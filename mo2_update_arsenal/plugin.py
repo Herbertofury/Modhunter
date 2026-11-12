@@ -151,6 +151,20 @@ class ModUpdateArsenal(mobase.IPluginTool):
         except Exception as ex:
             return {"ok": False, "error": f"MO2 download manager error: {ex}. Free accounts may need to initiate the download from Nexus."}
 
+    def _download_url(self, payload: dict):
+        """Route verified public GitHub release archives through MO2 Downloads."""
+        url = str(payload.get("url") or "")
+        if not url.startswith("https://github.com/") or "/releases/download/" not in url:
+            return {"ok": False, "error": "Untrusted release archive URL rejected"}
+        try:
+            download_id = int(self.org.downloadManager().startDownloadURLs([url]))
+            if download_id <= 0:
+                return {"ok": False, "error": "MO2 declined the source archive download"}
+            return {"ok": True, "downloadId": download_id,
+                    "message": "Verified public release asset queued in MO2 Downloads"}
+        except (AttributeError, RuntimeError, ValueError, TypeError) as exc:
+            return {"ok": False, "error": "MO2 URL download manager unavailable: " + str(exc)}
+
     def _profile_backup(self):
         profile_path = Path(self.org.profilePath()).resolve()
         profile_id = self.server.snapshot().get("profileId", "unknown")
@@ -285,6 +299,8 @@ class ModUpdateArsenal(mobase.IPluginTool):
                 result = self._refresh_snapshot()
             elif request.cmd == "download":
                 result = self._download(int(request.payload["modId"]), int(request.payload["fileId"]))
+            elif request.cmd == "download-url":
+                result = self._download_url(request.payload)
             elif request.cmd == "install":
                 result = self._install(int(request.payload["downloadId"]))
             elif request.cmd == "focus":

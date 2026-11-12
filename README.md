@@ -34,7 +34,7 @@
 
 ## Update Workshop: maintain an entire MO2 profile
 
-The new **[Update Workshop](wiki/Update-Workshop.md)** keeps all mods in full-width review lanes, including missing-source mods. In live MO2, start a cached/fast/full scan, inspect exact Nexus files, acknowledge compatibility risks, and queue a reviewed batch. Each download still goes through the native MO2 download manager; each installation stays interactive with profile load-order backups. The standalone HTML and desktop editions provide the same beautiful planning UI without requiring MO2 and never pretend offline checklist clicks are verified updates.
+The new **[Update Workshop](wiki/Update-Workshop.md)** ([source coverage](wiki/Updater-Source-Coverage.md)) keeps all mods in full-width review lanes, including missing-source mods. In live MO2, reuse MO2's authenticated Nexus connection, inspect exact Nexus files and public GitHub release assets, check GitHub/GitLab release versions, acknowledge compatibility risks, and queue a reviewed batch. Each download still goes through the native MO2 download manager; each installation stays interactive with profile load-order backups. Patreon, LoversLab, Mod DB and other gated sources retain exact links and unverified/manual-review status rather than imaginary update claims. The standalone HTML and desktop editions provide the same planning UI without requiring MO2 and never pretend offline checklist clicks are verified updates.
 
 ## What makes it different?
 

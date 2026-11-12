@@ -86,6 +86,7 @@ jobs:
                   assert hashlib.sha256(z.read(prefix+name)).hexdigest()==info['parts'][name]['sha256']
               for doc in ('Docs/Unified-Modhunter.md','Docs/Update-Workshop.md','Docs/Original-Releases-and-Output-Audit.md'):
                   assert doc in z.namelist(),doc
+          page=html.decode('utf-8')
           assert 'id="unifiedCommand"' in page
           assert 'id="unifiedScan"' in page
           assert 'id="unifiedReview"' in page

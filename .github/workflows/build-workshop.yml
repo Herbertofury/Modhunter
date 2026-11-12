@@ -1,0 +1,81 @@
+name: Verify and package Modhunter Update Workshop
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'mo2_update_arsenal/**'
+      - 'desktop/**'
+      - 'tests/**'
+      - 'build.py'
+      - 'release_v08.py'
+      - '.github/workflows/build-workshop.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: modhunter-workshop-package
+  cancel-in-progress: false
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify Python unit tests and independent update planning
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Check Electron syntax
+        run: |
+          node --check desktop/main.cjs
+          node --check desktop/preload.cjs
+          node --check desktop/chrome.js
+      - name: Compile single-file standalone dashboard and check its JavaScript
+        run: |
+          python3 build.py
+          python3 - <<'PY'
+          import re,subprocess
+          from pathlib import Path
+          page=Path('mo2_update_arsenal/web/index.html').read_text('utf-8')
+          scripts=re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',page,flags=re.S|re.I)
+          assert scripts, 'No inline JS found in built app'
+          for n,script in enumerate(scripts):
+              if script.strip():
+                  name=Path('/tmp')/f'modhunter-check-{n}.js'
+                  name.write_text(script,encoding='utf-8')
+                  subprocess.run(['node','--check',str(name)],check=True)
+          assert 'The Update <em>Workshop</em>' in page
+          assert 'async function queueWorkshop' in page
+          print('Verified',len(scripts),'scripts and standalone workshop')
+          PY
+      - name: Regenerate self-contained desktop, MO2 plugin and source packages
+        run: |
+          python3 release_v08.py
+          mkdir -p web dist
+          cp mo2_update_arsenal/web/index.html web/Modhunter.html
+          cp /mnt/data/Modhunter-MO2-Plugin.zip dist/Modhunter-MO2-Plugin.zip
+          cp /mnt/data/Modhunter-Desktop-Source.zip dist/Modhunter-Desktop-Source.zip
+          cp /mnt/data/Modhunter.html dist/Modhunter.html
+          cp /mnt/data/Modhunter-Complete-Source.zip dist/Modhunter-Complete-Source.zip
+          cp /mnt/data/Modhunter-0.8/dist/manifest.json dist/manifest.json
+          python3 - <<'PY'
+          from zipfile import ZipFile
+          from pathlib import Path
+          html=Path('web/Modhunter.html').read_bytes()
+          assert html==Path('mo2_update_arsenal/web/index.html').read_bytes()
+          for name in ('Modhunter-MO2-Plugin.zip','Modhunter-Desktop-Source.zip','Modhunter-Complete-Source.zip'):
+              with ZipFile(Path('dist')/name) as z:
+                  assert z.testzip() is None
+                  assert 'mo2_update_arsenal/web/index.html' in z.namelist() if name!='Modhunter-Complete-Source.zip' else 'web/Modhunter.html' in z.namelist()
+          print('All independent release packages verified')
+          PY
+      - name: Commit verified distributables to main
+        run: |
+          git config user.name "Modhunter Build Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add mo2_update_arsenal/web/index.html web/Modhunter.html dist/
+          if git diff --cached --quiet; then echo "Artifacts already current"; exit 0; fi
+          git commit -m "build: publish verified Update Workshop HTML and standalone packages"
+          git push origin HEAD:main

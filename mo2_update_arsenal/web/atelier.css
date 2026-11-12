@@ -257,3 +257,29 @@ body[data-theme="snow"] .workshop-metric:last-child{border-right:0}
  body .mod-row,body .workshop-item,body .unified-tile,body .nav-item,body .button-bright,body .quiet-button{transition:none!important;transform:none!important}
  body .hero,body .unified-command{scroll-behavior:auto}
 }
+
+/* Chromium layout regression repair: preserve readable viewport widths. */
+@media (max-width: 1640px) {
+  body .topbar { height:auto; min-height:63px; padding-top:9px; padding-bottom:9px; flex-wrap:wrap; row-gap:7px; }
+  body .topbar .breadcrumb { flex:1 1 260px; }
+  body .topbar .top-actions { flex:1 1 560px; display:flex; flex-wrap:wrap; gap:6px; align-items:center; justify-content:flex-end; min-width:0; }
+}
+@media (max-width: 1060px) {
+  body .topbar .breadcrumb { display:none; }
+  body .topbar .top-actions { justify-content:flex-start; flex:1 1 100%; }
+}
+@media (max-width: 700px) {
+  body[data-theme="night"] .hero,body[data-theme="snow"] .hero {
+    display:block; min-height:0; grid-template-columns:minmax(0,1fr);
+  }
+  body .hero .hero-main { display:block; width:100%; min-width:0; padding:24px 21px 26px; }
+  body .hero .hero-main :is(p,h1,.kicker,.reference-links) { max-width:100%; min-width:0; }
+  body .hero .hero-main .kicker { letter-spacing:.07em; white-space:normal; }
+  body .hero .hero-main h1 { font-size:clamp(33px,9vw,45px); line-height:1.1; overflow-wrap:normal; }
+  body .hero .hero-main p { font-size:13px; line-height:1.65; }
+  body .hero .hero-buttons { display:flex; flex-wrap:wrap; gap:8px; }
+  body .hero .hero-buttons button { flex:1 1 140px; justify-content:center; }
+  body .hero .hero-side { display:none; }
+  body .topbar { padding:8px 12px; }
+  body .topbar .top-actions { justify-content:flex-start; min-width:0; }
+}

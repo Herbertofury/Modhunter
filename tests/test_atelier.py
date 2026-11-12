@@ -48,5 +48,11 @@ class AtelierQualityTests(unittest.TestCase):
             self.assertIn("Design-System-and-Quality-Bar", (ROOT / file).read_text("utf-8"))
 
 
+    def test_chromium_qa_breakpoints_are_guarded(self):
+        layer = (WEB / "atelier.css").read_text("utf-8")
+        self.assertIn('body[data-theme="night"] .hero,body[data-theme="snow"] .hero', layer)
+        self.assertIn("body .topbar .top-actions { flex:1 1 560px", layer)
+        self.assertIn('body .hero .hero-main { display:block; width:100%', layer)
+
 if __name__ == "__main__":
     unittest.main()

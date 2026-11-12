@@ -11,13 +11,13 @@
 
 </div>
 
-![Modhunter hero](../screenshots/modhunter-menu.png)
+![Modhunter hero](https://raw.githubusercontent.com/Herbertofury/Modhunter/main/screenshots/modhunter-menu.png)
 
 > **Welcome, Hunter.** Your unfinished mod list is more than a maintenance backlog. It becomes your bestiary, quests and battles.
 
 | Enter the world | Standalone requirement | Optional link |
 | :-- | :-- | :-- |
-| **[Portable HTML](../web/Modhunter.html)** | A modern browser | MO2 localhost |
+| **[Portable HTML](https://github.com/Herbertofury/Modhunter/blob/main/web/Modhunter.html)** | A modern browser | MO2 localhost |
 | **[Desktop App](Desktop-App.md)** | Node.js / Electron for source build | MO2 localhost |
 | **[MO2 Plugin](MO2-Plugin.md)** | Mod Organizer 2 | Desktop or browser |
 

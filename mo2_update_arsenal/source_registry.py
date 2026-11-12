@@ -146,8 +146,7 @@ def release_verdict(item: dict, data: Any, provider: str, project: str) -> dict:
     """Only compare an actual published release tag; unknown is never current."""
     if not isinstance(data, dict) or not data:
         return {"verdict": "unknown", "reason": "No release metadata returned"}
-    version = str(data.get("tag_name") if provider == "github" else data.get("tag_name")
-                  or "")[:120]
+    version = str(data.get("tag_name") or "")[:120]
     # Enforce the same check for both providers; missing tag is not a version.
     if not version:
         return {"verdict": "unknown", "reason": "Provider did not publish a release tag"}

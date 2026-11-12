@@ -359,10 +359,12 @@ with sync_playwright() as pw:
     assert recovery.locator('#pulseFailed').inner_text()=='1'
     recovery.locator('[data-retry-download-id="801"]').click()
     recovery.wait_for_function("window.__SSS_MOCK__.tickets[801].retriedBy === 803")
+    recovery.locator('.ticket-requeued').first.wait_for(timeout=10000)
     assert recovery.locator('.ticket-requeued').count()==1
     assert recovery.evaluate("window.__SSS_MOCK__.calls.at(-1).endpoint")=='retry-download'
     recovery.locator('#installAllReady').click()
     recovery.wait_for_function("window.__SSS_MOCK__.tickets[802].status === 'installing'")
+    recovery.wait_for_function("document.getElementById('pulseReady').textContent === '0'")
     assert recovery.evaluate("window.__SSS_MOCK__.calls.at(-1).endpoint")=='install-ready'
     assert recovery.locator('#installPreviewVeil').is_hidden()
     assert recovery.locator('#queueReviewVeil').is_hidden()

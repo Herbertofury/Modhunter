@@ -1,6 +1,9 @@
 ### ⚔️ MODHUNTER
 **[🏰 Home](Home)**
 
+**Complete Original Archive**
+* [📦 All Original Outputs](Original-Releases-and-Output-Audit)
+
 **Explore**
 * [🎮 Game Modes](Game-Modes)
 * [🗺️ Atlas Campaign](Atlas-Campaign)

@@ -271,6 +271,27 @@ body[data-theme="snow"] .unified-meta{color:#247058}
 .workshop-remove:hover{background:rgba(190,90,75,.2);color:#fff}
 .workshop-remove:focus-visible{outline:2px solid #e6b3a4;outline-offset:2px}
 
+/* Premium update operations: exact provenance, profile-scoped previews, no automatic installs. */
+.operation-dialog{position:relative;margin:auto;width:min(820px,calc(100vw - 24px));max-height:min(90vh,970px);overflow:auto;padding:28px 30px 22px;color:#ebf5f1;background:radial-gradient(ellipse at 100% 0%,rgba(129,195,166,.17),transparent 44%),linear-gradient(138deg,#1b343c,#121e2a 65%,#192533);border:1px solid rgba(173,208,193,.36);border-radius:20px;box-shadow:0 34px 90px #0009,inset 0 1px 0 #cdebd026}
+.operation-dialog:before{content:"";position:sticky;display:block;top:-28px;margin:-28px -30px 23px;height:3px;background:linear-gradient(90deg,#d9b86d,#75caaa,#6797ba)}
+.operation-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:15px}.operation-eyebrow{font-size:10px;letter-spacing:.19em;color:#aedcc9;font-weight:800}.operation-emblem{display:inline-grid;place-items:center;width:41px;height:41px;border:1px solid #a4c5af77;transform:rotate(45deg);color:#f0ce84;font-size:22px}.operation-emblem::first-letter{display:inline-block}
+.operation-dialog h2{font:400 clamp(25px,3vw,37px)/1.15 Georgia,serif;color:#f5eddc;margin:0 0 8px}.operation-lede{font-size:13px;color:#b9cfce;line-height:1.55;margin:0 0 23px}.operation-section-heading{display:flex;justify-content:space-between;gap:15px;color:#a8bfbb;font-size:10px;font-weight:800;letter-spacing:.13em;margin-bottom:10px}
+.queue-review-rows{display:grid;gap:7px;max-height:43vh;overflow:auto;overscroll-behavior:contain;padding-right:4px}.queue-review-row{display:flex;gap:14px;align-items:start;padding:13px 15px;border:1px solid #3c555c;border-radius:11px;background:rgba(17,40,47,.7);min-width:0}.queue-review-index{font:400 19px/1 Georgia,serif;color:#d8ba7d;min-width:27px}.queue-review-row>div{flex:1;min-width:0}.queue-review-row strong{display:block;color:#eef4ed;font-size:14px;overflow-wrap:anywhere}.queue-review-row span:not(.queue-review-index){display:block;color:#e3c996;font-size:12px;margin:5px 0;overflow-wrap:anywhere}.queue-review-row small{color:#aec7c6;font-size:11px}
+.operation-notice{padding:13px 16px;border-left:3px solid #88cba9;background:rgba(92,154,127,.12);margin-top:19px;border-radius:6px}.operation-notice strong{font-size:12px;color:#c2edcd}.operation-notice p{margin:5px 0 0;font-size:12px;line-height:1.55;color:#c0d1ce}.operation-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-top:22px}.operation-actions button{min-height:41px;padding:9px 18px;font-weight:800}.operation-close{position:absolute;right:20px;top:14px;color:#dae9e3;background:transparent;border:0;font-size:27px;cursor:pointer}
+.install-brief-versions{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:16px}.install-brief-versions>span{display:flex;align-items:center;gap:8px;padding:10px 15px;background:rgba(25,60,64,.75);border:1px solid #49786d;border-radius:10px;color:#b5d4cc;font-size:12px}.install-brief-versions strong{font-size:21px;color:#f5dda7;font-weight:600}.install-brief-versions>b{color:#8fd8b1;font-size:21px}.install-brief-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.install-brief-detail{border:1px solid rgba(130,173,169,.28);background:rgba(9,28,38,.55);border-radius:9px;min-width:0;padding:11px 13px}.install-brief-detail small{display:block;color:#9bb7bb;letter-spacing:.11em;font-weight:800;font-size:10px}.install-brief-detail strong{display:block;color:#e7f3ea;font-size:13px;font-weight:650;overflow-wrap:anywhere;margin-top:5px}.install-brief-alerts{display:grid;gap:7px;margin-top:12px}.brief-alert{display:flex;align-items:flex-start;gap:13px;padding:11px 14px;border-radius:8px;font-size:12px;line-height:1.5}.brief-alert strong{min-width:57px;font-size:10px;letter-spacing:.12em}.brief-watch{background:rgba(156,117,55,.16);border:1px solid #b38c52a0;color:#f1d5ad}.brief-block{background:rgba(140,65,71,.19);border:1px solid #ad606c99;color:#ffd1d0}
+.operation-dialog :is(button,input):focus-visible{outline:2px solid #f3d29d;outline-offset:4px}
+body[data-theme="snow"] .operation-dialog{color:#21404a;background:linear-gradient(125deg,#f5fcf8,#e6f0f1);border-color:#9cb7b3}body[data-theme="snow"] .operation-dialog h2{color:#183b45}body[data-theme="snow"] .operation-lede,body[data-theme="snow"] .operation-notice p{color:#386167}body[data-theme="snow"] .queue-review-row,body[data-theme="snow"] .install-brief-detail{background:#ecf4ef}body[data-theme="snow"] .queue-review-row strong,body[data-theme="snow"] .install-brief-detail strong{color:#25434a}
+@media(max-width:600px){.operation-dialog{padding:19px 16px}.operation-dialog:before{margin:-19px -16px 19px;top:-19px}.install-brief-grid{grid-template-columns:1fr}.operation-actions button{flex:1}.operation-header{padding-right:32px}}
+@media(prefers-reduced-motion:reduce){.operation-dialog,.operation-dialog *{animation:none!important;transition:none!important}}
+
+/* Interactive six-lane dashboard and keyboard-accessible triage. */
+.workshop-summary{grid-template-columns:repeat(6,minmax(0,1fr))}
+.workshop-metric{appearance:none;cursor:pointer;text-align:left;transition:border-color .16s ease,background .16s ease,transform .16s ease}
+.workshop-metric:hover{border-color:#a8c6a1;background:#203842;transform:translateY(-1px)}.workshop-metric.is-active{border-color:#d6b579;background:linear-gradient(140deg,#284139,#1e3541);box-shadow:inset 0 0 0 1px rgba(210,189,126,.14)}
+.workshop-metric:focus-visible{outline:2px solid #e9c584;outline-offset:3px}.workshop-result-count{text-align:right;font-size:11px;color:#a9ccbf;letter-spacing:.05em;margin:6px 0 10px}
+@media(max-width:1100px){.workshop-summary{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:640px){.workshop-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(prefers-reduced-motion:reduce){.workshop-metric{transition:none!important;transform:none!important}}
+
 /* Questbound v0.4 AetherFX: cinematic DOM+Canvas feedback, independent of checklist and MO2 state. */
 #aetherCanvas{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:85;contain:strict}
 #aetherStage{position:fixed;inset:0;pointer-events:none;z-index:86;overflow:hidden;contain:layout style}
@@ -881,8 +902,8 @@ body[data-theme="snow"] .workshop-metric:last-child{border-right:0}
       <div class="workshop-tools"><button class="button-bright" id="workshopReviewNext" type="button" disabled>◈ Review next update</button><button class="button-bright" id="workshopRefresh" type="button">◈ Build update plan</button><button class="quiet-button" id="workshopRefreshDownloads" type="button">↻ Refresh downloads</button><button class="quiet-button" id="workshopExport" type="button">↓ Export plan</button><button class="quiet-button" id="workshopQueue" type="button">⇩ Queue reviewed files</button></div>
       <div class="workshop-status" id="workshopStatus" role="status">Standalone mode: inspect and export your checklist. Connect through MO2 to review exact Nexus files and queue downloads.</div>
       <div class="workshop-summary" id="workshopSummary" aria-live="polite"></div>
-      <div class="workshop-filter"><label for="workshopFilter">Queue lane</label><select id="workshopFilter" aria-label="Filter workshop by update status"><option value="candidate">Update candidates</option><option value="review">Needs verification</option><option value="manual">Manual / unlinked</option><option value="current">Current</option><option value="all">Every installed mod</option></select><label for="workshopSearch">Find</label><input id="workshopSearch" placeholder="Search mods, versions, source…" autocomplete="off" aria-label="Search update workshop"></div>
-      <div class="workshop-results" id="workshopResults" aria-live="polite"></div>
+      <div class="workshop-filter"><label for="workshopFilter">Queue lane</label><select id="workshopFilter" aria-label="Filter workshop by update status"><option value="candidate">Update candidates</option><option value="review">Needs verification</option><option value="manual">Manual / unlinked</option><option value="current">Current</option><option value="risky">Compatibility watch</option><option value="ready">Ready to install</option><option value="all">Every installed mod</option></select><label for="workshopSearch">Find</label><input id="workshopSearch" placeholder="Search mods, versions, source…" autocomplete="off" aria-label="Search update workshop"></div>
+      <div class="workshop-result-count" id="workshopVisibleCount" role="status"></div><div class="workshop-results" id="workshopResults" aria-live="polite"></div>
       <p class="workshop-foot">Version checks identify candidates, not guaranteed compatible installs. Review files, DLLs, masters, patches and your runtime before queueing. Offline HTML remains read-only.</p>
     </section>
     <div id="liveDownloadList" class="live-downloads" aria-live="polite"></div>
@@ -943,6 +964,28 @@ body[data-theme="snow"] .workshop-metric:last-child{border-right:0}
 <div id="mo2MatchPreview" class="mo2-preview" aria-live="polite"></div><button id="mo2Bind" class="button-bright" disabled>↗ Bind confirmed Nexus ID</button><small class="muted-help">Only choose a match if the imported folder really belongs to that checklist mod. Links are stored locally and included in your progress JSON backup.</small></section>
 </div></div>
 <div class="modal-veil" id="helpVeil" hidden><div class="help-dialog" role="dialog" aria-modal="true" aria-labelledby="helpTitle"><button id="helpClose" class="close-button" aria-label="Close help">×</button><div class="kicker">FIELD MANUAL / OPERATIONS</div><h2 id="helpTitle">How to survive the gauntlet</h2><p>Click a mod row to focus it with a runic selection pulse, or click its circular seal to mark it cleared with shattered glass, magic, and combat effects. Open ✧ Forge FX Studio for intensity, shake, hover trails, and previews. It explodes with your chosen finisher, and the result saves locally. Click the inspect icon to change its verdict, notes, version and exact download URL.</p><div class="shortcut-grid"><span><kbd>Ctrl / ⌘ K</kbd> Search the vault</span><span><kbd>J</kbd> Next visible mod</span><span><kbd>K</kbd> Previous visible mod</span><span><kbd>Space</kbd> Toggle focused row</span><span><kbd>N</kbd> Jump to next pending</span><span><kbd>F</kbd> Toggle compact Focus Mode</span><span><kbd>Esc</kbd> Close panel</span></div><p class="muted-help"><b>Live MO2:</b> Click a mod name or use Reveal in the inspector to select and center that exact mod in MO2. Manual clears are practice only; ranked XP and crowns require native version-upgrade evidence plus a fresh full Nexus audit.</p><p class="muted-help">Use <b>⌁ Link MO2</b> to import exact Nexus IDs from your installed MO2 metadata. Source honesty: verified links open exact project Files or Bethesda Creation pages. Unresolved entries have targeted lookup buttons rather than invented links. Add a confirmed file URL in the inspector to upgrade them.</p><button id="helpOK" class="button-bright">Return to the quest →</button></div></div>
+<div class="modal-veil" id="queueReviewVeil" hidden>
+ <section class="operation-dialog" role="dialog" aria-modal="true" aria-labelledby="queueReviewTitle">
+  <div class="operation-header"><span class="operation-eyebrow">MODHUNTER / REVIEWED DOWNLOADS</span><span class="operation-emblem" aria-hidden="true">✦</span></div>
+  <h2 id="queueReviewTitle">Approved update queue</h2><p id="queueReviewSummary" class="operation-lede">Review every exact archive before dispatch.</p>
+  <div class="operation-section-heading"><span>EXACT FILES TO REQUEST</span><span>MO2 DOWNLOAD MANAGER</span></div>
+  <div id="queueReviewRows" class="queue-review-rows"></div>
+  <div class="operation-notice"><strong>Download only</strong><p>These are your explicitly reviewed files. No mods will be overwritten or installed by this action. Every installation opens a separate MO2 briefing.</p></div>
+  <div class="operation-actions"><button class="quiet-button" id="queueReviewCancel" type="button">Keep reviewing</button><button class="button-bright" id="queueReviewConfirm" type="button">Queue approved downloads</button></div>
+ </section>
+</div>
+<div class="modal-veil" id="installPreviewVeil" hidden>
+ <section class="operation-dialog install-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="installBriefTitle">
+  <div class="operation-header"><span class="operation-eyebrow">MODHUNTER / INSTALLATION BRIEFING</span><span class="operation-emblem" aria-hidden="true">⛨</span></div>
+  <button id="installPreviewClose" class="operation-close" type="button" aria-label="Close installation briefing">×</button>
+  <h2 id="installBriefTitle">Verifying the archive…</h2><p class="operation-lede">Your MO2 installer remains in control of FOMOD options, conflicts, and file replacement.</p>
+  <div id="installBriefVersions" class="install-brief-versions" aria-label="Installed and target versions"></div>
+  <div id="installBriefDetails" class="install-brief-grid"></div>
+  <div id="installBriefWarnings" class="install-brief-alerts" aria-live="polite"></div>
+  <div class="operation-notice"><strong>Profile protection</strong><p id="installBriefBackup">Load-order text backup is created before the installer opens. Existing mod files are not included.</p></div>
+  <div class="operation-actions"><button class="quiet-button" id="installPreviewCancel" type="button">Not now</button><button class="button-bright" id="installPreviewConfirm" type="button" disabled>Verifying…</button></div>
+ </section>
+</div>
 <div class="modal-veil" id="filePickerVeil" hidden><div class="help-dialog file-picker" role="dialog" aria-modal="true" aria-labelledby="filePickerTitle"><button id="filePickerClose" class="close-button" aria-label="Close Nexus file picker">×</button><div class="kicker">LIVE NEXUS FILE RECONNAISSANCE</div><h2 id="filePickerTitle">Choose your armament</h2><p id="filePickerSummary" class="muted-help">Verify the selected build for your game and requirements before download.</p><div class="picker-searchbar"><label for="filePickerSearch">Find exact file</label><input id="filePickerSearch" type="search" autocomplete="off" placeholder="Filter by file name, version, description…" aria-label="Filter available release files"><span id="filePickerMatchCount" role="status" aria-live="polite"></span></div><div id="filePickerFiles" class="file-picker-files" aria-live="polite"></div><div class="picker-tail"><button id="filePickerNexus" class="quiet-button">↗ Open original files</button><button id="filePickerCancel" class="quiet-button">Cancel</button></div></div></div>
 <div class="victory-overlay" id="victoryOverlay" hidden role="dialog" aria-modal="true" aria-labelledby="victoryTitle">
  <div class="victory-sky" id="victorySky" aria-hidden="true"></div>
@@ -1152,6 +1195,7 @@ let STORAGE='dragonborn-mod-update-arsenal-v1';
 const BRIDGE=window.__MO2_BRIDGE_BOOT__||{active:false};
 let LIVE_SCAN=null,LIVE_CATALOG=null,SCAN_TIMER=null,FILE_PICKER_MOD=null,LIVE_GENERATION=0,LIVE_REFRESH_BUSY=false;
 let WORKSHOP_PLAN=null,WORKSHOP_CHOICES=new Map(),WORKSHOP_BUSY=false,WORKSHOP_REVIEW_ID=null;
+let QUEUE_PENDING=null,INSTALL_PREVIEW_ID=0,INSTALL_PREVIEW_PROFILE='',PREVIEW_RETURN_FOCUS=null;
 let WORKSHOP_TICKETS={},WORKSHOP_TICKET_SIGNATURE='',DOWNLOAD_REFRESH_BUSY=false;
 let GAME=null,GAME_SEEN=-1,PROGRESS_READY=false,PROGRESS_TIMER=null,NATIVE_SELECTED='',VICTORY_ACTIVE=null,VICTORY_TIMERS=[],PRACTICE_CROWNED=false;
 const BADGE_META=[['first-blood','First Blood','⚔',1],['apprentice','Apprentice Smith','🔨',5],['veteran','Veteran of the Forge','🛡',10],['archmage','Master Enchanter','✦',25],['dragonborn','Dragonborn','🐉',50],['legend','Legendary Smith','♛',100],['world-eater','World-Eater Defeated','👑',null]];
@@ -1421,9 +1465,11 @@ $('mo2Import').onclick=()=>$('mo2File').click();$('mo2File').onchange=e=>importM
 $('drawerClose').onclick=closeInspector;$('drawerVeil').onclick=closeInspector;
 $('helpToggle').onclick=()=>help(true);$('helpClose').onclick=()=>help(false);$('helpOK').onclick=()=>help(false);$('helpVeil').addEventListener('click',e=>{if(e.target===$('helpVeil'))help(false)});
 $('menuToggle').onclick=()=>$('sidebar').classList.toggle('open');document.addEventListener('click',e=>{if(!$('fxStudio').hidden&&!e.target.closest('#fxStudio')&&!e.target.closest('#fxSettingsToggle')){$('fxStudio').hidden=true;$('fxSettingsToggle').setAttribute('aria-expanded','false')}if($('sidebar').classList.contains('open')&&!e.target.closest('#sidebar')&&!e.target.closest('#menuToggle'))$('sidebar').classList.remove('open')});
-document.addEventListener('keydown',e=>{const inField=e.target.matches('input,textarea,select,[contenteditable]');if(e.key==='Escape'){$('fxStudio').hidden=true;$('fxSettingsToggle').setAttribute('aria-expanded','false');closeInspector();help(false);mo2Close();closeFilePicker();closeVictory();$('sidebar').classList.remove('open');if(inField)e.target.blur();return}
+document.addEventListener('keydown',e=>{const inField=e.target.matches('input,textarea,select,[contenteditable]');if(e.key==='Escape'){$('fxStudio').hidden=true;$('fxSettingsToggle').setAttribute('aria-expanded','false');closeInspector();help(false);mo2Close();closeFilePicker();closeInstallPreview();closeQueuePreview();closeVictory();$('sidebar').classList.remove('open');if(inField)e.target.blur();return}
  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();closeInspector();$('search').focus();$('search').select();return}
- if(inField||!$('helpVeil').hidden||!$('mo2Veil').hidden||$('detailDrawer').classList.contains('open'))return;
+ if(inField||!$('helpVeil').hidden||!$('mo2Veil').hidden||!$('installPreviewVeil').hidden||!$('queueReviewVeil').hidden||!$('filePickerVeil').hidden||$('detailDrawer').classList.contains('open'))return;
+ if(e.altKey&&e.key.toLowerCase()==='u'){e.preventDefault();unifiedScroll('updateWorkshop');$('workshopSearch').focus();return;}
+ if(e.altKey&&e.key.toLowerCase()==='r'&&BRIDGE.active){e.preventDefault();reviewNextWorkshopCandidate();return;}
  if(e.key.toLowerCase()==='f'){e.preventDefault();updatePrefs({focus:!STORE.prefs.focus});return}if(e.key.toLowerCase()==='n'){e.preventDefault();nextPending();return}if(e.key==='?'||e.key==='F1'){e.preventDefault();help(true);return}
  if(e.key.toLowerCase()==='j'||e.key.toLowerCase()==='k'){e.preventDefault();const ids=filtered().filter(m=>!STORE.prefs.collapsed.includes(m.groupId)).map(m=>m.id);if(!ids.length)return;let i=ids.indexOf(focusedRowId);i=(i+(e.key.toLowerCase()==='j'?1:-1)+ids.length)%ids.length;focusRow(ids[i]);return}
  if(e.code==='Space'&&focusedRowId){e.preventDefault();toggleDone(focusedRowId,$('row-'+focusedRowId)?.querySelector('[data-act="complete"]'))}
@@ -1456,7 +1502,7 @@ function activateLiveCatalog(c){
  $('liveSync').textContent='Snapshot: '+new Date().toLocaleTimeString();
  for(const id of ['liveAll','liveQuick','liveDeep','liveLocal','liveRefresh','liveRuntime','liveConnect','liveBackup'])$(id).disabled=false;
  const chosen=STORE.prefs.filter;if(chosen==='updates'&&!c.items.some(isUpdate))STORE.prefs.filter='all';
- if(newProfile||changedRuntime||changedMods){WORKSHOP_PLAN=null;WORKSHOP_CHOICES.clear()}
+ if(newProfile||changedRuntime||changedMods){WORKSHOP_PLAN=null;WORKSHOP_CHOICES.clear();QUEUE_PENDING=null;$('queueReviewVeil').hidden=true;INSTALL_PREVIEW_ID=0;$('installPreviewVeil').hidden=true;}
  if(newProfile){WORKSHOP_TICKETS={};WORKSHOP_TICKET_SIGNATURE='';$('liveDownloadList').innerHTML=''}
  applyAppearance();updateStorageIndicator();render();renderLiveStats();if(newProfile){hydrateProgress(c.profileId);refreshGame()}refreshWorkshop().catch(ex=>workshopSetStatus('Plan unavailable: '+ex.message));if(changedRuntime||changedMods)toast('⚠ Previous cleared checks need review: runtime or installed version changed.');
 }
@@ -1528,11 +1574,14 @@ function renderWorkshop(){
  const plan=currentWorkshopPlan(),summary=plan.summary,filter=$('workshopFilter').value||'candidate',query=$('workshopSearch').value.trim().toLowerCase();
  const selected=[...WORKSHOP_CHOICES.values()].filter(x=>x.profileId===plan.profileId);
  SET('workshopCount',summary.candidates+' CANDIDATES · '+selected.length+' REVIEWED');
- $('workshopSummary').innerHTML=[['Candidates',summary.candidates],['Investigate',summary.review],['Manual sources',summary.manual],['Current',summary.current],['Compatibility watch',summary.risky]].map(([name,n])=>'<div class="workshop-metric"><strong>'+escapeHTML(n)+'</strong><small>'+escapeHTML(name)+'</small></div>').join('');
- const visible=plan.items.filter(m=>(filter==='all'||m.lane===filter)&&(!query||[m.name,m.group,m.installedVersion,m.latestVersion,m.verdict].join(' ').toLowerCase().includes(query)));
- // Index tickets once: large profiles must never do tickets x installed-mod lookups.
+ // Index tickets once: keep constant-time lookups for arbitrarily large profiles.
  const ticketsByMod=new Map();
  for(const ticket of Object.values(WORKSHOP_TICKETS))if(ticket?.itemId&&!['failed','removed'].includes(ticket.status))ticketsByMod.set(ticket.itemId,ticket);
+ const ready=[...ticketsByMod.values()].filter(x=>x.status==='complete').length;
+ const metrics=[['Candidates',summary.candidates,'candidate'],['Investigate',summary.review,'review'],['Manual sources',summary.manual,'manual'],['Current',summary.current,'current'],['Compatibility watch',summary.risky,'risky'],['Ready to install',ready,'ready']];
+ $('workshopSummary').innerHTML=metrics.map(([name,n,key])=>'<button type="button" class="workshop-metric'+(filter===key?' is-active':'')+'" data-lane="'+key+'" aria-pressed="'+(filter===key)+'"><strong>'+escapeHTML(n)+'</strong><small>'+escapeHTML(name)+'</small></button>').join('');
+ const visible=plan.items.filter(m=>(filter==='all'||m.lane===filter||filter==='risky'&&!!m.risks?.length||filter==='ready'&&ticketsByMod.get(m.id)?.status==='complete')&&(!query||[m.name,m.group,m.installedVersion,m.latestVersion,m.verdict].join(' ').toLowerCase().includes(query)));
+ SET('workshopVisibleCount',visible.length+' of '+plan.items.length+' mods shown');
  area.innerHTML=visible.map(m=>{
   const choice=WORKSHOP_CHOICES.get(m.id);
   const src=m.sourceUrl||getSrc(ITEM_MAP.get(m.id)||{id:m.id,name:m.name,group:m.group,source:{}}).url;
@@ -1576,16 +1625,31 @@ async function reviewWorkshopFile(id){
  // replacing it with a generic message after the async file lookup.
  $('filePickerSummary').textContent+=' Selecting a file only prepares a reviewed download; it never installs automatically.';
 }
-async function queueWorkshop(){
- if(WORKSHOP_BUSY||!BRIDGE.active)return;
+function closeQueuePreview(){
+ $('queueReviewVeil').hidden=true;QUEUE_PENDING=null;
+ if(PREVIEW_RETURN_FOCUS?.isConnected)PREVIEW_RETURN_FOCUS.focus({preventScroll:true});
+ PREVIEW_RETURN_FOCUS=null;
+}
+function queueWorkshop(){
+ if(WORKSHOP_BUSY||!BRIDGE.active||!LIVE_CATALOG)return;
  const plan=currentWorkshopPlan(),profile=plan.profileId;
  const entries=[...WORKSHOP_CHOICES.values()].filter(x=>x.profileId===profile);
- if(!entries.length)return;
- const reviewedNames=entries.map(x=>plan.items.find(row=>row.id===x.itemId)?.name||x.itemId);
- const preview=reviewedNames.slice(0,8).map(n=>' • '+n).join('\n')+(reviewedNames.length>8?'\n • ...and '+(reviewedNames.length-8)+' more':'');
- if(!confirm('Queue '+entries.length+' reviewed archive(s) into MO2 Downloads?\n\n'+preview+'\n\nThis only downloads; install confirmations remain separate.'))return;
+ if(!entries.length){workshopSetStatus('Choose and review exact files before queueing.');return;}
+ QUEUE_PENDING={profile,entries};PREVIEW_RETURN_FOCUS=document.activeElement;
+ const warnings=entries.reduce((n,x)=>n+(plan.items.find(m=>m.id===x.itemId)?.risks?.length?1:0),0);
+ SET('queueReviewTitle',entries.length+' approved archive'+(entries.length===1?'':'s'));
+ SET('queueReviewSummary',plan.profileName+' · '+(plan.gameRuntime||'Unknown runtime')+' · '+warnings+' with compatibility advisories');
+ $('queueReviewRows').innerHTML=entries.map((x,i)=>{
+  const m=plan.items.find(row=>row.id===x.itemId)||{};
+  return '<article class="queue-review-row"><span class="queue-review-index">'+String(i+1).padStart(2,'0')+'</span><div><strong>'+escapeHTML(m.name||x.itemId)+'</strong><span>'+escapeHTML(x.displayName&&x.displayName!==x.fileName?x.displayName+' · '+x.fileName:x.fileName||('File #'+(x.fileId||x.assetId)))+'</span><small>'+escapeHTML(x.kind==='source'?'GitHub release':'Nexus Mods')+' · '+escapeHTML(x.installedVersion)+' → '+escapeHTML(x.targetVersion||'?')+(m.risks?.length?' · COMPATIBILITY WATCH':'')+'</small></div></article>';
+ }).join('');
+ $('queueReviewConfirm').textContent='Queue '+entries.length+' approved download'+(entries.length===1?'':'s');
+ $('queueReviewVeil').hidden=false;$('queueReviewConfirm').focus({preventScroll:true});
+}
+async function performQueuedWorkshop(entries,profile){
+ if(WORKSHOP_BUSY||!BRIDGE.active)return;
  WORKSHOP_BUSY=true;renderWorkshop();
- let sent=0;const problems=[],seen=new Set();
+ let sent=0;const problems=[];
  try{
   const latest=await bridgeRequest('GET','update-plan');
   if(latest.profileId!==profile||LIVE_CATALOG?.profileId!==profile)throw Error('Active profile changed. Reopen the Workshop.');
@@ -1597,6 +1661,13 @@ async function queueWorkshop(){
  }catch(e){workshopSetStatus('Queue halted: '+e.message)}
  finally{WORKSHOP_BUSY=false;renderWorkshop()}
 }
+$('queueReviewCancel').onclick=closeQueuePreview;
+$('queueReviewVeil').addEventListener('click',e=>{if(e.target===$('queueReviewVeil'))closeQueuePreview()});
+$('queueReviewConfirm').onclick=()=>{
+ if(!QUEUE_PENDING)return;
+ const {entries,profile}=QUEUE_PENDING;
+ closeQueuePreview();performQueuedWorkshop(entries,profile);
+};
 $('workshopNextAction').onclick=()=>{
  const action=$('workshopNextAction').dataset.action;
  if(action==='queue')return queueWorkshop();
@@ -1629,6 +1700,7 @@ $('workshopRefresh').onclick=()=>refreshWorkshop().catch(e=>workshopSetStatus('P
 $('workshopExport').onclick=exportWorkshop;
 $('workshopQueue').onclick=queueWorkshop;
 $('workshopFilter').onchange=renderWorkshop;
+$('workshopSummary').addEventListener('click',e=>{const choice=e.target.closest('button[data-lane]');if(!choice)return;$('workshopFilter').value=choice.dataset.lane;renderWorkshop();});
 $('workshopSearch').oninput=renderWorkshop;
 $('workshopResults').addEventListener('click',e=>{
  const b=e.target.closest('[data-workshop-act]');if(!b)return;
@@ -1711,7 +1783,7 @@ async function openFilePicker(m){
  $('filePickerTitle').textContent=m.name;
  $('filePickerSummary').textContent='Installed: '+m.installedVersion+' · Target runtime: '+(DATA.gameRuntime||'unknown')+'. Inspect file version, requirements and FOMOD instructions.';
  $('filePickerVeil').hidden=false;$('filePickerFiles').innerHTML='<div class="picker-loading">Loading exact file choices…</div>';
- const github=assets.length?'<div class="picker-source-title">GITHUB RELEASE · PUBLIC ARCHIVES</div>'+assets.map(f=>'<div class="picker-file"><div class="picker-file-main"><strong>'+escapeHTML(f.name)+'</strong><span>GitHub release · '+Math.round((f.size||0)/1024)+' KB · verify requirements and game runtime</span></div><button class="button-bright" data-file-id="'+Number(f.assetId)+'" data-source-kind="github">Select release asset</button></div>').join(''):'';
+ const github=assets.length?'<div class="picker-source-title">GITHUB RELEASE · PUBLIC ARCHIVES</div>'+assets.map(f=>'<div class="picker-file"><div class="picker-file-main"><strong>'+escapeHTML(f.name)+'</strong><span>GitHub release · '+Math.round((f.size||0)/1024)+' KB · verify requirements and game runtime</span></div><button class="button-bright" data-file-id="'+Number(f.assetId)+'" data-archive-name="'+escapeHTML(f.name)+'" data-source-kind="github">Select release asset</button></div>').join(''):'';
  if(!m.nexusId){$('filePickerFiles').innerHTML=github;filterFilePicker();return}
  try{
   const j=await bridgeRequest('GET','files?modId='+m.nexusId+'&itemId='+encodeURIComponent(m.id));
@@ -1719,7 +1791,7 @@ async function openFilePicker(m){
   if(FILE_PICKER_MOD!==m)return; // Do not repaint a picker that was closed or changed.
   const nexus=(j.files||[]).map(f=>{
    const tag=f.suggested?'◈ VERSION-MATCHED MAIN FILE':f.releaseVersionMatch?'✓ PROJECT VERSION MATCH':f.category===1?'MAIN FILE':'OPTIONAL / OTHER';
-   return '<div class="picker-file'+(f.suggested?' picker-suggested':'')+'"><div class="picker-file-main"><span class="picker-match-tag">'+escapeHTML(tag)+'</span><strong>'+escapeHTML(f.name)+'</strong><span>v'+escapeHTML(f.version||'?')+' · '+escapeHTML(f.fileName||'')+' · '+escapeHTML(f.sizeInKB||'?')+' KB '+(f.category===1?' · MAIN FILE':'')+'</span>'+(f.reviewHint?'<p class="picker-hint">'+escapeHTML(f.reviewHint)+'</p>':'')+(f.description?'<p class="picker-file-desc">'+escapeHTML(f.description)+'</p>':'')+'</div><button class="button-bright" data-file-id="'+Number(f.fileId)+'" data-mod-id="'+Number(m.nexusId)+'">Select Nexus file</button></div>';
+   return '<div class="picker-file'+(f.suggested?' picker-suggested':'')+'"><div class="picker-file-main"><span class="picker-match-tag">'+escapeHTML(tag)+'</span><strong>'+escapeHTML(f.name)+'</strong><span>v'+escapeHTML(f.version||'?')+' · '+escapeHTML(f.fileName||'')+' · '+escapeHTML(f.sizeInKB||'?')+' KB '+(f.category===1?' · MAIN FILE':'')+'</span>'+(f.reviewHint?'<p class="picker-hint">'+escapeHTML(f.reviewHint)+'</p>':'')+(f.description?'<p class="picker-file-desc">'+escapeHTML(f.description)+'</p>':'')+'</div><button class="button-bright" data-file-id="'+Number(f.fileId)+'" data-file-version="'+escapeHTML(f.version||'')+'" data-mod-id="'+Number(m.nexusId)+'" data-archive-name="'+escapeHTML(f.fileName||f.name)+'">Select Nexus file</button></div>';
   }).join('');
   if(!nexus&&!github)throw Error('No files available for this project');
   $('filePickerFiles').innerHTML=(nexus?'<div class="picker-source-title">NEXUS MODS · EXACT FILES</div>'+nexus:'')+github;
@@ -1746,22 +1818,85 @@ $('filePickerFiles').addEventListener('click',async e=>{const b=e.target.closest
   const riskAcknowledged=!record.risks?.length||confirm('Compatibility watch:\\n'+record.risks.join('\\n')+'\\n\\nI checked this file against my target runtime and prerequisites.');
   if(!riskAcknowledged)return;
   const sourceChoice=b.dataset.sourceKind==='github';
-  WORKSHOP_CHOICES.set(WORKSHOP_REVIEW_ID,sourceChoice?{kind:'source',itemId:WORKSHOP_REVIEW_ID,assetId:Number(b.dataset.fileId),installedVersion:record.installedVersion,targetVersion:record.latestVersion,profileId:plan.profileId,reviewed:true,riskAcknowledged}:{kind:'nexus',itemId:WORKSHOP_REVIEW_ID,modId:Number(m.nexusId),fileId:Number(b.dataset.fileId),installedVersion:record.installedVersion,targetVersion:record.latestVersion,profileId:plan.profileId,reviewed:true,riskAcknowledged});
+  const exactFile={fileName:b.dataset.archiveName||label,displayName:label,fileVersion:b.dataset.fileVersion||''};
+  WORKSHOP_CHOICES.set(WORKSHOP_REVIEW_ID,sourceChoice?{kind:'source',itemId:WORKSHOP_REVIEW_ID,assetId:Number(b.dataset.fileId),installedVersion:record.installedVersion,targetVersion:record.latestVersion,profileId:plan.profileId,reviewed:true,riskAcknowledged,...exactFile}:{kind:'nexus',itemId:WORKSHOP_REVIEW_ID,modId:Number(m.nexusId),fileId:Number(b.dataset.fileId),installedVersion:record.installedVersion,targetVersion:record.latestVersion,profileId:plan.profileId,reviewed:true,riskAcknowledged,...exactFile});
   closeFilePicker();renderWorkshop();workshopSetStatus('Reviewed '+record.name+'. Use Queue reviewed files when ready.');return;
  }
- if(!confirm('Queue this reviewed archive in MO2? Installation and compatibility review remain your choice.'))return;b.disabled=true;try{const r=b.dataset.sourceKind==='github'?await bridgeRequest('POST','update-queue',{profileId:LIVE_CATALOG.profileId,confirm:'QUEUE_REVIEWED_DOWNLOADS',entries:[{kind:'source',itemId:m.id,assetId:Number(b.dataset.fileId),installedVersion:m.installedVersion,reviewed:true,riskAcknowledged:true}]}):await bridgeRequest('POST','download',{modId:Number(b.dataset.modId),fileId:Number(b.dataset.fileId),confirm:'DOWNLOAD'});toast('⇩ '+r.message);closeFilePicker();await refreshDownloads()}catch(ex){toast('Download: '+ex.message);b.disabled=false}});
+ if(currentWorkshopPlan().items.some(row=>row.id===m.id&&row.lane==='candidate')){
+  WORKSHOP_REVIEW_ID=m.id;
+  b.click();return;
+ }
+ if(!confirm('This file is not a verified update candidate. Download only for manual MO2 installation? Check its edition, requirements and source yourself.'))return;
+ b.disabled=true;
+ try{
+  const r=await bridgeRequest('POST','download',{modId:Number(b.dataset.modId),fileId:Number(b.dataset.fileId),confirm:'DOWNLOAD'});
+  toast('⇩ '+(r.message||'Sent to MO2 Downloads'));closeFilePicker();await refreshDownloads();
+ }catch(ex){toast('Download: '+ex.message);b.disabled=false}
+ });
+function closeInstallPreview(){
+ $('installPreviewVeil').hidden=true;INSTALL_PREVIEW_ID=0;INSTALL_PREVIEW_PROFILE='';
+ if(PREVIEW_RETURN_FOCUS?.isConnected)PREVIEW_RETURN_FOCUS.focus({preventScroll:true});
+ PREVIEW_RETURN_FOCUS=null;
+}
+async function showInstallPreview(downloadId){
+ if(!BRIDGE.active||!LIVE_CATALOG)return;
+ INSTALL_PREVIEW_ID=Number(downloadId);INSTALL_PREVIEW_PROFILE=LIVE_CATALOG.profileId;
+ PREVIEW_RETURN_FOCUS=document.activeElement;
+ $('installPreviewVeil').hidden=false;
+ SET('installBriefTitle','Preparing installation briefing…');
+ $('installBriefDetails').innerHTML='<div class="picker-loading">Checking the active MO2 profile and reviewed download…</div>';
+ $('installBriefWarnings').innerHTML='';
+ $('installPreviewConfirm').disabled=true;
+ $('installPreviewCancel').focus({preventScroll:true});
+ try{
+  const brief=await bridgeRequest('GET','install-preview?downloadId='+encodeURIComponent(downloadId));
+  if(INSTALL_PREVIEW_ID!==Number(downloadId)||$('installPreviewVeil').hidden)return;
+  const details=[
+   ['TARGET MOD',brief.modName||'Unknown'],
+   ['INSTALL FILE',brief.archiveName||'Unknown archive'],
+   ['FROM',brief.provider==='github'?'GitHub release':'Nexus Mods'],
+   ['MO2 PROFILE',brief.profileName||'Unknown'],
+   ['GAME RUNTIME',brief.gameRuntime||'Unknown'],
+   ['DOWNLOAD ID','#'+brief.downloadId]
+  ];
+  SET('installBriefTitle',brief.modName||'Install reviewed archive');
+  $('installBriefVersions').innerHTML='<span>Installed <strong>'+escapeHTML(brief.installedVersion||'?')+'</strong></span><b>→</b><span>Target <strong>'+escapeHTML(brief.targetVersion||'?')+'</strong></span>';
+  $('installBriefDetails').innerHTML=details.map(([k,v])=>'<div class="install-brief-detail"><small>'+k+'</small><strong title="'+escapeHTML(v)+'">'+escapeHTML(v)+'</strong></div>').join('');
+  const errors=brief.errors||[],warnings=brief.warnings||[];
+  $('installBriefWarnings').innerHTML=errors.map(x=>'<div class="brief-alert brief-block"><strong>BLOCKED</strong><span>'+escapeHTML(x)+'</span></div>').join('')+warnings.map(x=>'<div class="brief-alert brief-watch"><strong>VERIFY</strong><span>'+escapeHTML(x)+'</span></div>').join('');
+  SET('installBriefBackup','Profile text/load-order files only ('+((brief.backup?.files||[]).length)+' files). Original mod folders are not backed up. MO2’s standard installer controls file replacement.');
+  $('installPreviewConfirm').disabled=!brief.canInstall||LIVE_CATALOG?.profileId!==INSTALL_PREVIEW_PROFILE;
+  $('installPreviewConfirm').textContent=brief.canInstall?'Open interactive MO2 installer':'Resolve blocking changes first';
+  if(brief.canInstall)$('installPreviewConfirm').focus({preventScroll:true});
+ }catch(ex){
+  SET('installBriefTitle','Could not verify this download');
+  $('installBriefDetails').innerHTML='<div class="brief-alert brief-block">'+escapeHTML(ex.message)+'</div>';
+  $('installPreviewConfirm').disabled=true;
+ }
+}
+$('installPreviewCancel').onclick=closeInstallPreview;
+$('installPreviewClose').onclick=closeInstallPreview;
+$('installPreviewVeil').addEventListener('click',e=>{if(e.target===$('installPreviewVeil'))closeInstallPreview()});
+$('installPreviewConfirm').onclick=async()=>{
+ if(!INSTALL_PREVIEW_ID||!BRIDGE.active)return;
+ const id=INSTALL_PREVIEW_ID,profile=INSTALL_PREVIEW_PROFILE;
+ if(LIVE_CATALOG?.profileId!==profile){closeInstallPreview();workshopSetStatus('MO2 profile changed. Reload and review this archive again.');return;}
+ $('installPreviewConfirm').disabled=true;
+ try{
+  const response=await bridgeRequest('POST','install',{downloadId:id,confirm:'INSTALL'});
+  closeInstallPreview();toast(response.message||'MO2 installer requested. Complete its prompts inside MO2.');
+  await refreshDownloads();
+ }catch(ex){
+  SET('installBriefTitle','Installation did not start');
+  $('installBriefWarnings').innerHTML='<div class="brief-alert brief-block">'+escapeHTML(ex.message)+'</div>';
+  $('installPreviewConfirm').disabled=true;
+ }
+};
 $('liveDownloadList').addEventListener('click',async e=>{
  const retry=e.target.closest('button[data-retry-item-id]');
  if(retry){$('workshopFilter').value='candidate';renderWorkshop();reviewWorkshopFile(retry.dataset.retryItemId).catch(ex=>workshopSetStatus('Review failed: '+ex.message));return;}
  const b=e.target.closest('button[data-download-id]');if(!b)return;
- if(!confirm('Open the normal MO2 installer for this completed archive? Modhunter creates a profile backup before the installer. Review the FOMOD and overwrite choices.'))return;
- b.disabled=true;
- try{
-  const r=await bridgeRequest('POST','install',{downloadId:Number(b.dataset.downloadId),confirm:'INSTALL'});
-  toast(r.message||'MO2 installer requested. Complete its prompts and watch this ticket.');
-  await refreshDownloads();
- }catch(ex){toast('Install: '+ex.message)}
- finally{b.disabled=false}
+ showInstallPreview(Number(b.dataset.downloadId));
 });
 $('liveQuick').onclick=()=>scanLive('quick');$('liveDeep').onclick=()=>scanLive('deep');$('liveLocal').onclick=()=>scanLive('local');$('liveAll').onclick=()=>scanLive('all');
 $('liveRefresh').onclick=async()=>{try{const r=await bridgeRequest('POST','refresh');activateLiveCatalog(r.catalog);await refreshWorkshop();await refreshGame();toast('⟳ Live profile refreshed')}catch(ex){toast(ex.message)}};

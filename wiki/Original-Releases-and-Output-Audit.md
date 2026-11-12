@@ -98,3 +98,14 @@ The final `Modhunter-Updater-Verified-Complete.zip` is the newest bundled source
 The shared ChatGPT transcript was not directly readable, so ephemeral chat-only outputs that were never saved to these Drive folders cannot be declared recovered. What *is* fully reconciled here is **every actual artifact in all eight original version folders**, including the previously missed authentic historical binaries and GIFs. Current authenticated update support on private mod-provider websites and real Windows MO2 acceptance remain separate unfinished work.
 
 **Repository:** https://github.com/Herbertofury/Modhunter · **Wiki:** https://github.com/Herbertofury/Modhunter/wiki · **CI:** https://github.com/Herbertofury/Modhunter/actions/runs/43137476465
+
+
+---
+
+## Historical manifest ambiguity and remaining proof boundary
+
+The original **AetherFX v0.4** manifest says `gif_frames: 21`, while the authentic saved **Glass Finisher Chromium Demo.gif** has **eight encoded frames** (895 × 303). This may reflect an earlier unoptimized capture, but the five-file v0.4 Drive folder contains only the eight-frame GIF. It is not justified to claim the specific 21-frame original was independently recovered. All original release ZIP/HTML size and SHA-256 tests still pass.
+
+The ChatGPT share URL itself was not available as a full transcript. This vault accounts for **all 39 saved outputs** in the versioned Drive release folders and later updater checkpoints, not hypothetical chat-only attachments. Native Windows MO2 acceptance remains separate.
+
+[Detailed discrepancies and evidence boundaries](https://drive.google.com/file/d/16N9ZdctIeNZcWa38M63gmhfS8GGK8HcE/view)

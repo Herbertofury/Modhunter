@@ -35,15 +35,15 @@
     },
     "Modhunter-MO2-Plugin.zip": {
       "bytes": 208298,
-      "sha256": "6ecf07e22487af2eefe016b2578a425a36b77a4aaa9a100eae9a5b74eaaff046"
+      "sha256": "670b62779874ee6e8ab1e9a139fdee0919a1f7a5607636fba1b32df6b4804be7"
     },
     "Modhunter-Desktop-Source.zip": {
       "bytes": 173953,
-      "sha256": "ffbdff21769f8de78db4e81bef52a388baa6e075ae4d2c310260afdb3db6d647"
+      "sha256": "7fce7a0ffdc3fe6f43172328a09b407ca472e3d1c8547c35471f0c9e23e2be99"
     },
     "Modhunter-Complete-Source.zip": {
-      "bytes": 6901242,
-      "sha256": "0a050a0bced9fad2697af2943e2bbed3569c8594ccb64d5f9bb6f53b33633bf6"
+      "bytes": 6904441,
+      "sha256": "084762d14a71e8d96b829a13399a2881160b6a7e19933410794a476e04060686"
     }
   }
 }

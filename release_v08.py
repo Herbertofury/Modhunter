@@ -135,7 +135,7 @@ with ZipFile(all_in_one,'w',ZIP_DEFLATED,compresslevel=9) as z:
     z.write(plugin,'Installers/'+plugin.name)
     z.write(app,'Installers/'+app.name)
     z.write(source,'Source/'+source.name)
-    z.write(R/'README.md','Docs/README.md')
+    z.write(R/'README.md','Docs/Project-README.md')
     for p in sorted((R/'wiki').glob('*.md')):
         z.write(p,'Docs/'+p.name)
     for p in sorted(ASSETS.iterdir()):
@@ -150,7 +150,7 @@ with ZipFile(all_in_one) as z:
         'MO2/mo2_update_arsenal/plugin.py','MO2/mo2_update_arsenal/web/index.html',
         'Source/Modhunter-Complete-Source.zip','Docs/Unified-Modhunter.md',
         'Docs/Update-Workshop.md','Docs/Original-Releases-and-Output-Audit.md',
-        'bundle-index.json'):
+        'Docs/Project-README.md','bundle-index.json'):
         assert required in z.namelist(),required
     for name in ('Modhunter.html','Desktop/Modhunter.html','MO2/mo2_update_arsenal/web/index.html'):
         assert z.read(name)==html.read_bytes(),name

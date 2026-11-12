@@ -14,6 +14,7 @@ from .bridge import ArsenalService, UIRequest
 from .model import take_snapshot
 from .focus import navigate, find_mo2_view, name_column
 from .scanner import version_verdict
+from .native_nexus import NativeNexusGateway
 
 
 class Dispatcher(QtCore.QObject):
@@ -34,6 +35,8 @@ class ModUpdateArsenal(mobase.IPluginTool):
         self._runtime = "unknown"
         self._download_complete_callback = None
         self._selection_connected = False
+        self._native_nexus = None
+        self._native_nexus_error = ''
 
     def name(self) -> str:
         return "MO2 Update Arsenal"
@@ -65,6 +68,10 @@ class ModUpdateArsenal(mobase.IPluginTool):
     def init(self, organizer: mobase.IOrganizer) -> bool:
         self.org = organizer
         self.dispatcher = Dispatcher(self._dispatch)
+        try:
+            self._native_nexus = NativeNexusGateway(organizer)
+        except Exception as exc:
+            self._native_nexus_error = str(exc)
         # Explicit user control for the runtime. Unknown is always safer than silently guessing.
         try:
             self._runtime = str(organizer.persistent(self.name(), "target-runtime", "unknown"))
@@ -100,6 +107,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
                 except Exception:
                     folder = Path(__file__).parent / "data"
                 self.server = ArsenalService(doc, folder / "nexus-cache.json", self.dispatcher.submitted.emit, snap)
+                self.server.native_nexus_available = self._native_nexus is not None
             else:
                 self._refresh_snapshot()
             address = self.server.start()
@@ -205,7 +213,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
         dlg = QtWidgets.QDialog(None)
         dlg.setWindowTitle("Nexus Connection - Update Arsenal")
         layout = QtWidgets.QVBoxLayout(dlg)
-        info = QtWidgets.QLabel("MO2 already supports official Nexus sign-in: Settings > Nexus > Connect to Nexus.\n\nThat connection handles Mod Manager Download. For fast bulk metadata scans, you may additionally provide your own personal Nexus API key (kept in memory, never in the web page or saved to disk).")
+        info = QtWidgets.QLabel("MO2's existing Nexus sign-in is the primary connection for mod update scanning and exact file lists.\n\nUse Settings > Nexus > Connect to Nexus. Modhunter does not extract credentials. A personal API key is an optional fallback on older MO2 builds.")
         info.setWordWrap(True)
         layout.addWidget(info)
         field = QtWidgets.QLineEdit()
@@ -225,7 +233,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
                 self.server.set_key(key)
                 field.clear()
                 return {"ok": True, "keyConnected": True, "message": "API key active in memory for this MO2 session"}
-            return {"ok": True, "keyConnected": bool(self.server.api_key), "message": "To use MO2's Nexus login, open MO2 Settings > Nexus > Connect to Nexus"}
+            return {"ok": True, "keyConnected": bool(self.server.api_key), "nativeNexus": bool(self._native_nexus), "message": "MO2 native Nexus connection ready" if self._native_nexus else "Open MO2 Settings > Nexus > Connect to Nexus, or use a fallback key"}
         return {"ok": False, "error": "Connection dialog canceled"}
 
     def _focus_mod(self, payload: dict) -> dict:
@@ -267,6 +275,12 @@ class ModUpdateArsenal(mobase.IPluginTool):
 
     def _dispatch(self, request: UIRequest):
         try:
+            if request.cmd in ("nexus-metadata", "nexus-files"):
+                if self._native_nexus is None:
+                    request.finish({"ok": False, "error": "MO2 native Nexus unavailable: " + self._native_nexus_error})
+                else:
+                    self._native_nexus.request(request)
+                return
             if request.cmd == "refresh":
                 result = self._refresh_snapshot()
             elif request.cmd == "download":

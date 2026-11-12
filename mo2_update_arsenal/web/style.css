@@ -157,3 +157,38 @@ body.victory-open{overflow:hidden}
  .top-actions .top-select{flex:1 1 87px;max-width:125px;min-width:72px}
  .top-actions .icon-button{flex:0 0 28px}
 }
+
+/* Modhunter Update Workshop: readable, full-list, responsive operational view. */
+.update-workshop{margin:22px 0 18px;border:1px solid rgba(210,187,134,.3);border-radius:18px;background:linear-gradient(130deg,rgba(27,43,49,.96),rgba(18,32,42,.97));box-shadow:0 18px 50px rgba(0,0,0,.12);padding:20px;position:relative;isolation:isolate}
+.update-workshop:before{content:"";position:absolute;pointer-events:none;inset:0 0 auto;height:3px;background:linear-gradient(90deg,#c9a86f,#68b9b0,#6b8ab4);border-radius:18px 18px 0 0}
+.workshop-heading{display:flex;align-items:center;justify-content:space-between;gap:18px;flex-wrap:wrap}
+.workshop-heading h3{margin:4px 0 8px;font-size:clamp(24px,3vw,32px);line-height:1.1;color:#f6ecda}
+.workshop-heading h3 em{color:#e2c68d}
+.workshop-heading p,.workshop-foot{color:#b7c8c9;line-height:1.5;font-size:13px}
+.workshop-count{color:#e2c68d;font-size:12px;letter-spacing:.1em;font-weight:800}
+.workshop-tools,.workshop-filter{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin:16px 0}
+.workshop-tools button{min-height:36px}
+.workshop-filter label{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#a8c3c2}
+.workshop-filter input,.workshop-filter select{background:#122630;border:1px solid #3e5760;border-radius:9px;padding:9px 11px;color:#eaf7f1;min-height:38px}
+.workshop-filter input{flex:1;min-width:150px}
+.workshop-status{font-size:13px;color:#d2e9d9;border-left:3px solid #67b9a2;background:#13353b;padding:10px 13px;border-radius:5px}
+.workshop-summary{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:14px 0}
+.workshop-metric{border:1px solid #34505a;background:#122a32;border-radius:10px;padding:12px}
+.workshop-metric strong{display:block;color:#f1d297;font-size:23px;line-height:1.1}
+.workshop-metric small{display:block;color:#a4bec0;font-size:11px;margin-top:5px}
+.workshop-results{display:grid;gap:8px;max-height:none;overflow:visible}
+.workshop-item{padding:13px 15px;border:1px solid #314e57;border-radius:10px;background:#122832;display:flex;justify-content:space-between;gap:14px;align-items:center}
+.workshop-item-main{min-width:0;flex:1}
+.workshop-line{display:flex;align-items:center;flex-wrap:wrap;gap:9px}
+.workshop-line strong{font-size:14px;color:#f3f1e9}
+.workshop-item-main small{display:block;margin-top:6px;color:#abbec6;font-size:12px}
+.workshop-lane{letter-spacing:.06em;font-size:10px;border-radius:6px;padding:4px 7px;background:#263d47;color:#d4e8e5}
+.lane-candidate{background:#254d44;color:#b9f3d6}.lane-review{background:#574431;color:#fce0aa}.lane-manual{background:#394055;color:#c8d9ff}
+.workshop-tags{margin-top:6px;display:flex;flex-wrap:wrap;gap:7px;font-size:11px}
+.workshop-warning{color:#ffc99e}.workshop-selected{color:#99e9b9}
+.workshop-item-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.workshop-item-actions a{color:#a6e3df;text-decoration:none;font-size:12px}
+.workshop-item-actions button{min-height:32px}
+.workshop-empty{padding:22px;border:1px dashed #49616a;border-radius:10px;text-align:center;color:#bbced0}
+@media(max-width:900px){.workshop-summary{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:640px){.update-workshop{padding:14px}.workshop-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.workshop-item{align-items:flex-start;flex-direction:column}.workshop-item-actions{width:100%;justify-content:flex-end}}

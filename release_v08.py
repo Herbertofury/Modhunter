@@ -4,7 +4,7 @@ No native Windows executable is invented or claimed.
 from __future__ import annotations
 from pathlib import Path
 from zipfile import ZipFile,ZIP_DEFLATED
-import hashlib,json,shutil,os
+import hashlib,json,shutil,os,unittest
 
 R=Path(__file__).resolve().parent
 OUT=Path(os.environ.get('MODHUNTER_ARTIFACT_DIR','/mnt/data'))
@@ -68,7 +68,7 @@ for p in (plugin,app,source):
         if p==app:assert 'desktop/main.cjs' in z.namelist() and 'mo2_update_arsenal/web/index.html' in z.namelist()
         if p==source:assert 'wiki/Home.md' in z.namelist() and 'tests/atlas_qa.py' in z.namelist()
 
-manifest={'product':'Modhunter: The Unfinished World','version':'0.8.0-dev','components':{'desktop':'Electron 45 source, independent offline + optional MO2 loopback','html':'self-contained offline browser dashboard + games','mo2':'Mod Organizer 2 Python Tool with self-hosted browser dashboard'},'content':{'sampleMods':227,'separatorSections':115,'regions':12,'namedStoryContracts':96,'masteryTiers':5,'firstClearMilestones':480,'baseTimerHoursAtAllTiers':80,'heroClasses':5,'upgradePaths':22,'evolutions':6,'legacyPerks':6},'testing':{'pythonTests':81,'pythonSubtests':3,'atlasChromium':'pass','electronChromeChromium':'pass','desktopSyntax':'pass','nativeWindowsElectron':'unverified','nativeWindowsMO2':'unverified'},'files':files}
+manifest={'product':'Modhunter: The Unfinished World','version':'0.8.0-dev','components':{'desktop':'Electron 45 source, independent offline + optional MO2 loopback','html':'self-contained offline browser dashboard + games','mo2':'Mod Organizer 2 Python Tool with self-hosted browser dashboard'},'content':{'sampleMods':227,'separatorSections':115,'regions':12,'namedStoryContracts':96,'masteryTiers':5,'firstClearMilestones':480,'baseTimerHoursAtAllTiers':80,'heroClasses':5,'upgradePaths':22,'evolutions':6,'legacyPerks':6},'testing':{'pythonTests':unittest.TestLoader().discover(str(R/'tests'),pattern='test_*.py').countTestCases(),'pythonSubtests':3,'atlasChromium':'pass','electronChromeChromium':'pass','desktopSyntax':'pass','nativeWindowsElectron':'unverified','nativeWindowsMO2':'unverified'},'files':files}
 (DIST/'manifest.json').write_text(json.dumps(manifest,indent=2),encoding='utf8')
 for p in (html,plugin,app,source):
     shutil.copy2(p,OUT/p.name)

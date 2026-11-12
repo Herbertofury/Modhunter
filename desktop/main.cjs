@@ -1,17 +1,18 @@
 'use strict';
 // Modhunter: a real Chromium-tabbed local-first shell. No exposed Node APIs to
 // the game/HTML and no privileged iframe of a remote site.
-const {app,BrowserWindow,WebContentsView,ipcMain,shell,clipboard,net,session}=require('electron');
+const {app,BrowserWindow,WebContentsView,ipcMain,shell,clipboard,net,session,dialog}=require('electron');
 const path=require('node:path');
 const {URL,pathToFileURL,fileURLToPath}=require('node:url');
 const fs=require('node:fs');
+const {readMo2Profile}=require('./offline_mo2.cjs');
 
 const BAR_HEIGHT=88;
 const SAFE_LOCAL_FILE=path.resolve(app.isPackaged
   ?path.join(process.resourcesPath,'Modhunter.html')
   :path.join(__dirname,'..','mo2_update_arsenal','web','index.html'));
 const CHROME=path.join(__dirname,'chrome.html');
-let mainWindow=null,bar=null,nextTab=1,activeId=null,mo2Url=null;
+let mainWindow=null,bar=null,nextTab=1,activeId=null,mo2Url=null,offlineCatalog=null;
 const tabs=new Map();
 function loc(s){try{return new URL(s)}catch{return null}}
 function validBridge(v){
@@ -30,13 +31,54 @@ function viewIsOwned(s){
 }
 function tabMode(s){const u=loc(s);if(!u)return 'dashboard';return u.searchParams.get('siege')==='1'?'siege':u.searchParams.get('realm')==='1'?'realm':'dashboard'}
 function titleFor(mode){return mode==='siege'?'⚔ Modhunter Siege':mode==='realm'?'ᛟ Shiverfell':'✦ Mod Vault'}
-function state(){return {tabs:[...tabs.values()].map(t=>({id:t.id,title:t.title,mode:t.mode,url:t.url,loading:t.loading})),activeId,connected:Boolean(mo2Url),endpoint:mo2Url||'',version:app.getVersion()}}
+function state(){return {tabs:[...tabs.values()].map(t=>({id:t.id,title:t.title,mode:t.mode,url:t.url,loading:t.loading})),activeId,connected:Boolean(mo2Url),offlineProfile:!mo2Url?(offlineCatalog?.profileName||''):'',offlineModCount:!mo2Url?(offlineCatalog?.items?.length||0):0,endpoint:mo2Url||'',version:app.getVersion()}}
 function notify(){if(bar&&!bar.webContents.isDestroyed())bar.webContents.send('modhunter:state',state())}
 function sizeView(v,isBar){if(!mainWindow)return;const [w,h]=mainWindow.getContentSize();v.setBounds(isBar?{x:0,y:0,width:w,height:BAR_HEIGHT}:{x:0,y:BAR_HEIGHT,width:w,height:Math.max(1,h-BAR_HEIGHT)})}
 function activate(id){
   const t=tabs.get(Number(id));if(!t||!mainWindow)return false;
   if(activeId!==null&&tabs.has(activeId)){const old=tabs.get(activeId);mainWindow.contentView.removeChildView(old.view)}
   activeId=t.id;mainWindow.contentView.addChildView(t.view);sizeView(t.view,false);notify();return true
+}
+function storageFile(){return path.join(app.getPath('userData'),'modhunter-offline-profile.json')}
+async function persistImportedCatalog(){
+ if(!offlineCatalog)return;
+ const destination=storageFile(),tmp=destination+'.tmp';
+ await fs.promises.mkdir(path.dirname(destination),{recursive:true});
+ await fs.promises.writeFile(tmp,JSON.stringify(offlineCatalog),'utf8');
+ await fs.promises.rename(tmp,destination);
+}
+function loadOfflineCatalog(){
+ try{
+  const value=JSON.parse(fs.readFileSync(storageFile(),'utf8'));
+  if(value&&value.offline===true&&typeof value.profileId==='string'&&Array.isArray(value.items)&&Array.isArray(value.groups))
+    offlineCatalog=value;
+ }catch{offlineCatalog=null}
+}
+async function injectOfflineCatalog(tab){
+ if(mo2Url||!offlineCatalog||!tab||tab.mode!=='dashboard'||!tab.url.startsWith('file:')||
+    tab.view.webContents.isDestroyed())return {ok:false};
+ // JSON is encoded as a JS literal; HTML tags/line separators are escaped.
+ const data=JSON.stringify(offlineCatalog).replace(/</g,'\\u003c').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029');
+ return tab.view.webContents.executeJavaScript('window.modhunterImportCatalog?.('+data+')',true);
+}
+async function importProfile(){
+ if(mo2Url)return {ok:false,error:'Unlink live MO2 before importing a read-only offline profile'};
+ const selected=await dialog.showOpenDialog(mainWindow,{title:'Choose profiles/<name>/modlist.txt from your MO2 instance',
+  filters:[{name:'MO2 modlist',extensions:['txt']}],properties:['openFile']});
+ if(selected.canceled||!selected.filePaths?.length)return {ok:false,error:'Import canceled'};
+ try{
+  const snapshot=await readMo2Profile(selected.filePaths[0]);
+  offlineCatalog=snapshot;
+  await persistImportedCatalog();
+  let current=[...tabs.values()].find(t=>t.mode==='dashboard'&&t.url.startsWith('file:'));
+  if(!current){const id=openTab('dashboard');current=tabs.get(id)}
+  if(!current)return {ok:false,error:'Could not open Mod Vault tab'};
+  activate(current.id);
+  if(!current.view.webContents.isLoading())await injectOfflineCatalog(current);
+  notify();
+  return {ok:true,count:snapshot.items.length,profileName:snapshot.profileName,
+   message:'Imported '+snapshot.items.length+' actual MO2 entries from '+snapshot.profileName+'. Read-only mode.'};
+ }catch(ex){return {ok:false,error:'MO2 profile import: '+String(ex?.message||ex)}}
 }
 function navigateTab(t,s){if(!viewIsOwned(s))return false;t.url=s;t.mode=tabMode(s);t.title=titleFor(t.mode);t.loading=true;notify();if(s.startsWith('file:'))t.view.webContents.loadURL(s);else t.view.webContents.loadURL(s);return true}
 function openTab(mode='dashboard',url=null){
@@ -51,6 +93,7 @@ function openTab(mode='dashboard',url=null){
   v.webContents.on('will-navigate',(event,dest)=>{if(!viewIsOwned(dest)){event.preventDefault();const ex=loc(dest);if(ex&&['https:','http:'].includes(ex.protocol))shell.openExternal(ex.href).catch(()=>{})}});
   v.webContents.on('did-start-loading',()=>{t.loading=true;notify()});
   v.webContents.on('did-stop-loading',()=>{t.loading=false;notify()});
+  v.webContents.on('did-finish-load',()=>{if(!mo2Url&&t.mode==='dashboard')injectOfflineCatalog(t).catch(e=>console.warn('Offline profile import:',e.message))});
   v.webContents.on('page-title-updated',(event,title)=>{event.preventDefault();/* stable short tab labels */});
   v.webContents.on('did-fail-load',(_,code,description)=>{if(code!==-3){t.title='⚠ '+titleFor(t.mode);notify();console.warn('Modhunter tab error',description)}});
   v.webContents.on('destroyed',()=>{if(tabs.has(id))tabs.delete(id)});
@@ -73,6 +116,7 @@ function action(event,{kind,value}={}){
   if(!trustedSender(event))return {ok:false,error:'Untrusted app surface'};
   if(typeof kind!=='string')return {ok:false,error:'Invalid command'};
   if(kind==='state')return {ok:true,state:state()};
+  if(kind==='importMo2')return importProfile();
   if(kind==='new')return {ok:!!openTab(['dashboard','realm','siege'].includes(value)?value:'dashboard')};
   if(kind==='activate')return {ok:activate(value)};
   if(kind==='close')return {ok:closeTab(value)};
@@ -90,6 +134,7 @@ app.whenReady().then(()=>{
   session.defaultSession.setPermissionRequestHandler((_,__,reply)=>reply(false));
   session.defaultSession.setPermissionCheckHandler(()=>false);
   if(!fs.existsSync(SAFE_LOCAL_FILE))throw Error('The bundled standalone HTML is missing: '+SAFE_LOCAL_FILE);
+  loadOfflineCatalog();
   mainWindow=new BrowserWindow({width:1480,height:940,minWidth:640,minHeight:490,backgroundColor:'#071016',autoHideMenuBar:true,show:false,webPreferences:{contextIsolation:true,nodeIntegration:false,sandbox:true,preload:path.join(__dirname,'preload.cjs')}});
   mainWindow.once('ready-to-show',()=>{if(mainWindow&&!mainWindow.isDestroyed())mainWindow.show()});
   mainWindow.on('resize',()=>{if(bar)sizeView(bar,true);if(tabs.has(activeId))sizeView(tabs.get(activeId).view,false)});

@@ -4,10 +4,10 @@ No native Windows executable is invented or claimed.
 from __future__ import annotations
 from pathlib import Path
 from zipfile import ZipFile,ZIP_DEFLATED
-import hashlib,json,shutil
+import hashlib,json,shutil,os
 
 R=Path(__file__).resolve().parent
-OUT=Path('/mnt/data')
+OUT=Path(os.environ.get('MODHUNTER_ARTIFACT_DIR','/mnt/data'))
 PKG=OUT/'Modhunter-0.8'
 DIST=PKG/'dist'
 ASSETS=PKG/'assets'

@@ -23,6 +23,7 @@ SNAP = {
          "update": {"source": "nexus-api", "verdict": "candidate", "latestVersion": "2.0"}},
         {"id": "github", "name": "GitHub Mod", "mo2InternalName": "GitHub Mod",
          "installedVersion": "1.0", "nexusId": 0, "flags": [],
+         "source": {"url": "https://github.com/project/repo", "type": "github", "verified": True},
          "update": {"source": "github-release-api", "verdict": "candidate", "latestVersion": "2.0",
                     "releaseAssets": [{"assetId": 17, "name": "github-mod.zip",
                                       "url": "https://github.com/project/repo/releases/download/v2/github-mod.zip"}]}},

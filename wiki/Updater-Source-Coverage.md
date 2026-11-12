@@ -22,6 +22,10 @@
 
 All source links are **provenance labels**, not authentication claims. The app never promises to inspect a private Patreon, LoversLab or other account session. For those sources it retains the exact URL, reports **Unverified**, and opens the correct page.
 
+## Independent desktop mode
+
+**⌁ Import MO2** in the Electron top bar opens a native file picker. Select `profiles/<name>/modlist.txt`. The app reads the corresponding `mods/<mod>/meta.ini` files on demand to build a real read-only vault, retaining disabled/unlisted mods, sources, installed versions and DLL warnings. This does **not** require the plugin, Node integration in the web content, Nexus credentials or background monitoring. It does **not** remotely verify updates or install archives; use the plugin for those actions. Re-import to refresh.
+
 ## Where source identities come from
 
 Modhunter inspects, in order, the mod's own **MO2 URL field**, its mod directory's limited `meta.ini`, notes, and the explicit original URL you save in Modhunter's inspector. Where no other link exists and MO2 provides a real Nexus mod ID, the official Nexus project Files URL is constructed. A mod without a source remains **Unlinked** rather than guessed by title.

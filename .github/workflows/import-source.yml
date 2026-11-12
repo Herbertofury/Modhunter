@@ -2,7 +2,9 @@ name: Import complete Modhunter source
 on:
   push:
     branches: [main]
-    paths: ['dist/Modhunter-Complete-Source.zip']
+    paths:
+      - 'source-parts/**'
+      - '.github/workflows/import-source.yml'
   workflow_dispatch:
 permissions:
   contents: write
@@ -16,38 +18,68 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: true
-      - name: Extract complete project archive
+      - name: Reconstruct, verify and extract canonical source
         shell: bash
         run: |
           python3 - <<'PY'
+          import base64
+          import hashlib
+          import json
           from pathlib import Path, PurePosixPath
           from zipfile import ZipFile
-          archive = Path('dist/Modhunter-Complete-Source.zip')
+          manifest = json.loads(Path("manifest.json").read_text(encoding="utf-8"))
+          expected = manifest["files"]["Modhunter-Complete-Source.zip"]["sha256"]
+          parts = sorted(Path("source-parts").glob("part-*.b64"))
+          if len(parts) != 20:
+              raise RuntimeError(f"Expected 20 complete source shards, found {len(parts)}")
+          archive = Path("/tmp/Modhunter-Complete-Source.zip")
+          with archive.open("wb") as target:
+              rem = ""
+              for part in parts:
+                  rem += part.read_text(encoding="ascii")
+                  upto = (len(rem) // 4) * 4
+                  target.write(base64.b64decode(rem[:upto],validate=True))
+                  rem = rem[upto:]
+              if rem:
+                  raise RuntimeError("Incomplete base64 stream")
+          digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+          if digest != expected:
+              raise RuntimeError(f"Archive checksum mismatch: {digest} != {expected}")
           with ZipFile(archive) as z:
               entries = z.infolist()
-              assert entries and len(entries) <= 10000
+              assert 1 <= len(entries) <= 10000
               for item in entries:
-                  part = PurePosixPath(item.filename)
-                  if part.is_absolute() or '..' in part.parts or part.parts[0] == '.git':
-                      raise ValueError(f'Unsafe archive path: {item.filename}')
+                  p = PurePosixPath(item.filename)
+                  if p.is_absolute() or '..' in p.parts or not p.parts or p.parts[0] == '.git':
+                      raise ValueError(f"Unsafe archive path: {item.filename}")
                   if ((item.external_attr >> 16) & 0o170000) == 0o120000:
-                      raise ValueError(f'Unexpected symlink: {item.filename}')
-              z.extractall('.')
-          print(f'Extracted {len(entries)} entries')
+                      raise ValueError(f"Symlink not supported: {item.filename}")
+              for item in entries:
+                  p = Path(item.filename)
+                  if item.is_dir():
+                      p.mkdir(parents=True,exist_ok=True)
+                      continue
+                  if p.exists() and (str(p) == "README.md" or str(p).startswith("wiki/") or str(p).startswith(".github/workflows/")):
+                      continue
+                  p.parent.mkdir(parents=True,exist_ok=True)
+                  with z.open(item) as src, p.open("wb") as dst:
+                      import shutil
+                      shutil.copyfileobj(src,dst)
+          print(f"Verified {len(entries)} source entries: {digest}")
           PY
-      - name: Run Python and desktop checks
+      - name: Run source tests and desktop syntax checks
         shell: bash
         run: |
           python3 -m unittest discover -s tests -p 'test_*.py' -v
           node --check desktop/main.cjs
           node --check desktop/preload.cjs
           node --check desktop/chrome.js
-      - name: Commit all sources and documentation
+      - name: Commit complete source tree
         shell: bash
         run: |
           git config user.name 'Modhunter Release Bot'
           git config user.email 'actions@users.noreply.github.com'
           git add -A
           if git diff --cached --quiet; then echo 'Already current'; exit 0; fi
-          git commit -m 'feat: publish Modhunter v0.8 sources, app, HTML, MO2 plugin and wiki'
+          git commit -m 'feat: restore complete Modhunter v0.8 source, game assets and tests'
           git push origin HEAD:main

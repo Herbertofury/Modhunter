@@ -86,7 +86,7 @@ class UpdaterFrontendContractTests(unittest.TestCase):
                 self.assertIn(f'id="{element}"', PAGE)
         for marker in ("function renderActivity()", "async function refreshActivity()",
                        "function exportActivity()", "bridgeRequest('GET','activity')",
-                       "ACTIVITY_RECORDS=[]", "if(rec.needsReview)", "sessionActive"):
+                       "ACTIVITY_RECORDS=[]", "if(record.needsReview)", "sessionActive"):
             with self.subTest(marker=marker):
                 self.assertIn(marker, APP)
 

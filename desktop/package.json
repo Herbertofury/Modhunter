@@ -9,7 +9,7 @@
   "author": "Herberto / Modhunter",
   "scripts": {
     "start": "electron .",
-    "check": "node --check main.cjs && node --check preload.cjs && node --check chrome.js",
+    "check": "node --check main.cjs && node --check preload.cjs && node --check chrome.js && node --check offline_mo2.cjs && node --test offline_mo2.test.cjs",
     "dist:win": "electron-builder --win portable zip"
   },
   "devDependencies": {

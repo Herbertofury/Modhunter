@@ -18,7 +18,7 @@
 
 | Component | What it does | Needs another component? |
 |---|---|---|
-| **Desktop App** | Real Chromium tabs for Mod Vault, Modhunter Siege and Shiverfell; optional connection to running MO2 | **No.** Standalone offline mode; requires Electron/Node runtime to start the development source package |
+| **Desktop App** | Real Chromium tabs, **Import MO2 Profile** (reads actual `modlist.txt` and installed metadata without the plugin), optional live MO2 updating | **No.** Native read-only import and offline games work alone; Electron/Node starts the source package |
 | **Standalone HTML** | Full mod update dashboard + both games in a single portable file | **No.** Open locally in a modern browser. Progress and rewards are **practice only** without live MO2 |
 | **MO2 Plugin** | Reads current profile, verifies updates, queues Nexus downloads, opens standard MO2 installer, exact row navigation, official Forge Sigil and boss-bounty economy | **No.** Runs in MO2 and serves its own browser dashboard |
 
@@ -28,13 +28,13 @@
 
 1. **Just play:** download [`web/Modhunter.html`](web/Modhunter.html), open it, and click **Modhunter Siege** or **Survival Realm**. This always works in offline practice.
 2. **Use MO2:** download the [`dist/Modhunter-MO2-Plugin.zip`](dist/Modhunter-MO2-Plugin.zip), unzip it and run `Install_to_MO2.bat`; restart MO2 and open **Tools → Update Arsenal - Quest Board**.
-3. **Use the desktop app:** download [`dist/Modhunter-Desktop-Source.zip`](dist/Modhunter-Desktop-Source.zip), install Node.js, run `Run_ModHunter.bat` in `desktop/`, and optionally paste the MO2 plugin's loopback URL into **Connect**.
+3. **Use the desktop app:** download [`dist/Modhunter-Desktop-Source.zip`](dist/Modhunter-Desktop-Source.zip), install Node.js, run `Run_ModHunter.bat` in `desktop/`. Click **⌁ Import MO2** and select `profiles/<name>/modlist.txt` for an actual read-only profile without the plugin. Paste a plugin loopback URL into **Connect** only when you want native update actions.
 
-> **Current stage:** v0.8 development build. Browser gameplay and the expanded 81-test Python/HTTP suite are exercised. A prebuilt Windows executable and native Windows MO2 integration have **not** been verified in this environment. The content catalogue describes 480 campaign clear conditions, not 80 hours of independently playtested authored content.
+> **Current stage:** v0.8 development build. Browser gameplay, Python/HTTP unit tests, and the standalone desktop-import Node test suite are covered by automated checks. A prebuilt Windows executable and native Windows MO2 integration have **not** been verified in this environment. The content catalogue describes 480 campaign clear conditions, not 80 hours of independently playtested authored content.
 
 ## Update Workshop: maintain an entire MO2 profile
 
-The new **[Update Workshop](wiki/Update-Workshop.md)** ([source coverage](wiki/Updater-Source-Coverage.md)) keeps all mods in full-width review lanes, including missing-source mods. In live MO2, reuse MO2's authenticated Nexus connection, inspect exact Nexus files and public GitHub release assets, check GitHub/GitLab release versions, acknowledge compatibility risks, and queue a reviewed batch. Each download still goes through the native MO2 download manager; each installation stays interactive with profile load-order backups. Patreon, LoversLab, Mod DB and other gated sources retain exact links and unverified/manual-review status rather than imaginary update claims. The standalone HTML and desktop editions provide the same planning UI without requiring MO2 and never pretend offline checklist clicks are verified updates.
+The new **[Update Workshop](wiki/Update-Workshop.md)** ([source coverage](wiki/Updater-Source-Coverage.md)) keeps all mods in full-width review lanes, including missing-source mods. In live MO2, reuse MO2's authenticated Nexus connection, inspect exact Nexus files and public GitHub release assets, check GitHub/GitLab release versions, acknowledge compatibility risks, and queue a reviewed batch. Each download still goes through the native MO2 download manager; each installation stays interactive with profile load-order backups. Patreon, LoversLab, Mod DB and other gated sources retain exact links and unverified/manual-review status rather than imaginary update claims. The desktop edition can import an actual user-selected portable MO2 profile **without the plugin** for local inspection; standalone HTML remains an offline checklist. Native downloads and installations require the MO2 plugin, and offline checklist clicks never award verified updates.
 
 ## What makes it different?
 

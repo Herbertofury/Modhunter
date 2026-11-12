@@ -78,6 +78,18 @@ class UpdaterFrontendContractTests(unittest.TestCase):
         self.assertIn("data-lane", APP)
         self.assertIn("EXACT FILES TO REQUEST", PAGE)
 
+    def test_durable_activity_ui_is_read_only_and_profile_scoped(self):
+        for element in ('activityPanel', 'activityTitle', 'activitySearch',
+                        'activityFilter', 'activityResults', 'activityExport',
+                        'activityRefresh', 'activityCount', 'activityWarning'):
+            with self.subTest(element=element):
+                self.assertIn(f'id="{element}"', PAGE)
+        for marker in ("function renderActivity()", "async function refreshActivity()",
+                       "function exportActivity()", "bridgeRequest('GET','activity')",
+                       "ACTIVITY_RECORDS=[]", "if(rec.needsReview)", "sessionActive"):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, APP)
+
     def test_desktop_can_import_a_user_selected_mo2_profile_without_plugin(self):
         root = ROOT / "desktop"
         main = (root / "main.cjs").read_text(encoding="utf-8")

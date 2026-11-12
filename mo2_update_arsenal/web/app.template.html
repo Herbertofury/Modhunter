@@ -126,6 +126,22 @@
       <p class="workshop-foot">Version checks identify candidates, not guaranteed compatible installs. Review files, DLLs, masters, patches and your runtime before queueing. Offline HTML remains read-only.</p>
     </section>
     <div id="liveDownloadList" class="live-downloads" aria-live="polite"></div>
+    <section class="activity-panel" id="activityPanel" aria-labelledby="activityTitle">
+      <div class="activity-heading">
+        <div><span class="label-overline">OPERATION HISTORY / FORENSIC RECEIPTS</span><h3 id="activityTitle">The Update <em>Timeline</em></h3>
+          <p>Verified MO2 download and installer states, remembered after reopening the app. History never authorizes an automatic install.</p></div>
+        <span id="activityStats" class="activity-stats">NO LIVE OPERATIONS</span>
+      </div>
+      <div class="activity-toolbar">
+        <label for="activitySearch">Find operation</label><input id="activitySearch" type="search" autocomplete="off" placeholder="Mod, file, version or source…" />
+        <label for="activityFilter">Show</label><select id="activityFilter"><option value="all">All operations</option><option value="review">Needs verification</option><option value="verified">Verified updates</option><option value="active">Current session</option></select>
+        <button class="quiet-button" id="activityRefresh" type="button">↻ Refresh history</button>
+        <button class="quiet-button" id="activityExport" type="button" disabled>↓ Export receipts</button>
+      </div>
+      <div id="activityWarning" class="activity-note" role="status">Connect the MO2 plugin to view persistent update activity. Past downloads never resume automatically.</div>
+      <div id="activityCount" class="activity-count" role="status"></div>
+      <div class="activity-results" id="activityResults" aria-live="polite"></div>
+    </section>
     <p class="live-disclaimer">A newer project version is not necessarily a compatible file. Review requirements, back up your profile and use MO2’s standard installer for every change. Offline mode never modifies your installation.</p>
    </section>
    <section class="game-board" id="gameBoard" aria-label="Modding adventure and achievements">

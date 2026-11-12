@@ -11,6 +11,7 @@ let LIVE_SCAN=null,LIVE_CATALOG=null,SCAN_TIMER=null,FILE_PICKER_MOD=null,LIVE_G
 let WORKSHOP_PLAN=null,WORKSHOP_CHOICES=new Map(),WORKSHOP_BUSY=false,WORKSHOP_REVIEW_ID=null;
 let QUEUE_PENDING=null,INSTALL_PREVIEW_ID=0,INSTALL_PREVIEW_PROFILE='',PREVIEW_RETURN_FOCUS=null;
 let WORKSHOP_TICKETS={},WORKSHOP_TICKET_SIGNATURE='',DOWNLOAD_REFRESH_BUSY=false;
+let ACTIVITY_RECORDS=[],ACTIVITY_GENERATION=0,ACTIVITY_WARNING='';
 let GAME=null,GAME_SEEN=-1,PROGRESS_READY=false,PROGRESS_TIMER=null,NATIVE_SELECTED='',VICTORY_ACTIVE=null,VICTORY_TIMERS=[],PRACTICE_CROWNED=false;
 const BADGE_META=[['first-blood','First Blood','⚔',1],['apprentice','Apprentice Smith','🔨',5],['veteran','Veteran of the Forge','🛡',10],['archmage','Master Enchanter','✦',25],['dragonborn','Dragonborn','🐉',50],['legend','Legendary Smith','♛',100],['world-eater','World-Eater Defeated','👑',null]];
 
@@ -317,7 +318,7 @@ function activateLiveCatalog(c){
  for(const id of ['liveAll','liveQuick','liveDeep','liveLocal','liveRefresh','liveRuntime','liveConnect','liveBackup'])$(id).disabled=false;
  const chosen=STORE.prefs.filter;if(chosen==='updates'&&!c.items.some(isUpdate))STORE.prefs.filter='all';
  if(newProfile||changedRuntime||changedMods){WORKSHOP_PLAN=null;WORKSHOP_CHOICES.clear();QUEUE_PENDING=null;$('queueReviewVeil').hidden=true;INSTALL_PREVIEW_ID=0;$('installPreviewVeil').hidden=true;}
- if(newProfile){WORKSHOP_TICKETS={};WORKSHOP_TICKET_SIGNATURE='';$('liveDownloadList').innerHTML=''}
+ if(newProfile){WORKSHOP_TICKETS={};WORKSHOP_TICKET_SIGNATURE='';$('liveDownloadList').innerHTML='';ACTIVITY_RECORDS=[];ACTIVITY_WARNING='';ACTIVITY_GENERATION++;renderActivity();refreshActivity();}
  applyAppearance();updateStorageIndicator();render();renderLiveStats();if(newProfile){hydrateProgress(c.profileId);refreshGame()}refreshWorkshop().catch(ex=>workshopSetStatus('Plan unavailable: '+ex.message));if(changedRuntime||changedMods)toast('⚠ Previous cleared checks need review: runtime or installed version changed.');
 }
 
@@ -554,6 +555,71 @@ async function scanLive(mode){
  for(const id of ['liveQuick','liveDeep','liveLocal','liveAll'])$(id).disabled=true;
  try{const r=await bridgeRequest('POST','scan',{mode});if(r.state==='running'){SET('liveScanProgress','Beginning '+mode+' scan…');clearInterval(SCAN_TIMER);SCAN_TIMER=setInterval(async()=>{try{const v=await bridgeRequest('GET','scan');updateScanUI(v.scan);if(v.scan.state==='completed'||v.scan.state==='partial'){clearInterval(SCAN_TIMER);SCAN_TIMER=null;const snap=await bridgeRequest('GET','snapshot');activateLiveCatalog(snap.catalog);await refreshGame();await refreshWorkshop();toast('ϟ '+mode+' sweep complete!');}else if(v.scan.state==='error'){clearInterval(SCAN_TIMER);SCAN_TIMER=null}}catch(ex){clearInterval(SCAN_TIMER);SCAN_TIMER=null;toast('Scan interrupted: '+ex.message)}finally{if(!SCAN_TIMER||LIVE_SCAN?.state!=='running')for(const id of ['liveQuick','liveDeep','liveLocal','liveAll'])$(id).disabled=false}},1200);}}catch(ex){toast(ex.message);for(const id of ['liveQuick','liveDeep','liveLocal','liveAll'])$(id).disabled=false}
 }
+
+function activityStatus(record){
+ if(record.needsReview)return ['Previous session · review in MO2','needs-review'];
+ if(record.status==='installed')return record.verifiedUpdate?['Version verified','verified']:['Installed · version unverified','review'];
+ const labels={downloading:'Downloading in MO2',paused:'Paused in MO2',complete:'Ready in current MO2 session',installing:'Interactive installer open',failed:'Download failed',removed:'Removed from MO2',attention:'Manual attention'};
+ return [labels[record.status]||String(record.status||'Unknown'),record.status||'unknown'];
+}
+function renderActivity(){
+ const panel=$('activityResults');if(!panel)return;
+ const query=$('activitySearch').value.trim().toLowerCase(),filter=$('activityFilter').value||'all';
+ const list=ACTIVITY_RECORDS.filter(rec=>{
+  if(filter==='review'&&!rec.needsReview&&rec.status!=='failed'&&!(rec.status==='installed'&&!rec.verifiedUpdate))return false;
+  if(filter==='verified'&&!(rec.status==='installed'&&rec.verifiedUpdate))return false;
+  if(filter==='active'&&!rec.sessionActive)return false;
+  return !query||[rec.modName,rec.itemId,rec.fileName,rec.provider,rec.installedVersion,rec.targetVersion,rec.status].join(' ').toLowerCase().includes(query);
+ });
+ const pending=ACTIVITY_RECORDS.filter(x=>x.needsReview).length;
+ const verified=ACTIVITY_RECORDS.filter(x=>x.status==='installed'&&x.verifiedUpdate).length;
+ SET('activityStats',ACTIVITY_RECORDS.length+' operations · '+verified+' verified updates · '+pending+' previous-session reviews');
+ SET('activityCount',list.length+' / '+ACTIVITY_RECORDS.length+' visible');
+ SET('activityWarning',!BRIDGE.active?'Connect through MO2 to view your real, profile-scoped update history. Offline mode cannot read or modify installations.':(ACTIVITY_WARNING||'This is read-only history. Previous MO2 sessions cannot automatically resume downloads or installations.'));
+ panel.innerHTML=list.map(rec=>{
+  const state=activityStatus(rec),date=new Date(rec.lastAt),dateText=Number.isNaN(date.valueOf())?'Time unknown':date.toLocaleString();
+  const meta=[rec.installedVersion||'?',rec.targetVersion||'?'].join(' → ');
+  const headline=rec.modName||rec.itemId||rec.fileName||'Unlinked MO2 download';
+  const timeline=(rec.timeline||[]).map(entry=>{
+   const at=new Date(entry.at),time=Number.isNaN(at.valueOf())?'Unknown time':at.toLocaleString();
+   return '<li><span>'+escapeHTML(entry.status||'')+'</span><small>'+escapeHTML(time)+'</small>'+(entry.note?'<small>'+escapeHTML(entry.note)+'</small>':'')+'</li>';
+  }).join('');
+  return '<details class="activity-entry activity-'+escapeHTML(state[1])+'"><summary><span class="activity-dot" aria-hidden="true"></span><span class="activity-head"><strong>'+escapeHTML(headline)+'</strong><small>'+escapeHTML(meta)+' · '+escapeHTML(rec.provider||'MO2')+' · '+escapeHTML(rec.fileName||'Archive unknown')+'</small></span><span class="activity-state"><b>'+escapeHTML(state[0])+'</b><small>'+escapeHTML(dateText)+'</small></span></summary><div class="activity-detail"><div><strong>Source:</strong> '+escapeHTML(rec.provider||'Unknown')+' · <strong>Download:</strong> #'+escapeHTML(rec.downloadId)+'</div><div><strong>Runtime:</strong> '+escapeHTML(rec.gameRuntime||'Unknown')+' · <strong>Profile backup:</strong> '+(rec.hasProfileBackup?'Profile text files recorded':'Not recorded')+'</div>'+(rec.needsReview?'<p class="activity-safety">Previous session only. Open MO2 Downloads, verify the archive exists and rescan before taking further action. No automatic resume is available.</p>':'')+'<ol class="activity-timeline">'+timeline+'</ol></div></details>';
+ }).join('')||'<div class="workshop-empty">No operations match this view. Queue an update from the MO2 plugin to begin recording real update activity.</div>';
+ $('activityExport').disabled=!BRIDGE.active||!LIVE_CATALOG||!ACTIVITY_RECORDS.length;
+ $('activityRefresh').disabled=!BRIDGE.active;
+}
+async function refreshActivity(){
+ if(!BRIDGE.active||!LIVE_CATALOG)return;
+ const profile=LIVE_CATALOG.profileId,generation=++ACTIVITY_GENERATION;
+ try{
+  const result=await bridgeRequest('GET','activity');
+  if(generation!==ACTIVITY_GENERATION||LIVE_CATALOG?.profileId!==profile||result.profileId!==profile)return;
+  ACTIVITY_RECORDS=Array.isArray(result.records)?result.records:[];
+  ACTIVITY_WARNING=result.durable===false?(result.warning||'The operation journal could not be saved. Check MO2 plugin storage permissions.'):'';
+  renderActivity();
+ }catch(ex){
+  if(generation===ACTIVITY_GENERATION&&LIVE_CATALOG?.profileId===profile){
+   ACTIVITY_WARNING='Could not read updater history: '+ex.message;renderActivity();
+  }
+ }
+}
+function exportActivity(){
+ if(!BRIDGE.active||!LIVE_CATALOG)return;
+ const profile=LIVE_CATALOG.profileId;
+ const data={format:'Modhunter MO2 Operation History',version:1,exportedAt:new Date().toISOString(),
+   profileId:profile,profileName:LIVE_CATALOG.profileName,
+   important:'This is read-only history. It cannot restore overwritten mod files or resume previous-session downloads.',
+   operations:ACTIVITY_RECORDS};
+ const title=String(LIVE_CATALOG.profileName||'MO2').replace(/[^a-z0-9_-]+/gi,'-');
+ saveFile('Modhunter-Operations-'+title+'.json','application/json',JSON.stringify(data,null,2));
+ workshopSetStatus('Exported '+ACTIVITY_RECORDS.length+' profile-scoped MO2 operation receipts.');
+}
+$('activityRefresh').onclick=()=>refreshActivity();
+$('activityExport').onclick=exportActivity;
+$('activitySearch').oninput=renderActivity;
+$('activityFilter').onchange=renderActivity;
+
 async function refreshDownloads(){
  if(!BRIDGE.active||!LIVE_CATALOG||DOWNLOAD_REFRESH_BUSY)return;
  DOWNLOAD_REFRESH_BUSY=true;
@@ -574,6 +640,7 @@ async function refreshDownloads(){
    return '<article class="download-ticket ticket-'+escapeHTML(safeState)+'" data-ticket-item-id="'+escapeHTML(d.itemId||'')+'"><i class="ticket-status-dot" aria-hidden="true"></i><div class="ticket-copy"><strong>'+escapeHTML(name)+'</strong><span>'+escapeHTML(title)+' · '+(d.provider==='github'?'GitHub release':'Nexus Mods')+' · #'+escapeHTML(id)+'</span><small>'+escapeHTML(d.lastError||detail)+'</small></div>'+buttons+'</article>';
   }).join(''):'';
   renderWorkshop();
+  await refreshActivity();
  }catch(ex){SET('liveSync','Download status unavailable: '+ex.message)}
  finally{DOWNLOAD_REFRESH_BUSY=false}
 }
@@ -718,7 +785,7 @@ $('liveBackup').onclick=async()=>{if(!confirm('Create a timestamped backup of th
 $('liveRuntime').onclick=async()=>{try{const r=await bridgeRequest('POST','runtime');activateLiveCatalog(r.catalog);await refreshGame();toast('⚙ Target runtime updated')}catch(ex){toast(ex.message)}};
 $('liveConnect').onclick=async()=>{try{const r=await bridgeRequest('POST','nexus-connect');toast(r.message)}catch(ex){toast(ex.message)}};
 window.addEventListener('storage',e=>{if(e.key===STORAGE){STORE=structuredClone(BASE);load();$('search').value=STORE.prefs.query;applyAppearance();render();toast('↻ Changes synchronized from another Arsenal tab.')}});
-load();applyAppearance();updateStorageIndicator();render();
+load();applyAppearance();updateStorageIndicator();render();renderActivity();
 // Development/test trace, harmless in release; does not expose filesystem privileges.
 if(BRIDGE.active){initLiveBridge();setInterval(async()=>{if(document.hidden||LIVE_REFRESH_BUSY||!LIVE_CATALOG)return;LIVE_REFRESH_BUSY=true;try{const revision=await bridgeRequest('GET','revision');if(revision.generation!==LIVE_GENERATION){const snap=await bridgeRequest('GET','snapshot');LIVE_GENERATION=snap.generation;activateLiveCatalog(snap.catalog);toast('⟳ MO2 changes synchronized');}if(revision.profileId===LIVE_CATALOG?.profileId&&NATIVE_SELECTED!==revision.selectedModId){NATIVE_SELECTED=revision.selectedModId||'';paintNativeSelection();if(NATIVE_SELECTED)window.AetherFX?.select($('row-'+NATIVE_SELECTED),{source:'mo2'})}await refreshGame();if($('liveDownloadList').children.length)await refreshDownloads()}catch(ex){SET('liveSync','Bridge disconnected: '+ex.message)}finally{LIVE_REFRESH_BUSY=false}},4200)}
 /**
@@ -735,6 +802,7 @@ function importOfflineCatalog(c){
  GROUP_MAP=new Map(c.groups.map(g=>[g.id,g]));
  LIVE_CATALOG=null;GAME=null;GAME_SEEN=-1;NATIVE_SELECTED='';focusedRowId='';
  WORKSHOP_PLAN=null;WORKSHOP_CHOICES.clear();
+ ACTIVITY_RECORDS=[];ACTIVITY_WARNING='';ACTIVITY_GENERATION++;renderActivity();
  STORAGE='modhunter-offline-profile:v1:'+c.profileId;
  STORE=structuredClone(BASE);load();
  $('search').value=STORE.prefs.query||'';

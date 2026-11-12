@@ -22,6 +22,7 @@ from .source_registry import SourceScanner, canonical_source_url, source_record
 from .update_plan import PlanError, plan_updates, validate_batch_selection, validate_release_asset, risk_reasons
 from .file_advisor import advise_nexus_files
 from .install_brief import build_install_brief
+from .operation_journal import OperationJournal
 
 MAX_REQUEST = 16_384
 MAX_PROGRESS_REQUEST = 8_000_000
@@ -59,6 +60,7 @@ class ArsenalService:
         self._scan: dict[str, Any] = {"state": "idle"}
         self._file_cache: dict[int, dict] = {}
         self._downloads: dict[int, dict] = {}
+        self.journal = OperationJournal(cache_path.with_name("update-operations.jsonl"))
         self._stopped = False
         self._generation = 1
 
@@ -339,9 +341,16 @@ class ArsenalService:
         result = self.call_ui("download", {"modId": mod_id, "fileId": file_id})
         if result.get("ok"):
             with self._guard:
-                self._downloads[int(result["downloadId"])] = {"provider": "nexus", "modId": mod_id,
-                    "fileId": file_id, "itemId": item_id, "installedVersion": installed_version,
-                    "status": "downloading", "profileId": self._snapshot.get("profileId")}
+                ticket = {"provider": "nexus", "modId": mod_id, "fileId": file_id,
+                    "operationId": secrets.token_hex(12), "itemId": item_id,
+                    "installedVersion": installed_version, "status": "downloading",
+                    "profileId": self._snapshot.get("profileId"),
+                    "profileName": self._snapshot.get("profileName", ""),
+                    "game": self._snapshot.get("game", ""),
+                    "gameRuntime": self._snapshot.get("gameRuntime", "unknown")}
+                self._downloads[int(result["downloadId"])] = ticket
+                if not item_id:
+                    self.journal.record(ticket, int(result["downloadId"]))
         return result
 
     def queue_reviewed_downloads(self, payload: dict) -> dict:
@@ -423,6 +432,7 @@ class ArsenalService:
                     with self._guard:
                         self._downloads[int(result["downloadId"])] = {
                             "provider": "github", "name": renewed["name"],
+                            "operationId": secrets.token_hex(12),
                             "itemId": item["itemId"], "installedVersion": item["installedVersion"],
                             "status": "downloading", "profileId": live.get("profileId")}
             else:
@@ -450,6 +460,11 @@ class ArsenalService:
                         if item.get("kind") == "source":
                             live_ticket["assetId"] = item.get("assetId")
                             live_ticket["fileName"] = item.get("name") or live_ticket.get("name") or ""
+                with self._guard:
+                    receipt = self._downloads.get(int(result["downloadId"]))
+                    if receipt:
+                        receipt["modName"] = str(selected_row.get("name") or receipt.get("name") or "")[:220]
+                        self.journal.record(receipt, int(result["downloadId"]))
                 queued.append({"itemId": item["itemId"], "provider": item.get("provider", "nexus"),
                                "downloadId": result.get("downloadId")})
             else:
@@ -464,10 +479,17 @@ class ArsenalService:
                 # back into an actionable "complete" ticket.
                 if self._downloads[download_id]["status"] not in ("installing", "installed"):
                     self._downloads[download_id]["status"] = state
+                    self.journal.record(self._downloads[download_id], download_id)
 
     def downloads(self) -> dict:
         with self._guard:
             return deepcopy({k:v for k,v in self._downloads.items() if v.get("profileId")==self._snapshot.get("profileId")})
+
+    def activity(self) -> dict:
+        """Read-only operational history; previous-session receipts never install."""
+        with self._guard:
+            profile_id = str(self._snapshot.get("profileId") or "")
+        return self.journal.profile(profile_id)
 
     def preview_install(self, download_id: int) -> dict:
         """The browser sees only an immutable, profile-scoped advisory briefing."""
@@ -497,6 +519,7 @@ class ArsenalService:
                     return {"ok": False, "error": "; ".join(preflight["errors"])}
                 ticket["status"] = "installing"
                 ticket.pop("lastError", None)
+                self.journal.record(ticket, download_id)
             threading.Thread(target=self._complete_native_install,
                              args=(download_id, ticket), daemon=True,
                              name=f"ArsenalInstall-{download_id}").start()
@@ -533,6 +556,10 @@ class ArsenalService:
                         # Cancellation keeps the reviewed archive retryable.
                         ticket["status"] = "complete"
                         ticket["lastError"] = str(result.get("error") or "MO2 installer canceled")[:240]
+                        # A canceled FOMOD can still have created the profile
+                        # text backup. Keep the evidence, never its path in history.
+                        ticket["backupPath"] = str((result.get("backup") or {}).get("backupPath") or ticket.get("backupPath") or "")
+                    self.journal.record(ticket, download_id)
         finally:
             self._install_lock.release()
 
@@ -645,6 +672,8 @@ class ArsenalService:
                     return self._reply(plan_updates(service.snapshot()))
                 if uri.path == "/api/downloads":
                     return self._reply({"ok": True, "downloads": service.downloads()})
+                if uri.path == "/api/activity":
+                    return self._reply(service.activity())
                 if uri.path == "/api/install-preview":
                     query = urllib.parse.parse_qs(uri.query)
                     try:
@@ -661,7 +690,7 @@ class ArsenalService:
                     item_id = query.get("itemId", [""])[0]
                     return self._reply(service.review_files(mid, item_id) if item_id else service.fetch_files(mid))
                 if uri.path == "/api/capabilities":
-                    return self._reply({"ok": True, "app": "MO2 Update Arsenal", "live": True, "nexusKeySession": bool(service.api_key), "nativeNexusAvailable": bool(service.native_nexus_available), "keyStorage": "RAM only", "features": ["snapshot", "local-check", "nexus-quick", "nexus-deep", "nexus-files", "native-mo2-nexus-login", "github-release-checks", "gitlab-release-checks", "manual-source-review", "github-direct-downloads", "mixed-source-batch-updates", "reviewed-update-workshop", "mo2-download", "mo2-install", "install-preview", "backup", "focus-mod", "chronicle", "verified-achievements", "ranked-full-clear", "persistent-profile-progress", "realm-wallet", "realm-purchase", "realm-save", "siege-targets", "siege-state", "siege-bounties", "siege-mod-focus"]})
+                    return self._reply({"ok": True, "app": "MO2 Update Arsenal", "live": True, "nexusKeySession": bool(service.api_key), "nativeNexusAvailable": bool(service.native_nexus_available), "keyStorage": "RAM only", "features": ["snapshot", "local-check", "nexus-quick", "nexus-deep", "nexus-files", "native-mo2-nexus-login", "github-release-checks", "gitlab-release-checks", "manual-source-review", "github-direct-downloads", "mixed-source-batch-updates", "reviewed-update-workshop", "mo2-download", "mo2-install", "install-preview", "operation-journal", "read-only-recovery-history", "backup", "focus-mod", "chronicle", "verified-achievements", "ranked-full-clear", "persistent-profile-progress", "realm-wallet", "realm-purchase", "realm-save", "siege-targets", "siege-state", "siege-bounties", "siege-mod-focus"]})
                 return self._reply({"ok": False, "error": "Unknown endpoint"}, 404)
 
             def do_POST(self):

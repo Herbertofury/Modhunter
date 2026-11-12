@@ -53,7 +53,14 @@ files = lambda mid: [
 ]
 review={str(mid): {"ok": True, "modId": mid, **advise_nexus_files(mods[ix],files(mid))}
         for ix,mid in enumerate((44,45))}
-mock={"catalog":catalog,"plan":plan_updates(catalog),"review":review}
+history=[{"key":"previous:101","sessionId":"previous","sessionActive":False,"needsReview":True,
+          "actionable":False,"firstAt":"2026-11-10T00:00:00+00:00","lastAt":"2026-11-10T00:01:00+00:00",
+          "status":"complete","profileId":"sss-profile","downloadId":101,"provider":"nexus",
+          "modName":"Previously queued Quest Example","itemId":"live-b","fileName":"quest-se.zip",
+          "installedVersion":"1.5","targetVersion":"2.3","gameRuntime":"1.5.97",
+          "timeline":[{"at":"2026-11-10T00:00:00+00:00","status":"downloading","note":""},
+                      {"at":"2026-11-10T00:01:00+00:00","status":"complete","note":""}]}]
+mock={"catalog":catalog,"plan":plan_updates(catalog),"review":review,"history":history}
 bootstrap = r"""
 <script>
 window.__MO2_BRIDGE_BOOT__={active:true,token:'browser-qa'};
@@ -65,6 +72,8 @@ window.fetch=async(url,opts={})=>{
  else if(endpoint==='update-plan')result=x.data.plan;
  else if(endpoint.startsWith('files?'))result=x.data.review[String(new URLSearchParams(endpoint.split('?')[1]).get('modId'))]||{ok:false,error:'Missing mod'};
  else if(endpoint==='downloads')result={ok:true,downloads:x.tickets};
+ else if(endpoint==='activity')result={ok:true,profileId:x.data.catalog.profileId,
+      records:x.data.history,count:x.data.history.length,durable:true,warning:''};
  else if(endpoint==='revision')result={ok:true,generation:1,profileId:x.data.catalog.profileId};
  else if(endpoint==='scan')result={ok:true,scan:{state:'completed',mode:'deep',queried:2}};
  else if(endpoint==='progress')result={ok:true,profileId:x.data.catalog.profileId,progress:{rows:{},prefs:{}}};
@@ -107,6 +116,23 @@ with sync_playwright() as pw:
     page.set_content(html,wait_until='load',timeout=30000)
     page.locator('#workshopResults .workshop-item').first.wait_for(timeout=15000)
     assert page.locator('#workshopResults .workshop-item').count()==2
+    page.locator('#activityResults .activity-entry').first.wait_for(timeout=10000)
+    assert page.locator('#activityResults .activity-entry').count()==1
+    assert 'Previous session' in page.locator('#activityResults').inner_text()
+    assert page.locator('#activityCount').inner_text()=='1 / 1 visible'
+    page.locator('#activitySearch').fill('not-present')
+    assert page.locator('#activityCount').inner_text()=='0 / 1 visible'
+    page.locator('#activitySearch').fill('')
+    page.locator('#activityFilter').select_option('verified')
+    assert page.locator('#activityCount').inner_text()=='0 / 1 visible'
+    page.locator('#activityFilter').select_option('review')
+    assert page.locator('#activityCount').inner_text()=='1 / 1 visible'
+    page.locator('#activityResults summary').first.click()
+    assert 'No automatic resume' in page.locator('#activityResults').inner_text()
+    page.screenshot(path=str(OUTPUT/'update-history.png'),full_page=False)
+    with page.expect_download(timeout=10000) as export_info:
+        page.locator('#activityExport').click()
+    assert export_info.value.suggested_filename.startswith('Modhunter-Operations-')
     assert page.locator('#workshopReviewNext').is_enabled()
     page.locator('#workshopReviewNext').click()
     page.locator('#filePickerVeil').wait_for(state='visible')

@@ -28,11 +28,11 @@
 | **Modhunter Siege** | Survivor roguelite with 5 classes, 22 upgrades, 6 weapon evolutions and boss fights |
 | **Atlas Campaign** | 12 regions, 96 authored contracts, 5 mastery tiers, 480 first-clear milestones |
 | **Shiverfell Chronicles** | Persistent top-down exploration, crafting, weather, companions and quests |
-| **Update Arsenal** | Check installed mods, inspect candidates, launch MO2-supported update actions |
+| **Update Workshop** | Profile-wide update review, compatibility warnings, exact Nexus file selection, reviewed batch downloads, and interactive MO2 installs |
 
 ## 📖 Field guide
 
-**[Getting Started](Getting-Started.md)** · **[Game Modes](Game-Modes.md)** · **[Atlas Campaign](Atlas-Campaign.md)** · **[Unfinished Bestiary](Unfinished-Bestiary.md)** · **[Rewards & Integrity](Rewards-and-Integrity.md)** · **[Architecture](Architecture.md)** · **[Troubleshooting](Troubleshooting.md)**
+**[Update Workshop](Update-Workshop.md)** · **[Getting Started](Getting-Started.md)** · **[Game Modes](Game-Modes.md)** · **[Atlas Campaign](Atlas-Campaign.md)** · **[Unfinished Bestiary](Unfinished-Bestiary.md)** · **[Rewards & Integrity](Rewards-and-Integrity.md)** · **[Architecture](Architecture.md)** · **[Troubleshooting](Troubleshooting.md)**
 
 ## A single world, three independent gateways
 

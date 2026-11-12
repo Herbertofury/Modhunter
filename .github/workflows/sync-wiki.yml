@@ -8,6 +8,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+concurrency:
+  group: modhunter-live-wiki
+  cancel-in-progress: false
 jobs:
   wiki:
     runs-on: ubuntu-latest

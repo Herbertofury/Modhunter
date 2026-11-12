@@ -4,7 +4,7 @@
 The independent Mod Organizer 2 Python Tool provides the live Update Arsenal dashboard, installed-mod identity, scanner, local API and verified rewards.
 
 ### Installation
-Download [MO2 plugin ZIP](../dist/Modhunter-MO2-Plugin.zip), extract, run the included `Install_to_MO2.bat`, restart MO2, then launch **Tools → Update Arsenal - Quest Board**.
+Download [MO2 plugin ZIP](https://github.com/Herbertofury/Modhunter/blob/main/dist/Modhunter-MO2-Plugin.zip), extract, run the included `Install_to_MO2.bat`, restart MO2, then launch **Tools → Update Arsenal - Quest Board**.
 
 ### Live features
 * Read the current MO2 profile, mods and game.

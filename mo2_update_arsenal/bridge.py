@@ -16,7 +16,7 @@ from typing import Any, Callable
 
 from .scanner import Cache, MissingAuth, NexusClient, NexusError, UpdateScanner, local_mo2_candidates
 from .gameplay import Chronicle
-from .update_plan import plan_updates
+from .update_plan import PlanError, plan_updates, validate_batch_selection
 
 MAX_REQUEST = 16_384
 MAX_PROGRESS_REQUEST = 8_000_000
@@ -260,6 +260,42 @@ class ArsenalService:
                 self._downloads[int(result["downloadId"])] = {"modId": mod_id, "fileId": file_id, "status": "downloading", "profileId": self._snapshot.get("profileId")}
         return result
 
+    def queue_reviewed_downloads(self, payload: dict) -> dict:
+        """Preflight entire batch then call existing exact-file MO2 download workflow.
+
+        This never installs, overwrites, or awards XP. On failure the caller
+        gets per-item results and can retry only the unfinished selections.
+        """
+        with self._guard:
+            snapshot = deepcopy(self._snapshot)
+        try:
+            approved = validate_batch_selection(snapshot, payload)
+        except PlanError as exc:
+            return {"ok": False, "error": str(exc), "queued": [], "failed": []}
+        queued, failed = [], []
+        for item in approved:
+            with self._guard:
+                live = self._snapshot
+                current = next((m for m in live.get("items", [])
+                                if m.get("id") == item["itemId"]), None)
+                unchanged = (live.get("profileId") == snapshot.get("profileId")
+                             and current is not None
+                             and str(current.get("installedVersion") or "") == item["installedVersion"]
+                             and int(current.get("nexusId") or 0) == item["modId"]
+                             and (current.get("update") or {}).get("verdict") == "candidate")
+            if not unchanged:
+                failed.append({"itemId": item["itemId"], "error": "Profile, scan or installed version changed"})
+                break
+            result = self.request_download(item["modId"], item["fileId"], "DOWNLOAD")
+            if result.get("ok"):
+                queued.append({"itemId": item["itemId"], "modId": item["modId"],
+                               "fileId": item["fileId"], "downloadId": result.get("downloadId")})
+            else:
+                failed.append({"itemId": item["itemId"],
+                               "error": str(result.get("error") or "Download rejected")})
+        return {"ok": not failed, "queued": queued, "failed": failed,
+                "message": f"Queued {len(queued)} reviewed file(s) in MO2. Install separately."}
+
     def set_download_status(self, download_id: int, state: str) -> None:
         with self._guard:
             if download_id in self._downloads:
@@ -394,7 +430,7 @@ class ArsenalService:
                     return
                 try:
                     length = int(self.headers.get("Content-Length", "0"))
-                    if length <= 0 or length > (MAX_PROGRESS_REQUEST if self.path.split("?", 1)[0] == "/api/progress" else MAX_REALM_REQUEST if self.path.split("?", 1)[0] in ("/api/realm/world", "/api/siege/state") else MAX_REQUEST):
+                    if length <= 0 or length > (MAX_PROGRESS_REQUEST if self.path.split("?", 1)[0] in ("/api/progress", "/api/update-queue") else MAX_REALM_REQUEST if self.path.split("?", 1)[0] in ("/api/realm/world", "/api/siege/state") else MAX_REQUEST):
                         return self._reply({"ok": False, "error": "Request size rejected"}, 413)
                     data = json.loads(self.rfile.read(length))
                     if not isinstance(data, dict):
@@ -446,6 +482,8 @@ class ArsenalService:
                     return self._reply(service.call_ui("runtime", {}, timeout=180))
                 if uri.path == "/api/scan":
                     return self._reply(service.begin_scan(data.get("mode", "quick")))
+                if uri.path == "/api/update-queue":
+                    return self._reply(service.queue_reviewed_downloads(data))
                 if uri.path == "/api/download":
                     try:
                         result = service.request_download(int(data.get("modId") or 0), int(data.get("fileId") or 0), data.get("confirm"))

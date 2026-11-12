@@ -1,0 +1,49 @@
+{
+  "product": "Modhunter: The Unfinished World",
+  "version": "0.8.0-dev",
+  "source_checkpoint": "Google Drive Modhunter v0.8",
+  "components": {
+    "desktop": "Electron 45 development source; standalone offline; optional MO2 loopback",
+    "html": "Self-contained offline browser dashboard",
+    "mo2": "Mod Organizer 2 Python Tool with its own local browser dashboard"
+  },
+  "content": {
+    "sampleMods": 227,
+    "separatorSections": 115,
+    "regions": 12,
+    "namedStoryContracts": 96,
+    "masteryTiers": 5,
+    "firstClearMilestones": 480,
+    "heroClasses": 5,
+    "upgradePaths": 22,
+    "evolutions": 6,
+    "legacyPerks": 6
+  },
+  "testing": {
+    "pythonTests": 68,
+    "pythonSubtests": 3,
+    "atlasChromium": "previous checkpoint pass",
+    "electronChromeChromium": "previous checkpoint pass",
+    "desktopSyntax": "previous checkpoint pass",
+    "nativeWindowsElectron": "unverified",
+    "nativeWindowsMO2": "unverified"
+  },
+  "files": {
+    "Modhunter.html": {
+      "bytes": 560639,
+      "sha256": "265c17b3794d784251355dd5813361e88e9f524400cf3173589e1e23c3026b7d"
+    },
+    "Modhunter-MO2-Plugin.zip": {
+      "bytes": 192841,
+      "sha256": "95eca91956cd1c6f131e564d5c025d1a22f6d62b0ddbf4347a475d583f53f8f2"
+    },
+    "Modhunter-Desktop-Source.zip": {
+      "bytes": 169721,
+      "sha256": "623280d2901944a76bb3235203f588689bab78a69e4b18d10c549a9e29350d14"
+    },
+    "Modhunter-Complete-Source.zip": {
+      "bytes": 6870000,
+      "sha256": "e9632672c2642a61aed5c6ec90131386346a79beaa3db1a8350c12c7282d0103"
+    }
+  }
+}

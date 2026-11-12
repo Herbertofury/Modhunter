@@ -28,7 +28,9 @@ jobs:
         with:
           node-version: '22'
       - name: Verify Python unit tests and independent update planning
-        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+        run: |
+          python3 -m py_compile tests/updater_sss_browser_qa.py
+          python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Check Electron syntax
         run: |
           node --check desktop/main.cjs

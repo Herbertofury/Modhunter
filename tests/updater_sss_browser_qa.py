@@ -360,10 +360,10 @@ with sync_playwright() as pw:
     recovery.locator('[data-retry-download-id="801"]').click()
     recovery.wait_for_function("window.__SSS_MOCK__.tickets[801].retriedBy === 803")
     assert recovery.locator('.ticket-requeued').count()==1
-    assert recovery.evaluate("window.__SSS_MOCK__.calls.at(-1).endpoint")==='retry-download'
+    assert recovery.evaluate("window.__SSS_MOCK__.calls.at(-1).endpoint")=='retry-download'
     recovery.locator('#installAllReady').click()
     recovery.wait_for_function("window.__SSS_MOCK__.tickets[802].status === 'installing'")
-    assert recovery.evaluate("window.__SSS_MOCK__.calls.at(-1).endpoint")==='install-ready'
+    assert recovery.evaluate("window.__SSS_MOCK__.calls.at(-1).endpoint")=='install-ready'
     assert recovery.locator('#installPreviewVeil').is_hidden()
     assert recovery.locator('#queueReviewVeil').is_hidden()
     recovery.screenshot(path=str(OUTPUT/'recovery-cockpit.png'),full_page=False)

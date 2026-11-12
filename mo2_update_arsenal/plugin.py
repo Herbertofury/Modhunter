@@ -188,6 +188,8 @@ class ModUpdateArsenal(mobase.IPluginTool):
             return {"ok": False, "error": "The download is not complete"}
         try:
             before = self.server.snapshot()
+            if str(self.org.profileName()) != str(before.get("profileName") or ""):
+                return {"ok": False, "error": "Active MO2 profile changed; reopen the Workshop before installing"}
             source = Path(self.org.downloadManager().downloadPath(download_id)).resolve()
             root = Path(self.org.downloadsPath()).resolve()
             if not source.is_file() or not source.is_relative_to(root) or source.suffix.lower() not in (".zip", ".7z", ".rar"):

@@ -1,6 +1,8 @@
 """MO2 Update Workshop installation tickets and duplicate-queue regression tests."""
 import copy
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -21,6 +23,9 @@ class TicketLifecycleTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.calls = []
+        self.install_started = threading.Event()
+        self.install_gate = threading.Event()
+        self.install_gate.set()
         self.install_result = {"ok": True, "verifiedUpdate": True,
                                "installedName": "Test Mod",
                                "backup": {"backupPath": "/backup/example"}}
@@ -29,6 +34,8 @@ class TicketLifecycleTests(unittest.TestCase):
             if req.cmd == "download":
                 req.finish({"ok": True, "downloadId": 744})
             elif req.cmd == "install":
+                self.install_started.set()
+                self.install_gate.wait(3)
                 req.finish(self.install_result)
             else:
                 req.finish({"ok": False, "error": "Unexpected command"})
@@ -37,8 +44,18 @@ class TicketLifecycleTests(unittest.TestCase):
         self.service.fetch_files = lambda mid: {"ok": True, "files": [{"fileId": 55}]}
 
     def tearDown(self):
+        self.install_gate.set()
         self.service.stop()
         self.tmp.cleanup()
+
+    def await_ticket(self, state, timeout=2):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if (self.service.downloads().get(744, {}).get("status") == state
+                    and not self.service._install_lock.locked()):
+                return self.service.downloads()[744]
+            time.sleep(0.01)
+        self.fail("MO2 ticket never reached " + state)
 
     def queue(self):
         return self.service.queue_reviewed_downloads({
@@ -61,8 +78,8 @@ class TicketLifecycleTests(unittest.TestCase):
         self.service.set_download_status(744, "complete")
         result = self.service.install_reviewed_download(744)
         self.assertTrue(result["ok"])
-        self.assertTrue(self.service.downloads()[744]["verifiedUpdate"])
-        self.assertEqual(self.service.downloads()[744]["status"], "installed")
+        self.assertEqual(result["state"], "installing")
+        self.assertTrue(self.await_ticket("installed")["verifiedUpdate"])
         self.service.set_download_status(744, "complete")
         self.assertEqual(self.service.downloads()[744]["status"], "installed")
         self.assertFalse(self.service.install_reviewed_download(744)["ok"])
@@ -72,13 +89,28 @@ class TicketLifecycleTests(unittest.TestCase):
         self.assertTrue(self.queue()["ok"])
         self.service.set_download_status(744, "complete")
         self.install_result = {"ok": False, "error": "MO2 installer canceled"}
-        self.assertFalse(self.service.install_reviewed_download(744)["ok"])
-        self.assertEqual(self.service.downloads()[744]["status"], "complete")
+        self.assertTrue(self.service.install_reviewed_download(744)["ok"])
+        self.assertIn("canceled", self.await_ticket("complete")["lastError"])
         self.install_result = {"ok": True, "verifiedUpdate": False,
                                "installedName": "Test Mod"}
         self.assertTrue(self.service.install_reviewed_download(744)["ok"])
-        self.assertFalse(self.service.downloads()[744]["verifiedUpdate"])
+        self.assertFalse(self.await_ticket("installed")["verifiedUpdate"])
         self.assertEqual(self.calls, ["download", "install", "install"])
+
+    def test_native_fomod_dialog_can_stay_open_without_blocking_http(self):
+        self.assertTrue(self.queue()["ok"])
+        self.service.set_download_status(744, "complete")
+        self.install_gate.clear()
+        began = time.monotonic()
+        receipt = self.service.install_reviewed_download(744)
+        self.assertTrue(receipt["ok"])
+        self.assertLess(time.monotonic() - began, 0.5)
+        self.assertTrue(self.install_started.wait(1))
+        self.assertEqual(self.service.downloads()[744]["status"], "installing")
+        self.assertFalse(self.service.install_reviewed_download(744)["ok"])
+        self.assertFalse(self.queue()["ok"])
+        self.install_gate.set()
+        self.assertEqual(self.await_ticket("installed")["status"], "installed")
 
     def test_profile_or_version_change_blocks_stale_install(self):
         self.assertTrue(self.queue()["ok"])

@@ -432,15 +432,17 @@ class ArsenalService:
             return deepcopy({k:v for k,v in self._downloads.items() if v.get("profileId")==self._snapshot.get("profileId")})
 
     def install_reviewed_download(self, download_id: int) -> dict:
-        """Open MO2's native installer once for an exact completed profile ticket.
+        """Start one interactive MO2 installer without blocking the browser.
 
-        Reject stale or switched profiles, prevent overlapping installers, and
-        preserve retryability after cancellation. The browser never installs files.
+        An unfinished native dialog is a normal in-progress state, not an HTTP
+        timeout. Keep the global install lease until the Qt callback actually
+        finishes, then publish the verified receipt to the download ticket.
         """
         if isinstance(download_id, bool) or download_id <= 0:
             return {"ok": False, "error": "Invalid MO2 download ID"}
         if not self._install_lock.acquire(blocking=False):
             return {"ok": False, "error": "Another MO2 installer is already open"}
+        started = False
         try:
             with self._guard:
                 ticket = self._downloads.get(download_id)
@@ -456,7 +458,32 @@ class ArsenalService:
                             str(current.get("installedVersion") or "") != ticket.get("installedVersion")):
                         return {"ok": False, "error": "Installed mod changed since queueing; rescan and review this file again"}
                 ticket["status"] = "installing"
-            result = self.call_ui("install", {"downloadId": download_id}, timeout=180)
+                ticket.pop("lastError", None)
+            threading.Thread(target=self._complete_native_install,
+                             args=(download_id, ticket), daemon=True,
+                             name=f"ArsenalInstall-{download_id}").start()
+            started = True
+            return {"ok": True, "state": "installing", "downloadId": download_id,
+                    "message": "MO2 installer requested. Finish its normal prompts; Modhunter will show the result."}
+        except (RuntimeError, OSError) as exc:
+            with self._guard:
+                if self._downloads.get(download_id) is ticket:
+                    ticket["status"] = "complete"
+            return {"ok": False, "error": "Could not open MO2 installer: " + str(exc)[:160]}
+        finally:
+            if not started:
+                self._install_lock.release()
+
+    def _complete_native_install(self, download_id: int, ticket: dict) -> None:
+        """Wait on a daemon worker, never the HTTP thread or MO2 GUI thread."""
+        try:
+            request = UIRequest("install", {"downloadId": download_id})
+            self.ui_call(request)  # Qt signal delivers the request to MO2's GUI.
+            request.event.wait()  # No deadline while the real FOMOD dialog is open.
+            result = request.result
+        except Exception as exc:
+            result = {"ok": False, "error": "MO2 installer dispatch failed: " + type(exc).__name__}
+        try:
             with self._guard:
                 if self._downloads.get(download_id) is ticket:
                     if result.get("ok"):
@@ -464,13 +491,10 @@ class ArsenalService:
                         ticket["verifiedUpdate"] = result.get("verifiedUpdate") is True
                         ticket["installedName"] = str(result.get("installedName") or "")
                         ticket["backupPath"] = str((result.get("backup") or {}).get("backupPath") or "")
-                    elif "MO2 is busy" in str(result.get("error") or ""):
-                        # Native installation may still be running after the HTTP
-                        # timeout. Do not enable a second installer blindly.
-                        ticket["status"] = "attention"
                     else:
-                        ticket["status"] = "complete"  # Cancelled/failed, may be retried.
-            return result
+                        # Cancellation keeps the reviewed archive retryable.
+                        ticket["status"] = "complete"
+                        ticket["lastError"] = str(result.get("error") or "MO2 installer canceled")[:240]
         finally:
             self._install_lock.release()
 

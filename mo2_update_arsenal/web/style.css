@@ -223,3 +223,29 @@ body[data-theme="snow"] .unified-intro p,body[data-theme="snow"] .unified-intro 
 body[data-theme="snow"] .unified-meta{color:#247058}
 @media(max-width:840px){.unified-grid{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:550px){.unified-command{padding:14px}.unified-actions button,.unified-link{width:100%}}
+
+/* Update Workshop command surface: one clear next action, full-list navigation. */
+.workshop-command{margin-top:17px;border:1px solid rgba(125,189,171,.32);border-radius:13px;background:linear-gradient(120deg,rgba(19,46,51,.95),rgba(22,33,44,.96));overflow:hidden}
+.workshop-journey{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-bottom:1px solid rgba(167,197,193,.16)}
+.workshop-journey-step{display:flex;align-items:center;gap:12px;padding:12px 16px;min-width:0;border-right:1px solid rgba(167,197,193,.13)}
+.workshop-journey-step:last-child{border-right:0}.workshop-journey-step>b{color:#d4af78;font-size:20px;font-family:Georgia,serif;font-weight:400}
+.workshop-journey-step strong{display:block;font-size:11px;letter-spacing:.12em;color:#d7e7e1}.workshop-journey-step small{display:block;color:#a2c0c1;font-size:11px;margin-top:3px}
+.workshop-journey-step.is-done{background:rgba(57,137,108,.12)}.workshop-journey-step.is-done>b{color:#8ae0ba}
+.workshop-next{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:15px;padding:16px}
+.workshop-next>div{min-width:0;flex:1 1 280px}.workshop-next strong{display:block;color:#f5eddd;font-size:18px;margin:5px 0}
+.workshop-next p{font-size:12px;line-height:1.5;color:#b9cbcb;margin:0}.workshop-next button{min-height:40px}
+.workshop-command :is(button,a):focus-visible,.update-workshop :is(button,a,input,select):focus-visible{outline:2px solid #bfe8d8;outline-offset:3px}
+@media(max-width:650px){.workshop-journey-step{gap:7px;padding:9px}.workshop-journey-step>b{font-size:14px}.workshop-journey-step strong{font-size:9px}.workshop-journey-step small{font-size:10px}.workshop-next button{width:100%}}
+
+/* Native download ticket design. No list limits or viewport culling. */
+.workshop-downloads-heading{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;border:1px solid #3c6260;background:#1a343b;padding:14px 17px;border-radius:12px}
+.workshop-downloads-heading strong{font-size:16px;color:#f3e8d7}.workshop-downloads-heading small{display:block;margin-top:5px;color:#b5cbcb;font-size:12px}
+.workshop-downloads-heading>span{color:#eed49c;font-size:12px;font-weight:700}
+.download-ticket{padding:13px 16px;min-height:70px;border-radius:12px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:linear-gradient(110deg,#132d35,#192a35)}
+.download-ticket .ticket-copy{flex:1 1 240px;min-width:0}.ticket-copy strong{display:block;color:#f1f4eb;font-size:13px}.ticket-copy span{display:block;color:#a8c8c7;font-size:12px;margin-top:4px}.ticket-copy small{display:block;color:#c0cbcf;font-size:11px;margin-top:4px;line-height:1.4}
+.download-ticket .ticket-status-dot{width:11px;height:11px;flex:0 0 11px;border-radius:50%;background:#6b929e;box-shadow:0 0 0 4px rgba(107,146,158,.15)}
+.ticket-complete .ticket-status-dot{background:#d8bd75;box-shadow:0 0 0 4px rgba(216,189,117,.15)}.ticket-installed .ticket-status-dot{background:#79d4a8;box-shadow:0 0 0 4px rgba(121,212,168,.15)}
+.ticket-failed .ticket-status-dot,.ticket-removed .ticket-status-dot{background:#de8886}.ticket-installing .ticket-status-dot{background:#6ec7d7}
+.workshop-ticket-note{color:#b8dcea;border:1px solid rgba(109,175,185,.35);padding:2px 7px;border-radius:5px}
+.picker-source-title{font-size:11px;color:#d9c194;letter-spacing:.13em;font-weight:750;padding:13px 10px 7px;border-bottom:1px solid rgba(204,186,140,.25)}
+@media(max-width:620px){.download-ticket{align-items:flex-start}.download-ticket .button-bright,.download-ticket .quiet-button{width:100%}}

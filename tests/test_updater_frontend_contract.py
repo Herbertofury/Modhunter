@@ -28,6 +28,28 @@ class UpdaterFrontendContractTests(unittest.TestCase):
         self.assertIn('id="workshopResults"', PAGE)
         self.assertIn('id="workshopQueue"', PAGE)
 
+    def test_step_by_step_command_center_has_real_action_handlers(self):
+        for element in ('workshopJourney', 'workshopNextTitle', 'workshopNextHint',
+                        'workshopNextAction', 'workshopRefreshDownloads'):
+            with self.subTest(element=element):
+                self.assertIn(f'id="{element}"', PAGE)
+        self.assertIn('function renderWorkshopJourney()', APP)
+        self.assertIn("$('workshopNextAction').onclick", APP)
+        self.assertIn("if(action==='install'||action==='downloads')", APP)
+        self.assertIn("if(action==='queue')return queueWorkshop()", APP)
+        self.assertIn("$('workshopRefreshDownloads').onclick", APP)
+        self.assertIn("if(signature===WORKSHOP_TICKET_SIGNATURE)return", APP)
+
+    def test_github_and_nexus_files_can_both_appear_in_the_same_picker(self):
+        self.assertIn("const github=assets.length?", APP)
+        self.assertIn("if(!m.nexusId){$('filePickerFiles').innerHTML=github;return}", APP)
+        self.assertIn("'<div class=\"picker-source-title\">NEXUS MODS", APP)
+        self.assertIn("'<div class=\"picker-source-title\">GITHUB RELEASE", APP)
+        self.assertIn("EXACT FILES</div>'+nexus:'')+github", APP)
+        self.assertIn("targetVersion:record.latestVersion", APP)
+        self.assertIn("String(m.latestVersion||'')===String(choice.targetVersion||'')", APP)
+        self.assertIn("data-retry-item-id", APP)
+
     def test_desktop_can_import_a_user_selected_mo2_profile_without_plugin(self):
         root = ROOT / "desktop"
         main = (root / "main.cjs").read_text(encoding="utf-8")

@@ -30,9 +30,10 @@ from .audit_probe import exercise_plugin_audit
 
 GAME_NAME = "Modhunter CI Fixture"
 PROFILE_NAME = "Modhunter Smoke"
+# MO2 2.5.2 VersionInfo renders these numeric fixture versions with four parts.
 EXPECTED_MODS = {
-    "Smoke Enabled": {"enabled": True, "installedVersion": "1.0.0"},
-    "Smoke Disabled": {"enabled": False, "installedVersion": "2.0.0"},
+    "Smoke Enabled": {"enabled": True, "installedVersion": "1.0.0.0"},
+    "Smoke Disabled": {"enabled": False, "installedVersion": "2.0.0.0"},
 }
 
 

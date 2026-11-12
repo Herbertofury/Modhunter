@@ -654,6 +654,15 @@ fn open_tab(app: &tauri::AppHandle, mode: Mode) -> Result<u64> {
                         }
                     }
                 };
+                // PathBuf preserves input separators. Normalize the Windows
+                // path before passing the destination across the WebView2 API.
+                let directory = match std::path::absolute(&directory) {
+                    Ok(path) => path,
+                    Err(e) => {
+                        alert(&download_app, e.to_string());
+                        return false;
+                    }
+                };
                 if let Err(e) = std::fs::create_dir_all(&directory) {
                     alert(&download_app, e.to_string());
                     return false;

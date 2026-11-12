@@ -316,6 +316,24 @@ function activateLiveCatalog(c){
  applyAppearance();updateStorageIndicator();render();renderLiveStats();if(newProfile){hydrateProgress(c.profileId);refreshGame()}refreshWorkshop().catch(ex=>workshopSetStatus('Plan unavailable: '+ex.message));if(changedRuntime||changedMods)toast('⚠ Previous cleared checks need review: runtime or installed version changed.');
 }
 
+function refreshUnifiedCommand(){
+ const el=$('unifiedEdition');if(!el)return;
+ const live=BRIDGE.active&&!!LIVE_CATALOG;
+ const imported=!!DATA?.offline&&!live;
+ const count=DATA?.items?.length||0;
+ el.textContent=live?'● LIVE MO2 · '+LIVE_CATALOG.profileName:imported?'◈ IMPORTED MO2 · READ ONLY':'◌ STANDALONE · PRACTICE';
+ const plan=typeof currentWorkshopPlan==='function'?currentWorkshopPlan():null;
+ const candidates=plan?.summary?.candidates||0;
+ const checked=live&&WORKSHOP_PLAN?candidates+' candidate'+(candidates===1?'':'s')+' · '+count+' installed mods':imported?count+' imported mods · remote status unverified':'Sample archive · live updates unavailable';
+ SET('unifiedUpdateState',checked);
+ $('unifiedScan').textContent=live?'ϟ Check all mod sources':'⌁ Connect MO2 for live scan';
+}
+function unifiedScroll(id){const target=$(id);if(target){target.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'});}}
+$('unifiedScan').onclick=()=>{if(BRIDGE.active&&LIVE_CATALOG)scanLive('all');else{unifiedScroll('liveHub');workshopSetStatus(DATA?.offline?'Imported profile is read only. Launch the MO2 plugin for real update checks.':'Standalone sample mode. Install or launch the optional MO2 plugin to verify and download updates.')}};
+$('unifiedReview').onclick=()=>{unifiedScroll('updateWorkshop');$('workshopFilter').value='all';renderWorkshop()};
+$('unifiedQuest').onclick=()=>unifiedScroll('gameBoard');
+$('unifiedFX').onclick=()=>{$('fxSettingsToggle').click()};
+
 function workshopSource(item){
  const u=getSrc(item),link=validUrl(u.url);
  return link&&u.verified?link:'';
@@ -349,6 +367,7 @@ function renderWorkshop(){
  $('workshopQueue').disabled=!BRIDGE.active||!selected.length||WORKSHOP_BUSY;
  $('workshopRefresh').disabled=WORKSHOP_BUSY;
  $('workshopExport').disabled=WORKSHOP_BUSY;
+ refreshUnifiedCommand();
 }
 async function refreshWorkshop(){
  if(!BRIDGE.active){WORKSHOP_PLAN=workshopLocalPlan();renderWorkshop();workshopSetStatus('Standalone checklist ready. No live MO2 installation or download actions are available.');return}

@@ -34,6 +34,8 @@ jobs:
           node --check desktop/main.cjs
           node --check desktop/preload.cjs
           node --check desktop/chrome.js
+          node --check desktop/offline_mo2.cjs
+          node --test desktop/offline_mo2.test.cjs
       - name: Compile single-file standalone dashboard and check its JavaScript
         run: |
           python3 build.py

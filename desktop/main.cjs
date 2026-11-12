@@ -8,9 +8,13 @@ const fs=require('node:fs');
 const {readMo2Profile}=require('./offline_mo2.cjs');
 
 const BAR_HEIGHT=88;
+// All-in-One ships Desktop/Modhunter.html beside the Electron source.
+// Development mode still uses the canonical repository build as a fallback.
+const nearbyHTML=path.join(__dirname,'Modhunter.html');
+const sourceHTML=path.join(__dirname,'..','mo2_update_arsenal','web','index.html');
 const SAFE_LOCAL_FILE=path.resolve(app.isPackaged
   ?path.join(process.resourcesPath,'Modhunter.html')
-  :path.join(__dirname,'..','mo2_update_arsenal','web','index.html'));
+  :fs.existsSync(nearbyHTML)?nearbyHTML:sourceHTML);
 const CHROME=path.join(__dirname,'chrome.html');
 let mainWindow=null,bar=null,nextTab=1,activeId=null,mo2Url=null,offlineCatalog=null;
 const tabs=new Map();

@@ -10,6 +10,7 @@ const vm=require('node:vm');
 const {test}=require('node:test');
 const APP=fs.readFileSync(path.join(__dirname,'../mo2_update_arsenal/web/app.js'),'utf8');
 const INSIGHTS=fs.readFileSync(path.join(__dirname,'../mo2_update_arsenal/web/mod_insights.js'),'utf8');
+const SOURCES=fs.readFileSync(path.join(__dirname,'../mo2_update_arsenal/web/source_insights.js'),'utf8');
 
 function catalog(profile='a',count=3){
  return {profileId:profile,catalogId:profile,profileName:profile,game:'skyrimspecialedition',gameRuntime:'1.5.97',
@@ -64,7 +65,11 @@ function harness({live=true,failSnapshots=0,count=3}={}){
     const item=c.items.find(m=>m.id===id);
     value={ok:true,profileId:c.profileId,itemId:id,health:state.health||{schema:1,provider:'nexus',bugs:{state:'available',displayedCount:0,checkedAt:1800000000},page:{status:'available'},job:{state:'completed'}},localAnalysis:item?.localAnalysis||null};
    }
-   else if(endpoint==='update-plan')value={ok:true,profileId:c.profileId,profileName:c.profileName,summary:{candidates:c.items.length,total:c.items.length,review:0,manual:0,current:0,risky:0},items:c.items.map(m=>({...m,lane:'candidate',latestVersion:'2.0',risks:[]}))};
+   else if(endpoint.startsWith('source-details?')){
+    const id=new URL('http://fixture/'+endpoint).searchParams.get('itemId');
+    value={ok:true,profileId:c.profileId,itemId:id,update:state.sourceDetails||c.items.find(m=>m.id===id)?.update||{}};
+   }
+   else if(endpoint==='update-plan'||endpoint==='update-plan?details=full')value={ok:true,profileId:c.profileId,profileName:c.profileName,summary:{candidates:c.items.length,total:c.items.length,review:0,manual:0,current:0,risky:0},items:c.items.map(m=>({...m,lane:'candidate',latestVersion:'2.0',risks:[]}))};
    else if(endpoint==='scan'){
     if(method==='POST'){state.scan={state:'running',mode:body.mode,total:c.items.length};value={ok:true,profileId:c.profileId,state:'running'}}
     else value={ok:true,profileId:c.profileId,scan:structuredClone(state.scan)};
@@ -74,15 +79,40 @@ function harness({live=true,failSnapshots=0,count=3}={}){
    return{ok:true,json:async()=>value};
   }finally{active.set(key,active.get(key)-1)}
  };
- const instrument='window.__RUNTIME__={getSrc,bridgeRequest,scanLive,fastUpdateAll,refreshWorkshop,pollLiveBridge,updatePrefs,save,counts,filtered,render,importOfflineCatalog,scheduleSearchRender,analyzePlugins,refreshModHealth,drawInspector,loadModInsights,state:()=>({connected:LIVE_CONNECTED,quick:QUICK_RUNNING,profileEpoch:PROFILE_EPOCH}),setRow:(id,value)=>{STORE.rows[id]=value;save()},setQuery:q=>{STORE.prefs.query=q;scheduleSearchRender()}};';
+ const instrument='window.__RUNTIME__={getSrc,bridgeRequest,scanLive,fastUpdateAll,refreshWorkshop,pollLiveBridge,updatePrefs,save,counts,filtered,render,importOfflineCatalog,scheduleSearchRender,analyzePlugins,refreshModHealth,drawInspector,loadModInsights,loadSourceDetails,sourceDetailMod,openFilePicker,closeFilePicker,exportWorkshop,state:()=>({connected:LIVE_CONNECTED,quick:QUICK_RUNNING,profileEpoch:PROFILE_EPOCH}),setRow:(id,value)=>{STORE.rows[id]=value;save()},setQuery:q=>{STORE.prefs.query=q;scheduleSearchRender()}};';
  const source=APP.replace('/*__POWERSHELL__*/','""').replace(/\}\)\(\);\s*$/,instrument+'\n})();');
- vm.createContext(context);vm.runInContext(INSIGHTS,context,{filename:'mod_insights.js'});vm.runInContext(source,context,{filename:'app.js'});
+ vm.createContext(context);vm.runInContext(SOURCES,context,{filename:'source_insights.js'});vm.runInContext(INSIGHTS,context,{filename:'mod_insights.js'});vm.runInContext(source,context,{filename:'app.js'});
  return{context,state,nodes,timers,calls,active,maximum,pending,api:context.__RUNTIME__,qa:context.__ARSENAL_QA__,
   release(key){state.defer.delete(key);for(const resolve of pending.get(key)||[])resolve();pending.delete(key)},
   async settle(){for(let i=0;i<6;i++)await new Promise(resolve=>setImmediate(resolve))},
   async tick(ms){const pair=[...timers].find(([,t])=>t.ms===ms);assert.ok(pair,'Expected timer '+ms);timers.delete(pair[0]);pair[1].fn();await this.settle()},
  };
 }
+
+test('release details coalesce and a different profile cannot receive a late result',async()=>{
+ const h=harness();await h.settle();const mod=h.qa.getCatalog().items[0];
+ const endpoint='GET source-details?itemId=item-0&profileId=a';h.state.defer.add(endpoint);
+ h.state.sourceDetails={provider:'gitlab',changelog:'Profile A release notes'};
+ const a=h.api.loadSourceDetails(mod),b=h.api.loadSourceDetails(mod);await h.settle();
+ assert.equal(h.active.get(endpoint),1);
+ h.state.catalog=catalog('b');await h.qa.setCatalog(h.state.catalog);h.release(endpoint);await Promise.all([a,b]);
+ assert.equal(h.api.sourceDetailMod(h.qa.getCatalog().items[0]).update.changelog,undefined);
+});
+test('compact external source file picker fetches exact details and ignores an old Nexus ID',async()=>{
+ const h=harness();await h.settle();const data=catalog('a');
+ data.items[0].source={type:'gitlab',verified:true,url:'https://gitlab.com/team/project'};
+ data.items[0].update={provider:'gitlab',verdict:'candidate',latestVersion:'2.0',releaseAssetCount:1,detailsAvailable:true};
+ h.state.catalog=data;h.state.sourceDetails={...data.items[0].update,releaseAssets:[{assetKey:'gitlab:team/project:2:4',assetProof:'f'.repeat(64),provider:'gitlab',name:'mod.zip',size:55}]};
+ await h.qa.setCatalog(data);const mod=h.qa.getCatalog().items[0];await h.api.openFilePicker(mod);
+ assert.match(h.nodes.get('filePickerFiles').innerHTML,/GitLab/);assert.match(h.nodes.get('filePickerFiles').innerHTML,/data-asset-key="gitlab:team\/project:2:4"/);
+ assert.ok(h.nodes.get('filePickerFiles').innerHTML.includes('data-asset-proof="'+'f'.repeat(64)+'"'));
+ assert.equal(h.calls.filter(c=>c.endpoint.startsWith('files?')).length,0);
+});
+test('loading source evidence preserves unsaved inspector notes',async()=>{
+ const h=harness();await h.settle();const mod=h.qa.getCatalog().items[0];h.api.drawInspector(mod);
+ h.context.document.getElementById('drawerNote').value='Keep my unsaved setup notes';await h.api.loadSourceDetails(mod);await h.settle();
+ assert.equal(h.nodes.get('drawerNote').value,'Keep my unsaved setup notes');
+});
 
 test('initial connection failure retries automatically and restores connected status',async()=>{
  const h=harness({failSnapshots:1});await h.settle();assert.equal(h.api.state().connected,false);

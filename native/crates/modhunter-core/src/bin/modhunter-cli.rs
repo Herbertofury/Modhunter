@@ -1,5 +1,6 @@
 use modhunter_core::{
-    BridgeClient, ImportRequest, PluginAuditRequest, ProfileImporter, audit_plugins,
+    BridgeClient, ImportRequest, PluginAuditRequest, ProfileImporter, SourceScanRequest,
+    audit_plugins, scan_sources,
 };
 use serde_json::json;
 use std::fs;
@@ -76,10 +77,35 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let request: PluginAuditRequest = serde_json::from_slice(bytes)?;
             println!("{}", serde_json::to_string(&audit_plugins(&request)?)?);
         }
+        Some("scan-sources") => {
+            let path = value(&args, "--request")?
+                .ok_or("scan-sources requires --request PATH or --request - for stdin")?;
+            const REQUEST_LIMIT: u64 = 32 * 1024 * 1024;
+            let mut bytes = Vec::new();
+            if path == "-" {
+                std::io::stdin()
+                    .take(REQUEST_LIMIT + 1)
+                    .read_to_end(&mut bytes)?;
+            } else {
+                fs::File::open(path)?
+                    .take(REQUEST_LIMIT + 1)
+                    .read_to_end(&mut bytes)?;
+            }
+            if bytes.len() as u64 > REQUEST_LIMIT {
+                return Err("Source scan request exceeds 32 MiB".into());
+            }
+            let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes);
+            let request: SourceScanRequest = serde_json::from_slice(bytes)?;
+            let output = serde_json::to_string(&scan_sources(&request)?)?;
+            if output.len() > 30 * 1024 * 1024 {
+                return Err("Source scan result exceeds 30 MiB; select a smaller batch".into());
+            }
+            println!("{output}");
+        }
         Some("benchmark") => benchmark(&args)?,
         Some("--version") => println!("Modhunter Rust engine {}", env!("CARGO_PKG_VERSION")),
         None | Some("--help") | Some("help") => println!(
-            "Modhunter Rust engine\n\nimport --modlist PATH [--ini PATH] [--mods PATH] [--workers 1..32]\nprobe --endpoint http://127.0.0.1:PORT/\naudit-plugins --request PATH|-\nbenchmark [--mods 2500] [--rounds 5] [--workers 8]\n\nImport and plugin audits are read-only. ESL eligibility is conditional; save, dependent-mod, asset and external-reference safety is not certified. The live MO2 plugin remains responsible for downloads and FOMOD installation. Benchmark uses a generated fixture, not a user's MO2 installation."
+            "Modhunter Rust engine\n\nimport --modlist PATH [--ini PATH] [--mods PATH] [--workers 1..32]\nprobe --endpoint http://127.0.0.1:PORT/\naudit-plugins --request PATH|-\nscan-sources --request PATH|-\nbenchmark [--mods 2500] [--rounds 5] [--workers 8]\n\nImport and plugin audits are read-only. ESL eligibility is conditional; save, dependent-mod, asset and external-reference safety is not certified. The live MO2 plugin remains responsible for downloads and FOMOD installation. Benchmark uses a generated fixture, not a user's MO2 installation."
         ),
         Some(command) => {
             return Err(format!("Unknown command: {command}. Run modhunter-cli --help").into());

@@ -48,7 +48,9 @@ $Process = $null
 $Failure = $null
 $StartedAt = [DateTime]::UtcNow
 $CriticalProductionFiles = @('plugin.py', 'bridge.py', 'model.py', 'focus.py',
-    'intelligence.py', 'plugin_intelligence.py', 'mod_health.py', 'web/index.html')
+    'intelligence.py', 'plugin_intelligence.py', 'mod_health.py',
+    'source_adapters.py', 'source_registry.py', 'update_plan.py', 'quick_update.py',
+    'install_brief.py', 'web/index.html')
 $Summary = [ordered]@{
     schemaVersion = 1
     test = 'mo2-native-fixture-smoke-orchestrator'

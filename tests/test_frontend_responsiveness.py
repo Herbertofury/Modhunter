@@ -25,8 +25,8 @@ def build_page():
     """Compile source in memory; do not rewrite another worker's artifacts."""
     replacements = {
         "/*__STYLE__*/": "\n".join((WEB / name).read_text("utf8") for name in
-            ("style.css", "aether_fx.css", "realm.css", "siege.css", "atelier.css", "mod_insights.css")),
-        "/*__SCRIPT__*/": (WEB / "mod_insights.js").read_text("utf8") + "\n" + (WEB / "app.js").read_text("utf8").replace(
+            ("style.css", "aether_fx.css", "realm.css", "siege.css", "atelier.css", "mod_insights.css", "source_insights.css")),
+        "/*__SCRIPT__*/": (WEB / "source_insights.js").read_text("utf8") + "\n" + (WEB / "mod_insights.js").read_text("utf8") + "\n" + (WEB / "app.js").read_text("utf8").replace(
             "/*__POWERSHELL__*/", json.dumps("")),
         "/*__CATALOG__*/": (WEB / "catalog.json").read_text("utf8").replace("</", "<\\/"),
         "/*__AETHER_SCRIPT__*/": (WEB / "aether_fx.js").read_text("utf8"),

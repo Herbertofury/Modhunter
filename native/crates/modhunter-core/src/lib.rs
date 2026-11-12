@@ -3,12 +3,15 @@ pub mod bridge;
 pub mod importer;
 pub mod ini;
 pub mod plugin_analysis;
+pub mod source_adapters;
 
 pub use bridge::{BridgeClient, BridgeHealth, validate_bridge_endpoint};
 pub use importer::{ImportRequest, ImportResult, ImportStats, ProfileImporter};
 pub use plugin_analysis::{
     PluginAnalyzer, PluginAuditRequest, PluginAuditResult, PluginMod, PluginState, audit_plugins,
 };
+
+pub use source_adapters::{SourceScanRequest, SourceScanResult, scan_sources};
 
 #[derive(Debug, thiserror::Error)]
 pub enum CoreError {

@@ -41,7 +41,13 @@ The browser tests use Chromium/Playwright. See `tests/` for actual game flows an
 
 ## Release layout
 
-The GitHub repository holds source code as normal text files and the complete release under `dist/`. The separate GitHub Wiki is sourced from `wiki/` and can be synchronized after its first Home page is initialized. The intended GitHub Wiki URL is [`Herbertofury/Modhunter/wiki`](https://github.com/Herbertofury/Modhunter/wiki).
+The GitHub repository holds current source code as normal text files. The `Rust desktop and MO2 readiness` workflow owns current Windows/MO2 release packaging and publishes only after its native, browser and installer gates pass. Its portable package includes the matching Rust helper required by the plugin's deep audit and source adapters.
+
+The separate `Verify Modhunter dashboard and standalone HTML` workflow preserves dashboard, legacy-source and Chromium checks, then uploads a `Modhunter-Standalone-HTML` CI artifact containing the current HTML, commit identity and checksum. It has read-only repository permissions and does not publish legacy Electron/MO2 archives or commit generated packages back to `main`.
+
+Files already under `dist/` and `web/` preserve earlier release outputs. They are not refreshed as substitutes for the tested Rust release. The current compiled standalone dashboard is `mo2_update_arsenal/web/index.html`; see [Standalone HTML](Standalone-HTML.md). The `release_v08.py` script remains available for reproducing the historical package layout, but it does not produce the current Windows/MO2 release.
+
+The separate GitHub Wiki is sourced from `wiki/` and can be synchronized after its first Home page is initialized. The intended GitHub Wiki URL is [`Herbertofury/Modhunter/wiki`](https://github.com/Herbertofury/Modhunter/wiki).
 
 [[Architecture]] · [[Frequently Asked Questions]]
 

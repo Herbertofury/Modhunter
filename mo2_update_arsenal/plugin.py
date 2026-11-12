@@ -163,12 +163,18 @@ class ModUpdateArsenal(mobase.IPluginTool):
             return {"ok": False, "error": f"MO2 download manager error: {ex}. Free accounts may need to initiate the download from Nexus."}
 
     def _download_url(self, payload: dict):
-        """Route verified public GitHub release archives through MO2 Downloads."""
-        url = str(payload.get("url") or "")
-        if not url.startswith("https://github.com/") or "/releases/download/" not in url:
-            return {"ok": False, "error": "Untrusted release archive URL rejected"}
+        """Resolve the exact reviewed public archive again on MO2's Qt thread."""
+        from .update_plan import validate_release_asset, PlanError
+        if not self.server:
+            return {"ok": False, "error": "Modhunter service is not running"}
         try:
-            download_id = int(self.org.downloadManager().startDownloadURLs([url]))
+            selected = validate_release_asset(self.server.selection_snapshot([str(payload.get("itemId") or "")]), payload)
+            if selected["url"] != payload.get("url") or selected["assetProof"] != payload.get("assetProof"):
+                raise PlanError("Release archive changed before native execution")
+        except PlanError as exc:
+            return {"ok": False, "error": str(exc)}
+        try:
+            download_id = int(self.org.downloadManager().startDownloadURLs([selected["url"]]))
             if download_id <= 0:
                 return {"ok": False, "error": "MO2 declined the source archive download"}
             return {"ok": True, "downloadId": download_id,
@@ -196,6 +202,11 @@ class ModUpdateArsenal(mobase.IPluginTool):
         status = self.server.downloads().get(download_id, {}) if self.server else {}
         if status.get("status") != "installing":
             return {"ok": False, "error": "The download is not complete"}
+        from .install_brief import build_install_brief
+        preflight = build_install_brief(self.server.selection_snapshot([str(status.get("itemId") or "")]),
+                                        {**status, "status": "complete"}, download_id)
+        if not preflight.get("canInstall"):
+            return {"ok": False, "error": "; ".join(preflight.get("errors") or ["Archive evidence changed before native installation"])}
         try:
             before = self.server.native_snapshot()
             if str(self.org.profileName()) != str(before.get("profileName") or ""):

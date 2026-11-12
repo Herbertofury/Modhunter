@@ -976,27 +976,7 @@ fn source_for(raw: &str, mod_id: u64, game: &str) -> Value {
         {
             sanitize_source_query(&mut url);
             url.set_fragment(None);
-            let host = url
-                .host_str()
-                .unwrap_or_default()
-                .trim_start_matches("www.");
-            let provider = [
-                ("nexusmods.com", "nexus"),
-                ("github.com", "github"),
-                ("gitlab.com", "gitlab"),
-                ("patreon.com", "patreon"),
-                ("loverslab.com", "loverslab"),
-                ("moddb.com", "moddb"),
-                ("curseforge.com", "curseforge"),
-                ("creations.bethesda.net", "bethesda"),
-                ("modding-guild.com", "modding-guild"),
-                ("dwemermods.com", "dwemer"),
-                ("modrinth.com", "modrinth"),
-            ]
-            .into_iter()
-            .find(|(domain, _)| host == *domain || host.ends_with(&format!(".{domain}")))
-            .map(|(_, p)| p)
-            .unwrap_or("website");
+            let provider = crate::source_adapters::provider_of(url.as_str());
             return json!({"type":provider,"verified":true,"kind":"project","label":format!("{} · MO2 URL", provider.to_uppercase()),"url":url.as_str()});
         }
     }
@@ -1027,6 +1007,10 @@ fn sanitize_source_query(url: &mut Url) {
                 && !matches!(
                     key.as_str(),
                     "token"
+                        | "private_token"
+                        | "auth_token"
+                        | "oauth_token"
+                        | "download_key"
                         | "access_token"
                         | "refresh_token"
                         | "id_token"

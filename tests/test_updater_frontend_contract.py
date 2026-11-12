@@ -8,6 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 APP = (ROOT / "mo2_update_arsenal/web/app.js").read_text(encoding="utf-8")
+SOURCES = (ROOT / "mo2_update_arsenal/web/source_insights.js").read_text(encoding="utf-8")
 PAGE = (ROOT / "mo2_update_arsenal/web/app.template.html").read_text(encoding="utf-8")
 
 
@@ -25,7 +26,8 @@ class UpdaterFrontendContractTests(unittest.TestCase):
         self.assertIn("function queueWorkshop()", APP)
         self.assertIn("async function performQueuedWorkshop(", APP)
         self.assertIn("bridgeRequest('POST','update-queue'", APP)
-        self.assertIn('data-source-kind="github"', APP)
+        self.assertIn('data-source-kind="release"', SOURCES)
+        self.assertIn("assetProof:b.dataset.assetProof", APP)
         self.assertIn('id="workshopResults"', PAGE)
         self.assertIn('id="workshopQueue"', PAGE)
 
@@ -41,12 +43,14 @@ class UpdaterFrontendContractTests(unittest.TestCase):
         self.assertIn("$('workshopRefreshDownloads').onclick", APP)
         self.assertIn("if(signature===WORKSHOP_TICKET_SIGNATURE)return", APP)
 
-    def test_github_and_nexus_files_can_both_appear_in_the_same_picker(self):
-        self.assertIn("const github=assets.length?", APP)
-        self.assertIn("if(!m.nexusId){$('filePickerFiles').innerHTML=github;filterFilePicker();return}", APP)
-        self.assertIn("'<div class=\"picker-source-title\">NEXUS MODS", APP)
-        self.assertIn("'<div class=\"picker-source-title\">GITHUB RELEASE", APP)
-        self.assertIn("EXACT FILES</div>'+nexus:'')+github", APP)
+    def test_file_picker_uses_bound_provider_and_lazy_exact_details(self):
+        self.assertIn("await loadSourceDetails(m)", APP)
+        self.assertIn("SOURCES.provider(m)==='nexus'", APP)
+        self.assertIn("SOURCES?.assetCards(detailed)", APP)
+        self.assertIn('data-asset-key="', SOURCES)
+        self.assertIn('data-asset-proof="', SOURCES)
+        self.assertIn("if(!nativeNexus)", APP)
+        self.assertIn("EXACT FILES</div>'+nexus:'')+releaseFiles", APP)
         self.assertIn("targetVersion:record.latestVersion", APP)
         self.assertIn("String(m.latestVersion||'')===String(choice.targetVersion||'')", APP)
         self.assertIn("data-retry-item-id", APP)

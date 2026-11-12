@@ -85,4 +85,4 @@ The test fixtures contain no user's mod list, Nexus account, commercial game or 
 
 ## Delivery status
 
-All work above is local. Automatic approval review previously rejected external source publication because explicit end-user approval to publish to `Herbertofury/Modhunter` was required. No retry or alternate publication route has been used for this candidate. Publishing the candidate, running its final native CI, merging after success and releasing the verified Windows artifacts remain awaiting that authorization.
+This is the historical local receipt for the first QoL candidate. The user subsequently explicitly authorized GitHub publication, pushing and merging on 2026-11-12. That candidate was published in [PR #1](https://github.com/Herbertofury/Modhunter/pull/1), and subsequent source-adapter and native integration work continues there. Consult the latest PR/CI commit for its results; these local counts and artifact hashes describe the earlier candidate only.

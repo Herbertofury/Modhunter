@@ -874,6 +874,8 @@ body[data-theme="snow"] .workshop-metric:last-child{border-right:0}
 .insight-next{padding-left:17px;font-size:12px;line-height:1.5}.insight-next li{margin:9px 0}.insight-next strong{display:block;color:var(--gold,#e2bc7a)}.insight-next span{color:var(--muted,#bcc3cc);font-size:11px}
 .plugin-fact{border:1px solid var(--line,#343b45);border-radius:7px;padding:9px;margin:8px 0}.plugin-fact summary{cursor:pointer;font-size:12px;line-height:1.5;overflow-wrap:anywhere}.plugin-fact summary span{font-size:10px;color:var(--muted,#bcc3cc);margin-left:6px}.insight-panel dl{display:grid;grid-template-columns:minmax(70px,100px) 1fr;gap:5px 10px;font-size:11px;margin:10px 0}.insight-panel dt{color:var(--muted,#bcc3cc)}.insight-panel dd{margin:0;overflow-wrap:anywhere}.insight-evidence,.insight-problems{padding-left:16px;font-size:11px;line-height:1.6;color:var(--muted,#bcc3cc)}.insight-problems{color:var(--red,#ec9395)}.insight-hash{font-size:9px;color:var(--muted,#bcc3cc);overflow-wrap:anywhere}.insight-hash code{display:block}.insight-text-button{font:inherit;border:0;background:none;color:var(--teal,#93d7c6);text-decoration:underline;cursor:pointer;padding:0}
 @media(max-width:600px){.insight-toolbar{padding:10px}.insight-toolbar label{width:100%}.insight-toolbar select{flex:1}.insight-panel{padding:11px}.insight-heading{flex-wrap:wrap}.insight-chip{font-size:9px}}
+
+.source-panel{border-color:color-mix(in srgb,var(--teal) 24%,var(--line))}.source-release-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:12px 0}.source-release-grid>div{min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:11px 12px}.source-release-grid small{display:block;color:var(--muted);font-size:10px;letter-spacing:.08em;text-transform:uppercase}.source-release-grid strong{display:block;font-size:16px;margin-top:5px;overflow-wrap:anywhere}.source-facts{display:grid;grid-template-columns:minmax(100px,1fr) 2fr;gap:7px 12px;font-size:11px;margin:14px 0}.source-facts dt{color:var(--muted)}.source-facts dd{margin:0;overflow-wrap:anywhere}.source-summary{font-size:12px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}.source-people{display:flex;flex-wrap:wrap;gap:10px;margin:12px 0}.source-person{display:grid;gap:4px;min-width:120px}.source-person>span{font-size:10px;color:var(--muted)}.source-person strong{font-size:12px}.source-person a,.source-disclosure a{color:var(--teal);text-decoration:none}.source-compatibility{border-left:2px solid var(--gold);padding:4px 12px;margin:15px 0;font-size:11px}.source-compatibility p{line-height:1.6;margin:6px 0}.source-disclosure{border-top:1px solid var(--line);padding:11px 0}.source-disclosure>summary{cursor:pointer;font-size:12px;color:var(--text);font-weight:600}.source-disclosure ul{list-style:none;margin:10px 0;padding:0;display:grid;gap:10px}.source-disclosure li{display:grid;gap:3px;font-size:11px;overflow-wrap:anywhere}.source-disclosure li>span{color:var(--muted)}.source-changelog{font:11px/1.7 var(--font-body,system-ui);white-space:pre-wrap;overflow-wrap:anywhere;max-height:340px;overflow:auto;padding:12px;background:var(--panel);border:1px solid var(--line);border-radius:6px;tab-size:2}.source-file-hashes{font-size:10px;margin-top:9px}.source-file-hashes summary{cursor:pointer;color:var(--teal)}.source-file-hashes p{overflow-wrap:anywhere;line-height:1.5}.source-file-hashes code{font-size:10px}.source-coverage{border:1px solid var(--line);border-radius:8px;background:var(--panel);margin:12px 0}.source-coverage>summary{padding:11px 14px;font-size:12px;cursor:pointer;color:var(--text)}.source-coverage>p{margin:0 14px 12px;font-size:11px;color:var(--muted);line-height:1.6}.source-coverage-table{overflow-x:auto;padding:0 14px 12px}.source-coverage table{width:100%;border-collapse:collapse;font-size:11px}.source-coverage th,.source-coverage td{text-align:left;padding:9px;border-bottom:1px solid var(--line);white-space:normal}.source-coverage thead th{font-size:10px;letter-spacing:.04em;color:var(--muted)}.source-coverage tbody th{font-weight:600;min-width:100px}.source-chips{margin-top:4px}.source-panel button:focus-visible,.source-coverage summary:focus-visible,.source-disclosure summary:focus-visible{outline:2px solid var(--teal);outline-offset:3px}@media(max-width:600px){.source-facts{grid-template-columns:90px minmax(0,1fr)}.source-release-grid strong{font-size:14px}.source-coverage th,.source-coverage td{padding:7px}}
 </style>
 </head>
 <body data-theme="night" data-density="compact">
@@ -992,6 +994,7 @@ body[data-theme="snow"] .workshop-metric:last-child{border-right:0}
       <div class="workshop-tools"><button class="button-bright quick-bulk" id="workshopQuickAll" type="button" disabled>ϟ Queue matched updates</button><button class="quiet-button" id="workshopReviewNext" type="button" disabled>Choose next file</button><button class="quiet-button" id="workshopRefresh" type="button">⟳ Refresh update plan</button><button class="quiet-button" id="workshopRefreshDownloads" type="button">↻ MO2 downloads</button><button class="quiet-button" id="workshopQueue" type="button">⇩ Queue selected files</button><button class="quiet-button" id="workshopInspectQueue" type="button" disabled>Inspect selection</button><button class="quiet-button" id="workshopExport" type="button">↓ Export plan</button></div>
       <div class="workshop-status" id="workshopStatus" role="status">Standalone mode: inspect and export your checklist. Connect through MO2 to review exact Nexus files and queue downloads.</div>
       <div class="workshop-summary" id="workshopSummary" aria-live="polite"></div>
+      <details class="source-coverage" id="sourceCoverage"><summary>Source coverage for this profile</summary><div id="sourceCoverageRows"></div><p>Adapters report the evidence each provider supplies. A source link identifies a project; it does not establish an available or compatible update.</p></details>
       <div class="workshop-filter"><label for="workshopFilter">Queue lane</label><select id="workshopFilter" aria-label="Filter workshop by update status"><option value="candidate">Update candidates</option><option value="review">Needs verification</option><option value="manual">Manual / unlinked</option><option value="current">Current</option><option value="risky">Compatibility watch</option><option value="ready">Ready to install</option><option value="all">Every installed mod</option></select><label for="workshopSearch">Find</label><input id="workshopSearch" placeholder="Search mods, versions, source…" autocomplete="off" aria-label="Search update workshop"></div>
       <div class="workshop-result-count" id="workshopVisibleCount" role="status"></div><div class="workshop-results" id="workshopResults" aria-live="polite"></div>
       <p class="workshop-foot">Update now selects an unambiguous version-matched main archive and opens the regular MO2 installer when ready. Complex editions remain selectable, with runtime and requirements visible. Offline HTML stays read-only.</p>
@@ -1047,7 +1050,7 @@ body[data-theme="snow"] .workshop-metric:last-child{border-right:0}
      <button class="quiet-button focus-btn" id="focusToggle" title="Switch to the compact checklist-only battle view (F)" aria-pressed="false">◎ Focus</button><button class="quiet-button mo2-link-btn" id="mo2Btn" title="Import actual Nexus IDs from your MO2 installed mod metadata">⌁ Link MO2</button><button class="quiet-button" id="backupBtn">↓ Export</button><button class="quiet-button" id="importBtn">↑ Restore</button><button class="quiet-button" id="csvBtn">⇩ CSV</button>
     </div>
     <div class="filterstrip"><div class="filterchips" id="filterChips"><button data-filter="all" class="active">All records</button><button data-filter="pending">To do</button><button data-filter="done">Cleared</button><button data-filter="review">Review</button><button data-filter="updates">ϟ Updates</button><button data-filter="risky">⚠ Watchlist</button><button data-filter="unlinked">No direct link</button><button data-filter="favorites">✧ Saved</button></div><button id="clearFilters" class="reset-filters">Reset filters</button></div>
-    <div class="insight-toolbar" aria-label="Plugin and mod health controls"><label for="insightFilter">Mod health<select id="insightFilter"><option value="all">Every mod</option><option value="maintenance">Needs maintenance</option><option value="esl-review">ESL review</option><option value="light">Already light / light override</option><option value="stale-conversion">ESLifier changes</option><option value="masters">Master issues</option><option value="bugs-disabled">Bugs disabled / hidden / locked</option><option value="bugs-unknown">Bugs unverified / unavailable</option></select></label><button class="quiet-button" type="button" id="analyzePlugins">Analyze plugins</button><p id="pluginAuditStatus" role="status">Inspect any mod for plugin and source evidence.</p></div>
+    <div class="insight-toolbar" aria-label="Plugin and mod health controls"><label for="insightFilter">Mod health<select id="insightFilter"><option value="all">Every mod</option><option value="maintenance">Needs maintenance</option><option value="esl-review">ESL review</option><option value="light">Already light / light override</option><option value="stale-conversion">ESLifier changes</option><option value="masters">Master issues</option><option value="bugs-disabled">Bugs disabled / hidden / locked</option><option value="bugs-unknown">Bugs unverified / unavailable</option><option value="source-stale">Source refresh needed</option><option value="source-manual">Source-page / account review</option><option value="source-dependencies">Declared dependencies</option><option value="source-incompatible">Source compatibility review</option></select></label><button class="quiet-button" type="button" id="analyzePlugins">Analyze plugins</button><p id="pluginAuditStatus" role="status">Inspect any mod for plugin and source evidence.</p></div>
     <div class="list-header"><span>STATE</span><span>PRIORITY</span><span>MOD / INSTALL NOTES</span><span>INSTALLED</span><span>FILE / RUNTIME SAFETY</span><span>FILE SOURCE</span><span>INSPECT</span></div>
     <div id="modList" class="modlist" aria-live="polite"></div>
     <div class="list-footer"><span id="listFooter">END OF YOUR CHRONICLE.</span><button id="backToTop">↑ Back to top</button></div>
@@ -1102,7 +1105,7 @@ body[data-theme="snow"] .workshop-metric:last-child{border-right:0}
   <div class="operation-actions"><button class="quiet-button" id="installPreviewCancel" type="button">Not now</button><button class="button-bright" id="installPreviewConfirm" type="button" disabled>Verifying…</button></div>
  </section>
 </div>
-<div class="modal-veil" id="filePickerVeil" hidden><div class="help-dialog file-picker" role="dialog" aria-modal="true" aria-labelledby="filePickerTitle"><button id="filePickerClose" class="close-button" aria-label="Close Nexus file picker">×</button><div class="kicker">LIVE NEXUS FILE RECONNAISSANCE</div><h2 id="filePickerTitle">Choose your armament</h2><p id="filePickerSummary" class="muted-help">Verify the selected build for your game and requirements before download.</p><div class="picker-searchbar"><label for="filePickerSearch">Find exact file</label><input id="filePickerSearch" type="search" autocomplete="off" placeholder="Filter by file name, version, description…" aria-label="Filter available release files"><span id="filePickerMatchCount" role="status" aria-live="polite"></span></div><div id="filePickerFiles" class="file-picker-files" aria-live="polite"></div><div class="picker-tail"><button id="filePickerNexus" class="quiet-button">↗ Open original files</button><button id="filePickerCancel" class="quiet-button">Cancel</button></div></div></div>
+<div class="modal-veil" id="filePickerVeil" hidden><div class="help-dialog file-picker" role="dialog" aria-modal="true" aria-labelledby="filePickerTitle"><button id="filePickerClose" class="close-button" aria-label="Close release file picker">×</button><div class="kicker">RELEASE FILES · EXACT PROVIDER EVIDENCE</div><h2 id="filePickerTitle">Choose your armament</h2><p id="filePickerSummary" class="muted-help">Verify the selected build for your game and requirements before download.</p><div class="picker-searchbar"><label for="filePickerSearch">Find exact file</label><input id="filePickerSearch" type="search" autocomplete="off" placeholder="Filter by file name, version, description…" aria-label="Filter available release files"><span id="filePickerMatchCount" role="status" aria-live="polite"></span></div><div id="filePickerFiles" class="file-picker-files" aria-live="polite"></div><div class="picker-tail"><button id="filePickerNexus" class="quiet-button">↗ Open original files</button><button id="filePickerCancel" class="quiet-button">Cancel</button></div></div></div>
 <div class="victory-overlay" id="victoryOverlay" hidden role="dialog" aria-modal="true" aria-labelledby="victoryTitle">
  <div class="victory-sky" id="victorySky" aria-hidden="true"></div>
  <div class="victory-runes" id="victoryRunes" aria-hidden="true"></div>
@@ -1300,7 +1303,104 @@ body[data-theme="snow"] .workshop-metric:last-child{border-right:0}
  function preview(){const r=document.querySelector('.mod-row:not(.done)')||document.querySelector('.mod-row');if(!r)return;r.scrollIntoView({block:'center',behavior:'instant'});requestAnimationFrame(()=>{if(!r.isConnected)return;select(r,{force:true});complete(r,{mode:document.getElementById('effectSelect')?.value||'random'});});}
  window.AetherFX=Object.freeze({config,select,complete,undo,favorite,hover,reveal,verified,preview,getState:()=>({particles:particles.length,rings:rings.length,beams:beams.length,selected,options:{...options},running:!!frame})});
 })();
-</script><script>/* Evidence presentation only. No filesystem, native IPC, network, or conversions. */
+</script><script>/* Provider evidence presentation. All remote text is inert; downloads use server-owned IDs. */
+(function(root){
+'use strict';
+const text=value=>String(value??'');
+const list=value=>Array.isArray(value)?value:[];
+const esc=value=>text(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const names={nexus:'Nexus Mods',github:'GitHub',gitlab:'GitLab',modrinth:'Modrinth',thunderstore:'Thunderstore',curseforge:'CurseForge',patreon:'Patreon',loverslab:'LoversLab',moddb:'Mod DB',bethesda:'Bethesda Creations',creations:'Bethesda Creations',dwemer:'Dwemer Mods','modding-guild':'Modding Guild','ko-fi':'Ko-fi',boosty:'Boosty',afdian:'Afdian',tumblr:'Tumblr',subscribestar:'SubscribeStar',modcollective:'Mod Collective',simsfinds:'SimsFinds',itch:'itch.io','itch.io':'itch.io',steam:'Steam Workshop',steamworkshop:'Steam Workshop',discord:'Discord',website:'Original website',unknown:'Unlinked source'};
+const safeURL=value=>{try{const u=new URL(value);return u.protocol==='https:'&&!u.username&&!u.password&&!u.port&&!/^(localhost|127\.|0\.|\[)/i.test(u.hostname)?u.href:''}catch{return''}};
+const link=(url,label)=>{const href=safeURL(url);return href?'<a href="'+esc(href)+'" target="_blank" rel="noopener noreferrer">'+esc(label)+' ↗</a>':''};
+const number=value=>Number.isSafeInteger(value)&&value>=0?value:null;
+const compatibilityAlerts={incompatible:'Game / loader mismatch',mismatch:'Game / loader mismatch','game-mismatch':'Game / loader mismatch','context-required':'Game / loader context needed','community-required':'Community review needed',deprecated:'Deprecated package',unsupported:'Unsupported game context'};
+const compatibilityLabels={compatible:'Declared game / loader match',matched:'Declared game / loader match','community-matched':'Declared community match',unknown:'Compatibility not established','not-declared':'Compatibility not declared',review:'Compatibility review required',...compatibilityAlerts};
+function provider(mod){return text(mod.update?.provider||mod.provider||mod.source?.type||(Number(mod.nexusId)>0?'nexus':'unknown')).toLowerCase()}
+function label(value){return names[value]||text(value||'Original source').replace(/[-_]/g,' ')}
+function checked(value){if(value===null||value===undefined||value==='')return'Not checked';const d=new Date(typeof value==='number'?value*1000:value);return Number.isFinite(d.getTime())?d.toLocaleString():'Time unavailable'}
+function hasAssets(mod){const update=mod.update||mod;return (number(update.releaseAssetCount)??list(update.releaseAssets).length)>0}
+function state(mod,now=Date.now()/1000){
+ const u=mod.update||{},caps=u.capabilities||mod.sourceCapabilities||(provider(mod)==='nexus'?{checkMode:'native-api',reviewedDownload:true,authentication:'mo2',reason:'Uses the connected MO2 Nexus integration.'}:{});
+ const stale=u.freshness==='stale'||(Number(u.expiresAt)>0&&Number(u.expiresAt)<=now);
+ const rateLimited=u.availability==='rate-limited'||Number(u.retryAt)>now;
+ let status=stale?'Refresh needed':rateLimited?'Provider cooldown':({fresh:'Fresh API evidence',cached:'Cached API evidence',revalidated:'Revalidated API evidence',unverified:'Not verified'})[u.freshness]||'Not checked';
+ if(!stale&&!rateLimited&&u.outcome==='unavailable')status='Source unavailable';
+ if(!stale&&!rateLimited&&['manual','api-key'].includes(caps.checkMode))status=caps.checkMode==='api-key'?'Provider key required':'Source-page review';
+ const compatibilityAlert=compatibilityAlerts[u.compatibility?.status];
+ if(compatibilityAlert)status=compatibilityAlert;
+ const tone=stale||rateLimited||compatibilityAlert?'warning':u.outcome==='unavailable'?'danger':u.freshness&&u.freshness!=='unverified'?'positive':'muted';
+ return {provider:provider(mod),caps,stale,rateLimited,status,tone,assets:number(u.releaseAssetCount)??list(u.releaseAssets).length,assetsKnown:number(u.releaseAssetCount)!==null||Array.isArray(u.releaseAssets),dependencies:number(u.dependencyCount)??list(u.dependencies).length,dependenciesKnown:number(u.dependencyCount)!==null||Array.isArray(u.dependencies)};
+}
+function chips(mod){
+ const u=mod.update||{},s=state(mod);
+ if(!u.capabilities&&!u.freshness&&!u.releaseId&&!u.outcome)return'';
+ const detail=s.caps.reason||u.reason||'Open source details for evidence and supported actions.';
+ const tag=(value,tone,title)=>'<button type="button" class="insight-chip '+tone+'" data-source-act="inspect" data-id="'+esc(mod.id)+'" title="'+esc(title)+'">'+esc(value)+'</button>';
+ return '<div class="mod-insights source-chips" aria-label="Source adapter evidence">'+tag(label(s.provider),'neutral',detail)+tag(s.status,s.tone,u.reason||s.status)+(s.dependencies?tag(s.dependencies+' declared dependenc'+(s.dependencies===1?'y':'ies'),'info','Provider declarations; installed dependency compatibility requires review.'):'')+'</div>';
+}
+function person(value,role){
+ if(!value)return'';
+ const p=typeof value==='string'?{name:value}:value;
+ const name=p.name||p.login||p.username||p.id;
+ if(!name)return'';
+ return '<div class="source-person"><span>'+esc(role)+'</span><strong>'+(link(p.url||p.profileUrl,name)||esc(name))+'</strong>'+(p.avatarUrl?'<span>'+link(p.avatarUrl,'Profile image')+'</span>':'')+'</div>';
+}
+function hashes(asset){return Object.entries(asset.hashes||{}).filter(([algorithm,value])=>typeof value==='string'&&value.length===({sha256:64,sha512:128,sha1:40,md5:32})[algorithm.toLowerCase()]&&/^[a-f0-9]+$/i.test(value))}
+function assetIdentity(asset){const id=Number(asset.assetId);return {assetKey:typeof asset.assetKey==='string'?asset.assetKey:'',assetProof:/^[a-f0-9]{64}$/i.test(asset.assetProof||'')?asset.assetProof:'',...(Number.isSafeInteger(id)&&id>0?{assetId:id}:{})}}
+function assetCards(mod){
+ const u=mod.update||{},p=provider(mod);
+ return list(u.releaseAssets).slice(0,256).map(asset=>{
+  const identity=assetIdentity(asset),digest=hashes(asset),size=number(asset.size);
+  if(!identity.assetKey&&!identity.assetId)return'';
+  const evidence=[label(asset.provider||p),size===null?'Size unavailable':new Intl.NumberFormat().format(size)+' bytes'];
+  if(asset.primary===true)evidence.push('Provider primary file');
+  return '<div class="picker-file"><div class="picker-file-main"><strong>'+esc(asset.name||'Release archive')+'</strong><span>'+esc(evidence.join(' · '))+'</span>'+(asset.contentType?'<span>'+esc(asset.contentType)+'</span>':'')+(digest.length?'<details class="source-file-hashes"><summary>Published checksums</summary>'+digest.map(([k,v])=>'<p>'+esc(k.toUpperCase())+' <code>'+esc(v)+'</code></p>').join('')+'<p>Provider metadata. Downloaded bytes still need verification.</p></details>':'<p class="picker-hint">No checksum published in this release record.</p>')+'<p class="picker-hint">'+esc(u.compatibility?.reason||'Review game runtime, variant and required dependencies.')+'</p></div><button class="button-bright" data-file-id="'+esc(identity.assetId||'')+'" data-asset-key="'+esc(identity.assetKey)+'" data-asset-proof="'+esc(identity.assetProof)+'" data-archive-name="'+esc(asset.name)+'" data-source-kind="release" data-source-provider="'+esc(asset.provider||p)+'">Select release file</button></div>';
+ }).join('');
+}
+function details(mod,{live=false,loading=false,error=''}={}){
+ const u=mod.update||{},s=state(mod),caps=s.caps;
+ const mode=({'native-api':'MO2 native API','public-api':'Public release API','manual':'Original page review','api-key':'Provider API key required'})[caps.checkMode]||'Run a source check';
+ let html='<section class="insight-panel source-panel"><div class="insight-heading"><div><span class="drawer-label">SOURCE & RELEASE</span><h3>'+esc(label(s.provider))+'</h3></div><span class="insight-depth">'+esc(s.status)+'</span></div>';
+ html+='<div class="source-release-grid"><div><small>Installed</small><strong>'+esc(mod.installedVersion||'Unknown')+'</strong></div><div><small>Published release</small><strong>'+esc(u.latestVersion||'Not established')+'</strong></div></div>';
+ if(loading)html+='<p class="insight-note" role="status">Loading release details…</p>';
+ if(error)html+='<p class="insight-alert">'+esc(error)+'</p>';
+ html+='<p class="insight-note">'+esc(u.reason||caps.reason||'Check this exact source to establish its release information.')+'</p>';
+ html+='<dl class="source-facts"><dt>Adapter</dt><dd>'+esc(mode)+'</dd><dt>Source checked</dt><dd>'+esc(checked(u.checkedAt))+'</dd><dt>Release published</dt><dd>'+esc(checked(u.publishedAt))+'</dd><dt>Download support</dt><dd>'+esc(caps.reviewedDownload?'Reviewed provider files → MO2':caps.authentication==='mo2'?'MO2 native download manager':'Open the original provider')+'</dd></dl>';
+ if(u.retryAt)html+='<p class="insight-note">Provider retry time: '+esc(checked(u.retryAt))+'.</p>';
+ if(u.summary)html+='<p class="source-summary">'+esc(text(u.summary).slice(0,4000))+'</p>';
+ html+='<div class="source-people">'+person(u.author,'Author')+person(u.publisher,'Release publisher')+'</div>';
+ const media=list(u.media).filter(x=>x&&safeURL(x.url));
+ if(u.iconUrl||media.length)html+='<details class="source-disclosure" data-source-section="media"><summary>Project images & media</summary><div class="insight-links">'+link(u.iconUrl,'Project icon')+media.slice(0,6).map((x,i)=>link(x.url,x.caption||'Project '+(x.type||'media')+' '+(i+1))).join('')+'</div></details>';
+ const compatibility=u.compatibility||{};
+ if(compatibility.status||compatibility.reason)html+='<div class="source-compatibility"><strong>'+esc(compatibilityLabels[compatibility.status]||'Compatibility review')+'</strong><p>'+esc(compatibility.reason||'Review the exact file for this profile.')+'</p>'+(list(compatibility.gameVersions).length?'<p>Game versions: '+list(compatibility.gameVersions).slice(0,40).map(esc).join(', ')+'</p>':'')+(list(compatibility.loaders).length?'<p>Loaders: '+list(compatibility.loaders).slice(0,20).map(esc).join(', ')+'</p>':'')+'</div>';
+ const dependencies=list(u.dependencies);
+ if(dependencies.length)html+='<details class="source-disclosure" data-source-section="dependencies"><summary>'+dependencies.length+' declared dependenc'+(dependencies.length===1?'y':'ies')+'</summary><ul>'+dependencies.slice(0,128).map(d=>'<li><strong>'+(link(d.url,d.name||d.projectId||d.versionId||'Dependency')||esc(d.name||d.projectId||d.versionId||'Unresolved dependency'))+'</strong><span>'+esc(d.kind||'Requirement')+(d.versionId?' · version '+esc(d.versionId):'')+'</span></li>').join('')+'</ul><p class="insight-note">These are provider declarations. They do not establish installed versions or satisfy plugin-master checks.</p></details>';
+ else if(s.dependencies)html+='<p class="insight-note">'+s.dependencies+' declared dependencies; open details to inspect them.</p>';
+ if(u.changelog)html+='<details class="source-disclosure" data-source-section="changelog"><summary>Release notes / changelog</summary><pre class="source-changelog">'+esc(text(u.changelog).slice(0,24000))+'</pre><p class="insight-note">Text supplied by the provider. Open the release for the original formatting and full content.</p></details>';
+ if(s.assets)html+='<p class="insight-note">'+s.assets+' published file'+(s.assets===1?'':'s')+' in this release.</p>';
+ html+='<div class="insight-links">'+link(u.releaseUrl,'Release & changelog')+link(mod.source?.url,'Original project')+'</div>';
+ if(live)html+='<div class="insight-actions"><button type="button" data-source-act="scan" data-id="'+esc(mod.id)+'">Check mod sources</button>'+(hasAssets(mod)&&u.verdict==='candidate'&&!s.stale&&!s.rateLimited&&!compatibilityAlerts[u.compatibility?.status]?'<button type="button" data-source-act="files" data-id="'+esc(mod.id)+'">Review release files</button>':'')+'</div>';
+ if(!live)html+='<p class="insight-note">Connect the MO2 plugin for source checks and reviewed downloads.</p>';
+ return html+'</section>';
+}
+function coverage(items){
+ const groups=new Map();
+ for(const mod of list(items)){
+  const s=state(mod),key=s.provider+'|'+(s.caps.checkMode||'unverified');
+  const row=groups.get(key)||{provider:s.provider,caps:s.caps,count:0,stale:0};row.count++;if(s.stale)row.stale++;groups.set(key,row);
+ }
+ const rows=[...groups.values()].sort((a,b)=>b.count-a.count||a.provider.localeCompare(b.provider));
+ return '<div class="source-coverage-table"><table><thead><tr><th scope="col">Source</th><th scope="col">Mods</th><th scope="col">Update checks</th><th scope="col">File workflow</th></tr></thead><tbody>'+rows.map(r=>'<tr><th scope="row">'+esc(label(r.provider))+'</th><td>'+r.count+(r.stale?' · '+r.stale+' stale':'')+'</td><td>'+esc(({'native-api':'MO2 native API','public-api':'Public release API','manual':'Original page review','api-key':'Provider key required'})[r.caps.checkMode]||'Check sources to establish support')+'</td><td>'+esc(r.caps.reviewedDownload?'Reviewed files in MO2':r.caps.authentication==='mo2'?'MO2 download manager':'Original provider page')+'</td></tr>').join('')+'</tbody></table></div>';
+}
+function matches(mod,filter){const s=state(mod);return filter==='source-stale'?s.stale||s.rateLimited:filter==='source-manual'?['manual','api-key'].includes(s.caps.checkMode):filter==='source-dependencies'?s.dependencies>0:filter==='source-incompatible'?!!compatibilityAlerts[mod.update?.compatibility?.status]:filter==='all'}
+function searchText(mod){const u=mod.update||{},s=state(mod);return [s.provider,label(s.provider),s.status,u.latestVersion,u.releaseId,u.availability,u.compatibility?.status,u.author?.name,u.publisher?.name,...list(u.dependencies).slice(0,128).map(d=>d.name||d.projectId||d.versionId)].map(text).join(' ').toLowerCase()}
+const csvHeaders=['Release provider','Release version','Release ID','Release URL','Release published at','Source checked at','Source expires at','Source freshness','Source availability','Adapter mode','Provider compatibility','Declared dependencies','Release files'];
+function csv(mod){const u=mod.update||{},s=state(mod);return [s.provider,u.latestVersion||'',u.releaseId||'',safeURL(u.releaseUrl),u.publishedAt||'',u.checkedAt||'',u.expiresAt||'',u.freshness||'',u.availability||'',s.caps.checkMode||'',u.compatibility?.status||'',s.dependenciesKnown?s.dependencies:'',s.assetsKnown?s.assets:'']}
+const api={provider,label,checked,state,hasAssets,chips,details,coverage,searchText,matches,csv,csvHeaders,assetCards,assetIdentity,safeURL};
+root.ModhunterSources=api;if(typeof module==='object'&&module.exports)module.exports=api;
+})(typeof window==='object'?window:globalThis);
+
+/* Evidence presentation only. No filesystem, native IPC, network, or conversions. */
 (function(root){
 'use strict';
 const text=v=>String(v??'');
@@ -1422,6 +1522,7 @@ const PALETTE={gold:'#e2b975',stone:'#92959d',purple:'#b78cde',violet:'#a26cfa',
 let STORAGE='dragonborn-mod-update-arsenal-v1';
 const BRIDGE=window.__MO2_BRIDGE_BOOT__||{active:false};
 const INSIGHTS=window.ModhunterInsights;
+const SOURCES=window.ModhunterSources;
 let LIVE_SCAN=null,LIVE_CATALOG=null,SCAN_TIMER=null,FILE_PICKER_MOD=null,LIVE_GENERATION=0,LIVE_REFRESH_BUSY=false;
 let WORKSHOP_PLAN=null,WORKSHOP_CHOICES=new Map(),WORKSHOP_BUSY=false,WORKSHOP_REVIEW_ID=null,FAST_PICKER_ID=null;
 let QUICK_RUNNING=false,QUICK_POLL=null,QUICK_SKIPPED=new Map();
@@ -1437,6 +1538,7 @@ let SEARCH_FRAME=null,SAVE_TIMER=null,SAVE_REVISION=0,PROGRESS_SYNC_CHAIN=Promis
 let RENDER_COUNTS=null,LOCAL_PLAN_CACHE=null;
 const BRIDGE_READS=new Map(),SOURCE_CACHE=new WeakMap(),SEARCH_CACHE=new WeakMap(),HTML_CACHE=new WeakMap();
 const INSIGHT_REQUESTS=new Map();
+const SOURCE_DETAIL_READS=new WeakMap(),SOURCE_DETAILS=new WeakMap();
 let GAME=null,GAME_SEEN=-1,PROGRESS_READY=false,PROGRESS_TIMER=null,NATIVE_SELECTED='',VICTORY_ACTIVE=null,VICTORY_TIMERS=[],PRACTICE_CROWNED=false;
 const BADGE_META=[['first-blood','First Blood','⚔',1],['apprentice','Apprentice Smith','🔨',5],['veteran','Veteran of the Forge','🛡',10],['archmage','Master Enchanter','✦',25],['dragonborn','Dragonborn','🐉',50],['legend','Legendary Smith','♛',100],['world-eater','World-Eater Defeated','👑',null]];
 
@@ -1467,6 +1569,8 @@ const resolveSrc=(m)=>{
 const getSrc=(m)=>{const custom=getRow(m.id).url||'',game=LIVE_CATALOG?.game||DATA?.game||'',cached=SOURCE_CACHE.get(m);if(cached&&cached.custom===custom&&cached.game===game)return cached.source;const source=resolveSrc(m);SOURCE_CACHE.set(m,{custom,game,source});return source};
 const isRisk=(m)=>{const {verdict}=getAudit(m);return ['hold','check','avoid','ae-only'].includes(verdict)||(m.flags||[]).some(f=>['HARD_ESP','HARD_ESM','DLL','NEMESIS'].includes(f))};
 const isUpdate=(m)=>m.update&&m.update.verdict==='candidate';
+const hasReleaseAssets=m=>SOURCES?SOURCES.hasAssets(m):Boolean(m.update?.releaseAssets?.length||m.releaseAssets?.length);
+const providerLabel=p=>SOURCES?.label(p)||p||'Original provider';
 const isDone=(m)=>getStatus(m)==='done';
 const isReview=(m)=>getStatus(m)==='review';
 const isFav=(m)=>Boolean(getRow(m.id).favorite);
@@ -1514,8 +1618,9 @@ function renderStats(){const c=counts();SET('sidePercent',c.percent+'%');$('side
  $all('[data-filter]').forEach(el=>{const on=el.dataset.filter===STORE.prefs.filter;el.classList.toggle('active',on);if(el.tagName==='BUTTON')el.setAttribute('aria-pressed',String(on))});
 }
 function tokenizeQuery(raw){const out=[];const re=/"([^"]+)"|(\S+)/g;let m;while((m=re.exec(raw)))out.push((m[1]||m[2]).trim().toLowerCase());return out}
-function textMatches(m,query,terms){if(!query)return true;let base=SEARCH_CACHE.get(m);if(!base){base={text:[m.name,m.installedVersion,m.screenshotNote,m.author,m.group,m.priority,(m.flags||[]).join(' '),INSIGHTS?.searchText(m)||''].join(' ').toLowerCase(),author:txt(m.author).toLowerCase(),group:txt(m.group).toLowerCase(),flags:(m.flags||[]).join(' ').toLowerCase(),version:txt(m.installedVersion).toLowerCase()};SEARCH_CACHE.set(m,base)}const row=getRow(m.id),str=base.text+' '+txt(row.note).toLowerCase()+' '+txt(row.installed).toLowerCase();return(terms||tokenizeQuery(query)).every(part=>{const ix=part.indexOf(':');if(ix>0){const p=part.slice(0,ix),v=part.slice(ix+1);if(p==='health'||p==='esl')return (INSIGHTS?.searchText(m)||'').includes(v);if(p==='author')return base.author.includes(v);if(p==='section'||p==='group')return base.group.includes(v);if(p==='flag')return base.flags.includes(v);if(p==='priority')return txt(m.priority).includes(v);if(p==='status')return getStatus(m).includes(v);if(p==='version')return base.version.includes(v);if(p==='note')return (m.screenshotNote+' '+txt(getRow(m.id).note)).toLowerCase().includes(v);}return str.includes(part)})}
-function filtered(){const f=STORE.prefs.filter,terms=tokenizeQuery(STORE.prefs.query);return DATA.items.filter(m=>(!INSIGHTS||INSIGHTS.matches(m,STORE.prefs.insight||'all'))&&textMatches(m,STORE.prefs.query,terms)&&(
+function healthFilterMatches(mod,filter){return filter.startsWith('source-')?Boolean(SOURCES?.matches(mod,filter)):!INSIGHTS||INSIGHTS.matches(mod,filter)}
+function textMatches(m,query,terms){if(!query)return true;let base=SEARCH_CACHE.get(m);if(!base){base={text:[m.name,m.installedVersion,m.screenshotNote,m.author,m.group,m.priority,(m.flags||[]).join(' '),INSIGHTS?.searchText(m)||'',SOURCES?.searchText(m)||''].join(' ').toLowerCase(),author:txt(m.author).toLowerCase(),group:txt(m.group).toLowerCase(),flags:(m.flags||[]).join(' ').toLowerCase(),version:txt(m.installedVersion).toLowerCase()};SEARCH_CACHE.set(m,base)}const row=getRow(m.id),str=base.text+' '+txt(row.note).toLowerCase()+' '+txt(row.installed).toLowerCase();return(terms||tokenizeQuery(query)).every(part=>{const ix=part.indexOf(':');if(ix>0){const p=part.slice(0,ix),v=part.slice(ix+1);if(p==='health'||p==='esl')return (INSIGHTS?.searchText(m)||'').includes(v);if(p==='source'||p==='provider')return (SOURCES?.searchText(m)||'').includes(v);if(p==='author')return (base.author+' '+(SOURCES?.searchText(m)||'')).includes(v);if(p==='section'||p==='group')return base.group.includes(v);if(p==='flag')return base.flags.includes(v);if(p==='priority')return txt(m.priority).includes(v);if(p==='status')return getStatus(m).includes(v);if(p==='version')return base.version.includes(v);if(p==='note')return (m.screenshotNote+' '+txt(getRow(m.id).note)).toLowerCase().includes(v);}return str.includes(part)})}
+function filtered(){const f=STORE.prefs.filter,terms=tokenizeQuery(STORE.prefs.query);return DATA.items.filter(m=>healthFilterMatches(m,STORE.prefs.insight||'all')&&textMatches(m,STORE.prefs.query,terms)&&(
  f==='all'||(f==='pending'&&getStatus(m)==='pending')||(f==='done'&&isDone(m))||(f==='review'&&isReview(m))||(f==='risky'&&isRisk(m))||(f==='unlinked'&&!getSrc(m).verified)||(f==='favorites'&&isFav(m))||(f==='updates'&&isUpdate(m))));}
 function classFor(m){const s=getStatus(m);return s==='done'?'done':s==='review'?'needs-review':s==='skipped'?'skipped':''}
 function assessmentHTML(m){const audit=getAudit(m),out=[];
@@ -1534,7 +1639,7 @@ function modHTML(m){const s=getSrc(m),sourceText=s.type==='creations'?'↗ Creat
  return `<article class="mod-row ${classFor(m)}" id="row-${escapeHTML(m.id)}" data-id="${escapeHTML(m.id)}">
  <div class="mod-status"><button class="complete-btn" data-act="complete" data-id="${m.id}" aria-label="${escapeHTML(statusLabel+' for '+m.name)}" title="${escapeHTML(statusLabel)}">${stat==='done'?'✓':stat==='review'?'!':''}</button></div>
  <div class="mod-priority">${m.priority}</div>
- <div class="mod-primary" data-priority="${m.priority}"><div class="mod-name-actions"><a class="mod-title source-title ${s.verified?'':'unknown'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHTML((s.verified?'Open source page for ':'Search for original source of ')+m.name)}" title="${escapeHTML(s.verified?'Open the original mod website in a new tab':'Source unknown: search for this mod in a new tab')}" data-act="source" data-id="${escapeHTML(m.id)}">${escapeHTML(m.name)}<span class="source-open-glyph" aria-hidden="true">↗</span></a>${BRIDGE.active?`<button class="mod-inline-locate" type="button" title="Reveal this mod in Mod Organizer 2" aria-label="Reveal ${escapeHTML(m.name)} in MO2" data-act="locate" data-id="${escapeHTML(m.id)}">⌖</button>`:''}</div>${note?`<div class="mod-note ${/do not|ctd|crash|hard esp|incompati|needs update|bugs/i.test(note)?'warning-note':''}" title="${escapeHTML(note)}">${escapeHTML(note)}</div>`:''}${INSIGHTS?.chips(m)||''}</div>
+ <div class="mod-primary" data-priority="${m.priority}"><div class="mod-name-actions"><a class="mod-title source-title ${s.verified?'':'unknown'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHTML((s.verified?'Open source page for ':'Search for original source of ')+m.name)}" title="${escapeHTML(s.verified?'Open the original mod website in a new tab':'Source unknown: search for this mod in a new tab')}" data-act="source" data-id="${escapeHTML(m.id)}">${escapeHTML(m.name)}<span class="source-open-glyph" aria-hidden="true">↗</span></a>${BRIDGE.active?`<button class="mod-inline-locate" type="button" title="Reveal this mod in Mod Organizer 2" aria-label="Reveal ${escapeHTML(m.name)} in MO2" data-act="locate" data-id="${escapeHTML(m.id)}">⌖</button>`:''}</div>${note?`<div class="mod-note ${/do not|ctd|crash|hard esp|incompati|needs update|bugs/i.test(note)?'warning-note':''}" title="${escapeHTML(note)}">${escapeHTML(note)}</div>`:''}${INSIGHTS?.chips(m)||''}${SOURCES?.chips(m)||''}</div>
  <div class="mod-version" title="Installed version recorded by source">${escapeHTML(getRow(m.id).installed||m.installedVersion)}${m.update?.latestVersion?`<small class="newer-version" title="Latest metadata, not necessarily compatible">→ ${escapeHTML(m.update.latestVersion)}</small>`:''}</div>
  <div class="mod-assessment">${assessmentHTML(m)}</div>
  <div class="mod-source"><a class="source-btn ${s.verified?'':'lookup'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" data-act="source" data-id="${m.id}" title="${escapeHTML(s.type==='creations'?'Exact Bethesda Creation listing. Install from in-game Creations menu.':s.verified?'Exact mod files page':'Search for the correct mod project; source not yet verified')}">${sourceText}</a></div>
@@ -1549,7 +1654,7 @@ function renderList(){const visible=filtered(),byGroup=new Map();for(const m of 
  if(!collapsed)html+=sorted.map(modHTML).join('');}
  setHTML($('modList'),html||`<div class="empty-state"><div class="empty-icon">ᛟ</div><h3>No foes in this chamber.</h3><p>Nothing matches your current search and filters.</p><button id="emptyReset">Clear filters</button></div>`);
  const listCounts=counts(),parts=[visible.length+' of '+DATA.items.length+' mods',byGroup.size+' chapters'];if(STORE.prefs.query)parts.push('query: '+STORE.prefs.query);SET('resultsMeta',parts.join(' · '));SET('listFooter',`YOU'VE REACHED THE END · ${visible.length} MATCHING MODS · ${listCounts.total-listCounts.unlinked} EXACT ORIGINAL SOURCES`);$('sortSelect').value=STORE.prefs.sort;}
-function render(){if(SEARCH_FRAME!==null){cancelAnimationFrame(SEARCH_FRAME);SEARCH_FRAME=null}RENDER_COUNTS=counts();try{groupProgress();renderStats();renderList();renderChapters();renderQuest();paintNativeSelection();renderWorkshop();renderInsightToolbar()}finally{RENDER_COUNTS=null}}
+function render(){if(SEARCH_FRAME!==null){cancelAnimationFrame(SEARCH_FRAME);SEARCH_FRAME=null}RENDER_COUNTS=counts();try{groupProgress();renderStats();renderList();renderChapters();renderQuest();paintNativeSelection();renderWorkshop();renderInsightToolbar();renderSourceCoverage()}finally{RENDER_COUNTS=null}}
 function renderSearch(){SEARCH_FRAME=null;renderList();paintNativeSelection()}
 function scheduleSearchRender(){if(DATA.items.length<1000){renderSearch();return}if(SEARCH_FRAME===null)SEARCH_FRAME=requestAnimationFrame(renderSearch)}
 function setStatus(m,status,withEffect=false,center){if(!['pending','done','review','skipped'].includes(status))return;const old=getStatus(m);if(old===status)return;const previousRow=$('row-'+m.id);const effectMode=STORE.prefs.effect==='random'?['shatter','fireworks','shot','slash','burn','arrow','frost','thunder'][Math.floor(Math.random()*8)]:STORE.prefs.effect;if(withEffect&&status==='done')window.AetherFX?.complete(previousRow,{mode:effectMode});else if(withEffect&&status==='pending')window.AetherFX?.undo(previousRow);getRow(m.id).status=old;STORE.rows[m.id]={...getRow(m.id),status,observedInstalledVersion:status==='done'?m.installedVersion:null,updatedAt:new Date().toISOString()};lastUndo={id:m.id,previous:old,next:status};save();render();if(withEffect&&status==='done')spawnFinisher(center||centerOfRow(m.id),effectMode);toast(status==='done'?'✦ '+m.name+' — quest cleared!'+(BRIDGE.active?' (manual, no ranked XP)':''):'Updated '+m.name,()=>undoLast(),'UNDO');if(!BRIDGE.active&&counts().total>0&&counts().done===counts().total&&!PRACTICE_CROWNED){PRACTICE_CROWNED=true;setTimeout(()=>launchVictory({verifiedMods:DATA.items.length,bonus:0,updates:DATA.items.length},true),420)}}
@@ -1566,6 +1671,7 @@ function drawInspector(m){openedId=m.id;STORE.lastSelected=m.id;save();const row
  const selected=(v)=>row.compat===v?'selected':'';const status=getStatus(m);
  $('drawerContent').innerHTML=`<div class="drawer-priority"><span>MO2 PRIORITY #${m.priority}</span><span>${escapeHTML(m.group)}</span><span>${BRIDGE.active?'LIVE PROFILE':'SCREENSHOT '+m.screenshot}</span></div>
  <div class="drawer-section drawer-alert" data-alert="${escapeHTML(audit.verdict)}"><span class="drawer-label" style="margin:0">${BRIDGE.active?'RUNTIME / FILE COMPATIBILITY CHECK':'1.5.97 COMPATIBILITY ADVISORY'}</span><strong>${escapeHTML(audit.verdict==='avoid'?'AVOID LATEST RELEASE':audit.verdict==='hold'?'HOLD / PICK LEGACY FILE':audit.verdict==='safe-file'?'SE BUILD LISTED':audit.verdict==='check'?'VERIFY SPECIFIC BUILD':'NOT YET VERIFIED')}</strong><p>${escapeHTML(audit.note||'The provided screenshots do not establish compatibility for a new release. Check the required game executable, SKSE, Address Library, BEES and masters before updating.')}</p>${audit.evidence?`<a class="drawer-link" href="${escapeHTML(audit.evidence)}" target="_blank" rel="noopener noreferrer">↗ View supporting source</a>`:''}</div>
+ <div id="modSourceDetails">${SOURCES?.details(sourceDetailMod(m),{live:BRIDGE.active})||''}</div>
  <div id="modInsightDetails">${INSIGHTS?.details(m,{live:BRIDGE.active,game:DATA.game,auditState:DATA.pluginAuditState||{}})||''}</div>
  <label class="drawer-label" for="drawerStatus">CHECKLIST STATUS</label><select class="drawer-field" id="drawerStatus"><option value="pending" ${status==='pending'?'selected':''}>◷ Not checked</option><option value="done" ${status==='done'?'selected':''}>✓ Updated / cleared</option><option value="review" ${status==='review'?'selected':''}>⚠ Needs investigation</option><option value="skipped" ${status==='skipped'?'selected':''}>⤼ Deliberately skipped</option></select>
  <div class="drawer-row"><div><label class="drawer-label" for="drawerInstalled">INSTALLED VERSION</label><input class="drawer-field" id="drawerInstalled" value="${escapeHTML(row.installed||m.installedVersion)}" placeholder="version"></div><div><label class="drawer-label" for="drawerVerifiedVersion">FILE YOU TESTED</label><input class="drawer-field" id="drawerVerifiedVersion" value="${escapeHTML(row.testedVersion||'')}" placeholder="e.g. SE 1.5.97 FOMOD"></div></div>
@@ -1592,9 +1698,10 @@ function drawInspector(m){openedId=m.id;STORE.lastSelected=m.id;save();const row
  if(BRIDGE.active&&$('drawerLocate'))$('drawerLocate').onclick=()=>locateInMO2(m,$('drawerLocate'));
  $('saveInspector').onclick=()=>saveInspection(false);
  $('markInspectorDone').onclick=()=>saveInspection(true);
- if(BRIDGE.active)void loadModInsights(m);
+ if(BRIDGE.active){void loadModInsights(m);void loadSourceDetails(m);}
 }
 function refreshInspectorInsights(){
+ refreshSourceDetails();
  const panel=$('modInsightDetails'),mod=ITEM_MAP.get(openedId);
  if(panel&&mod&&INSIGHTS){
   const expanded=new Map([...panel.querySelectorAll('details[data-plugin-name]')].map(el=>[el.dataset.pluginName,el.open]));
@@ -1602,6 +1709,38 @@ function refreshInspectorInsights(){
   for(const el of panel.querySelectorAll('details[data-plugin-name]'))if(expanded.has(el.dataset.pluginName))el.open=expanded.get(el.dataset.pluginName);
  }
 }
+function sourceDetailMod(mod){const detail=SOURCE_DETAILS.get(mod);return detail?.update?{...mod,update:{...mod.update,...detail.update}}:mod}
+function refreshSourceDetails(){
+ const panel=$('modSourceDetails'),mod=ITEM_MAP.get(openedId);if(!panel||!mod||!SOURCES)return;
+ const detail=SOURCE_DETAILS.get(mod)||{};
+ const expanded=new Map([...panel.querySelectorAll('details[data-source-section]')].map(el=>[el.dataset.sourceSection,el.open]));
+ setHTML(panel,SOURCES.details(sourceDetailMod(mod),{live:BRIDGE.active,loading:detail.loading,error:detail.error}));
+ for(const el of panel.querySelectorAll('details[data-source-section]'))if(expanded.has(el.dataset.sourceSection))el.open=expanded.get(el.dataset.sourceSection);
+}
+async function loadSourceDetails(mod){
+ if(!BRIDGE.active||!mod)return null;
+ if(SOURCE_DETAILS.get(mod)?.update)return SOURCE_DETAILS.get(mod).update;
+ if(SOURCE_DETAIL_READS.has(mod))return SOURCE_DETAIL_READS.get(mod);
+ const context=profileContext();SOURCE_DETAILS.set(mod,{loading:true});if(openedId===mod.id)refreshSourceDetails();
+ const task=(async()=>{
+  try{
+   const result=await bridgeRequest('GET','source-details?itemId='+encodeURIComponent(mod.id)+'&profileId='+encodeURIComponent(context.profile));
+   if(!contextIsCurrent(context)||result.profileId!==context.profile||ITEM_MAP.get(mod.id)!==mod)return null;
+   if(!result.update||typeof result.update!=='object')throw Error('Source details are not available. Refresh the source check.');
+   SOURCE_DETAILS.set(mod,{update:result.update});if(openedId===mod.id)refreshSourceDetails();return result.update;
+  }catch(ex){if(contextIsCurrent(context)&&ITEM_MAP.get(mod.id)===mod){SOURCE_DETAILS.set(mod,{error:ex.message});if(openedId===mod.id)refreshSourceDetails();}return null;}
+  finally{SOURCE_DETAIL_READS.delete(mod);}
+ })();SOURCE_DETAIL_READS.set(mod,task);return task;
+}
+function renderSourceCoverage(){const section=$('sourceCoverage'),rows=$('sourceCoverageRows');if(section?.open&&rows&&SOURCES)setHTML(rows,SOURCES.coverage(DATA.items));}
+if($('sourceCoverage'))$('sourceCoverage').addEventListener('toggle',renderSourceCoverage);
+document.addEventListener('click',async e=>{
+ const button=e.target.closest('[data-source-act]');if(!button)return;e.preventDefault();
+ const mod=ITEM_MAP.get(button.dataset.id||openedId);if(!mod)return;
+ if(button.dataset.sourceAct==='inspect'){if(openedId===mod.id){refreshSourceDetails();void loadSourceDetails(mod);}else drawInspector(mod);}
+ if(button.dataset.sourceAct==='scan')await scanLive('all');
+ if(button.dataset.sourceAct==='files')await reviewWorkshopFile(mod.id);
+});
 function renderInsightToolbar(){
  const select=$('insightFilter'),button=$('analyzePlugins');if(!select||!button)return;
  select.value=STORE.prefs.insight||'all';
@@ -1695,7 +1834,7 @@ async function copyToClipboard(value){try{await navigator.clipboard.writeText(va
 function exportJSON(){const obj={format:'Mod Update Arsenal Backup',version:1,createdAt:new Date().toISOString(),catalogId:DATA.catalogId,sourceRevision:DATA.sourceRevision,items:DATA.items.length,rows:STORE.rows,prefs:STORE.prefs,lastSelected:STORE.lastSelected,verifiedRuntime:STORE.verifiedRuntime};saveFile((BRIDGE.active?'MO2 Update Arsenal - '+(LIVE_CATALOG?.profileName||'Profile')+' - Progress.json':'Skyrim 1.5.97 - Mod Update Progress.json'),'application/json',JSON.stringify(obj,null,2));toast('↓ Full progress backup saved.');}
 function saveFile(name,type,body){const blob=new Blob([body],{type:type+';charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3500)}
 function csvCell(v){return'"'+txt(v).replace(/"/g,'""')+'"'}
-function exportCSV(){const cols=['Priority','Mod','Section','Installed version','Status','1.5.97 Verdict','Type Flags','Exact Source URL','Source Verified','Source Provider','Screenshot Note','User Note','Tested Version','Author'];const csv=[cols.map(csvCell).join(',')];cols.push('Winning light plugins','Winning full plugins','Light overrides','Flag-only candidates','Compaction review','ESLifier changes','Master issues','Plugin checked at','Bugs tab state','Nexus displayed bug count','Bugs checked at');csv[0]=cols.map(csvCell).join(',');for(const m of filtered()){const r=getRow(m.id),s=getSrc(m);const c=[m.priority,m.name,m.group,r.installed||m.installedVersion,getStatus(m),getAudit(m).verdict,m.flags.join(';'),s.verified?s.url:'',s.verified?'yes':'NO',s.label,m.screenshotNote,r.note||'',r.testedVersion||'',m.author];c.push(...(INSIGHTS?.csv(m)||Array(11).fill('')));csv.push(c.map(csvCell).join(','))}saveFile((BRIDGE.active?'MO2 Update Arsenal - Visible Mods.csv':'Skyrim 1.5.97 - Visible Mod Checklist.csv'),'text/csv','\ufeff'+csv.join('\r\n'));toast('⇩ CSV exported for '+filtered().length+' visible mods.');}
+function exportCSV(){const cols=['Priority','Mod','Section','Installed version','Status','1.5.97 Verdict','Type Flags','Exact Source URL','Source Verified','Source Provider','Screenshot Note','User Note','Tested Version','Author'];const csv=[cols.map(csvCell).join(',')];cols.push('Winning light plugins','Winning full plugins','Light overrides','Flag-only candidates','Compaction review','ESLifier changes','Master issues','Plugin checked at','Bugs tab state','Nexus displayed bug count','Bugs checked at');cols.push(...(SOURCES?.csvHeaders||[]));csv[0]=cols.map(csvCell).join(',');for(const m of filtered()){const r=getRow(m.id),s=getSrc(m);const c=[m.priority,m.name,m.group,r.installed||m.installedVersion,getStatus(m),getAudit(m).verdict,m.flags.join(';'),s.verified?s.url:'',s.verified?'yes':'NO',s.label,m.screenshotNote,r.note||'',r.testedVersion||'',m.author];c.push(...(INSIGHTS?.csv(m)||Array(11).fill('')),...(SOURCES?.csv(m)||[]));csv.push(c.map(csvCell).join(','))}saveFile((BRIDGE.active?'MO2 Update Arsenal - Visible Mods.csv':'Skyrim 1.5.97 - Visible Mod Checklist.csv'),'text/csv','\ufeff'+csv.join('\r\n'));toast('⇩ CSV exported for '+filtered().length+' visible mods.');}
 async function importJSON(file){if(!file)return;try{const obj=JSON.parse(await file.text());if(obj.catalogId!==DATA.catalogId||!obj.rows||typeof obj.rows!=='object')throw Error('This is not an Update Arsenal progress backup for the current catalog.');const imported=Object.entries(obj.rows).filter(([id])=>ITEM_MAP.has(id));if(!confirm('Restore '+imported.length+' saved mod records? This merges records from the backup into this browser.'))return;for(const[id,v]of imported)if(v&&typeof v==='object')STORE.rows[id]={...STORE.rows[id],...v};if(obj.prefs&&typeof obj.prefs==='object'){const allowed=Object.keys(BASE.prefs);for(const k of allowed)if(k in obj.prefs)STORE.prefs[k]=obj.prefs[k]}save();$('search').value=STORE.prefs.query;applyAppearance();render();toast('✓ Restored '+imported.length+' saved mod records.')}catch(e){toast('⚠ Restore failed: '+e.message)}finally{$('importFile').value=''}}
 // The optional PowerShell bridge is embedded as text, downloaded on demand and never executed by the browser.
 function mo2Open(){ $('mo2Veil').hidden=false; if(MO2_PENDING.length)drawMO2Matcher();else $('mo2Results').textContent=''; }
@@ -1893,7 +2032,7 @@ function activateLiveCatalog(c){
  SET('liveProfile',c.profileName+' / '+c.game);SET('liveCount',c.items.length+' mods · '+c.groups.length+' chapters');setBridgeConnection(true,'Live session. Your active MO2 profile is authoritative; the checklist is saved per profile.');
  $('liveSync').textContent='Snapshot: '+new Date().toLocaleTimeString();
  const chosen=STORE.prefs.filter;if(chosen==='updates'&&!c.items.some(isUpdate))STORE.prefs.filter='all';
- if(newProfile){closeInspector();}else{refreshInspectorInsights();if(openedId&&ITEM_MAP.has(openedId))void loadModInsights(ITEM_MAP.get(openedId));}
+ if(newProfile){closeInspector();}else{refreshInspectorInsights();if(openedId&&ITEM_MAP.has(openedId)){void loadModInsights(ITEM_MAP.get(openedId));void loadSourceDetails(ITEM_MAP.get(openedId));}}
  if(newProfile||changedRuntime||changedMods){WORKSHOP_PLAN=null;WORKSHOP_CHOICES.clear();QUEUE_PENDING=null;$('queueReviewVeil').hidden=true;INSTALL_PREVIEW_ID=0;$('installPreviewVeil').hidden=true;closeFilePicker();}
  if(newProfile){if(QUICK_POLL){clearTimeout(QUICK_POLL);QUICK_POLL=null;}QUICK_RUNNING=false;FAST_PICKER_ID=null;QUICK_SKIPPED.clear();WORKSHOP_TICKETS={};WORKSHOP_TICKET_SIGNATURE='';$('liveDownloadList').innerHTML='';renderDownloadPulse({});ACTIVITY_RECORDS=[];ACTIVITY_WARNING='';ACTIVITY_GENERATION++;renderActivity();refreshActivity();}
  applyAppearance();updateStorageIndicator();render();renderLiveStats();if(changedRuntime||changedMods)toast('⚠ Previous cleared checks need review: runtime or installed version changed.');
@@ -1930,7 +2069,7 @@ function workshopLocalPlan(){
   const lane=verdict==='candidate'?'candidate':['current','newer-installed'].includes(verdict)?'current':!Number(m.nexusId||0)?'manual':'review';
   summary[({candidate:'candidates',review:'review',manual:'manual',current:'current'})[lane]]++;
   const risky=isRisk(m);if(risky)summary.risky++;
-  return{id:m.id,name:m.name,nexusId:Number(m.nexusId||0),installedVersion:m.installedVersion||'',latestVersion:m.update?.latestVersion||'',verdict,lane,priority:m.priority,group:m.group,risks:risky?['Review compatibility and installation prerequisites']:[],sourceUrl:workshopSource(m),sourceVerified:!!workshopSource(m),provider:m.update?.provider||m.source?.type||'unknown',releaseAssets:m.update?.releaseAssets||[]};
+  return{id:m.id,name:m.name,nexusId:Number(m.nexusId||0),installedVersion:m.installedVersion||'',latestVersion:m.update?.latestVersion||'',verdict,lane,priority:m.priority,group:m.group,risks:risky?['Review compatibility and installation prerequisites']:[],sourceUrl:workshopSource(m),sourceVerified:!!workshopSource(m),provider:m.update?.provider||m.source?.type||'unknown',releaseAssets:m.update?.releaseAssets||[],releaseAssetCount:m.update?.releaseAssetCount??m.update?.releaseAssets?.length??0};
  });
  return{ok:true,profileId:LIVE_CATALOG?.profileId||'',profileName:LIVE_CATALOG?.profileName||'Standalone sample',game:DATA.game||'skyrimspecialedition',gameRuntime:DATA.gameRuntime||'unknown',summary,items};
 }
@@ -1974,7 +2113,7 @@ function renderWorkshop(){
  const ready=[...ticketsByMod.values()].filter(x=>x.status==='complete').length;
  const metrics=[['Candidates',summary.candidates,'candidate'],['Investigate',summary.review,'review'],['Manual sources',summary.manual,'manual'],['Current',summary.current,'current'],['Compatibility watch',summary.risky,'risky'],['Ready to install',ready,'ready']];
  setHTML($('workshopSummary'),metrics.map(([name,n,key])=>'<button type="button" class="workshop-metric'+(filter===key?' is-active':'')+'" data-lane="'+key+'" aria-pressed="'+(filter===key)+'"><strong>'+escapeHTML(n)+'</strong><small>'+escapeHTML(name)+'</small></button>').join(''));
- const visible=plan.items.filter(m=>(filter==='all'||m.lane===filter||filter==='risky'&&!!m.risks?.length||filter==='ready'&&ticketsByMod.get(m.id)?.status==='complete')&&(!query||[m.name,m.group,m.installedVersion,m.latestVersion,m.verdict].join(' ').toLowerCase().includes(query)));
+ const visible=plan.items.filter(m=>(filter==='all'||m.lane===filter||filter==='risky'&&!!m.risks?.length||filter==='ready'&&ticketsByMod.get(m.id)?.status==='complete')&&(!query||[m.name,m.group,m.installedVersion,m.latestVersion,m.verdict,SOURCES?.searchText(ITEM_MAP.get(m.id)||m)||''].join(' ').toLowerCase().includes(query)));
  SET('workshopVisibleCount',visible.length+' of '+plan.items.length+' mods shown');
  const html=visible.map(m=>{
   const choice=WORKSHOP_CHOICES.get(m.id);
@@ -1987,7 +2126,7 @@ function renderWorkshop(){
   const quickReason=QUICK_SKIPPED.get(m.id);
   const quickHint=quickReason&&!ticket?'<span class="workshop-choice-hint" title="'+escapeHTML(quickReason)+'">Choose edition · '+escapeHTML(quickReason)+'</span>':'';
   const ticketTag=ticket?'<span class="workshop-ticket-note">MO2 · '+escapeHTML(String(ticket.status||'').toUpperCase())+'</span>':'';
-  return '<article class="workshop-item" data-workshop-id="'+escapeHTML(m.id)+'"><div class="workshop-item-main"><div class="workshop-line"><span class="workshop-lane lane-'+escapeHTML(m.lane)+'">'+escapeHTML(m.lane.toUpperCase())+'</span><a class="workshop-item-title'+(exactSource?'':' source-unresolved')+'" href="'+escapeHTML(src)+'" target="_blank" rel="noopener noreferrer" data-workshop-act="source" data-id="'+escapeHTML(m.id)+'" title="'+escapeHTML(exactSource?'Open original project website':'Find the original project; source not verified')+'" aria-label="'+escapeHTML((exactSource?'Open source website for ':'Search for source of ')+m.name)+'">'+escapeHTML(m.name)+'<span class="source-open-glyph" aria-hidden="true">↗</span></a>'+(BRIDGE.active?'<button type="button" class="workshop-inline-locate" data-workshop-act="locate" data-id="'+escapeHTML(m.id)+'" aria-label="Reveal '+escapeHTML(m.name)+' in MO2" title="Reveal this mod in Mod Organizer 2">⌖</button>':'')+'</div><small>'+escapeHTML(m.group||'MO2 profile')+' · '+escapeHTML(m.installedVersion||'?')+' → '+escapeHTML(m.latestVersion||'?')+'</small>'+(INSIGHTS?.chips(match)||'')+'<div class="workshop-tags">'+(warning?'<span class="workshop-warning">⚠ '+escapeHTML(m.risks.join(' · '))+'</span>':'')+(choice?'<span class="workshop-selected">✓ Reviewed file #'+escapeHTML(choice.fileId||choice.assetId)+'</span><button type="button" class="workshop-remove" data-workshop-act="remove" data-id="'+escapeHTML(m.id)+'" aria-label="Remove reviewed file for '+escapeHTML(m.name)+'">× Remove file</button>':'')+ticketTag+quickHint+'</div></div><div class="workshop-item-actions"><a target="_blank" rel="noopener noreferrer" href="'+escapeHTML(src)+'" title="'+escapeHTML(exactSource?'Open the source website':'Find the original source')+'">'+(exactSource?'↗ Project website':'⌕ Find project')+'</a>'+(hasAlternateRelease?'<a target="_blank" rel="noopener noreferrer" href="'+escapeHTML(release)+'" title="Open the published release page">↗ Latest release</a>':'')+(BRIDGE.active&&compatible&&(m.nexusId||m.releaseAssets?.length)?ticket?'<button type="button" class="quiet-button" data-workshop-act="downloads" data-id="'+escapeHTML(m.id)+'">View download</button>':'<button type="button" class="button-bright quick-update" data-workshop-act="quick" data-id="'+escapeHTML(m.id)+'">ϟ Update now</button><button type="button" class="quiet-button" data-workshop-act="review" data-id="'+escapeHTML(m.id)+'">Choose file</button>':'')+'</div></article>';
+  return '<article class="workshop-item" data-workshop-id="'+escapeHTML(m.id)+'"><div class="workshop-item-main"><div class="workshop-line"><span class="workshop-lane lane-'+escapeHTML(m.lane)+'">'+escapeHTML(m.lane.toUpperCase())+'</span><a class="workshop-item-title'+(exactSource?'':' source-unresolved')+'" href="'+escapeHTML(src)+'" target="_blank" rel="noopener noreferrer" data-workshop-act="source" data-id="'+escapeHTML(m.id)+'" title="'+escapeHTML(exactSource?'Open original project website':'Find the original project; source not verified')+'" aria-label="'+escapeHTML((exactSource?'Open source website for ':'Search for source of ')+m.name)+'">'+escapeHTML(m.name)+'<span class="source-open-glyph" aria-hidden="true">↗</span></a>'+(BRIDGE.active?'<button type="button" class="workshop-inline-locate" data-workshop-act="locate" data-id="'+escapeHTML(m.id)+'" aria-label="Reveal '+escapeHTML(m.name)+' in MO2" title="Reveal this mod in Mod Organizer 2">⌖</button>':'')+'</div><small>'+escapeHTML(m.group||'MO2 profile')+' · '+escapeHTML(m.installedVersion||'?')+' → '+escapeHTML(m.latestVersion||'?')+'</small>'+(INSIGHTS?.chips(match)||'')+(SOURCES?.chips(match)||'')+'<div class="workshop-tags">'+(warning?'<span class="workshop-warning">⚠ '+escapeHTML(m.risks.join(' · '))+'</span>':'')+(choice?'<span class="workshop-selected">✓ Reviewed file #'+escapeHTML(choice.fileId||choice.assetKey||choice.assetId)+'</span><button type="button" class="workshop-remove" data-workshop-act="remove" data-id="'+escapeHTML(m.id)+'" aria-label="Remove reviewed file for '+escapeHTML(m.name)+'">× Remove file</button>':'')+ticketTag+quickHint+'</div></div><div class="workshop-item-actions"><a target="_blank" rel="noopener noreferrer" href="'+escapeHTML(src)+'" title="'+escapeHTML(exactSource?'Open the source website':'Find the original source')+'">'+(exactSource?'↗ Project website':'⌕ Find project')+'</a>'+(hasAlternateRelease?'<a target="_blank" rel="noopener noreferrer" href="'+escapeHTML(release)+'" title="Open the published release page">↗ Latest release</a>':'')+(BRIDGE.active&&compatible&&(INSIGHTS?.isNexus(match)||hasReleaseAssets(m))?ticket?'<button type="button" class="quiet-button" data-workshop-act="downloads" data-id="'+escapeHTML(m.id)+'">View download</button>':'<button type="button" class="button-bright quick-update" data-workshop-act="quick" data-id="'+escapeHTML(m.id)+'">ϟ Update now</button><button type="button" class="quiet-button" data-workshop-act="review" data-id="'+escapeHTML(m.id)+'">Choose file</button>':'')+'</div></article>';
  }).join('')||'<div class="workshop-empty">No mods in this lane. Change the filter or run a deeper audit.</div>';
  setHTML(area,html);
  $('workshopQueue').disabled=!BRIDGE.active||!LIVE_CONNECTED||!selected.length||WORKSHOP_BUSY;
@@ -2009,16 +2148,20 @@ async function refreshWorkshop(){
  for(const [id,choice] of WORKSHOP_CHOICES){const m=candidates.get(id);if(choice.profileId!==profile||!m||!(m.installedVersion===choice.installedVersion&&String(m.latestVersion||'')===String(choice.targetVersion||'')))WORKSHOP_CHOICES.delete(id);}
  renderWorkshop();workshopSetStatus('Ready: use Update now for a one-click download and interactive MO2 install, or choose any file manually.');
 }
-function exportWorkshop(){
- const plan=currentWorkshopPlan();
- const data={format:'Modhunter Reviewed Update Plan',version:1,exportedAt:new Date().toISOString(),profileId:plan.profileId,profileName:plan.profileName,game:plan.game,gameRuntime:plan.gameRuntime,summary:plan.summary,items:plan.items,reviewedFiles:[...WORKSHOP_CHOICES.values()]};
+async function exportWorkshop(){
+ const context=profileContext();let plan=currentWorkshopPlan();
+ if(BRIDGE.active){
+  try{plan=await bridgeRequest('GET','update-plan?details=full');if(!contextIsCurrent(context)||plan.profileId!==context.profile)return;}
+  catch(ex){workshopSetStatus('Could not export complete source evidence: '+ex.message);return;}
+ }
+ const data={format:'Modhunter Reviewed Update Plan',version:2,exportedAt:new Date().toISOString(),profileId:plan.profileId,profileName:plan.profileName,game:plan.game,gameRuntime:plan.gameRuntime,summary:plan.summary,items:plan.items,reviewedFiles:[...WORKSHOP_CHOICES.values()].filter(x=>x.profileId===plan.profileId)};
  saveFile('Modhunter-Update-Plan-'+(plan.profileName||'Standalone').replace(/[^\w-]+/g,'-')+'.json','application/json',JSON.stringify(data,null,2));
- workshopSetStatus('Exported the full plan, including manual/unlinked mods and any explicit file reviews.');
+ workshopSetStatus('Exported the complete plan with source evidence, manual/unlinked mods and exact file selections.');
 }
 async function reviewWorkshopFile(id){
- const m=ITEM_MAP.get(id);if(!m||!BRIDGE.active||(!m.nexusId&&!m.update?.releaseAssets?.length))return;
+ const m=ITEM_MAP.get(id);if(!m||!BRIDGE.active||(!INSIGHTS?.isNexus(m)&&!hasReleaseAssets(m)))return;
  const plan=currentWorkshopPlan(),record=plan.items.find(x=>x.id===id);
- if(!record||record.lane!=='candidate'){toast('This mod needs a fresh Nexus scan or manual review.');return}
+ if(!record||record.lane!=='candidate'){toast('This mod needs a fresh source check or manual review.');return}
  WORKSHOP_REVIEW_ID=id;
  await openFilePicker(m);
  if(FILE_PICKER_MOD!==m||WORKSHOP_REVIEW_ID!==id)return;
@@ -2043,7 +2186,7 @@ function inspectQueue(){
  SET('queueReviewSummary',plan.profileName+' · '+(plan.gameRuntime||'Unknown runtime')+' · '+warnings+' with compatibility advisories');
  $('queueReviewRows').innerHTML=entries.map((x,i)=>{
   const m=plan.items.find(row=>row.id===x.itemId)||{};
-  return '<article class="queue-review-row"><span class="queue-review-index">'+String(i+1).padStart(2,'0')+'</span><div><strong>'+escapeHTML(m.name||x.itemId)+'</strong><span>'+escapeHTML(x.displayName&&x.displayName!==x.fileName?x.displayName+' · '+x.fileName:x.fileName||('File #'+(x.fileId||x.assetId)))+'</span><small>'+escapeHTML(x.kind==='source'?'GitHub release':'Nexus Mods')+' · '+escapeHTML(x.installedVersion)+' → '+escapeHTML(x.targetVersion||'?')+(m.risks?.length?' · COMPATIBILITY WATCH':'')+'</small></div></article>';
+  return '<article class="queue-review-row"><span class="queue-review-index">'+String(i+1).padStart(2,'0')+'</span><div><strong>'+escapeHTML(m.name||x.itemId)+'</strong><span>'+escapeHTML(x.displayName&&x.displayName!==x.fileName?x.displayName+' · '+x.fileName:x.fileName||('File #'+(x.fileId||x.assetKey||x.assetId)))+'</span><small>'+escapeHTML(x.kind==='source'?providerLabel(x.provider||m.provider):'Nexus Mods')+' · '+escapeHTML(x.installedVersion)+' → '+escapeHTML(x.targetVersion||'?')+(m.risks?.length?' · COMPATIBILITY WATCH':'')+'</small></div></article>';
  }).join('');
  $('queueReviewConfirm').textContent='Queue '+entries.length+' approved download'+(entries.length===1?'':'s');
  $('queueReviewVeil').hidden=false;$('queueReviewConfirm').focus({preventScroll:true});
@@ -2154,7 +2297,7 @@ function nextWorkshopCandidate(){
  const plan=currentWorkshopPlan(),busyIds=new Set(Object.values(WORKSHOP_TICKETS)
    .filter(t=>!['failed','removed'].includes(t.status)).map(t=>t.itemId));
  return plan.items.find(row=>row.lane==='candidate'&&!WORKSHOP_CHOICES.has(row.id)
-   &&!busyIds.has(row.id)&&(row.nexusId||row.releaseAssets?.length))||null;
+   &&!busyIds.has(row.id)&&(INSIGHTS?.isNexus(ITEM_MAP.get(row.id)||row)||hasReleaseAssets(row)))||null;
 }
 function reviewNextWorkshopCandidate(){
  const row=nextWorkshopCandidate();
@@ -2395,7 +2538,7 @@ async function refreshDownloads(){
    const title=state==='complete'?'Ready to install':state==='installing'?'MO2 installer open':state==='installed'?(d.verifiedUpdate?'Update confirmed':'Installed · needs verification'):state==='downloading'?'Downloading':state==='paused'?'Paused in MO2':state==='failed'?'Download failed':state==='removed'?'Removed from MO2':state;
    const detail=state==='complete'?'Profile snapshot and interactive FOMOD/overwrite review before installing':state==='installing'?'Finish the installer prompts inside MO2':state==='installed'?(d.verifiedUpdate?'Version change confirmed in MO2':'Rescan and verify the installed version and overwrite order'):state==='paused'?'Resume in the MO2 Downloads pane':state==='failed'?'Review an exact file to try again':state==='downloading'?'MO2 is handling this archive':'Check MO2 Downloads';
    const buttons=state==='complete'?'<button class="button-bright" data-download-id="'+escapeHTML(id)+'">ϟ Install now</button><button class="quiet-button" data-download-details="'+escapeHTML(id)+'">Details</button>':state==='failed'&&d.retriedBy?'<span class="ticket-requeued">Requeued as #'+escapeHTML(d.retriedBy)+'</span>':state==='failed'&&mod?'<button class="button-bright" data-retry-download-id="'+escapeHTML(id)+'">↻ Retry now</button><button class="quiet-button" data-retry-item-id="'+escapeHTML(d.itemId)+'">Choose another file</button>':'';
-   return '<article class="download-ticket ticket-'+escapeHTML(safeState)+'" data-ticket-item-id="'+escapeHTML(d.itemId||'')+'"><i class="ticket-status-dot" aria-hidden="true"></i><div class="ticket-copy"><strong>'+escapeHTML(name)+'</strong><span>'+escapeHTML(title)+' · '+(d.provider==='github'?'GitHub release':'Nexus Mods')+' · #'+escapeHTML(id)+'</span><small>'+escapeHTML(d.lastError||detail)+'</small></div>'+buttons+'</article>';
+   return '<article class="download-ticket ticket-'+escapeHTML(safeState)+'" data-ticket-item-id="'+escapeHTML(d.itemId||'')+'"><i class="ticket-status-dot" aria-hidden="true"></i><div class="ticket-copy"><strong>'+escapeHTML(name)+'</strong><span>'+escapeHTML(title)+' · '+(providerLabel(d.provider||'nexus'))+' · #'+escapeHTML(id)+'</span><small>'+escapeHTML(d.lastError||detail)+'</small></div>'+buttons+'</article>';
   }).join(''):'';
   renderWorkshop();
   await refreshActivity();
@@ -2417,34 +2560,39 @@ function filterFilePicker(){
 }
 $('filePickerSearch').oninput=filterFilePicker;
 async function openFilePicker(m){
- const assets=Array.isArray(m.update?.releaseAssets)?m.update.releaseAssets:[];
- if(!BRIDGE.active||(!m.nexusId&&!assets.length)){toast('No verified download assets for this source.');return}
+ const nativeNexus=Boolean(INSIGHTS?.isNexus(m)&&(!SOURCES||SOURCES.provider(m)==='nexus'));
+ if(!BRIDGE.active||(!nativeNexus&&!hasReleaseAssets(m))){toast('No verified download assets for this source.');return}
  const context=profileContext();FILE_PICKER_MOD=m;
- $('filePickerSearch').value='';
- $('filePickerMatchCount').textContent='Loading…';
+ $('filePickerSearch').value='';$('filePickerMatchCount').textContent='Loading…';
  $('filePickerTitle').textContent=m.name;
  $('filePickerSummary').textContent='Installed: '+m.installedVersion+' · Target runtime: '+(DATA.gameRuntime||'unknown')+'. Inspect file version, requirements and FOMOD instructions.';
  $('filePickerVeil').hidden=false;$('filePickerFiles').innerHTML='<div class="picker-loading">Loading exact file choices…</div>';
- const github=assets.length?'<div class="picker-source-title">GITHUB RELEASE · PUBLIC ARCHIVES</div>'+assets.map(f=>'<div class="picker-file"><div class="picker-file-main"><strong>'+escapeHTML(f.name)+'</strong><span>GitHub release · '+Math.round((f.size||0)/1024)+' KB · verify requirements and game runtime</span></div><button class="button-bright" data-file-id="'+Number(f.assetId)+'" data-archive-name="'+escapeHTML(f.name)+'" data-source-kind="github">Select release asset</button></div>').join(''):'';
- if(!m.nexusId){$('filePickerFiles').innerHTML=github;filterFilePicker();return}
+ if(m.update?.detailsAvailable||(!m.update?.releaseAssets?.length&&hasReleaseAssets(m))){
+  await loadSourceDetails(m);
+  if(FILE_PICKER_MOD!==m||!contextIsCurrent(context)||ITEM_MAP.get(m.id)!==m)return;
+ }
+ const detailed=sourceDetailMod(m),assets=Array.isArray(detailed.update?.releaseAssets)?detailed.update.releaseAssets:[];
+ const releaseFiles=assets.length?'<div class="picker-source-title">'+escapeHTML(providerLabel(SOURCES?.provider(detailed)||detailed.update?.provider))+' · PUBLISHED RELEASE FILES</div>'+(SOURCES?.assetCards(detailed)||''):'';
+ if(!nativeNexus){
+  $('filePickerFiles').innerHTML=releaseFiles||'<div class="picker-error">'+escapeHTML(SOURCE_DETAILS.get(m)?.error||'Release files are unavailable. Refresh the source check and inspect the original release.')+'</div>';
+  filterFilePicker();return;
+ }
  try{
   const j=await bridgeRequest('GET','files?modId='+m.nexusId+'&itemId='+encodeURIComponent(m.id));
   if(!j.ok)throw Error(j.error||'Nexus file review unavailable');
-  if(FILE_PICKER_MOD!==m||!contextIsCurrent(context))return; // Do not repaint a picker that was closed or changed.
+  if(FILE_PICKER_MOD!==m||!contextIsCurrent(context))return;
   const nexus=(j.files||[]).map(f=>{
    const tag=f.suggested?'◈ VERSION-MATCHED MAIN FILE':f.releaseVersionMatch?'✓ PROJECT VERSION MATCH':f.category===1?'MAIN FILE':'OPTIONAL / OTHER';
    return '<div class="picker-file'+(f.suggested?' picker-suggested':'')+'"><div class="picker-file-main"><span class="picker-match-tag">'+escapeHTML(tag)+'</span><strong>'+escapeHTML(f.name)+'</strong><span>v'+escapeHTML(f.version||'?')+' · '+escapeHTML(f.fileName||'')+' · '+escapeHTML(f.sizeInKB||'?')+' KB '+(f.category===1?' · MAIN FILE':'')+'</span>'+(f.reviewHint?'<p class="picker-hint">'+escapeHTML(f.reviewHint)+'</p>':'')+(f.description?'<p class="picker-file-desc">'+escapeHTML(f.description)+'</p>':'')+'</div><button class="button-bright" data-file-id="'+Number(f.fileId)+'" data-file-version="'+escapeHTML(f.version||'')+'" data-mod-id="'+Number(m.nexusId)+'" data-archive-name="'+escapeHTML(f.fileName||f.name)+'">Select Nexus file</button></div>';
   }).join('');
-  if(!nexus&&!github)throw Error('No files available for this project');
-  $('filePickerFiles').innerHTML=(nexus?'<div class="picker-source-title">NEXUS MODS · EXACT FILES</div>'+nexus:'')+github;
-  if(j.reviewAdvice?.hasUniqueMainMatch)$('filePickerSummary').textContent='One main Nexus file matches the published project version. This is NOT compatibility approval: verify game/runtime, required files, and FOMOD options.';
+  if(!nexus&&!releaseFiles)throw Error('No files available for this project');
+  $('filePickerFiles').innerHTML=(nexus?'<div class="picker-source-title">NEXUS MODS · EXACT FILES</div>'+nexus:'')+releaseFiles;
+  if(j.reviewAdvice?.hasUniqueMainMatch)$('filePickerSummary').textContent='One main Nexus file matches the published project version. Verify game/runtime, required files, and FOMOD options.';
   else if(j.reviewAdvice?.matchingMainFiles>1)$('filePickerSummary').textContent='Several main files share the published version. Compare the variants carefully for your runtime and mod configuration.';
-  else if(github)$('filePickerSummary').textContent='Both Nexus and GitHub releases are available. Choose the correct source and verify the exact archive against your game runtime.';
   filterFilePicker();
  }catch(ex){
   if(FILE_PICKER_MOD!==m||!contextIsCurrent(context))return;
-  $('filePickerFiles').innerHTML='<div class="picker-error">'+escapeHTML(ex.message)+'<p>Use the original Nexus Files page and Mod Manager Download if required by your account.</p></div>'+github;
-  if(github)$('filePickerSummary').textContent='Nexus files are currently unavailable. You can still review the verified public GitHub release files below.';
+  $('filePickerFiles').innerHTML='<div class="picker-error">'+escapeHTML(ex.message)+'<p>Use the original Nexus Files page and Mod Manager Download if required by your account.</p></div>'+releaseFiles;
   filterFilePicker();
  }
 }
@@ -2458,10 +2606,10 @@ $('filePickerFiles').addEventListener('click',async e=>{const b=e.target.closest
   const picked=b.closest('.picker-file'),label=picked?.querySelector('strong')?.textContent||'Selected file';
   // Exact archive selection is the user action; compatibility hints stay visible.
   const riskAcknowledged=true;
-  const sourceChoice=b.dataset.sourceKind==='github';
+  const sourceChoice=b.dataset.sourceKind==='release';
   const exactFile={fileName:b.dataset.archiveName||label,displayName:label,fileVersion:b.dataset.fileVersion||''};
   const fast=FAST_PICKER_ID===WORKSHOP_REVIEW_ID;
-  const selection=sourceChoice?{kind:'source',itemId:WORKSHOP_REVIEW_ID,assetId:Number(b.dataset.fileId),installedVersion:record.installedVersion,targetVersion:record.latestVersion,profileId:plan.profileId,reviewed:true,riskAcknowledged,autoInstall:fast,...exactFile}:{kind:'nexus',itemId:WORKSHOP_REVIEW_ID,modId:Number(m.nexusId),fileId:Number(b.dataset.fileId),installedVersion:record.installedVersion,targetVersion:record.latestVersion,profileId:plan.profileId,reviewed:true,riskAcknowledged,autoInstall:fast,...exactFile};
+  const selection=sourceChoice?{kind:'source',itemId:WORKSHOP_REVIEW_ID,assetKey:b.dataset.assetKey||'',assetProof:b.dataset.assetProof||'',...(Number(b.dataset.fileId)>0?{assetId:Number(b.dataset.fileId)}:{}),provider:b.dataset.sourceProvider||record.provider,installedVersion:record.installedVersion,targetVersion:record.latestVersion,profileId:plan.profileId,reviewed:true,riskAcknowledged,autoInstall:fast,...exactFile}:{kind:'nexus',itemId:WORKSHOP_REVIEW_ID,modId:Number(m.nexusId),fileId:Number(b.dataset.fileId),installedVersion:record.installedVersion,targetVersion:record.latestVersion,profileId:plan.profileId,reviewed:true,riskAcknowledged,autoInstall:fast,...exactFile};
   WORKSHOP_CHOICES.set(WORKSHOP_REVIEW_ID,selection);
   FAST_PICKER_ID=null;closeFilePicker();renderWorkshop();
   if(fast)return performQueuedWorkshop([selection],plan.profileId);
@@ -2471,7 +2619,9 @@ $('filePickerFiles').addEventListener('click',async e=>{const b=e.target.closest
   WORKSHOP_REVIEW_ID=m.id;
   b.click();return;
  }
- // The file itself was explicitly chosen; do not burden manual Nexus downloads with another prompt.
+ // Release assets require the active reviewed-candidate flow.
+ if(b.dataset.sourceKind==='release'){toast('Run a fresh source check before selecting this release file.');return;}
+ // The Nexus file itself was explicitly chosen.
  b.disabled=true;
  try{
   const r=await bridgeRequest('POST','download',{modId:Number(b.dataset.modId),fileId:Number(b.dataset.fileId),confirm:'DOWNLOAD'});
@@ -2499,7 +2649,7 @@ async function showInstallPreview(downloadId){
   const details=[
    ['TARGET MOD',brief.modName||'Unknown'],
    ['INSTALL FILE',brief.archiveName||'Unknown archive'],
-   ['FROM',brief.provider==='github'?'GitHub release':'Nexus Mods'],
+   ['FROM',providerLabel(brief.provider||'nexus')],
    ['MO2 PROFILE',brief.profileName||'Unknown'],
    ['GAME RUNTIME',brief.gameRuntime||'Unknown'],
    ['DOWNLOAD ID','#'+brief.downloadId]

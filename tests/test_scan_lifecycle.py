@@ -45,7 +45,7 @@ class ScanOwnershipTests(unittest.TestCase):
         for worker in self.threads:
             worker.join(2)
 
-    def blocked_scan(self, snapshot, progress):
+    def blocked_scan(self, snapshot, progress, **kwargs):
         with self.lock:
             job = self.jobs[len(self.threads) - 1]
         job.progress = progress
@@ -167,7 +167,7 @@ class ScanOwnershipTests(unittest.TestCase):
                 return copy.deepcopy(result)
             return SimpleNamespace(scan=scan)
         with patch("mo2_update_arsenal.bridge.UpdateScanner", side_effect=provider), \
-             patch("mo2_update_arsenal.bridge.SourceScanner", return_value=SimpleNamespace(scan=lambda *args: {
+             patch("mo2_update_arsenal.bridge.SourceScanner", return_value=SimpleNamespace(scan=lambda *args, **kwargs: {
                  "records": {}, "itemRecords": {}, "errors": [], "queried": 0, "mode": "sources"})):
             for mode in ("deep", "all"):
                 index = len(self.threads)

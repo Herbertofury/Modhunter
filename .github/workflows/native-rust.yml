@@ -32,6 +32,7 @@ jobs:
           cargo fmt --manifest-path native/Cargo.toml --all -- --check
           cargo test --manifest-path native/Cargo.toml --workspace --locked
           python3 native/scripts/verify_plugin_bridge.py --cli native/target/debug/modhunter-cli --output native/target/plugin-bridge-protocol.json
+          python3 native/scripts/verify_source_bridge.py --cli native/target/debug/modhunter-cli --output native/target/source-bridge-protocol.json
           cargo clippy --manifest-path native/Cargo.toml --workspace --all-targets --locked -- -D warnings
           python3 -m unittest discover -s tests -p 'test_*.py' -q
           node --check native/ui/shell.js

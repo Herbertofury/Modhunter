@@ -8,6 +8,7 @@ const PALETTE={gold:'#e2b975',stone:'#92959d',purple:'#b78cde',violet:'#a26cfa',
 let STORAGE='dragonborn-mod-update-arsenal-v1';
 const BRIDGE=window.__MO2_BRIDGE_BOOT__||{active:false};
 const INSIGHTS=window.ModhunterInsights;
+const SOURCES=window.ModhunterSources;
 let LIVE_SCAN=null,LIVE_CATALOG=null,SCAN_TIMER=null,FILE_PICKER_MOD=null,LIVE_GENERATION=0,LIVE_REFRESH_BUSY=false;
 let WORKSHOP_PLAN=null,WORKSHOP_CHOICES=new Map(),WORKSHOP_BUSY=false,WORKSHOP_REVIEW_ID=null,FAST_PICKER_ID=null;
 let QUICK_RUNNING=false,QUICK_POLL=null,QUICK_SKIPPED=new Map();
@@ -23,6 +24,7 @@ let SEARCH_FRAME=null,SAVE_TIMER=null,SAVE_REVISION=0,PROGRESS_SYNC_CHAIN=Promis
 let RENDER_COUNTS=null,LOCAL_PLAN_CACHE=null;
 const BRIDGE_READS=new Map(),SOURCE_CACHE=new WeakMap(),SEARCH_CACHE=new WeakMap(),HTML_CACHE=new WeakMap();
 const INSIGHT_REQUESTS=new Map();
+const SOURCE_DETAIL_READS=new WeakMap(),SOURCE_DETAILS=new WeakMap();
 let GAME=null,GAME_SEEN=-1,PROGRESS_READY=false,PROGRESS_TIMER=null,NATIVE_SELECTED='',VICTORY_ACTIVE=null,VICTORY_TIMERS=[],PRACTICE_CROWNED=false;
 const BADGE_META=[['first-blood','First Blood','⚔',1],['apprentice','Apprentice Smith','🔨',5],['veteran','Veteran of the Forge','🛡',10],['archmage','Master Enchanter','✦',25],['dragonborn','Dragonborn','🐉',50],['legend','Legendary Smith','♛',100],['world-eater','World-Eater Defeated','👑',null]];
 
@@ -53,6 +55,8 @@ const resolveSrc=(m)=>{
 const getSrc=(m)=>{const custom=getRow(m.id).url||'',game=LIVE_CATALOG?.game||DATA?.game||'',cached=SOURCE_CACHE.get(m);if(cached&&cached.custom===custom&&cached.game===game)return cached.source;const source=resolveSrc(m);SOURCE_CACHE.set(m,{custom,game,source});return source};
 const isRisk=(m)=>{const {verdict}=getAudit(m);return ['hold','check','avoid','ae-only'].includes(verdict)||(m.flags||[]).some(f=>['HARD_ESP','HARD_ESM','DLL','NEMESIS'].includes(f))};
 const isUpdate=(m)=>m.update&&m.update.verdict==='candidate';
+const hasReleaseAssets=m=>SOURCES?SOURCES.hasAssets(m):Boolean(m.update?.releaseAssets?.length||m.releaseAssets?.length);
+const providerLabel=p=>SOURCES?.label(p)||p||'Original provider';
 const isDone=(m)=>getStatus(m)==='done';
 const isReview=(m)=>getStatus(m)==='review';
 const isFav=(m)=>Boolean(getRow(m.id).favorite);
@@ -100,8 +104,9 @@ function renderStats(){const c=counts();SET('sidePercent',c.percent+'%');$('side
  $all('[data-filter]').forEach(el=>{const on=el.dataset.filter===STORE.prefs.filter;el.classList.toggle('active',on);if(el.tagName==='BUTTON')el.setAttribute('aria-pressed',String(on))});
 }
 function tokenizeQuery(raw){const out=[];const re=/"([^"]+)"|(\S+)/g;let m;while((m=re.exec(raw)))out.push((m[1]||m[2]).trim().toLowerCase());return out}
-function textMatches(m,query,terms){if(!query)return true;let base=SEARCH_CACHE.get(m);if(!base){base={text:[m.name,m.installedVersion,m.screenshotNote,m.author,m.group,m.priority,(m.flags||[]).join(' '),INSIGHTS?.searchText(m)||''].join(' ').toLowerCase(),author:txt(m.author).toLowerCase(),group:txt(m.group).toLowerCase(),flags:(m.flags||[]).join(' ').toLowerCase(),version:txt(m.installedVersion).toLowerCase()};SEARCH_CACHE.set(m,base)}const row=getRow(m.id),str=base.text+' '+txt(row.note).toLowerCase()+' '+txt(row.installed).toLowerCase();return(terms||tokenizeQuery(query)).every(part=>{const ix=part.indexOf(':');if(ix>0){const p=part.slice(0,ix),v=part.slice(ix+1);if(p==='health'||p==='esl')return (INSIGHTS?.searchText(m)||'').includes(v);if(p==='author')return base.author.includes(v);if(p==='section'||p==='group')return base.group.includes(v);if(p==='flag')return base.flags.includes(v);if(p==='priority')return txt(m.priority).includes(v);if(p==='status')return getStatus(m).includes(v);if(p==='version')return base.version.includes(v);if(p==='note')return (m.screenshotNote+' '+txt(getRow(m.id).note)).toLowerCase().includes(v);}return str.includes(part)})}
-function filtered(){const f=STORE.prefs.filter,terms=tokenizeQuery(STORE.prefs.query);return DATA.items.filter(m=>(!INSIGHTS||INSIGHTS.matches(m,STORE.prefs.insight||'all'))&&textMatches(m,STORE.prefs.query,terms)&&(
+function healthFilterMatches(mod,filter){return filter.startsWith('source-')?Boolean(SOURCES?.matches(mod,filter)):!INSIGHTS||INSIGHTS.matches(mod,filter)}
+function textMatches(m,query,terms){if(!query)return true;let base=SEARCH_CACHE.get(m);if(!base){base={text:[m.name,m.installedVersion,m.screenshotNote,m.author,m.group,m.priority,(m.flags||[]).join(' '),INSIGHTS?.searchText(m)||'',SOURCES?.searchText(m)||''].join(' ').toLowerCase(),author:txt(m.author).toLowerCase(),group:txt(m.group).toLowerCase(),flags:(m.flags||[]).join(' ').toLowerCase(),version:txt(m.installedVersion).toLowerCase()};SEARCH_CACHE.set(m,base)}const row=getRow(m.id),str=base.text+' '+txt(row.note).toLowerCase()+' '+txt(row.installed).toLowerCase();return(terms||tokenizeQuery(query)).every(part=>{const ix=part.indexOf(':');if(ix>0){const p=part.slice(0,ix),v=part.slice(ix+1);if(p==='health'||p==='esl')return (INSIGHTS?.searchText(m)||'').includes(v);if(p==='source'||p==='provider')return (SOURCES?.searchText(m)||'').includes(v);if(p==='author')return (base.author+' '+(SOURCES?.searchText(m)||'')).includes(v);if(p==='section'||p==='group')return base.group.includes(v);if(p==='flag')return base.flags.includes(v);if(p==='priority')return txt(m.priority).includes(v);if(p==='status')return getStatus(m).includes(v);if(p==='version')return base.version.includes(v);if(p==='note')return (m.screenshotNote+' '+txt(getRow(m.id).note)).toLowerCase().includes(v);}return str.includes(part)})}
+function filtered(){const f=STORE.prefs.filter,terms=tokenizeQuery(STORE.prefs.query);return DATA.items.filter(m=>healthFilterMatches(m,STORE.prefs.insight||'all')&&textMatches(m,STORE.prefs.query,terms)&&(
  f==='all'||(f==='pending'&&getStatus(m)==='pending')||(f==='done'&&isDone(m))||(f==='review'&&isReview(m))||(f==='risky'&&isRisk(m))||(f==='unlinked'&&!getSrc(m).verified)||(f==='favorites'&&isFav(m))||(f==='updates'&&isUpdate(m))));}
 function classFor(m){const s=getStatus(m);return s==='done'?'done':s==='review'?'needs-review':s==='skipped'?'skipped':''}
 function assessmentHTML(m){const audit=getAudit(m),out=[];
@@ -120,7 +125,7 @@ function modHTML(m){const s=getSrc(m),sourceText=s.type==='creations'?'↗ Creat
  return `<article class="mod-row ${classFor(m)}" id="row-${escapeHTML(m.id)}" data-id="${escapeHTML(m.id)}">
  <div class="mod-status"><button class="complete-btn" data-act="complete" data-id="${m.id}" aria-label="${escapeHTML(statusLabel+' for '+m.name)}" title="${escapeHTML(statusLabel)}">${stat==='done'?'✓':stat==='review'?'!':''}</button></div>
  <div class="mod-priority">${m.priority}</div>
- <div class="mod-primary" data-priority="${m.priority}"><div class="mod-name-actions"><a class="mod-title source-title ${s.verified?'':'unknown'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHTML((s.verified?'Open source page for ':'Search for original source of ')+m.name)}" title="${escapeHTML(s.verified?'Open the original mod website in a new tab':'Source unknown: search for this mod in a new tab')}" data-act="source" data-id="${escapeHTML(m.id)}">${escapeHTML(m.name)}<span class="source-open-glyph" aria-hidden="true">↗</span></a>${BRIDGE.active?`<button class="mod-inline-locate" type="button" title="Reveal this mod in Mod Organizer 2" aria-label="Reveal ${escapeHTML(m.name)} in MO2" data-act="locate" data-id="${escapeHTML(m.id)}">⌖</button>`:''}</div>${note?`<div class="mod-note ${/do not|ctd|crash|hard esp|incompati|needs update|bugs/i.test(note)?'warning-note':''}" title="${escapeHTML(note)}">${escapeHTML(note)}</div>`:''}${INSIGHTS?.chips(m)||''}</div>
+ <div class="mod-primary" data-priority="${m.priority}"><div class="mod-name-actions"><a class="mod-title source-title ${s.verified?'':'unknown'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHTML((s.verified?'Open source page for ':'Search for original source of ')+m.name)}" title="${escapeHTML(s.verified?'Open the original mod website in a new tab':'Source unknown: search for this mod in a new tab')}" data-act="source" data-id="${escapeHTML(m.id)}">${escapeHTML(m.name)}<span class="source-open-glyph" aria-hidden="true">↗</span></a>${BRIDGE.active?`<button class="mod-inline-locate" type="button" title="Reveal this mod in Mod Organizer 2" aria-label="Reveal ${escapeHTML(m.name)} in MO2" data-act="locate" data-id="${escapeHTML(m.id)}">⌖</button>`:''}</div>${note?`<div class="mod-note ${/do not|ctd|crash|hard esp|incompati|needs update|bugs/i.test(note)?'warning-note':''}" title="${escapeHTML(note)}">${escapeHTML(note)}</div>`:''}${INSIGHTS?.chips(m)||''}${SOURCES?.chips(m)||''}</div>
  <div class="mod-version" title="Installed version recorded by source">${escapeHTML(getRow(m.id).installed||m.installedVersion)}${m.update?.latestVersion?`<small class="newer-version" title="Latest metadata, not necessarily compatible">→ ${escapeHTML(m.update.latestVersion)}</small>`:''}</div>
  <div class="mod-assessment">${assessmentHTML(m)}</div>
  <div class="mod-source"><a class="source-btn ${s.verified?'':'lookup'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" data-act="source" data-id="${m.id}" title="${escapeHTML(s.type==='creations'?'Exact Bethesda Creation listing. Install from in-game Creations menu.':s.verified?'Exact mod files page':'Search for the correct mod project; source not yet verified')}">${sourceText}</a></div>
@@ -135,7 +140,7 @@ function renderList(){const visible=filtered(),byGroup=new Map();for(const m of 
  if(!collapsed)html+=sorted.map(modHTML).join('');}
  setHTML($('modList'),html||`<div class="empty-state"><div class="empty-icon">ᛟ</div><h3>No foes in this chamber.</h3><p>Nothing matches your current search and filters.</p><button id="emptyReset">Clear filters</button></div>`);
  const listCounts=counts(),parts=[visible.length+' of '+DATA.items.length+' mods',byGroup.size+' chapters'];if(STORE.prefs.query)parts.push('query: '+STORE.prefs.query);SET('resultsMeta',parts.join(' · '));SET('listFooter',`YOU'VE REACHED THE END · ${visible.length} MATCHING MODS · ${listCounts.total-listCounts.unlinked} EXACT ORIGINAL SOURCES`);$('sortSelect').value=STORE.prefs.sort;}
-function render(){if(SEARCH_FRAME!==null){cancelAnimationFrame(SEARCH_FRAME);SEARCH_FRAME=null}RENDER_COUNTS=counts();try{groupProgress();renderStats();renderList();renderChapters();renderQuest();paintNativeSelection();renderWorkshop();renderInsightToolbar()}finally{RENDER_COUNTS=null}}
+function render(){if(SEARCH_FRAME!==null){cancelAnimationFrame(SEARCH_FRAME);SEARCH_FRAME=null}RENDER_COUNTS=counts();try{groupProgress();renderStats();renderList();renderChapters();renderQuest();paintNativeSelection();renderWorkshop();renderInsightToolbar();renderSourceCoverage()}finally{RENDER_COUNTS=null}}
 function renderSearch(){SEARCH_FRAME=null;renderList();paintNativeSelection()}
 function scheduleSearchRender(){if(DATA.items.length<1000){renderSearch();return}if(SEARCH_FRAME===null)SEARCH_FRAME=requestAnimationFrame(renderSearch)}
 function setStatus(m,status,withEffect=false,center){if(!['pending','done','review','skipped'].includes(status))return;const old=getStatus(m);if(old===status)return;const previousRow=$('row-'+m.id);const effectMode=STORE.prefs.effect==='random'?['shatter','fireworks','shot','slash','burn','arrow','frost','thunder'][Math.floor(Math.random()*8)]:STORE.prefs.effect;if(withEffect&&status==='done')window.AetherFX?.complete(previousRow,{mode:effectMode});else if(withEffect&&status==='pending')window.AetherFX?.undo(previousRow);getRow(m.id).status=old;STORE.rows[m.id]={...getRow(m.id),status,observedInstalledVersion:status==='done'?m.installedVersion:null,updatedAt:new Date().toISOString()};lastUndo={id:m.id,previous:old,next:status};save();render();if(withEffect&&status==='done')spawnFinisher(center||centerOfRow(m.id),effectMode);toast(status==='done'?'✦ '+m.name+' — quest cleared!'+(BRIDGE.active?' (manual, no ranked XP)':''):'Updated '+m.name,()=>undoLast(),'UNDO');if(!BRIDGE.active&&counts().total>0&&counts().done===counts().total&&!PRACTICE_CROWNED){PRACTICE_CROWNED=true;setTimeout(()=>launchVictory({verifiedMods:DATA.items.length,bonus:0,updates:DATA.items.length},true),420)}}
@@ -152,6 +157,7 @@ function drawInspector(m){openedId=m.id;STORE.lastSelected=m.id;save();const row
  const selected=(v)=>row.compat===v?'selected':'';const status=getStatus(m);
  $('drawerContent').innerHTML=`<div class="drawer-priority"><span>MO2 PRIORITY #${m.priority}</span><span>${escapeHTML(m.group)}</span><span>${BRIDGE.active?'LIVE PROFILE':'SCREENSHOT '+m.screenshot}</span></div>
  <div class="drawer-section drawer-alert" data-alert="${escapeHTML(audit.verdict)}"><span class="drawer-label" style="margin:0">${BRIDGE.active?'RUNTIME / FILE COMPATIBILITY CHECK':'1.5.97 COMPATIBILITY ADVISORY'}</span><strong>${escapeHTML(audit.verdict==='avoid'?'AVOID LATEST RELEASE':audit.verdict==='hold'?'HOLD / PICK LEGACY FILE':audit.verdict==='safe-file'?'SE BUILD LISTED':audit.verdict==='check'?'VERIFY SPECIFIC BUILD':'NOT YET VERIFIED')}</strong><p>${escapeHTML(audit.note||'The provided screenshots do not establish compatibility for a new release. Check the required game executable, SKSE, Address Library, BEES and masters before updating.')}</p>${audit.evidence?`<a class="drawer-link" href="${escapeHTML(audit.evidence)}" target="_blank" rel="noopener noreferrer">↗ View supporting source</a>`:''}</div>
+ <div id="modSourceDetails">${SOURCES?.details(sourceDetailMod(m),{live:BRIDGE.active})||''}</div>
  <div id="modInsightDetails">${INSIGHTS?.details(m,{live:BRIDGE.active,game:DATA.game,auditState:DATA.pluginAuditState||{}})||''}</div>
  <label class="drawer-label" for="drawerStatus">CHECKLIST STATUS</label><select class="drawer-field" id="drawerStatus"><option value="pending" ${status==='pending'?'selected':''}>◷ Not checked</option><option value="done" ${status==='done'?'selected':''}>✓ Updated / cleared</option><option value="review" ${status==='review'?'selected':''}>⚠ Needs investigation</option><option value="skipped" ${status==='skipped'?'selected':''}>⤼ Deliberately skipped</option></select>
  <div class="drawer-row"><div><label class="drawer-label" for="drawerInstalled">INSTALLED VERSION</label><input class="drawer-field" id="drawerInstalled" value="${escapeHTML(row.installed||m.installedVersion)}" placeholder="version"></div><div><label class="drawer-label" for="drawerVerifiedVersion">FILE YOU TESTED</label><input class="drawer-field" id="drawerVerifiedVersion" value="${escapeHTML(row.testedVersion||'')}" placeholder="e.g. SE 1.5.97 FOMOD"></div></div>
@@ -178,9 +184,10 @@ function drawInspector(m){openedId=m.id;STORE.lastSelected=m.id;save();const row
  if(BRIDGE.active&&$('drawerLocate'))$('drawerLocate').onclick=()=>locateInMO2(m,$('drawerLocate'));
  $('saveInspector').onclick=()=>saveInspection(false);
  $('markInspectorDone').onclick=()=>saveInspection(true);
- if(BRIDGE.active)void loadModInsights(m);
+ if(BRIDGE.active){void loadModInsights(m);void loadSourceDetails(m);}
 }
 function refreshInspectorInsights(){
+ refreshSourceDetails();
  const panel=$('modInsightDetails'),mod=ITEM_MAP.get(openedId);
  if(panel&&mod&&INSIGHTS){
   const expanded=new Map([...panel.querySelectorAll('details[data-plugin-name]')].map(el=>[el.dataset.pluginName,el.open]));
@@ -188,6 +195,38 @@ function refreshInspectorInsights(){
   for(const el of panel.querySelectorAll('details[data-plugin-name]'))if(expanded.has(el.dataset.pluginName))el.open=expanded.get(el.dataset.pluginName);
  }
 }
+function sourceDetailMod(mod){const detail=SOURCE_DETAILS.get(mod);return detail?.update?{...mod,update:{...mod.update,...detail.update}}:mod}
+function refreshSourceDetails(){
+ const panel=$('modSourceDetails'),mod=ITEM_MAP.get(openedId);if(!panel||!mod||!SOURCES)return;
+ const detail=SOURCE_DETAILS.get(mod)||{};
+ const expanded=new Map([...panel.querySelectorAll('details[data-source-section]')].map(el=>[el.dataset.sourceSection,el.open]));
+ setHTML(panel,SOURCES.details(sourceDetailMod(mod),{live:BRIDGE.active,loading:detail.loading,error:detail.error}));
+ for(const el of panel.querySelectorAll('details[data-source-section]'))if(expanded.has(el.dataset.sourceSection))el.open=expanded.get(el.dataset.sourceSection);
+}
+async function loadSourceDetails(mod){
+ if(!BRIDGE.active||!mod)return null;
+ if(SOURCE_DETAILS.get(mod)?.update)return SOURCE_DETAILS.get(mod).update;
+ if(SOURCE_DETAIL_READS.has(mod))return SOURCE_DETAIL_READS.get(mod);
+ const context=profileContext();SOURCE_DETAILS.set(mod,{loading:true});if(openedId===mod.id)refreshSourceDetails();
+ const task=(async()=>{
+  try{
+   const result=await bridgeRequest('GET','source-details?itemId='+encodeURIComponent(mod.id)+'&profileId='+encodeURIComponent(context.profile));
+   if(!contextIsCurrent(context)||result.profileId!==context.profile||ITEM_MAP.get(mod.id)!==mod)return null;
+   if(!result.update||typeof result.update!=='object')throw Error('Source details are not available. Refresh the source check.');
+   SOURCE_DETAILS.set(mod,{update:result.update});if(openedId===mod.id)refreshSourceDetails();return result.update;
+  }catch(ex){if(contextIsCurrent(context)&&ITEM_MAP.get(mod.id)===mod){SOURCE_DETAILS.set(mod,{error:ex.message});if(openedId===mod.id)refreshSourceDetails();}return null;}
+  finally{SOURCE_DETAIL_READS.delete(mod);}
+ })();SOURCE_DETAIL_READS.set(mod,task);return task;
+}
+function renderSourceCoverage(){const section=$('sourceCoverage'),rows=$('sourceCoverageRows');if(section?.open&&rows&&SOURCES)setHTML(rows,SOURCES.coverage(DATA.items));}
+if($('sourceCoverage'))$('sourceCoverage').addEventListener('toggle',renderSourceCoverage);
+document.addEventListener('click',async e=>{
+ const button=e.target.closest('[data-source-act]');if(!button)return;e.preventDefault();
+ const mod=ITEM_MAP.get(button.dataset.id||openedId);if(!mod)return;
+ if(button.dataset.sourceAct==='inspect'){if(openedId===mod.id){refreshSourceDetails();void loadSourceDetails(mod);}else drawInspector(mod);}
+ if(button.dataset.sourceAct==='scan')await scanLive('all');
+ if(button.dataset.sourceAct==='files')await reviewWorkshopFile(mod.id);
+});
 function renderInsightToolbar(){
  const select=$('insightFilter'),button=$('analyzePlugins');if(!select||!button)return;
  select.value=STORE.prefs.insight||'all';
@@ -281,7 +320,7 @@ async function copyToClipboard(value){try{await navigator.clipboard.writeText(va
 function exportJSON(){const obj={format:'Mod Update Arsenal Backup',version:1,createdAt:new Date().toISOString(),catalogId:DATA.catalogId,sourceRevision:DATA.sourceRevision,items:DATA.items.length,rows:STORE.rows,prefs:STORE.prefs,lastSelected:STORE.lastSelected,verifiedRuntime:STORE.verifiedRuntime};saveFile((BRIDGE.active?'MO2 Update Arsenal - '+(LIVE_CATALOG?.profileName||'Profile')+' - Progress.json':'Skyrim 1.5.97 - Mod Update Progress.json'),'application/json',JSON.stringify(obj,null,2));toast('↓ Full progress backup saved.');}
 function saveFile(name,type,body){const blob=new Blob([body],{type:type+';charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3500)}
 function csvCell(v){return'"'+txt(v).replace(/"/g,'""')+'"'}
-function exportCSV(){const cols=['Priority','Mod','Section','Installed version','Status','1.5.97 Verdict','Type Flags','Exact Source URL','Source Verified','Source Provider','Screenshot Note','User Note','Tested Version','Author'];const csv=[cols.map(csvCell).join(',')];cols.push('Winning light plugins','Winning full plugins','Light overrides','Flag-only candidates','Compaction review','ESLifier changes','Master issues','Plugin checked at','Bugs tab state','Nexus displayed bug count','Bugs checked at');csv[0]=cols.map(csvCell).join(',');for(const m of filtered()){const r=getRow(m.id),s=getSrc(m);const c=[m.priority,m.name,m.group,r.installed||m.installedVersion,getStatus(m),getAudit(m).verdict,m.flags.join(';'),s.verified?s.url:'',s.verified?'yes':'NO',s.label,m.screenshotNote,r.note||'',r.testedVersion||'',m.author];c.push(...(INSIGHTS?.csv(m)||Array(11).fill('')));csv.push(c.map(csvCell).join(','))}saveFile((BRIDGE.active?'MO2 Update Arsenal - Visible Mods.csv':'Skyrim 1.5.97 - Visible Mod Checklist.csv'),'text/csv','\ufeff'+csv.join('\r\n'));toast('⇩ CSV exported for '+filtered().length+' visible mods.');}
+function exportCSV(){const cols=['Priority','Mod','Section','Installed version','Status','1.5.97 Verdict','Type Flags','Exact Source URL','Source Verified','Source Provider','Screenshot Note','User Note','Tested Version','Author'];const csv=[cols.map(csvCell).join(',')];cols.push('Winning light plugins','Winning full plugins','Light overrides','Flag-only candidates','Compaction review','ESLifier changes','Master issues','Plugin checked at','Bugs tab state','Nexus displayed bug count','Bugs checked at');cols.push(...(SOURCES?.csvHeaders||[]));csv[0]=cols.map(csvCell).join(',');for(const m of filtered()){const r=getRow(m.id),s=getSrc(m);const c=[m.priority,m.name,m.group,r.installed||m.installedVersion,getStatus(m),getAudit(m).verdict,m.flags.join(';'),s.verified?s.url:'',s.verified?'yes':'NO',s.label,m.screenshotNote,r.note||'',r.testedVersion||'',m.author];c.push(...(INSIGHTS?.csv(m)||Array(11).fill('')),...(SOURCES?.csv(m)||[]));csv.push(c.map(csvCell).join(','))}saveFile((BRIDGE.active?'MO2 Update Arsenal - Visible Mods.csv':'Skyrim 1.5.97 - Visible Mod Checklist.csv'),'text/csv','\ufeff'+csv.join('\r\n'));toast('⇩ CSV exported for '+filtered().length+' visible mods.');}
 async function importJSON(file){if(!file)return;try{const obj=JSON.parse(await file.text());if(obj.catalogId!==DATA.catalogId||!obj.rows||typeof obj.rows!=='object')throw Error('This is not an Update Arsenal progress backup for the current catalog.');const imported=Object.entries(obj.rows).filter(([id])=>ITEM_MAP.has(id));if(!confirm('Restore '+imported.length+' saved mod records? This merges records from the backup into this browser.'))return;for(const[id,v]of imported)if(v&&typeof v==='object')STORE.rows[id]={...STORE.rows[id],...v};if(obj.prefs&&typeof obj.prefs==='object'){const allowed=Object.keys(BASE.prefs);for(const k of allowed)if(k in obj.prefs)STORE.prefs[k]=obj.prefs[k]}save();$('search').value=STORE.prefs.query;applyAppearance();render();toast('✓ Restored '+imported.length+' saved mod records.')}catch(e){toast('⚠ Restore failed: '+e.message)}finally{$('importFile').value=''}}
 // The optional PowerShell bridge is embedded as text, downloaded on demand and never executed by the browser.
 function mo2Open(){ $('mo2Veil').hidden=false; if(MO2_PENDING.length)drawMO2Matcher();else $('mo2Results').textContent=''; }
@@ -479,7 +518,7 @@ function activateLiveCatalog(c){
  SET('liveProfile',c.profileName+' / '+c.game);SET('liveCount',c.items.length+' mods · '+c.groups.length+' chapters');setBridgeConnection(true,'Live session. Your active MO2 profile is authoritative; the checklist is saved per profile.');
  $('liveSync').textContent='Snapshot: '+new Date().toLocaleTimeString();
  const chosen=STORE.prefs.filter;if(chosen==='updates'&&!c.items.some(isUpdate))STORE.prefs.filter='all';
- if(newProfile){closeInspector();}else{refreshInspectorInsights();if(openedId&&ITEM_MAP.has(openedId))void loadModInsights(ITEM_MAP.get(openedId));}
+ if(newProfile){closeInspector();}else{refreshInspectorInsights();if(openedId&&ITEM_MAP.has(openedId)){void loadModInsights(ITEM_MAP.get(openedId));void loadSourceDetails(ITEM_MAP.get(openedId));}}
  if(newProfile||changedRuntime||changedMods){WORKSHOP_PLAN=null;WORKSHOP_CHOICES.clear();QUEUE_PENDING=null;$('queueReviewVeil').hidden=true;INSTALL_PREVIEW_ID=0;$('installPreviewVeil').hidden=true;closeFilePicker();}
  if(newProfile){if(QUICK_POLL){clearTimeout(QUICK_POLL);QUICK_POLL=null;}QUICK_RUNNING=false;FAST_PICKER_ID=null;QUICK_SKIPPED.clear();WORKSHOP_TICKETS={};WORKSHOP_TICKET_SIGNATURE='';$('liveDownloadList').innerHTML='';renderDownloadPulse({});ACTIVITY_RECORDS=[];ACTIVITY_WARNING='';ACTIVITY_GENERATION++;renderActivity();refreshActivity();}
  applyAppearance();updateStorageIndicator();render();renderLiveStats();if(changedRuntime||changedMods)toast('⚠ Previous cleared checks need review: runtime or installed version changed.');
@@ -516,7 +555,7 @@ function workshopLocalPlan(){
   const lane=verdict==='candidate'?'candidate':['current','newer-installed'].includes(verdict)?'current':!Number(m.nexusId||0)?'manual':'review';
   summary[({candidate:'candidates',review:'review',manual:'manual',current:'current'})[lane]]++;
   const risky=isRisk(m);if(risky)summary.risky++;
-  return{id:m.id,name:m.name,nexusId:Number(m.nexusId||0),installedVersion:m.installedVersion||'',latestVersion:m.update?.latestVersion||'',verdict,lane,priority:m.priority,group:m.group,risks:risky?['Review compatibility and installation prerequisites']:[],sourceUrl:workshopSource(m),sourceVerified:!!workshopSource(m),provider:m.update?.provider||m.source?.type||'unknown',releaseAssets:m.update?.releaseAssets||[]};
+  return{id:m.id,name:m.name,nexusId:Number(m.nexusId||0),installedVersion:m.installedVersion||'',latestVersion:m.update?.latestVersion||'',verdict,lane,priority:m.priority,group:m.group,risks:risky?['Review compatibility and installation prerequisites']:[],sourceUrl:workshopSource(m),sourceVerified:!!workshopSource(m),provider:m.update?.provider||m.source?.type||'unknown',releaseAssets:m.update?.releaseAssets||[],releaseAssetCount:m.update?.releaseAssetCount??m.update?.releaseAssets?.length??0};
  });
  return{ok:true,profileId:LIVE_CATALOG?.profileId||'',profileName:LIVE_CATALOG?.profileName||'Standalone sample',game:DATA.game||'skyrimspecialedition',gameRuntime:DATA.gameRuntime||'unknown',summary,items};
 }
@@ -560,7 +599,7 @@ function renderWorkshop(){
  const ready=[...ticketsByMod.values()].filter(x=>x.status==='complete').length;
  const metrics=[['Candidates',summary.candidates,'candidate'],['Investigate',summary.review,'review'],['Manual sources',summary.manual,'manual'],['Current',summary.current,'current'],['Compatibility watch',summary.risky,'risky'],['Ready to install',ready,'ready']];
  setHTML($('workshopSummary'),metrics.map(([name,n,key])=>'<button type="button" class="workshop-metric'+(filter===key?' is-active':'')+'" data-lane="'+key+'" aria-pressed="'+(filter===key)+'"><strong>'+escapeHTML(n)+'</strong><small>'+escapeHTML(name)+'</small></button>').join(''));
- const visible=plan.items.filter(m=>(filter==='all'||m.lane===filter||filter==='risky'&&!!m.risks?.length||filter==='ready'&&ticketsByMod.get(m.id)?.status==='complete')&&(!query||[m.name,m.group,m.installedVersion,m.latestVersion,m.verdict].join(' ').toLowerCase().includes(query)));
+ const visible=plan.items.filter(m=>(filter==='all'||m.lane===filter||filter==='risky'&&!!m.risks?.length||filter==='ready'&&ticketsByMod.get(m.id)?.status==='complete')&&(!query||[m.name,m.group,m.installedVersion,m.latestVersion,m.verdict,SOURCES?.searchText(ITEM_MAP.get(m.id)||m)||''].join(' ').toLowerCase().includes(query)));
  SET('workshopVisibleCount',visible.length+' of '+plan.items.length+' mods shown');
  const html=visible.map(m=>{
   const choice=WORKSHOP_CHOICES.get(m.id);
@@ -573,7 +612,7 @@ function renderWorkshop(){
   const quickReason=QUICK_SKIPPED.get(m.id);
   const quickHint=quickReason&&!ticket?'<span class="workshop-choice-hint" title="'+escapeHTML(quickReason)+'">Choose edition · '+escapeHTML(quickReason)+'</span>':'';
   const ticketTag=ticket?'<span class="workshop-ticket-note">MO2 · '+escapeHTML(String(ticket.status||'').toUpperCase())+'</span>':'';
-  return '<article class="workshop-item" data-workshop-id="'+escapeHTML(m.id)+'"><div class="workshop-item-main"><div class="workshop-line"><span class="workshop-lane lane-'+escapeHTML(m.lane)+'">'+escapeHTML(m.lane.toUpperCase())+'</span><a class="workshop-item-title'+(exactSource?'':' source-unresolved')+'" href="'+escapeHTML(src)+'" target="_blank" rel="noopener noreferrer" data-workshop-act="source" data-id="'+escapeHTML(m.id)+'" title="'+escapeHTML(exactSource?'Open original project website':'Find the original project; source not verified')+'" aria-label="'+escapeHTML((exactSource?'Open source website for ':'Search for source of ')+m.name)+'">'+escapeHTML(m.name)+'<span class="source-open-glyph" aria-hidden="true">↗</span></a>'+(BRIDGE.active?'<button type="button" class="workshop-inline-locate" data-workshop-act="locate" data-id="'+escapeHTML(m.id)+'" aria-label="Reveal '+escapeHTML(m.name)+' in MO2" title="Reveal this mod in Mod Organizer 2">⌖</button>':'')+'</div><small>'+escapeHTML(m.group||'MO2 profile')+' · '+escapeHTML(m.installedVersion||'?')+' → '+escapeHTML(m.latestVersion||'?')+'</small>'+(INSIGHTS?.chips(match)||'')+'<div class="workshop-tags">'+(warning?'<span class="workshop-warning">⚠ '+escapeHTML(m.risks.join(' · '))+'</span>':'')+(choice?'<span class="workshop-selected">✓ Reviewed file #'+escapeHTML(choice.fileId||choice.assetId)+'</span><button type="button" class="workshop-remove" data-workshop-act="remove" data-id="'+escapeHTML(m.id)+'" aria-label="Remove reviewed file for '+escapeHTML(m.name)+'">× Remove file</button>':'')+ticketTag+quickHint+'</div></div><div class="workshop-item-actions"><a target="_blank" rel="noopener noreferrer" href="'+escapeHTML(src)+'" title="'+escapeHTML(exactSource?'Open the source website':'Find the original source')+'">'+(exactSource?'↗ Project website':'⌕ Find project')+'</a>'+(hasAlternateRelease?'<a target="_blank" rel="noopener noreferrer" href="'+escapeHTML(release)+'" title="Open the published release page">↗ Latest release</a>':'')+(BRIDGE.active&&compatible&&(m.nexusId||m.releaseAssets?.length)?ticket?'<button type="button" class="quiet-button" data-workshop-act="downloads" data-id="'+escapeHTML(m.id)+'">View download</button>':'<button type="button" class="button-bright quick-update" data-workshop-act="quick" data-id="'+escapeHTML(m.id)+'">ϟ Update now</button><button type="button" class="quiet-button" data-workshop-act="review" data-id="'+escapeHTML(m.id)+'">Choose file</button>':'')+'</div></article>';
+  return '<article class="workshop-item" data-workshop-id="'+escapeHTML(m.id)+'"><div class="workshop-item-main"><div class="workshop-line"><span class="workshop-lane lane-'+escapeHTML(m.lane)+'">'+escapeHTML(m.lane.toUpperCase())+'</span><a class="workshop-item-title'+(exactSource?'':' source-unresolved')+'" href="'+escapeHTML(src)+'" target="_blank" rel="noopener noreferrer" data-workshop-act="source" data-id="'+escapeHTML(m.id)+'" title="'+escapeHTML(exactSource?'Open original project website':'Find the original project; source not verified')+'" aria-label="'+escapeHTML((exactSource?'Open source website for ':'Search for source of ')+m.name)+'">'+escapeHTML(m.name)+'<span class="source-open-glyph" aria-hidden="true">↗</span></a>'+(BRIDGE.active?'<button type="button" class="workshop-inline-locate" data-workshop-act="locate" data-id="'+escapeHTML(m.id)+'" aria-label="Reveal '+escapeHTML(m.name)+' in MO2" title="Reveal this mod in Mod Organizer 2">⌖</button>':'')+'</div><small>'+escapeHTML(m.group||'MO2 profile')+' · '+escapeHTML(m.installedVersion||'?')+' → '+escapeHTML(m.latestVersion||'?')+'</small>'+(INSIGHTS?.chips(match)||'')+(SOURCES?.chips(match)||'')+'<div class="workshop-tags">'+(warning?'<span class="workshop-warning">⚠ '+escapeHTML(m.risks.join(' · '))+'</span>':'')+(choice?'<span class="workshop-selected">✓ Reviewed file #'+escapeHTML(choice.fileId||choice.assetKey||choice.assetId)+'</span><button type="button" class="workshop-remove" data-workshop-act="remove" data-id="'+escapeHTML(m.id)+'" aria-label="Remove reviewed file for '+escapeHTML(m.name)+'">× Remove file</button>':'')+ticketTag+quickHint+'</div></div><div class="workshop-item-actions"><a target="_blank" rel="noopener noreferrer" href="'+escapeHTML(src)+'" title="'+escapeHTML(exactSource?'Open the source website':'Find the original source')+'">'+(exactSource?'↗ Project website':'⌕ Find project')+'</a>'+(hasAlternateRelease?'<a target="_blank" rel="noopener noreferrer" href="'+escapeHTML(release)+'" title="Open the published release page">↗ Latest release</a>':'')+(BRIDGE.active&&compatible&&(INSIGHTS?.isNexus(match)||hasReleaseAssets(m))?ticket?'<button type="button" class="quiet-button" data-workshop-act="downloads" data-id="'+escapeHTML(m.id)+'">View download</button>':'<button type="button" class="button-bright quick-update" data-workshop-act="quick" data-id="'+escapeHTML(m.id)+'">ϟ Update now</button><button type="button" class="quiet-button" data-workshop-act="review" data-id="'+escapeHTML(m.id)+'">Choose file</button>':'')+'</div></article>';
  }).join('')||'<div class="workshop-empty">No mods in this lane. Change the filter or run a deeper audit.</div>';
  setHTML(area,html);
  $('workshopQueue').disabled=!BRIDGE.active||!LIVE_CONNECTED||!selected.length||WORKSHOP_BUSY;
@@ -595,16 +634,20 @@ async function refreshWorkshop(){
  for(const [id,choice] of WORKSHOP_CHOICES){const m=candidates.get(id);if(choice.profileId!==profile||!m||!(m.installedVersion===choice.installedVersion&&String(m.latestVersion||'')===String(choice.targetVersion||'')))WORKSHOP_CHOICES.delete(id);}
  renderWorkshop();workshopSetStatus('Ready: use Update now for a one-click download and interactive MO2 install, or choose any file manually.');
 }
-function exportWorkshop(){
- const plan=currentWorkshopPlan();
- const data={format:'Modhunter Reviewed Update Plan',version:1,exportedAt:new Date().toISOString(),profileId:plan.profileId,profileName:plan.profileName,game:plan.game,gameRuntime:plan.gameRuntime,summary:plan.summary,items:plan.items,reviewedFiles:[...WORKSHOP_CHOICES.values()]};
+async function exportWorkshop(){
+ const context=profileContext();let plan=currentWorkshopPlan();
+ if(BRIDGE.active){
+  try{plan=await bridgeRequest('GET','update-plan?details=full');if(!contextIsCurrent(context)||plan.profileId!==context.profile)return;}
+  catch(ex){workshopSetStatus('Could not export complete source evidence: '+ex.message);return;}
+ }
+ const data={format:'Modhunter Reviewed Update Plan',version:2,exportedAt:new Date().toISOString(),profileId:plan.profileId,profileName:plan.profileName,game:plan.game,gameRuntime:plan.gameRuntime,summary:plan.summary,items:plan.items,reviewedFiles:[...WORKSHOP_CHOICES.values()].filter(x=>x.profileId===plan.profileId)};
  saveFile('Modhunter-Update-Plan-'+(plan.profileName||'Standalone').replace(/[^\w-]+/g,'-')+'.json','application/json',JSON.stringify(data,null,2));
- workshopSetStatus('Exported the full plan, including manual/unlinked mods and any explicit file reviews.');
+ workshopSetStatus('Exported the complete plan with source evidence, manual/unlinked mods and exact file selections.');
 }
 async function reviewWorkshopFile(id){
- const m=ITEM_MAP.get(id);if(!m||!BRIDGE.active||(!m.nexusId&&!m.update?.releaseAssets?.length))return;
+ const m=ITEM_MAP.get(id);if(!m||!BRIDGE.active||(!INSIGHTS?.isNexus(m)&&!hasReleaseAssets(m)))return;
  const plan=currentWorkshopPlan(),record=plan.items.find(x=>x.id===id);
- if(!record||record.lane!=='candidate'){toast('This mod needs a fresh Nexus scan or manual review.');return}
+ if(!record||record.lane!=='candidate'){toast('This mod needs a fresh source check or manual review.');return}
  WORKSHOP_REVIEW_ID=id;
  await openFilePicker(m);
  if(FILE_PICKER_MOD!==m||WORKSHOP_REVIEW_ID!==id)return;
@@ -629,7 +672,7 @@ function inspectQueue(){
  SET('queueReviewSummary',plan.profileName+' · '+(plan.gameRuntime||'Unknown runtime')+' · '+warnings+' with compatibility advisories');
  $('queueReviewRows').innerHTML=entries.map((x,i)=>{
   const m=plan.items.find(row=>row.id===x.itemId)||{};
-  return '<article class="queue-review-row"><span class="queue-review-index">'+String(i+1).padStart(2,'0')+'</span><div><strong>'+escapeHTML(m.name||x.itemId)+'</strong><span>'+escapeHTML(x.displayName&&x.displayName!==x.fileName?x.displayName+' · '+x.fileName:x.fileName||('File #'+(x.fileId||x.assetId)))+'</span><small>'+escapeHTML(x.kind==='source'?'GitHub release':'Nexus Mods')+' · '+escapeHTML(x.installedVersion)+' → '+escapeHTML(x.targetVersion||'?')+(m.risks?.length?' · COMPATIBILITY WATCH':'')+'</small></div></article>';
+  return '<article class="queue-review-row"><span class="queue-review-index">'+String(i+1).padStart(2,'0')+'</span><div><strong>'+escapeHTML(m.name||x.itemId)+'</strong><span>'+escapeHTML(x.displayName&&x.displayName!==x.fileName?x.displayName+' · '+x.fileName:x.fileName||('File #'+(x.fileId||x.assetKey||x.assetId)))+'</span><small>'+escapeHTML(x.kind==='source'?providerLabel(x.provider||m.provider):'Nexus Mods')+' · '+escapeHTML(x.installedVersion)+' → '+escapeHTML(x.targetVersion||'?')+(m.risks?.length?' · COMPATIBILITY WATCH':'')+'</small></div></article>';
  }).join('');
  $('queueReviewConfirm').textContent='Queue '+entries.length+' approved download'+(entries.length===1?'':'s');
  $('queueReviewVeil').hidden=false;$('queueReviewConfirm').focus({preventScroll:true});
@@ -740,7 +783,7 @@ function nextWorkshopCandidate(){
  const plan=currentWorkshopPlan(),busyIds=new Set(Object.values(WORKSHOP_TICKETS)
    .filter(t=>!['failed','removed'].includes(t.status)).map(t=>t.itemId));
  return plan.items.find(row=>row.lane==='candidate'&&!WORKSHOP_CHOICES.has(row.id)
-   &&!busyIds.has(row.id)&&(row.nexusId||row.releaseAssets?.length))||null;
+   &&!busyIds.has(row.id)&&(INSIGHTS?.isNexus(ITEM_MAP.get(row.id)||row)||hasReleaseAssets(row)))||null;
 }
 function reviewNextWorkshopCandidate(){
  const row=nextWorkshopCandidate();
@@ -981,7 +1024,7 @@ async function refreshDownloads(){
    const title=state==='complete'?'Ready to install':state==='installing'?'MO2 installer open':state==='installed'?(d.verifiedUpdate?'Update confirmed':'Installed · needs verification'):state==='downloading'?'Downloading':state==='paused'?'Paused in MO2':state==='failed'?'Download failed':state==='removed'?'Removed from MO2':state;
    const detail=state==='complete'?'Profile snapshot and interactive FOMOD/overwrite review before installing':state==='installing'?'Finish the installer prompts inside MO2':state==='installed'?(d.verifiedUpdate?'Version change confirmed in MO2':'Rescan and verify the installed version and overwrite order'):state==='paused'?'Resume in the MO2 Downloads pane':state==='failed'?'Review an exact file to try again':state==='downloading'?'MO2 is handling this archive':'Check MO2 Downloads';
    const buttons=state==='complete'?'<button class="button-bright" data-download-id="'+escapeHTML(id)+'">ϟ Install now</button><button class="quiet-button" data-download-details="'+escapeHTML(id)+'">Details</button>':state==='failed'&&d.retriedBy?'<span class="ticket-requeued">Requeued as #'+escapeHTML(d.retriedBy)+'</span>':state==='failed'&&mod?'<button class="button-bright" data-retry-download-id="'+escapeHTML(id)+'">↻ Retry now</button><button class="quiet-button" data-retry-item-id="'+escapeHTML(d.itemId)+'">Choose another file</button>':'';
-   return '<article class="download-ticket ticket-'+escapeHTML(safeState)+'" data-ticket-item-id="'+escapeHTML(d.itemId||'')+'"><i class="ticket-status-dot" aria-hidden="true"></i><div class="ticket-copy"><strong>'+escapeHTML(name)+'</strong><span>'+escapeHTML(title)+' · '+(d.provider==='github'?'GitHub release':'Nexus Mods')+' · #'+escapeHTML(id)+'</span><small>'+escapeHTML(d.lastError||detail)+'</small></div>'+buttons+'</article>';
+   return '<article class="download-ticket ticket-'+escapeHTML(safeState)+'" data-ticket-item-id="'+escapeHTML(d.itemId||'')+'"><i class="ticket-status-dot" aria-hidden="true"></i><div class="ticket-copy"><strong>'+escapeHTML(name)+'</strong><span>'+escapeHTML(title)+' · '+(providerLabel(d.provider||'nexus'))+' · #'+escapeHTML(id)+'</span><small>'+escapeHTML(d.lastError||detail)+'</small></div>'+buttons+'</article>';
   }).join(''):'';
   renderWorkshop();
   await refreshActivity();
@@ -1003,34 +1046,39 @@ function filterFilePicker(){
 }
 $('filePickerSearch').oninput=filterFilePicker;
 async function openFilePicker(m){
- const assets=Array.isArray(m.update?.releaseAssets)?m.update.releaseAssets:[];
- if(!BRIDGE.active||(!m.nexusId&&!assets.length)){toast('No verified download assets for this source.');return}
+ const nativeNexus=Boolean(INSIGHTS?.isNexus(m)&&(!SOURCES||SOURCES.provider(m)==='nexus'));
+ if(!BRIDGE.active||(!nativeNexus&&!hasReleaseAssets(m))){toast('No verified download assets for this source.');return}
  const context=profileContext();FILE_PICKER_MOD=m;
- $('filePickerSearch').value='';
- $('filePickerMatchCount').textContent='Loading…';
+ $('filePickerSearch').value='';$('filePickerMatchCount').textContent='Loading…';
  $('filePickerTitle').textContent=m.name;
  $('filePickerSummary').textContent='Installed: '+m.installedVersion+' · Target runtime: '+(DATA.gameRuntime||'unknown')+'. Inspect file version, requirements and FOMOD instructions.';
  $('filePickerVeil').hidden=false;$('filePickerFiles').innerHTML='<div class="picker-loading">Loading exact file choices…</div>';
- const github=assets.length?'<div class="picker-source-title">GITHUB RELEASE · PUBLIC ARCHIVES</div>'+assets.map(f=>'<div class="picker-file"><div class="picker-file-main"><strong>'+escapeHTML(f.name)+'</strong><span>GitHub release · '+Math.round((f.size||0)/1024)+' KB · verify requirements and game runtime</span></div><button class="button-bright" data-file-id="'+Number(f.assetId)+'" data-archive-name="'+escapeHTML(f.name)+'" data-source-kind="github">Select release asset</button></div>').join(''):'';
- if(!m.nexusId){$('filePickerFiles').innerHTML=github;filterFilePicker();return}
+ if(m.update?.detailsAvailable||(!m.update?.releaseAssets?.length&&hasReleaseAssets(m))){
+  await loadSourceDetails(m);
+  if(FILE_PICKER_MOD!==m||!contextIsCurrent(context)||ITEM_MAP.get(m.id)!==m)return;
+ }
+ const detailed=sourceDetailMod(m),assets=Array.isArray(detailed.update?.releaseAssets)?detailed.update.releaseAssets:[];
+ const releaseFiles=assets.length?'<div class="picker-source-title">'+escapeHTML(providerLabel(SOURCES?.provider(detailed)||detailed.update?.provider))+' · PUBLISHED RELEASE FILES</div>'+(SOURCES?.assetCards(detailed)||''):'';
+ if(!nativeNexus){
+  $('filePickerFiles').innerHTML=releaseFiles||'<div class="picker-error">'+escapeHTML(SOURCE_DETAILS.get(m)?.error||'Release files are unavailable. Refresh the source check and inspect the original release.')+'</div>';
+  filterFilePicker();return;
+ }
  try{
   const j=await bridgeRequest('GET','files?modId='+m.nexusId+'&itemId='+encodeURIComponent(m.id));
   if(!j.ok)throw Error(j.error||'Nexus file review unavailable');
-  if(FILE_PICKER_MOD!==m||!contextIsCurrent(context))return; // Do not repaint a picker that was closed or changed.
+  if(FILE_PICKER_MOD!==m||!contextIsCurrent(context))return;
   const nexus=(j.files||[]).map(f=>{
    const tag=f.suggested?'◈ VERSION-MATCHED MAIN FILE':f.releaseVersionMatch?'✓ PROJECT VERSION MATCH':f.category===1?'MAIN FILE':'OPTIONAL / OTHER';
    return '<div class="picker-file'+(f.suggested?' picker-suggested':'')+'"><div class="picker-file-main"><span class="picker-match-tag">'+escapeHTML(tag)+'</span><strong>'+escapeHTML(f.name)+'</strong><span>v'+escapeHTML(f.version||'?')+' · '+escapeHTML(f.fileName||'')+' · '+escapeHTML(f.sizeInKB||'?')+' KB '+(f.category===1?' · MAIN FILE':'')+'</span>'+(f.reviewHint?'<p class="picker-hint">'+escapeHTML(f.reviewHint)+'</p>':'')+(f.description?'<p class="picker-file-desc">'+escapeHTML(f.description)+'</p>':'')+'</div><button class="button-bright" data-file-id="'+Number(f.fileId)+'" data-file-version="'+escapeHTML(f.version||'')+'" data-mod-id="'+Number(m.nexusId)+'" data-archive-name="'+escapeHTML(f.fileName||f.name)+'">Select Nexus file</button></div>';
   }).join('');
-  if(!nexus&&!github)throw Error('No files available for this project');
-  $('filePickerFiles').innerHTML=(nexus?'<div class="picker-source-title">NEXUS MODS · EXACT FILES</div>'+nexus:'')+github;
-  if(j.reviewAdvice?.hasUniqueMainMatch)$('filePickerSummary').textContent='One main Nexus file matches the published project version. This is NOT compatibility approval: verify game/runtime, required files, and FOMOD options.';
+  if(!nexus&&!releaseFiles)throw Error('No files available for this project');
+  $('filePickerFiles').innerHTML=(nexus?'<div class="picker-source-title">NEXUS MODS · EXACT FILES</div>'+nexus:'')+releaseFiles;
+  if(j.reviewAdvice?.hasUniqueMainMatch)$('filePickerSummary').textContent='One main Nexus file matches the published project version. Verify game/runtime, required files, and FOMOD options.';
   else if(j.reviewAdvice?.matchingMainFiles>1)$('filePickerSummary').textContent='Several main files share the published version. Compare the variants carefully for your runtime and mod configuration.';
-  else if(github)$('filePickerSummary').textContent='Both Nexus and GitHub releases are available. Choose the correct source and verify the exact archive against your game runtime.';
   filterFilePicker();
  }catch(ex){
   if(FILE_PICKER_MOD!==m||!contextIsCurrent(context))return;
-  $('filePickerFiles').innerHTML='<div class="picker-error">'+escapeHTML(ex.message)+'<p>Use the original Nexus Files page and Mod Manager Download if required by your account.</p></div>'+github;
-  if(github)$('filePickerSummary').textContent='Nexus files are currently unavailable. You can still review the verified public GitHub release files below.';
+  $('filePickerFiles').innerHTML='<div class="picker-error">'+escapeHTML(ex.message)+'<p>Use the original Nexus Files page and Mod Manager Download if required by your account.</p></div>'+releaseFiles;
   filterFilePicker();
  }
 }
@@ -1044,10 +1092,10 @@ $('filePickerFiles').addEventListener('click',async e=>{const b=e.target.closest
   const picked=b.closest('.picker-file'),label=picked?.querySelector('strong')?.textContent||'Selected file';
   // Exact archive selection is the user action; compatibility hints stay visible.
   const riskAcknowledged=true;
-  const sourceChoice=b.dataset.sourceKind==='github';
+  const sourceChoice=b.dataset.sourceKind==='release';
   const exactFile={fileName:b.dataset.archiveName||label,displayName:label,fileVersion:b.dataset.fileVersion||''};
   const fast=FAST_PICKER_ID===WORKSHOP_REVIEW_ID;
-  const selection=sourceChoice?{kind:'source',itemId:WORKSHOP_REVIEW_ID,assetId:Number(b.dataset.fileId),installedVersion:record.installedVersion,targetVersion:record.latestVersion,profileId:plan.profileId,reviewed:true,riskAcknowledged,autoInstall:fast,...exactFile}:{kind:'nexus',itemId:WORKSHOP_REVIEW_ID,modId:Number(m.nexusId),fileId:Number(b.dataset.fileId),installedVersion:record.installedVersion,targetVersion:record.latestVersion,profileId:plan.profileId,reviewed:true,riskAcknowledged,autoInstall:fast,...exactFile};
+  const selection=sourceChoice?{kind:'source',itemId:WORKSHOP_REVIEW_ID,assetKey:b.dataset.assetKey||'',assetProof:b.dataset.assetProof||'',...(Number(b.dataset.fileId)>0?{assetId:Number(b.dataset.fileId)}:{}),provider:b.dataset.sourceProvider||record.provider,installedVersion:record.installedVersion,targetVersion:record.latestVersion,profileId:plan.profileId,reviewed:true,riskAcknowledged,autoInstall:fast,...exactFile}:{kind:'nexus',itemId:WORKSHOP_REVIEW_ID,modId:Number(m.nexusId),fileId:Number(b.dataset.fileId),installedVersion:record.installedVersion,targetVersion:record.latestVersion,profileId:plan.profileId,reviewed:true,riskAcknowledged,autoInstall:fast,...exactFile};
   WORKSHOP_CHOICES.set(WORKSHOP_REVIEW_ID,selection);
   FAST_PICKER_ID=null;closeFilePicker();renderWorkshop();
   if(fast)return performQueuedWorkshop([selection],plan.profileId);
@@ -1057,7 +1105,9 @@ $('filePickerFiles').addEventListener('click',async e=>{const b=e.target.closest
   WORKSHOP_REVIEW_ID=m.id;
   b.click();return;
  }
- // The file itself was explicitly chosen; do not burden manual Nexus downloads with another prompt.
+ // Release assets require the active reviewed-candidate flow.
+ if(b.dataset.sourceKind==='release'){toast('Run a fresh source check before selecting this release file.');return;}
+ // The Nexus file itself was explicitly chosen.
  b.disabled=true;
  try{
   const r=await bridgeRequest('POST','download',{modId:Number(b.dataset.modId),fileId:Number(b.dataset.fileId),confirm:'DOWNLOAD'});
@@ -1085,7 +1135,7 @@ async function showInstallPreview(downloadId){
   const details=[
    ['TARGET MOD',brief.modName||'Unknown'],
    ['INSTALL FILE',brief.archiveName||'Unknown archive'],
-   ['FROM',brief.provider==='github'?'GitHub release':'Nexus Mods'],
+   ['FROM',providerLabel(brief.provider||'nexus')],
    ['MO2 PROFILE',brief.profileName||'Unknown'],
    ['GAME RUNTIME',brief.gameRuntime||'Unknown'],
    ['DOWNLOAD ID','#'+brief.downloadId]

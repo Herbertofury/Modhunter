@@ -164,6 +164,7 @@ def build_audit_request(organizer, snapshot: dict, *, deep=False, configured=())
 
 class RustAuditRunner:
     """Run only the installed matching helper; reads/writes use bounded temporary IO."""
+    command = "audit-plugins"
     def __init__(self, executable: Path | None = None, *, timeout=180):
         self.executable = executable or Path(__file__).parent / "bin" / ("modhunter-cli.exe" if os.name == "nt" else "modhunter-cli")
         self.timeout = timeout
@@ -188,7 +189,7 @@ class RustAuditRunner:
         with tempfile.TemporaryFile() as incoming:
             incoming.write(payload)
             incoming.seek(0)
-            process = subprocess.Popen([str(self.executable), "audit-plugins", "--request", "-"],
+            process = subprocess.Popen([str(self.executable), self.command, "--request", "-"],
                 stdin=incoming, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
             output, errors = bytearray(), bytearray()
@@ -245,6 +246,9 @@ class RustAuditRunner:
             if len(raw) > 32_000_000:
                 raise RuntimeError("Plugin analysis response exceeds its supported bound")
             result = json.loads(raw)
+        return self._validate_result(result, request)
+
+    def _validate_result(self, result: dict, request: dict) -> dict:
         if not isinstance(result, dict) or result.get("schemaVersion") != 1 or not isinstance(result.get("mods"), dict):
             raise RuntimeError("Rust plugin analysis returned an unsupported schema")
         if result.get("profileId") != request.get("profileId"):

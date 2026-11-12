@@ -30,7 +30,9 @@ JSON_LIMIT = 4 * 1024 * 1024
 PNG_LIMIT = 32 * 1024 * 1024
 PORTABLE_EXPANDED_LIMIT = 512 * 1024 * 1024
 PRODUCTION_FILES = ("plugin.py", "bridge.py", "model.py", "focus.py", "intelligence.py",
-                    "plugin_intelligence.py", "mod_health.py", "web/index.html")
+                    "plugin_intelligence.py", "mod_health.py", "source_adapters.py",
+                    "source_registry.py", "update_plan.py", "quick_update.py",
+                    "install_brief.py", "web/index.html")
 BUNDLED_HELPER = "MO2/mo2_update_arsenal/bin/modhunter-cli.exe"
 FIXTURE_PLUGIN_SHA256 = hashlib.sha256(
     struct.pack("<4sIIIIHH", b"TES4", 18, 0, 0, 0, 44, 0)
@@ -498,8 +500,10 @@ def self_test() -> None:
             with self.assertRaisesRegex(ReleaseError, "rust_plugin_audit"):
                 prepare(self.artifacts, self.output, self.commit, self.run)
 
-        def test_all_intelligence_sources_are_bound_to_native_proof(self):
-            for name in ("intelligence.py", "plugin_intelligence.py", "mod_health.py"):
+        def test_intelligence_and_adapter_sources_are_bound_to_native_proof(self):
+            for name in ("intelligence.py", "plugin_intelligence.py", "mod_health.py",
+                         "source_adapters.py", "source_registry.py", "update_plan.py",
+                         "quick_update.py", "install_brief.py"):
                 with self.subTest(name=name):
                     original = self.result["productionFileHashes"].pop(name)
                     self.write_json(self.mo2 / "result.json", self.result)

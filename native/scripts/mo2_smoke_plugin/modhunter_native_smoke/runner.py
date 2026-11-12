@@ -61,11 +61,22 @@ def repository_api_metadata(organizer):
         details["bridgeType"] = type(bridge).__module__ + "." + type(bridge).__qualname__
         details["bridgeMembers"] = [name for name in dir(bridge)
                                     if not name.startswith("_")][:180]
+        try:
+            delegated = bridge._object()
+            sender = delegated.sender()
+            details["senderAccess"] = {"allowed": True, "outsideCallback": True,
+                                       "result": "none" if sender is None else type(sender).__name__}
+        except Exception as exc:
+            details["senderAccess"] = {"allowed": False, "error": str(exc)[:300]}
         if bridge is not None and hasattr(bridge, "metaObject"):
             meta = bridge.metaObject()
             details["qtSignatures"] = [
                 bytes(meta.method(index).methodSignature()).decode("utf-8", "replace")[:500]
                 for index in range(min(meta.methodCount(), 120))]
+            details["qtMethodKinds"] = {
+                bytes(meta.method(index).methodSignature()).decode("utf-8", "replace")[:500]:
+                    str(meta.method(index).methodType().name)
+                for index in range(min(meta.methodCount(), 120))}
     except Exception as exc:
         details["diagnosticError"] = str(exc)[:300]
     return details

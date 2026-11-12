@@ -1,0 +1,53 @@
+name: Import complete Modhunter source
+on:
+  push:
+    branches: [main]
+    paths: ['dist/Modhunter-Complete-Source.zip']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: modhunter-import-main
+  cancel-in-progress: false
+jobs:
+  unpack-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Extract complete project archive
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path, PurePosixPath
+          from zipfile import ZipFile
+          archive = Path('dist/Modhunter-Complete-Source.zip')
+          with ZipFile(archive) as z:
+              entries = z.infolist()
+              assert entries and len(entries) <= 10000
+              for item in entries:
+                  part = PurePosixPath(item.filename)
+                  if part.is_absolute() or '..' in part.parts or part.parts[0] == '.git':
+                      raise ValueError(f'Unsafe archive path: {item.filename}')
+                  if ((item.external_attr >> 16) & 0o170000) == 0o120000:
+                      raise ValueError(f'Unexpected symlink: {item.filename}')
+              z.extractall('.')
+          print(f'Extracted {len(entries)} entries')
+          PY
+      - name: Run Python and desktop checks
+        shell: bash
+        run: |
+          python3 -m unittest discover -s tests -p 'test_*.py' -v
+          node --check desktop/main.cjs
+          node --check desktop/preload.cjs
+          node --check desktop/chrome.js
+      - name: Commit all sources and documentation
+        shell: bash
+        run: |
+          git config user.name 'Modhunter Release Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then echo 'Already current'; exit 0; fi
+          git commit -m 'feat: publish Modhunter v0.8 sources, app, HTML, MO2 plugin and wiki'
+          git push origin HEAD:main

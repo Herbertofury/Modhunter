@@ -27,7 +27,7 @@
 
 The current desktop uses Rust for the shell, parallel profile importer, metadata cache, native operations and MO2 discovery. The shared dashboard and complete games continue in WebView2; MO2's Python adapter retains its native Nexus/download/install integration. Earlier combined archives below preserve the previous Electron release series.
 
-**[Download Everything Combined (current + 36 originals)](https://drive.google.com/file/d/1UZzjHQQX3hceSWcJWFX2yygH6htzXqHE/view)** · **[Download the complete All-in-One release](https://github.com/Herbertofury/Modhunter/blob/main/dist/Modhunter-All-in-One.zip)** · **[Unified guide](Unified-Modhunter.md)**
+**[Earlier Everything Combined archive](https://drive.google.com/file/d/1UZzjHQQX3hceSWcJWFX2yygH6htzXqHE/view)** · **[Legacy All-in-One archive](https://github.com/Herbertofury/Modhunter/blob/main/dist/Modhunter-All-in-One.zip)** · **[Unified guide](Unified-Modhunter.md)**
 
 Keep the real MO2 load order updated first. The combined interface includes the complete **Update Workshop**, **Questbound**, **AetherFX**, **Shiverfell**, **Mythforge**, **Modhunter Siege**, and **Atlas**, alongside the original 36-file historical archive. Each of the HTML, Desktop and MO2 plugin editions can launch independently. The live MO2 updater is the optional authoritative connection when verifying/queueing/installing updates.
 
@@ -38,7 +38,7 @@ Keep the real MO2 load order updated first. The combined interface includes the 
 | **Modhunter Siege** | Survivor roguelite with 5 classes, 22 upgrades, 6 weapon evolutions and boss fights |
 | **Atlas Campaign** | 12 regions, 96 authored contracts, 5 mastery tiers, 480 first-clear milestones |
 | **Shiverfell Chronicles** | Persistent top-down exploration, crafting, weather, companions and quests |
-| **Update Workshop** | Full MO2 profile audit, native Nexus login, public GitHub/GitLab release checks, reviewed Nexus/GitHub downloads, and interactive MO2 installs |
+| **Update Workshop** | Full MO2 profile audit, native Nexus connection, Rust GitHub/GitLab/Modrinth/Thunderstore adapters, exact-file downloads and interactive MO2 installs |
 
 ## ✧ Craft standard
 

@@ -15,6 +15,9 @@ page=(WEB/'app.template.html').read_text(encoding='utf8').replace('/*__STYLE__*/
 assert '/*__' not in page
 assert '<!--__MO2_BOOT__-->' in page
 (WEB/'index.html').write_text(page,encoding='utf8')
+standalone=ROOT/'web'/'Modhunter.html'
+standalone.parent.mkdir(parents=True,exist_ok=True)
+standalone.write_text(page,encoding='utf8')
 out=Path(os.environ.get('MODHUNTER_ARTIFACT_DIR','/mnt/data'))/'MO2_Update_Arsenal.html'
 out.parent.mkdir(parents=True,exist_ok=True)
 out.write_text(page,encoding='utf8')

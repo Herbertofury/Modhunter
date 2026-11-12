@@ -158,8 +158,136 @@ fn smoke_event(app: &tauri::AppHandle, stage: &str, details: Value) {
         .append(true)
         .open(path.with_extension("events.jsonl"))
     {
-        let _ = writeln!(file, "{}", json!({"stage": stage, "details": details}));
+        let observed_at_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_millis())
+            .unwrap_or_default();
+        let _ = writeln!(
+            file,
+            "{}",
+            json!({"observedAtUnixMs": observed_at_ms, "stage": stage, "details": details})
+        );
     }
+}
+
+fn smoke_download_details(
+    app: &tauri::AppHandle,
+    operation: &webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2DownloadOperation,
+    stage: &str,
+    elapsed_ms: u128,
+) {
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON, COREWEBVIEW2_DOWNLOAD_STATE,
+    };
+    use windows_core::PWSTR;
+
+    let mut state = COREWEBVIEW2_DOWNLOAD_STATE::default();
+    let state_result = unsafe { operation.State(&mut state) }.map(|()| state.0);
+    let mut reason = COREWEBVIEW2_DOWNLOAD_INTERRUPT_REASON::default();
+    let reason_result = unsafe { operation.InterruptReason(&mut reason) }.map(|()| reason.0);
+    let mut received = 0_i64;
+    let received_result = unsafe { operation.BytesReceived(&mut received) }.map(|()| received);
+    let mut total = 0_i64;
+    let total_result = unsafe { operation.TotalBytesToReceive(&mut total) }.map(|()| total);
+    let mut path = PWSTR::null();
+    let path_read = unsafe { operation.ResultFilePath(&mut path) };
+    // Frees the COM-allocated buffer, including when the getter reported an error.
+    let path_text = webview2_com::take_pwstr(path);
+    let path_result = path_read.map(|()| path_text);
+    smoke_event(
+        app,
+        stage,
+        json!({
+            "elapsedMs": elapsed_ms,
+            "state": state_result.as_ref().ok().copied(),
+            "stateError": state_result.err().map(|error| error.to_string()),
+            "interruptReason": reason_result.as_ref().ok().copied(),
+            "interruptReasonError": reason_result.err().map(|error| error.to_string()),
+            "receivedBytes": received_result.as_ref().ok().copied(),
+            "receivedBytesError": received_result.err().map(|error| error.to_string()),
+            "totalBytes": total_result.as_ref().ok().copied(),
+            "totalBytesError": total_result.err().map(|error| error.to_string()),
+            "resultFilePath": path_result.as_ref().ok(),
+            "resultFilePathError": path_result.as_ref().err().map(|error| error.to_string())
+        }),
+    );
+}
+
+fn install_smoke_download_observer(app: &tauri::AppHandle, view: &Webview) -> Result<()> {
+    use webview2_com::{
+        DownloadStartingEventHandler, Microsoft::Web::WebView2::Win32::ICoreWebView2_4,
+        StateChangedEventHandler,
+    };
+    use windows_core::Interface;
+
+    if app.state::<Runtime>().smoke_output.is_none() {
+        return Ok(());
+    }
+    let app = app.clone();
+    view.with_webview(move |platform| {
+        let setup = (|| -> windows_core::Result<()> {
+            let core = unsafe { platform.controller().CoreWebView2()? };
+            let core4: ICoreWebView2_4 = core.cast()?;
+            let start_app = app.clone();
+            let starting = DownloadStartingEventHandler::create(Box::new(move |_, args| {
+                let Some(args) = args else {
+                    return Ok(());
+                };
+                let operation = match unsafe { args.DownloadOperation() } {
+                    Ok(operation) => operation,
+                    Err(error) => {
+                        smoke_event(
+                            &start_app,
+                            "export-native-observer-error",
+                            json!({"operation": "DownloadOperation", "error": error.to_string()}),
+                        );
+                        return Ok(());
+                    }
+                };
+                let started = std::time::Instant::now();
+                smoke_download_details(&start_app, &operation, "export-native-start", 0);
+                let state_app = start_app.clone();
+                let changed = StateChangedEventHandler::create(Box::new(move |operation, _| {
+                    if let Some(operation) = operation {
+                        smoke_download_details(
+                            &state_app,
+                            &operation,
+                            "export-native-state",
+                            started.elapsed().as_millis(),
+                        );
+                    }
+                    Ok(())
+                }));
+                let mut state_token = 0_i64;
+                if let Err(error) =
+                    unsafe { operation.add_StateChanged(&changed, &mut state_token) }
+                {
+                    smoke_event(
+                        &start_app,
+                        "export-native-observer-error",
+                        json!({"operation": "add_StateChanged", "error": error.to_string()}),
+                    );
+                }
+                // Registration owns the COM callback until the operation ends.
+                // Do not cancel, resume, redirect, mark handled or change the path.
+                Ok(())
+            }));
+            let mut start_token = 0_i64;
+            unsafe {
+                core4.add_DownloadStarting(&starting, &mut start_token)?;
+            }
+            Ok(())
+        })();
+        match setup {
+            Ok(()) => smoke_event(&app, "export-native-observer-installed", json!({})),
+            Err(error) => smoke_event(
+                &app,
+                "export-native-observer-error",
+                json!({"operation": "setup", "error": error.to_string()}),
+            ),
+        }
+    })
+    .map_err(err)
 }
 
 fn page_url(mode: Mode, endpoint: Option<&str>) -> String {
@@ -351,6 +479,12 @@ fn inject_catalog(app: &tauri::AppHandle, label: &str) -> Result<()> {
                 window.location.href='modhunter-proof://result?ok='+(ok?'1':'0')+'&denied='+(denied?'1':'0')
                     +'&items='+(c?.items?.length||0)+'&profile='+encodeURIComponent(c?.profileName||'');
             };
+            window.__modhunterNativeSmokeDiagnostics={
+                userActivationActive:!!navigator.userActivation?.isActive,
+                userActivationEver:!!navigator.userActivation?.hasBeenActive,
+                documentReadyState:document.readyState,
+                requestedAtPerformanceMs:performance.now()
+            };
             document.getElementById('backupBtn').click();
         })();"#).map_err(err)?;
     }
@@ -472,6 +606,23 @@ fn open_tab(app: &tauri::AppHandle, mode: Mode) -> Result<u64> {
                     json!({"url": url.as_str(), "destination": destination}),
                 );
                 let state = download_app.state::<Runtime>();
+                if state.smoke_output.is_some() {
+                    let diagnostic_app = download_app.clone();
+                    if let Err(error) = view.eval_with_callback(
+                        "window.__modhunterNativeSmokeDiagnostics ?? null",
+                        move |value| {
+                            let details = serde_json::from_str(&value)
+                                .unwrap_or_else(|_| json!({"raw": value}));
+                            smoke_event(&diagnostic_app, "export-browser-state", details);
+                        },
+                    ) {
+                        smoke_event(
+                            &download_app,
+                            "export-browser-state-error",
+                            json!({"error": error.to_string()}),
+                        );
+                    }
+                }
                 let endpoint = state
                     .model
                     .lock()
@@ -512,6 +663,12 @@ fn open_tab(app: &tauri::AppHandle, mode: Mode) -> Result<u64> {
                     .map(|d| d.as_nanos())
                     .unwrap_or_default();
                 *destination = directory.join(format!("{stamp}-{name}"));
+                smoke_event(
+                    &download_app,
+                    "export-destination-selected",
+                    json!({"destination": destination,
+                    "absolute": destination.is_absolute(), "directoryExists": directory.is_dir()}),
+                );
                 true
             }
             DownloadEvent::Finished { path, success, .. } => {
@@ -601,6 +758,9 @@ fn open_tab(app: &tauri::AppHandle, mode: Mode) -> Result<u64> {
             .tabs
             .retain(|t| t.id != id);
         return Err(format!("Could not create a WebView2 tab: {e}"));
+    }
+    if let Some(view) = app.get_webview(&label) {
+        install_smoke_download_observer(app, &view)?;
     }
     activate(app, id)?;
     Ok(id)

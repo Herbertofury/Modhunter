@@ -1,8 +1,8 @@
 # ⚔ MODHUNTER · ONE UNIFIED COMMAND CENTER
 
-**[Download EVERYTHING together (current runnable app + all 36 untouched historical outputs)](https://drive.google.com/file/d/1UZzjHQQX3hceSWcJWFX2yygH6htzXqHE/view)** · [Current development release only](https://github.com/Herbertofury/Modhunter/blob/main/dist/Modhunter-All-in-One.zip)
+**[Download the current Rust Windows release](https://github.com/Herbertofury/Modhunter/releases)** · [Installation and tested scope](Rust-Desktop.md)
 
-The Everything archive puts the runnable current product at the root (Modhunter.html, Desktop/, MO2/, Source/, Docs/) and all authentic historical versions under History/. It contains 111 files verified against the archive manifest. Historical versions are preserved for reference and are not installed over the current build.
+The current portable package contains the Rust desktop, MO2 plugin, both native helpers and plugin installer. The [earlier Everything archive](https://drive.google.com/file/d/1UZzjHQQX3hceSWcJWFX2yygH6htzXqHE/view) preserves the Electron edition at its root (Modhunter.html, Desktop/, MO2/, Source/, Docs/) and all 36 original outputs under History/. Its 111 files were verified against that archive's manifest. Historical versions remain available for reference.
 
 
 > **Primary purpose:** Keep your real Mod Organizer 2 mods up to date, with an elegant, traceable, profile-specific workflow. Questbound, AetherFX, Shiverfell, Mythforge, Modhunter Siege and the Atlas are all part of the **same product**, not separate replacement apps.
@@ -14,7 +14,7 @@ The Everything archive puts the runnable current product at the root (Modhunter.
 | Entry point | Works by itself | Mod review | Live MO2 updating | World and game content |
 |---|---|---|---|---|
 | **Standalone HTML** | Yes, a self-contained HTML file | Complete offline checklist, search, source links, export | Not without MO2 connection; never fabricates update status | Questbound, AetherFX, Shiverfell/Mythforge, Siege/Atlas |
-| **Desktop App** | Yes, Node + Electron installed | All offline features **plus** on-demand read-only MO2 modlist import | Connect optionally to MO2 plugin's tokenized loopback session | Same HTML, native tabs for mods, Siege, Shiverfell |
+| **Rust Desktop App** | Yes, Windows and WebView2; no Node or Electron required | All offline features **plus** on-demand read-only MO2 modlist import | Find MO2 discovers and validates the plugin's tokenized loopback session | Same HTML, native tabs for mods, Siege, Shiverfell |
 | **MO2 Python Tool** | Yes, when loaded by MO2 | Actual active profile, installed versions, exact Nexus IDs, active game runtime | Nexus and public release checks; MO2 downloads, interactive installs, backups, rescan | Same bundled HTML, verified Forge Sigils and actual mod-based bosses |
 
 All three editions ship the **same byte-for-byte self-contained dashboard**. Desktop never needs the MO2 plugin to play games or inspect an imported portable profile. The MO2 plugin never needs the desktop app to serve its live dashboard. Standalone HTML requires neither to launch.
@@ -32,23 +32,23 @@ The worlds and effects must **never interrupt, replace, fake or prioritize thems
 
 ## Recommended Windows setup
 
-1. Download **[Modhunter All-in-One.zip](https://github.com/Herbertofury/Modhunter/blob/main/dist/Modhunter-All-in-One.zip)** and extract to a permanent folder.
-2. For a portable standalone experience, open **Modhunter.html**. All game modes and the offline checklist work without a program installer.
-3. For real MO2 2.5.x updates, run **MO2/Install_to_MO2.bat**; open MO2 and launch **Tools → Update Arsenal - Quest Board**. Its dashboard scans the actual current profile. The tool is designed for MO2 2.5.x, with **2.5.3 as a compatibility target**; native acceptance on a real Windows MO2 2.5.3 installation remains unverified.
-4. For native desktop tabs without an MO2 dependency, run **Desktop/Run_ModHunter.bat** (Node.js required). Use **Import MO2** to inspect a local portable profile without the plugin.
-5. If you want all live features *inside the desktop shell*, connect its address field to the plugin's local session. This pairing is optional.
+1. Download **Modhunter-Rust-Windows.zip** from [Windows releases](https://github.com/Herbertofury/Modhunter/releases) and extract it to a permanent folder. An NSIS installer is also available for the desktop app.
+2. Run **Modhunter.exe**. Use **Import MO2** to inspect a local profile without the plugin; select its `modlist.txt`, with optional instance INI and mods-path overrides for custom layouts.
+3. For live updates, close MO2 and run the portable package's **Install_MO2_Plugin.bat**. Select the folder containing `ModOrganizer.exe`, restart MO2 and launch **Tools → Update Arsenal - Quest Board**. The installer preserves previous plugin data and a backup. Native integration is tested against official **MO2 2.5.2**.
+4. Click **Find MO2** in the Rust app to connect a validated running session. Multiple sessions are offered for selection. The plugin's browser dashboard also works independently.
+5. For browser-only offline use, open the current [standalone HTML](https://github.com/Herbertofury/Modhunter/blob/main/web/Modhunter.html). Games and the checklist do not require MO2; live updating requires the plugin.
 
-Inside the All-in-One archive, **Installers/** has separate edition ZIPs, **Source/** contains the full editable source ZIP, **Docs/** contains the full Wiki, and **bundle-index.json** contains individual file hashes. The root HTML is identical to the copy in Desktop and MO2.
+The Rust portable package includes `BUILD_INFO.json`, `SHA256SUMS.txt` and Windows smoke evidence. The release also supplies a verification archive. The older [All-in-One archive](https://github.com/Herbertofury/Modhunter/blob/main/dist/Modhunter-All-in-One.zip) retains its historical **Installers/**, **Source/**, **Docs/** and **bundle-index.json**; use the current release above for the new helpers and source adapters.
 
 ## Actual updater workflow
 
 **Inspect actual profile → identify each original source → query real version evidence → review exact compatible files → queue approved downloads to MO2 → install interactively → backup and re-scan.**
 
 - **Nexus Mods:** MO2's own Nexus authorization when the bridge is available, exact project/file IDs, selected archive in MO2 Downloads.
-- **Public GitHub/GitLab releases:** release-tag comparisons, with GitHub release archive selection and native MO2 download.
+- **GitHub, GitLab, Modrinth and Thunderstore:** exact project/release/file comparisons, declared dependency and compatibility context, and eligible archive selection through MO2. Published hashes are metadata; they do not claim independent verification of downloaded bytes.
 - **Patreon, LoversLab, Mod DB, Bethesda Creations and other gated sources:** retained original URLs, manual-review states until a provider-authenticated, reliable check is implemented. Never display “current” without evidence.
 - **Compatibility:** target game executable and SKSE runtime, native DLLs, FOMOD options, hard masters, dependency order, behavior generators and save warnings.
-- **Updates:** per-profile backups and explicit file selection before queueing. No blind bulk installation.
+- **Updates:** an unambiguous, freshly validated file can use **Update now**; ambiguous or risky choices open the file picker. Batch review and installation briefings remain available. Profile backups cover load-order text files, and MO2 keeps its interactive FOMOD and overwrite choices.
 
 For the exact coverage matrix and unsupported providers, see [Updater Source Coverage](Updater-Source-Coverage.md) and [Update Workshop](Update-Workshop.md).
 
@@ -58,6 +58,6 @@ The v0.1 through v0.8 lineage is **merged functionally** into the current applic
 
 ## Verification boundary
 
-The GitHub workflow checks the Python bridge/scanner tests, desktop-import Node tests, inline HTML JavaScript syntax, archive integrity, and full byte parity between all three dashboard copies. A successful CI run **does not** prove MO2 2.5.3 native Windows integration or automatic version checks on private sites. Those require runtime evidence with an actual MO2 profile.
+The Rust workflow checks the core, Python bridge, source adapters, browser interactions, actual Windows WebView2 app and a portable official MO2 2.5.2 fixture. Release validation binds the packages to those build receipts and checks the shipped production files and native helpers. The fixture does not authenticate a Nexus account or prove account-specific downloads, FOMOD choices, private-site access or a particular game setup. Exact run evidence is linked from [Rust Desktop](Rust-Desktop.md).
 
-**Next:** [Getting Started](Getting-Started.md) · [Desktop App](Desktop-App.md) · [MO2 Plugin](MO2-Plugin.md) · [All Original Releases](Original-Releases-and-Output-Audit.md).
+**Next:** [Getting Started](Getting-Started.md) · [Rust Desktop](Rust-Desktop.md) · [MO2 Plugin](MO2-Plugin.md) · [All Original Releases](Original-Releases-and-Output-Audit.md).

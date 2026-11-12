@@ -28,12 +28,12 @@ jobs:
             echo "::error::The GitHub Wiki repository is not initialized or the Actions token lacks Wiki write access. Create the first Home page in GitHub's Wiki UI, or supply a credential with Wiki write permission."
             exit 1
           fi
-          find /tmp/modhunter-wiki -mindepth 1 -maxdepth 1 -type f -name '*.md' -delete
+          # Update repository-owned pages while preserving other Wiki content.
           cp wiki/*.md /tmp/modhunter-wiki/
           cd /tmp/modhunter-wiki
           git config user.name "Modhunter Wiki Bot"
           git config user.email "actions@users.noreply.github.com"
           git add -A
           if git diff --cached --quiet; then echo "Wiki already current"; exit 0; fi
-          git commit -m "docs: sync Modhunter v0.8 Wiki"
+          git commit -m "docs: sync canonical Modhunter Wiki"
           git push origin HEAD

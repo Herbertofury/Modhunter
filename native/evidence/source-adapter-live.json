@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
-  "recordedAt": "2026-11-12T16:50:55.003323+00:00",
+  "recordedAt": "2026-11-12T17:11:33.098423+00:00",
   "scope": "Compiled Rust public API reads and cache reuse only; no credentials, downloads, installation, MO2, GUI or game execution.",
   "platform": "Linux",
   "architecture": "x86_64",
-  "baseCommit": "584fa06b64ab0a964b65cd03d12526371f301398",
+  "baseCommit": "76040873cf17189aac9799e4ad68b09f8902d0cb",
   "sourceMatchesBaseCommit": false,
   "sourceSha256": {
-    "native/Cargo.lock": "86beefcf821c855ea66a338bfdb44db13a598b8be9b337ff49fd347091daf12d",
+    "native/Cargo.lock": "d630a54d3fd40f6313159b9e9f08f4e7334d253c968f5728aceadc108a31d132",
     "native/rust-toolchain.toml": "d13306be0ecda81ce779baa290ffb417380d525928477f16200884b5169cca33",
     "native/crates/modhunter-core/Cargo.toml": "d8984abc1438085078d1f27f96690718a8d59946d33528a725a163f9ad1581ea",
     "native/crates/modhunter-core/src/lib.rs": "9bfeaf6290f88f4453ed10cc8294d22d3d658a5860da8fc32da5a360547b5b44",
@@ -19,7 +19,7 @@
   },
   "binarySha256": "0fb1fc7654f07e5debbd72a8ff2d550117cd2182c685bbfa462625afdfd5764a",
   "protocolCompleted": true,
-  "successfulProviderObservations": 4,
+  "successfulProviderObservations": 3,
   "providerObservations": [
     {
       "provider": "github",
@@ -30,7 +30,7 @@
       "projectId": "modorganizer2/modorganizer",
       "releaseId": "168595754",
       "latestVersion": "v2.5.2",
-      "checkedAt": 1794502238,
+      "checkedAt": 1794503472,
       "retryAt": null,
       "compatibilityStatus": "not-declared",
       "moderationStatus": null,
@@ -47,7 +47,7 @@
       "firstRequestStats": {
         "budgetMs": 18000,
         "cacheHits": 0,
-        "elapsedMs": 4755.626725,
+        "elapsedMs": 6257.941507,
         "items": 2,
         "manualSources": 0,
         "queried": 3,
@@ -56,14 +56,14 @@
         "sourceProjects": 2,
         "workers": 4
       },
-      "processElapsedMs": 4764.129,
+      "processElapsedMs": 6265.417,
       "cacheRepeat": {
         "outcome": "release",
         "freshness": "cached",
         "stats": {
           "budgetMs": 18000,
           "cacheHits": 2,
-          "elapsedMs": 1.445979,
+          "elapsedMs": 1.017712,
           "items": 2,
           "manualSources": 0,
           "queried": 0,
@@ -72,7 +72,7 @@
           "sourceProjects": 2,
           "workers": 4
         },
-        "processElapsedMs": 9.963
+        "processElapsedMs": 10.638
       }
     },
     {
@@ -84,7 +84,7 @@
       "projectId": "OpenMW/openmw",
       "releaseId": "openmw-0.51.0",
       "latestVersion": "openmw-0.51.0",
-      "checkedAt": 1794502238,
+      "checkedAt": 1794503472,
       "retryAt": null,
       "compatibilityStatus": "not-declared",
       "moderationStatus": null,
@@ -101,7 +101,7 @@
       "firstRequestStats": {
         "budgetMs": 18000,
         "cacheHits": 0,
-        "elapsedMs": 4755.626725,
+        "elapsedMs": 6257.941507,
         "items": 2,
         "manualSources": 0,
         "queried": 3,
@@ -110,14 +110,14 @@
         "sourceProjects": 2,
         "workers": 4
       },
-      "processElapsedMs": 4764.129,
+      "processElapsedMs": 6265.417,
       "cacheRepeat": {
         "outcome": "release",
         "freshness": "cached",
         "stats": {
           "budgetMs": 18000,
           "cacheHits": 2,
-          "elapsedMs": 1.445979,
+          "elapsedMs": 1.017712,
           "items": 2,
           "manualSources": 0,
           "queried": 0,
@@ -126,52 +126,52 @@
           "sourceProjects": 2,
           "workers": 4
         },
-        "processElapsedMs": 9.963
+        "processElapsedMs": 10.638
       }
     },
     {
       "provider": "modrinth",
       "sourceUrl": "https://modrinth.com/mod/sodium",
-      "outcome": "release",
-      "availability": "available",
-      "reason": "Published release identity verified; installed-version comparison is performed by the updater.",
-      "projectId": "AANobbMI",
-      "releaseId": "SMxNOGZ6",
-      "latestVersion": "mc1.21.1-0.8.13-fabric",
-      "checkedAt": 1794502243,
-      "retryAt": null,
-      "compatibilityStatus": "matched",
+      "outcome": "unavailable",
+      "availability": "unavailable",
+      "reason": "Provider request timed out",
+      "projectId": "sodium",
+      "releaseId": null,
+      "latestVersion": null,
+      "checkedAt": 1794503478,
+      "retryAt": 1794503538,
+      "compatibilityStatus": null,
       "moderationStatus": null,
       "metadataCounts": {
-        "files": 1,
+        "files": 0,
         "queueableArchives": 0,
-        "filesWithPublishedHashes": 1,
+        "filesWithPublishedHashes": 0,
         "dependencies": 0,
-        "media": 6,
-        "changelogCharacters": 647
+        "media": 0,
+        "changelogCharacters": 0
       },
       "publisherObserved": false,
       "authorObserved": false,
       "firstRequestStats": {
         "budgetMs": 18000,
         "cacheHits": 0,
-        "elapsedMs": 7821.057167,
+        "elapsedMs": 9395.501294000002,
         "items": 1,
         "manualSources": 0,
-        "queried": 2,
+        "queried": 1,
         "rateLimited": 0,
         "revalidated": 0,
         "sourceProjects": 1,
         "workers": 4
       },
-      "processElapsedMs": 7828.573,
+      "processElapsedMs": 9461.43,
       "cacheRepeat": {
-        "outcome": "release",
-        "freshness": "cached",
+        "outcome": "unavailable",
+        "freshness": "unverified",
         "stats": {
           "budgetMs": 18000,
-          "cacheHits": 2,
-          "elapsedMs": 2.6318140000000003,
+          "cacheHits": 0,
+          "elapsedMs": 1.7063270000000001,
           "items": 1,
           "manualSources": 0,
           "queried": 0,
@@ -180,7 +180,7 @@
           "sourceProjects": 1,
           "workers": 4
         },
-        "processElapsedMs": 10.191
+        "processElapsedMs": 571.827
       }
     },
     {
@@ -192,7 +192,7 @@
       "projectId": "denikson/BepInExPack_Valheim",
       "releaseId": "5.4.2360",
       "latestVersion": "5.4.2360",
-      "checkedAt": 1794502251,
+      "checkedAt": 1794503488,
       "retryAt": null,
       "compatibilityStatus": "community-matched",
       "moderationStatus": "unreviewed",
@@ -209,7 +209,7 @@
       "firstRequestStats": {
         "budgetMs": 18000,
         "cacheHits": 0,
-        "elapsedMs": 3564.673904,
+        "elapsedMs": 4071.116866,
         "items": 1,
         "manualSources": 0,
         "queried": 1,
@@ -218,14 +218,14 @@
         "sourceProjects": 1,
         "workers": 4
       },
-      "processElapsedMs": 3572.581,
+      "processElapsedMs": 4134.351,
       "cacheRepeat": {
         "outcome": "release",
         "freshness": "cached",
         "stats": {
           "budgetMs": 18000,
           "cacheHits": 1,
-          "elapsedMs": 0.718677,
+          "elapsedMs": 1.732295,
           "items": 1,
           "manualSources": 0,
           "queried": 0,
@@ -234,7 +234,7 @@
           "sourceProjects": 1,
           "workers": 4
         },
-        "processElapsedMs": 7.356
+        "processElapsedMs": 23.96
       }
     }
   ],

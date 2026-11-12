@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "ok": true,
-  "generatedAt": "2026-11-12T16:50:45.022063Z",
+  "generatedAt": "2026-11-12T17:11:30.286412Z",
   "scope": {
     "kind": "synthetic-python-rust-json-protocol",
     "realMO2": false,
@@ -26,7 +26,7 @@
     "native/crates/modhunter-core/src/plugin_analysis/records.rs": "470b3d4dc33fb874af0354f60e36b12abd5854640a7db1d2dc2c2b76f0557d37",
     "native/crates/modhunter-core/src/plugin_analysis/provenance.rs": "20bd3f6fd3c33c2874e75319cd12764c3f74434cd372e14b7e9db341593dc160",
     "native/crates/modhunter-core/src/bin/modhunter-cli.rs": "bfdad48c937375fcf07d7e0f14506c379acdcb60f2af630b070d1982fbdfa352",
-    "native/Cargo.lock": "86beefcf821c855ea66a338bfdb44db13a598b8be9b337ff49fd347091daf12d"
+    "native/Cargo.lock": "d630a54d3fd40f6313159b9e9f08f4e7334d253c968f5728aceadc108a31d132"
   },
   "rustCliSha256": "0fb1fc7654f07e5debbd72a8ff2d550117cd2182c685bbfa462625afdfd5764a",
   "checks": [
@@ -106,8 +106,8 @@
     "changedSourceState": "source-changed",
     "installedVersionUnchanged": true,
     "unknownGameHeaderBytes": 42,
-    "initialRunnerElapsedMs": 8.639,
-    "changedSourceRunnerElapsedMs": 5.272
+    "initialRunnerElapsedMs": 455.757,
+    "changedSourceRunnerElapsedMs": 299.94
   },
   "limitations": "Actual Python request capture and subprocess runner invoke the actual Rust parser on synthetic files. Organizer methods are fixture doubles. No native MO2, Windows GUI, Nexus, download, installation, game, conversion or save-safety claim is made. Timings are single fixture runs, not benchmarks."
 }

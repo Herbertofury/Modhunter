@@ -5,7 +5,9 @@ make account or HTTP requests; a C++-created fixture QObject exercises the exact
 protected-sender limitation seen on the native MO2 bridge.
 """
 from __future__ import annotations
+import ast
 import ctypes
+import hashlib
 import os
 from pathlib import Path
 import threading
@@ -330,6 +332,52 @@ class CompiledQtTests(unittest.TestCase):
         worker.join(2)
         self.assertEqual(len(failures), 1)
         self.assertIn("GUI thread", failures[0])
+
+    @staticmethod
+    def optimized_native_probe():
+        # Execute the actual native acceptance function with the same assert
+        # stripping as MO2's optimized embedded Python. The test receiver stays
+        # a compiled C++ QObject, not a Python-created stand-in.
+        path = Path(__file__).resolve().parents[1] / "native/scripts/mo2_smoke_plugin/modhunter_native_smoke/runner.py"
+        module = ast.parse(path.read_text(encoding="utf-8"))
+        probe = next(node for node in module.body if isinstance(node, ast.FunctionDef)
+                     and node.name == "exercise_native_nexus_binding")
+        namespace = {"QtCore": QtCore, "sip": sip, "UIRequest": UIRequest,
+                     "hashlib": hashlib, "os": os}
+        exec(compile(ast.Module(body=[probe], type_ignores=[]), str(path), "exec", optimize=2), namespace)
+        return namespace[probe.name]
+
+    def test_actual_native_probe_completes_and_checks_lifetimes_under_optimized_python(self):
+        probe = self.optimized_native_probe()
+        helper_hash = hashlib.sha256(self.resolver.path.read_bytes()).hexdigest()
+        with patch.dict(os.environ, {"MODHUNTER_NATIVE_SMOKE_QT_BRIDGE_SHA256": helper_hash}):
+            result = probe(self.gateway, expected_qt_version=QtCore.qVersion())
+        self.assertTrue(result["metadataCompleted"])
+        self.assertTrue(result["rawFilesCompleted"])
+        self.assertTrue(result["unownedIgnored"])
+        self.assertTrue(result["cancelledIgnored"])
+        self.assertEqual(result["networkRequests"], 0)
+        self.assertFalse(result["accountAuthentication"])
+        self.assertEqual(self.native.calls, [])
+        self.assertEqual(self.gateway.pending, {})
+        self.assertIsNone(self.gateway._raw_source)
+
+    def test_optimized_native_probe_still_rejects_wrong_helper_hash(self):
+        probe = self.optimized_native_probe()
+        with patch.dict(os.environ, {"MODHUNTER_NATIVE_SMOKE_QT_BRIDGE_SHA256": "0" * 64}), \
+                self.assertRaisesRegex(AssertionError, "differs from the compiled fixture"):
+            probe(self.gateway, expected_qt_version=QtCore.qVersion())
+        self.assertEqual(self.native.calls, [])
+        self.assertEqual(self.gateway.pending, {})
+
+    def test_optimized_native_probe_still_rejects_wrong_qt_runtime(self):
+        probe = self.optimized_native_probe()
+        helper_hash = hashlib.sha256(self.resolver.path.read_bytes()).hexdigest()
+        with patch.dict(os.environ, {"MODHUNTER_NATIVE_SMOKE_QT_BRIDGE_SHA256": helper_hash}), \
+                self.assertRaises(AssertionError):
+            probe(self.gateway, expected_qt_version="0.0.0")
+        self.assertEqual(self.native.calls, [])
+        self.assertEqual(self.gateway.pending, {})
 
 
 if __name__ == "__main__":

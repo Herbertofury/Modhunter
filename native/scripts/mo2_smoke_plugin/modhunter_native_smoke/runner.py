@@ -84,17 +84,23 @@ def repository_api_metadata(organizer):
     return details
 
 
-def exercise_native_nexus_binding(gateway):
+def exercise_native_nexus_binding(gateway, *, expected_qt_version="6.7.1"):
     """Use the real MO2-created QObject with synthetic Qt data and no requests."""
-    assert gateway.files_available, gateway.files_error
+    # MO2's embedded Python is optimized. These checks and request lifecycle
+    # calls must execute under -O/-OO as well as ordinary test interpreters.
+    def require(condition, message):
+        if not condition:
+            raise AssertionError(message)
+
+    require(gateway.files_available, gateway.files_error)
     native = gateway._qt_bridge
-    assert native is not None and not sip.ispycreated(native), "Expected MO2's C++-created repository QObject"
+    require(native is not None and not sip.ispycreated(native), "Expected MO2's C++-created repository QObject")
     helper = gateway._qt_sender
-    assert helper is not None
+    require(helper is not None, "The native Qt sender helper is unavailable")
     helper_hash = hashlib.sha256(helper.path.read_bytes()).hexdigest()
-    assert helper_hash == os.environ["MODHUNTER_NATIVE_SMOKE_QT_BRIDGE_SHA256"], "The loaded Qt helper differs from the compiled fixture helper"
-    assert helper.info == {"abi": 1, "buildQt": "6.7.1", "runtimeQt": "6.7.1", "mechanism": "typed-qt-sender"}, helper.info
-    assert helper.sender(native) is None, "Qt sender leaked outside a callback"
+    require(helper_hash == os.environ["MODHUNTER_NATIVE_SMOKE_QT_BRIDGE_SHA256"], "The loaded Qt helper differs from the compiled fixture helper")
+    require(helper.info == {"abi": 1, "buildQt": expected_qt_version, "runtimeQt": expected_qt_version, "mechanism": "typed-qt-sender"}, helper.info)
+    require(helper.sender(native) is None, "Qt sender leaked outside a callback")
 
     class NexusInterface(QtCore.QObject):
         description = QtCore.pyqtSignal(str, int, "QVariant", "QVariant")
@@ -107,7 +113,8 @@ def exercise_native_nexus_binding(gateway):
     requests = []
     def owned(kind, ticket):
         request = UIRequest(kind, {"game": "skyrimspecialedition", "modId": 7})
-        assert request.begin()
+        started = request.begin()
+        require(started, "The fixture request did not begin")
         gateway.pending[ticket] = request
         request.add_done_callback(lambda: gateway._forget(ticket))
         requests.append(request)
@@ -116,24 +123,25 @@ def exercise_native_nexus_binding(gateway):
     try:
         meta = owned("nexus-metadata", "modhunter:ci:metadata")
         source.description.emit("skyrimspecialedition", 7, "other-plugin:fixture", {"version": "2"})
-        assert meta.state == "running" and gateway._raw_source is None
+        require(meta.state == "running" and gateway._raw_source is None, "An unowned metadata callback changed the fixture request")
         source.description.emit("skyrimspecialedition", 7, "modhunter:ci:metadata", {"version": "2"})
-        assert meta.result.get("ok") is True and meta.result["meta"]["version"] == "2", meta.result
-        assert gateway.file_transport == "qt-raw-variant" and gateway._raw_source is source, gateway.files_error
+        require(meta.result.get("ok") is True and meta.result["meta"]["version"] == "2", meta.result)
+        require(gateway.file_transport == "qt-raw-variant" and gateway._raw_source is source, gateway.files_error)
         files = owned("nexus-files", "modhunter:ci:files")
         payload = {"files": [{"file_id": 12, "file_name": "Fixture.zip", "size_in_bytes": 3072}]}
         source.nxmFilesAvailable.emit("skyrimspecialedition", 7, "other-plugin:fixture", payload, 3)
-        assert files.state == "running"
+        require(files.state == "running", "An unowned raw files callback completed the fixture request")
         source.nxmFilesAvailable.emit("skyrimspecialedition", 7, "modhunter:ci:files", payload, 3)
-        assert files.result.get("ok") is True, files.result
-        assert len(files.result["files"]) == 1
+        require(files.result.get("ok") is True, files.result)
+        require(len(files.result["files"]) == 1, "The native file callback did not produce exactly one fixture file")
         normalized = files.result["files"][0]
-        assert normalized["fileId"] == 12 and normalized["fileName"] == "Fixture.zip" and normalized["sizeInKB"] == 3
+        require(normalized["fileId"] == 12 and normalized["fileName"] == "Fixture.zip" and normalized["sizeInKB"] == 3, "The native raw JSON file identity or size did not match")
         cancelled = owned("nexus-files", "modhunter:ci:cancelled")
-        assert cancelled.cancel()
+        cancelled_now = cancelled.cancel()
+        require(cancelled_now, "The fixture request could not be cancelled")
         source.nxmFilesAvailable.emit("skyrimspecialedition", 7, "modhunter:ci:cancelled", payload, 4)
-        assert cancelled.state == "cancelled" and not cancelled.result.get("ok")
-        assert not gateway.pending
+        require(cancelled.state == "cancelled" and not cancelled.result.get("ok"), "A late callback changed the cancelled fixture request")
+        require(not gateway.pending, "Native fixture request bookkeeping was not cleared")
         return {**helper.info, "helperSha256": helper_hash, "nativeQObject": True,
                 "nativeBridgeClass": native.metaObject().className(), "metadataCompleted": True,
                 "rawFilesCompleted": True, "unownedIgnored": True, "cancelledIgnored": True,

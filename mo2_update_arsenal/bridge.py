@@ -16,6 +16,7 @@ from typing import Any, Callable
 
 from .scanner import Cache, MissingAuth, NexusClient, NexusError, UpdateScanner, local_mo2_candidates
 from .gameplay import Chronicle
+from .source_registry import SourceScanner, canonical_source_url, source_record
 from .update_plan import PlanError, plan_updates, validate_batch_selection
 
 MAX_REQUEST = 16_384
@@ -57,7 +58,18 @@ class ArsenalService:
 
     def snapshot(self) -> dict:
         with self._guard:
-            return deepcopy(self._snapshot)
+            snapshot = deepcopy(self._snapshot)
+        # The existing MO2 Chronicle persists explicit user source links by
+        # profile. Rehydrate them for scans without overwriting MO2 metadata.
+        progress = self.chronicle.progress(snapshot.get("profileId", ""))
+        rows = progress.get("rows") or {}
+        for item in snapshot.get("items", []):
+            row = rows.get(str(item.get("id")), {})
+            candidate = canonical_source_url(row.get("url", "")) if isinstance(row, dict) else ""
+            if candidate and candidate != (item.get("source") or {}).get("url"):
+                item["source"] = source_record(candidate, "MO2 Chronicle source link")
+                item.pop("update", None)  # Old source verdict is not transferable.
+        return snapshot
 
     def set_snapshot(self, snapshot: dict) -> None:
         with self._guard:
@@ -163,7 +175,7 @@ class ArsenalService:
         return req.result
 
     def begin_scan(self, mode: str) -> dict:
-        if mode not in ("quick", "deep", "local"):
+        if mode not in ("quick", "deep", "local", "sources", "all"):
             return {"ok": False, "error": "Invalid scan mode"}
         with self._guard:
             if self._scan.get("state") == "running":
@@ -176,38 +188,55 @@ class ArsenalService:
             version_signature = [(x.get("id"), x.get("installedVersion")) for x in snapshot.get("items", [])]
         def worker():
             try:
-                effective_mode = mode
-                if mode == "local" or (mode == "quick" and native_nexus and not key):
-                    # The native bridge has detailed lookup, not an activity-feed
-                    # API; a no-key quick check honestly uses MO2's cached hints.
-                    result = local_mo2_candidates(snapshot)
-                    effective_mode = "local"
-                else:
+                def scan_nexus(which):
+                    if which == "local" or (which == "quick" and native_nexus and not key):
+                        return local_mo2_candidates(snapshot), "local"
                     if key:
                         client = NexusClient(key)
                     elif native_nexus:
                         import re
                         game = snapshot.get("game", "skyrimspecialedition")
                         def mo2_nexus_get(path):
-                            match = re.fullmatch(r"/v1/games/[a-z0-9_-]+/mods/([0-9]+)\.json", path)
-                            if match is None:
+                            m = re.fullmatch(r"/v1/games/[a-z0-9_-]+/mods/([0-9]+)\.json", path)
+                            if m is None:
                                 raise NexusError("Unsupported native Nexus request")
                             native = self.call_ui("nexus-metadata",
-                                {"game": game, "modId": int(match.group(1))}, timeout=70)
+                                {"game": game, "modId": int(m.group(1))}, timeout=70)
                             if not native.get("ok"):
                                 raise NexusError(str(native.get("error") or "MO2 Nexus lookup failed"))
                             return native["meta"]
                         client = NexusClient("mo2-native", request_json=mo2_nexus_get)
                     else:
-                        raise MissingAuth("Connect to Nexus in MO2 Settings > Nexus, or use a fallback API key.")
-                    result = UpdateScanner(self.cache, client).scan(snapshot, mode, self._progress)
+                        raise MissingAuth("Connect to Nexus in MO2 Settings > Nexus or use a fallback API key.")
+                    return UpdateScanner(self.cache, client).scan(snapshot, which, self._progress), which
+
+                effective_mode = mode
+                if mode == "sources":
+                    result = SourceScanner().scan(snapshot, self._progress)
+                elif mode == "all":
+                    nexus, coverage = scan_nexus("deep" if key or native_nexus else "local")
+                    other = SourceScanner().scan(snapshot, self._progress)
+                    result = {**nexus,
+                        "itemRecords": {**nexus.get("itemRecords", {}), **other.get("itemRecords", {})},
+                        "errors": list(nexus.get("errors", [])) + list(other.get("errors", [])),
+                        "queried": int(nexus.get("queried", 0)) + int(other.get("queried", 0)),
+                        "sourcesChecked": other.get("sourceProjects", 0),
+                        "manualSources": other.get("manualSources", 0),
+                        "nexusCoverage": coverage, "mode": "all"}
+                else:
+                    result, effective_mode = scan_nexus(mode)
                 with self._guard:
                     if self._snapshot.get("profileId") != snapshot.get("profileId") or [(x.get("id"), x.get("installedVersion")) for x in self._snapshot.get("items", [])] != version_signature:
                         # Never leak a finished scan's status into another MO2 profile.
                         self._scan = {"state": "stale", "reason": "Profile or installed versions changed during scan"}
                     else:
+                        from_source = {str(i.get("id")): i for i in snapshot.get("items", [])}
                         for item in self._snapshot.get("items", []):
-                            update = result.get("itemRecords", {}).get(str(item.get("id", ""))) or result["records"].get(str(item.get("nexusId") or 0))
+                            key = str(item.get("id", ""))
+                            scanned_item = from_source.get(key)
+                            if scanned_item and scanned_item.get("source"):
+                                item["source"] = scanned_item["source"]
+                            update = result.get("itemRecords", {}).get(key) or result["records"].get(str(item.get("nexusId") or 0))
                             if update:
                                 item["update"] = update
                         self._scan = {"state": "partial" if result.get("errors") else "completed", "mode": effective_mode, **result, "checked": result.get("queried", 0), "total": result.get("queried", 0)}
@@ -459,7 +488,7 @@ class ArsenalService:
                         mid = 0
                     return self._reply(service.fetch_files(mid))
                 if uri.path == "/api/capabilities":
-                    return self._reply({"ok": True, "app": "MO2 Update Arsenal", "live": True, "nexusKeySession": bool(service.api_key), "nativeNexusAvailable": bool(service.native_nexus_available), "keyStorage": "RAM only", "features": ["snapshot", "local-check", "nexus-quick", "nexus-deep", "nexus-files", "native-mo2-nexus-login", "reviewed-update-workshop", "mo2-download", "mo2-install", "backup", "focus-mod", "chronicle", "verified-achievements", "ranked-full-clear", "persistent-profile-progress", "realm-wallet", "realm-purchase", "realm-save", "siege-targets", "siege-state", "siege-bounties", "siege-mod-focus"]})
+                    return self._reply({"ok": True, "app": "MO2 Update Arsenal", "live": True, "nexusKeySession": bool(service.api_key), "nativeNexusAvailable": bool(service.native_nexus_available), "keyStorage": "RAM only", "features": ["snapshot", "local-check", "nexus-quick", "nexus-deep", "nexus-files", "native-mo2-nexus-login", "github-release-checks", "gitlab-release-checks", "manual-source-review", "reviewed-update-workshop", "mo2-download", "mo2-install", "backup", "focus-mod", "chronicle", "verified-achievements", "ranked-full-clear", "persistent-profile-progress", "realm-wallet", "realm-purchase", "realm-save", "siege-targets", "siege-state", "siege-bounties", "siege-mod-focus"]})
                 return self._reply({"ok": False, "error": "Unknown endpoint"}, 404)
 
             def do_POST(self):

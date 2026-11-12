@@ -88,6 +88,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
             dm.onDownloadComplete(lambda did: self._download_state(did, "complete"))
             dm.onDownloadFailed(lambda did: self._download_state(did, "failed"))
             dm.onDownloadPaused(lambda did: self._download_state(did, "paused"))
+            dm.onDownloadRemoved(lambda did: self._download_state(did, "removed"))
         except Exception:
             # Plugin remains usable without change subscriptions; Refresh is always available.
             pass
@@ -183,7 +184,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
 
     def _install(self, download_id: int):
         status = self.server.downloads().get(download_id, {}) if self.server else {}
-        if status.get("status") != "complete":
+        if status.get("status") != "installing":
             return {"ok": False, "error": "The download is not complete"}
         try:
             before = self.server.snapshot()
@@ -202,10 +203,17 @@ class ModUpdateArsenal(mobase.IPluginTool):
             after = self.server.snapshot()
             target = next((m for m in after.get("items", []) if m.get("mo2InternalName") == installed.name()), None)
             previous = next((m for m in before.get("items", []) if m.get("mo2InternalName") == installed.name()), None)
-            if target and previous and version_verdict(str(previous.get("installedVersion", "")), str(target.get("installedVersion", ""))) == "candidate":
+            verified = bool(after.get("profileId") == before.get("profileId")
+                            and target and previous
+                            and (not status.get("itemId") or target.get("id") == status["itemId"])
+                            and version_verdict(str(previous.get("installedVersion", "")),
+                                                str(target.get("installedVersion", ""))) == "candidate")
+            if verified:
                 ticket = status
                 self.server.chronicle.record_update(after["profileId"], target, previous.get("installedVersion", "?"), target.get("installedVersion", "?"), "mo2-install-complete", str(ticket.get("fileId", "")))
-            return {"ok": True, "message": "MO2 installer finished; verify FOMOD choices, overwrites and enabled state", "backup": backup, "installedName": installed.name()}
+            return {"ok": True, "message": ("Update version confirmed in MO2" if verified else
+                "MO2 installer finished; version change not confirmed. Rescan and verify FOMOD, overrides and enabled state"),
+                "backup": backup, "installedName": installed.name(), "verifiedUpdate": verified}
         except Exception as ex:
             return {"ok": False, "error": f"MO2 install did not complete: {ex}"}
 

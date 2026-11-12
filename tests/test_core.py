@@ -97,6 +97,15 @@ class TestScanner(unittest.TestCase):
         self.assertEqual(result2['queried'],2)
         self.assertEqual(result2['cachedOrDeferred'],0)
         self.assertEqual(len(calls),2)
+    def test_cached_equal_version_not_fresh_verification(self):
+        catalog = {"game": "skyrimspecialedition", "items": [
+            {"id": "a", "nexusId": 8, "installedVersion": "2.0",
+             "latestKnownVersion": "2.0"},
+        ]}
+        result = local_mo2_candidates(catalog)
+        self.assertEqual(result["itemRecords"]["a"]["verdict"], "unverified")
+        self.assertIn("Cached MO2", result["itemRecords"]["a"]["reason"])
+
     def test_cached_profile(self):
         s={'items':[{'nexusId':5,'installedVersion':'1.0','latestKnownVersion':'2.0'}]}
         self.assertEqual(local_mo2_candidates(s)['records']['5']['verdict'],'candidate')

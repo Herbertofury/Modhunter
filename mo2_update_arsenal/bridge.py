@@ -16,6 +16,7 @@ from typing import Any, Callable
 
 from .scanner import Cache, MissingAuth, NexusClient, NexusError, UpdateScanner, local_mo2_candidates
 from .gameplay import Chronicle
+from .update_plan import plan_updates
 
 MAX_REQUEST = 16_384
 MAX_PROGRESS_REQUEST = 8_000_000
@@ -373,6 +374,8 @@ class ArsenalService:
                     return self._reply({"ok": True, "profileId": service.snapshot().get("profileId"), "progress": service.chronicle.progress(service.snapshot().get("profileId", ""))})
                 if uri.path == "/api/scan":
                     return self._reply({"ok": True, "scan": service.scan_state()})
+                if uri.path == "/api/update-plan":
+                    return self._reply(plan_updates(service.snapshot()))
                 if uri.path == "/api/downloads":
                     return self._reply({"ok": True, "downloads": service.downloads()})
                 if uri.path == "/api/files":
@@ -383,7 +386,7 @@ class ArsenalService:
                         mid = 0
                     return self._reply(service.fetch_files(mid))
                 if uri.path == "/api/capabilities":
-                    return self._reply({"ok": True, "app": "MO2 Update Arsenal", "live": True, "nexusKeySession": bool(service.api_key), "keyStorage": "RAM only", "features": ["snapshot", "local-check", "nexus-quick", "nexus-deep", "nexus-files", "mo2-download", "mo2-install", "backup", "focus-mod", "chronicle", "verified-achievements", "ranked-full-clear", "persistent-profile-progress", "realm-wallet", "realm-purchase", "realm-save", "siege-targets", "siege-state", "siege-bounties", "siege-mod-focus"]})
+                    return self._reply({"ok": True, "app": "MO2 Update Arsenal", "live": True, "nexusKeySession": bool(service.api_key), "keyStorage": "RAM only", "features": ["snapshot", "local-check", "nexus-quick", "nexus-deep", "nexus-files", "reviewed-update-workshop", "mo2-download", "mo2-install", "backup", "focus-mod", "chronicle", "verified-achievements", "ranked-full-clear", "persistent-profile-progress", "realm-wallet", "realm-purchase", "realm-save", "siege-targets", "siege-state", "siege-bounties", "siege-mod-focus"]})
                 return self._reply({"ok": False, "error": "Unknown endpoint"}, 404)
 
             def do_POST(self):

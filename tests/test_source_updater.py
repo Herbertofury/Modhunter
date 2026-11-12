@@ -95,6 +95,22 @@ class SourceRegistryTests(unittest.TestCase):
         self.assertEqual(result["itemRecords"]["patreon-row"]["verdict"], "unverified")
         self.assertEqual(len(result["itemRecords"]["github-row"]["releaseAssets"]), 1)
 
+    def test_missing_nexus_source_never_overrides_authoritative_nexus_result(self):
+        snap = {"profileId": "p1", "items": [
+            {"id": "nexus-no-source", "nexusId": 77, "installedVersion": "1.0",
+             "update": {"verdict": "current", "source": "nexus-api"}},
+            {"id": "nexus-with-external", "nexusId": 78, "installedVersion": "1.0",
+             "source": {"verified": True, "url": "https://github.com/owner/supermod"}},
+        ]}
+        calls = []
+        def fetch(url):
+            calls.append(url)
+            return {"tag_name": "v2.0"}
+        result = SourceScanner(fetch_json=fetch).scan(snap)
+        self.assertNotIn("nexus-no-source", result["itemRecords"])
+        self.assertEqual(result["itemRecords"]["nexus-with-external"]["verdict"], "candidate")
+        self.assertEqual(len(calls), 1)
+
     def test_network_error_is_unknown_not_current(self):
         def broken(url):
             raise TimeoutError("provider unavailable")

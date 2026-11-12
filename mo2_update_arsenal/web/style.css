@@ -192,3 +192,6 @@ body.victory-open{overflow:hidden}
 .workshop-empty{padding:22px;border:1px dashed #49616a;border-radius:10px;text-align:center;color:#bbced0}
 @media(max-width:900px){.workshop-summary{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:640px){.update-workshop{padding:14px}.workshop-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.workshop-item{align-items:flex-start;flex-direction:column}.workshop-item-actions{width:100%;justify-content:flex-end}}
+
+/* Update file metadata readable without opening a second browser window */
+.picker-file-desc{font-size:12px;color:var(--text-muted,#b6c8c8);line-height:1.5;margin:7px 0 1px;max-width:65ch;white-space:normal;overflow-wrap:anywhere}

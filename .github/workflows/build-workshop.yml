@@ -19,7 +19,7 @@ jobs:
   package:
     runs-on: ubuntu-latest
     env:
-      MODHUNTER_ARTIFACT_DIR: ${{ runner.temp }}/modhunter-artifacts
+      MODHUNTER_ARTIFACT_DIR: /tmp/modhunter-artifacts
     steps:
       - uses: actions/checkout@v4
         with:
@@ -41,7 +41,7 @@ jobs:
           import re,subprocess
           from pathlib import Path
           page=Path('mo2_update_arsenal/web/index.html').read_text('utf-8')
-          scripts=re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>',page,flags=re.S|re.I)
+          scripts=[body for attrs,body in re.findall(r'<script([^>]*)>(.*?)</script>',page,flags=re.S|re.I) if 'application/json' not in attrs.lower()]
           assert scripts, 'No inline JS found in built app'
           for n,script in enumerate(scripts):
               if script.strip():

@@ -1,7 +1,7 @@
 # ⚔️ Game Modes
 [Home](Home.md) / Modes
 
-![Battle menu](../screenshots/modhunter-menu.png)
+![Battle menu](https://raw.githubusercontent.com/Herbertofury/Modhunter/main/screenshots/modhunter-menu.png)
 
 ## Modhunter Siege
 A survivor-style combat roguelite with **5 hero classes**, automatic attacks, **22 upgrade paths**, **6 evolutions**, timed bosses and mod-themed enemies. Installed outdated mods can become in-world bounties only in a connected MO2 session.

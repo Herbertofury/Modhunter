@@ -71,6 +71,20 @@ jobs:
                   assert 'mo2_update_arsenal/web/index.html' in z.namelist() if name!='Modhunter-Complete-Source.zip' else 'web/Modhunter.html' in z.namelist()
           print('All independent release packages verified')
           PY
+      - name: Upload complete Modhunter release for independent download and Drive archival
+        uses: actions/upload-artifact@v4
+        with:
+          name: Modhunter-Update-Workshop-Complete
+          retention-days: 90
+          if-no-files-found: error
+          path: |
+            dist/Modhunter.html
+            dist/Modhunter-MO2-Plugin.zip
+            dist/Modhunter-Desktop-Source.zip
+            dist/Modhunter-Complete-Source.zip
+            dist/manifest.json
+            wiki/
+            README.md
       - name: Commit verified distributables to main
         run: |
           git config user.name "Modhunter Build Bot"

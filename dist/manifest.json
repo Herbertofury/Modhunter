@@ -2,7 +2,7 @@
   "product": "Modhunter: The Unfinished World",
   "version": "0.8.0-dev",
   "components": {
-    "desktop": "Electron 45 source, independent offline + optional MO2 loopback",
+    "desktop": "Electron source, independent read-only MO2 profile import and optional live plugin loopback",
     "html": "self-contained offline browser dashboard + games",
     "mo2": "Mod Organizer 2 Python Tool with self-hosted browser dashboard"
   },
@@ -25,6 +25,7 @@
     "atlasChromium": "pass",
     "electronChromeChromium": "pass",
     "desktopSyntax": "pass",
+    "desktopOfflineImporterNode": "pass",
     "nativeWindowsElectron": "unverified",
     "nativeWindowsMO2": "unverified"
   },
@@ -34,16 +35,16 @@
       "sha256": "75803627baa5d924955e751b474261174a58a997cc7190e58602afe2c724ef57"
     },
     "Modhunter-MO2-Plugin.zip": {
-      "bytes": 209716,
-      "sha256": "45c73ab1fe0bf34f7c3380b7ee2a079a1955bd15243029f10c751aa7304ba423"
+      "bytes": 209853,
+      "sha256": "9feef00752e9b83f3ad42a0f90babea6ec14b3186ed1d075e7ad3bab2f074bf9"
     },
     "Modhunter-Desktop-Source.zip": {
-      "bytes": 181698,
-      "sha256": "7cd66361c9b5ba26a15e957aae2acc2bf0c21a20ee96e65701efe0cf4ff206aa"
+      "bytes": 181935,
+      "sha256": "637cf16b4af22bd1c6443ba4f2bffee537826b282e3f173a1967a616e337e4fc"
     },
     "Modhunter-Complete-Source.zip": {
-      "bytes": 6919820,
-      "sha256": "ae255e227db972dd177dee262dfe1892235c9d5d09ee65722601095ebcec6242"
+      "bytes": 6920823,
+      "sha256": "93ee6aa59014f88af33f26e9ab68b9808c02757e4250199d2855e1bdb83b842e"
     }
   }
 }

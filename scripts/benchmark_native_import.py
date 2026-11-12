@@ -175,14 +175,18 @@ def main() -> None:
         "fixture": "Identical generated local MO2 metadata directories, reversed modlist, 2/3 enabled, one DLL per 50 mods; no native MO2, Nexus, download, install, or game operations",
         "method": {
             "freshProcess": "Each sample launches a new Node or Rust worker and a fresh importer; engine timing encloses only readMo2Profile/import; process timing includes process startup, engine, JSON serialization and exit, excluding parent JSON parsing. Alternating execution order limits order bias.",
-            "persistentProcess": "One process and importer per engine; first import measured separately, followed by repeated imports. Rust metadata cache stays alive; the old Node importer rereads metadata. These are not fresh-process timings.",
+            "persistentProcess": "One process and importer per engine; first import measured separately, followed by repeated imports. Rust revalidates bounded meta.ini bytes and plugin-root membership before reusing cached parsing; the old Node importer rereads and reparses metadata. These are not fresh-process timings.",
             "osCache": "OS filesystem caches are not forcibly evicted; fixture creation warms the page cache. 'First' or 'fresh' means empty application cache, not cold physical storage.",
             "guiStartup": "Not measured. Fresh-process timings launch Node/Rust import workers, not the Electron application or Windows Rust/WebView2 desktop.",
             "equivalence": "Compare every row by name, internal name, versions, enabled state, Nexus ID, author, notes, DLL flags and exact source URL/type/verified flag. IDs are platform/path-dependent and excluded. Legacy reversed priority order is excluded from equality; Rust priority order independently asserted.",
             "workers": {"rust": args.workers, "legacyNode": 24},
         },
         "environment": {"os": platform.platform(), "architecture": platform.machine(), "logicalCpuCount": os.cpu_count(), "node": subprocess.check_output([node, "--version"], text=True).strip(), "rustc": subprocess.check_output([rustc, "--version"], cwd=NATIVE, text=True).strip()},
-        "source": {"gitHead": revision, "legacyImporterSha256": sha256(ROOT / "desktop/offline_mo2.cjs"), "rustImporterSha256": sha256(NATIVE / "crates/modhunter-core/src/importer.rs"), "cargoLockSha256": sha256(NATIVE / "Cargo.lock")},
+        "source": {"gitHead": revision, "legacyImporterSha256": sha256(ROOT / "desktop/offline_mo2.cjs"), "rustImporterSha256": sha256(NATIVE / "crates/modhunter-core/src/importer.rs"),
+                   "rustPluginAnalysisSha256": sha256(NATIVE / "crates/modhunter-core/src/plugin_analysis/mod.rs"),
+                   "rustPluginRecordsSha256": sha256(NATIVE / "crates/modhunter-core/src/plugin_analysis/records.rs"),
+                   "rustReleaseCoreSha256": sha256(core), "benchmarkScriptSha256": sha256(Path(__file__)),
+                   "cargoLockSha256": sha256(NATIVE / "Cargo.lock")},
         "results": [],
     }
     with tempfile.TemporaryDirectory(prefix="modhunter-import-comparison-") as temporary:
@@ -217,8 +221,8 @@ def main() -> None:
                 persistent[kind] = {"firstEngineMs": runs[0]["engineMs"], "warmEngineMedianMs": statistics.median(r["engineMs"] for r in runs[1:]), "runs": runs, "totalProcessMs": process_ms, "outputBytes": byte_count}
                 catalogs[kind] = result["catalog"]
             verify(catalogs["rust"], catalogs["electron"], count)
-            if any(r["metadataCacheHits"] != count or r["filesRead"] != 2 for r in persistent["rust"]["runs"][1:]):
-                raise AssertionError("Persistent Rust metadata cache failed its expected reuse contract")
+            if any(r["metadataCacheHits"] != count or r["filesRead"] != count + 2 for r in persistent["rust"]["runs"][1:]):
+                raise AssertionError("Persistent Rust metadata cache did not verify fresh bytes before reusing parsed metadata")
             fresh = {kind: summary(values) for kind, values in samples.items()}
             row = {"mods": count, "freshProcess": fresh, "persistentProcess": persistent, "equivalentMetadata": True, "rustPriorityOrderVerified": True, "rustPersistentCacheVerified": True,
                    "ratiosLegacyOverRust": {"freshEngine": fresh["electron"]["engineMedianMs"] / fresh["rust"]["engineMedianMs"], "freshProcess": fresh["electron"]["processMedianMs"] / fresh["rust"]["processMedianMs"], "persistentWarmEngine": persistent["electron"]["warmEngineMedianMs"] / persistent["rust"]["warmEngineMedianMs"]}}

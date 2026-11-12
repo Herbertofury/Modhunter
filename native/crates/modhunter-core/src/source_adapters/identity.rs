@@ -262,14 +262,89 @@ pub fn api_url_allowed(raw: &str) -> bool {
         "api.github.com" => {
             url.path().starts_with("/repos/") && url.path().ends_with("/releases/latest")
         }
-        "gitlab.com" => {
-            url.path().starts_with("/api/v4/projects/")
-                && url.path().ends_with("/releases/permalink/latest")
-        }
+        "gitlab.com" => gitlab_release_endpoint(&url).is_some(),
         "api.modrinth.com" => {
             url.path().starts_with("/v2/project/") || url.path().starts_with("/v2/version/")
         }
         "thunderstore.io" => url.path().starts_with("/api/experimental/package/"),
         _ => false,
     }
+}
+
+// GitLab's latest endpoint redirects to a release endpoint, frequently using
+// the repository's numeric ID. This is the only redirect this engine follows.
+// A numeric alias never establishes project identity: the release parser still
+// requires the final self-link to match the original complete project path.
+pub(crate) fn gitlab_latest_redirect(origin: &str, location: &str) -> Option<(String, String)> {
+    if location.len() > 2000 || location.chars().any(|c| c.is_control() || c == '\\') {
+        return None;
+    }
+    let origin = Url::parse(origin).ok()?;
+    let (original_project, original_tag) = gitlab_release_endpoint(&origin)?;
+    if original_tag.is_some() {
+        return None;
+    }
+    let target = origin.join(location).ok()?;
+    let (project, tag) = gitlab_release_endpoint(&target)?;
+    let tag = tag?;
+    if project != original_project && !positive_numeric_id(&project) {
+        return None;
+    }
+    Some((target.into(), tag))
+}
+
+fn positive_numeric_id(value: &str) -> bool {
+    value.bytes().all(|b| b.is_ascii_digit()) && value.parse::<u64>().is_ok_and(|n| n > 0)
+}
+
+fn gitlab_release_endpoint(url: &Url) -> Option<(String, Option<String>)> {
+    if url.scheme() != "https"
+        || url.host_str() != Some("gitlab.com")
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.port().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+    {
+        return None;
+    }
+    let parts: Vec<_> = url
+        .path()
+        .strip_prefix("/api/v4/projects/")?
+        .split('/')
+        .collect();
+    if !(3..=4).contains(&parts.len()) || parts[1] != "releases" {
+        return None;
+    }
+    let project = decode_path_component(parts[0])?;
+    let group: Vec<_> = project.split('/').collect();
+    if !positive_numeric_id(&project)
+        && (!(2..=8).contains(&group.len()) || !group.iter().all(|p| segment(p)))
+    {
+        return None;
+    }
+    if parts.len() == 4 {
+        return (parts[2] == "permalink" && parts[3] == "latest").then_some((project, None));
+    }
+    let tag = decode_path_component(parts[2])?;
+    if tag.is_empty() || tag.len() > 120 || matches!(tag.as_str(), "." | "..") {
+        return None;
+    }
+    Some((project, Some(tag)))
+}
+
+fn decode_path_component(raw: &str) -> Option<String> {
+    let mut decoded = Vec::with_capacity(raw.len());
+    let mut bytes = raw.bytes();
+    while let Some(byte) = bytes.next() {
+        if byte == b'%' {
+            let upper = (bytes.next()? as char).to_digit(16)? as u8;
+            let lower = (bytes.next()? as char).to_digit(16)? as u8;
+            decoded.push(upper * 16 + lower);
+        } else {
+            decoded.push(byte);
+        }
+    }
+    let decoded = String::from_utf8(decoded).ok()?;
+    (!decoded.chars().any(|c| c.is_control() || c == '\\')).then_some(decoded)
 }

@@ -88,6 +88,7 @@ def main() -> None:
                 "releaseId": result.get("releaseId"), "latestVersion": result.get("latestVersion"),
                 "checkedAt": result.get("checkedAt"), "retryAt": result.get("retryAt"),
                 "compatibilityStatus": (result.get("compatibility") or {}).get("status"),
+                "moderationStatus": result.get("moderationStatus"),
                 "metadataCounts": {"files": len(assets), "queueableArchives": sum(a.get("installable") is True for a in assets),
                     "filesWithPublishedHashes": sum(bool(a.get("hashes")) for a in assets),
                     "dependencies": len(result.get("dependencies") or []), "media": len(result.get("media") or []),

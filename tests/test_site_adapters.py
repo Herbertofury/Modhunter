@@ -59,6 +59,14 @@ def selection(item):
 
 
 class SourceEvidenceTests(unittest.TestCase):
+    def test_community_moderation_is_visible_without_rewriting_release_facts(self):
+        item, raw = fixture("thunderstore")
+        raw["moderationStatus"] = "unreviewed"
+        item["update"] = normalize_adapter_record(item, raw)
+        self.assertEqual(item["update"]["moderationStatus"], "unreviewed")
+        self.assertEqual(item["update"]["verdict"], "candidate")
+        self.assertEqual(compact_source_update(item["update"])["moderationStatus"], "unreviewed")
+
     def test_supported_api_assets_bind_exact_owned_project_and_release(self):
         for provider in ("github", "gitlab", "modrinth", "thunderstore"):
             with self.subTest(provider=provider):

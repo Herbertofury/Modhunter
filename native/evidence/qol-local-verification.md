@@ -55,7 +55,7 @@ The subprocess output limit is enforced while the helper runs, including partial
 
 ## Performance evidence
 
-[import-comparison.json](import-comparison.json) contains five-sample medians and all samples for identical generated Linux metadata fixtures, with the new fast plugin-inventory path enabled. Its importer source hash matches this candidate.
+[import-comparison-before-freshness.json](import-comparison-before-freshness.json) contains five-sample medians and all samples for identical generated Linux metadata fixtures, with the new fast plugin-inventory path enabled. Its importer source hash matches this candidate.
 
 | Fixture | Rust fresh engine | Previous Node engine | Rust persistent warm | Previous Node persistent warm |
 |---|---:|---:|---:|---:|

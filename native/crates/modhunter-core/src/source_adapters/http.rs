@@ -1,7 +1,8 @@
-//! Public API transport only. Derived endpoints, no credentials, no redirects.
+//! Public API transport only. Derived endpoints, no credentials, and one narrow
+//! GitLab latest-release redirect whose final body must prove project identity.
 //! Body bounding follows Engineering-Atlas's public_http.rs; cached payloads are
 //! reparsed and rebound to the requested project on every use.
-use super::identity::api_url_allowed;
+use super::identity::{api_url_allowed, gitlab_latest_redirect};
 use crate::CoreError;
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
@@ -29,6 +30,8 @@ pub struct SourceCache {
 #[serde(rename_all = "camelCase")]
 pub struct CacheEntry {
     pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_url: Option<String>,
     #[serde(default)]
     pub body: Option<Value>,
     #[serde(default)]
@@ -142,6 +145,7 @@ impl SourceTransport for PublicTransport {
             "x-ratelimit-remaining",
             "x-ratelimit-reset",
             "content-type",
+            "location",
         ] {
             if let Some(value) = response.headers().get(name).and_then(|v| v.to_str().ok())
                 && clean_header(value)
@@ -267,6 +271,14 @@ impl<'a> HttpContext<'a> {
             if !api_url_allowed(&item.url)
                 || item.checked_at > now + 1
                 || item.retry_at > now + 3600
+                || item.resolved_url.as_ref().is_some_and(|resolved| {
+                    gitlab_latest_redirect(&item.url, resolved).is_none_or(|(url, tag)| {
+                        url != *resolved
+                            || item.body.as_ref().is_some_and(|body| {
+                                body.get("tag_name").and_then(Value::as_str) != Some(&tag)
+                            })
+                    })
+                })
             {
                 continue;
             }
@@ -371,20 +383,71 @@ impl<'a> HttpContext<'a> {
             etag: previous.as_ref().and_then(|e| e.etag.clone()),
             last_modified: previous.as_ref().and_then(|e| e.last_modified.clone()),
         };
+        let empty_validators = Validators::default();
+        let first_validators = if previous.as_ref().is_some_and(|e| e.resolved_url.is_some()) {
+            &empty_validators
+        } else {
+            &validators
+        };
         self.stats.requests.fetch_add(1, Ordering::Relaxed);
-        let reply =
-            match self
-                .transport
-                .get(url, &validators, remaining.min(Duration::from_secs(10)))
+        let mut reply = match self.transport.get(
+            url,
+            first_validators,
+            remaining.min(Duration::from_secs(10)),
+        ) {
+            Ok(reply) => reply,
+            Err(reason) => {
+                self.remember_failure(url, previous, 0, self.now + 60);
+                return Err(FetchFailure::new("unavailable", &reason, self.now));
+            }
+        };
+        let mut resolved_url = None;
+        let mut redirect_tag = None;
+        if matches!(reply.status, 302 | 307 | 308)
+            && let Some((target, tag)) = reply
+                .headers
+                .get("location")
+                .and_then(|location| gitlab_latest_redirect(url, location))
+        {
+            let remaining = self.deadline.saturating_duration_since(Instant::now());
+            if remaining < Duration::from_millis(20) {
+                self.remember_failure(url, previous, 0, self.now + 60);
+                return Err(FetchFailure::new(
+                    "budget-exhausted",
+                    "This scan reached its time budget before the GitLab release could be checked",
+                    self.now,
+                ));
+            }
+            // Validators belong to a specific resolved release endpoint. A
+            // new latest tag cannot borrow the previous release's ETag/304.
+            let target_validators = if previous.as_ref().and_then(|e| e.resolved_url.as_deref())
+                == Some(target.as_str())
             {
+                &validators
+            } else {
+                &empty_validators
+            };
+            self.stats.requests.fetch_add(1, Ordering::Relaxed);
+            reply = match self.transport.get(
+                &target,
+                target_validators,
+                remaining.min(Duration::from_secs(10)),
+            ) {
                 Ok(reply) => reply,
                 Err(reason) => {
                     self.remember_failure(url, previous, 0, self.now + 60);
                     return Err(FetchFailure::new("unavailable", &reason, self.now));
                 }
             };
+            resolved_url = Some(target);
+            redirect_tag = Some(tag);
+        }
         if reply.status == 304 {
-            if let Some(mut entry) = previous.filter(|e| e.body.is_some()) {
+            if let Some(mut entry) = previous
+                .as_ref()
+                .filter(|e| e.body.is_some() && e.resolved_url == resolved_url)
+                .cloned()
+            {
                 entry.checked_at = self.now;
                 entry.expires_at = self.now + TTL;
                 entry.retry_at = 0;
@@ -402,9 +465,10 @@ impl<'a> HttpContext<'a> {
                     freshness: "revalidated",
                 });
             }
+            self.remember_failure(url, previous, 0, self.now + 60);
             return Err(FetchFailure::new(
                 "invalid-response",
-                "Provider returned 304 without a cached observation",
+                "Provider returned 304 without a cached observation for the same release endpoint",
                 self.now,
             ));
         }
@@ -456,8 +520,20 @@ impl<'a> HttpContext<'a> {
                 ));
             }
         };
+        if redirect_tag
+            .as_ref()
+            .is_some_and(|tag| value.get("tag_name").and_then(Value::as_str) != Some(tag.as_str()))
+        {
+            self.remember_failure(url, previous, 0, self.now + 60);
+            return Err(FetchFailure::new(
+                "invalid-response",
+                "GitLab release body differs from its resolved release tag",
+                self.now,
+            ));
+        }
         let entry = CacheEntry {
             url: url.into(),
+            resolved_url,
             body: Some(cache_document(url, &value)),
             etag: reply
                 .headers

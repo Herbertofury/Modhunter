@@ -300,17 +300,18 @@ impl Stamp {
 
 #[derive(Clone)]
 struct CachedHeader {
-    stamp: Stamp,
     game: String,
+    digest: [u8; 32],
     header: PluginHeader,
 }
 #[derive(Clone)]
 struct CachedDirectory {
-    stamp: Stamp,
     files: Vec<PathBuf>,
 }
 
-/// Cache header facts across fast imports. Deep audits always hash fresh bytes.
+/// Reuse parsed headers only after rereading their bounded TES4 bytes. Directory
+/// membership is re-enumerated; filesystem timestamps are never freshness proof.
+/// Deep audits always hash fresh bytes.
 #[derive(Default)]
 pub struct PluginAnalyzer {
     headers: Mutex<HashMap<PathBuf, CachedHeader>>,
@@ -391,10 +392,9 @@ impl PluginAnalyzer {
             };
             match listing {
                 Ok((files, cache_hit)) => {
+                    stats.directories_read += 1;
                     if cache_hit {
                         stats.directory_cache_hits += 1;
-                    } else {
-                        stats.directories_read += 1;
                     }
                     if request
                         .game_data_path
@@ -574,16 +574,9 @@ impl PluginAnalyzer {
             ));
         }
         let stamp = Stamp::new(&meta);
-        if let Some(cached) = self
-            .directories
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .get(&owner.path)
-            .filter(|c| c.stamp == stamp)
-            .cloned()
-        {
-            return Ok((cached.files, true));
-        }
+        // NTFS/FAT timestamp granularity and preserved directory timestamps can
+        // hide additions/removals. Re-enumerate this one root; never traverse
+        // asset subdirectories or trust metadata as a complete plugin listing.
         let mut files = Vec::new();
         for (i, child) in fs::read_dir(&owner.path)
             .map_err(|e| io_error("Read plugin source folder", e))?
@@ -608,13 +601,15 @@ impl PluginAnalyzer {
             ));
         }
         let mut cache = self.directories.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(cached) = cache.get(&owner.path).filter(|c| c.files == files) {
+            return Ok((cached.files.clone(), true));
+        }
         if cache.len() >= CACHE_LIMIT {
             cache.clear();
         }
         cache.insert(
             owner.path.clone(),
             CachedDirectory {
-                stamp,
                 files: files.clone(),
             },
         );
@@ -674,21 +669,26 @@ impl PluginAnalyzer {
             )?;
             scanned_stamp = Some(stamp.clone());
             copy.fingerprint = Some(stamp.fingerprint());
-            if !request.deep
-                && let Some(cached) = self
-                    .headers
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .get(path)
-                    .filter(|c| c.stamp == stamp && c.game == game)
-                    .cloned()
-            {
-                stats.header_cache_hits += 1;
-                copy.header = Some(cached.header);
-                return Ok(());
-            }
+            let cached = (!request.deep)
+                .then(|| {
+                    self.headers
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .get(path)
+                        .filter(|c| c.game == game)
+                        .cloned()
+                })
+                .flatten();
             stats.files_read += 1;
-            let parsed = records::scan(file, &stamp, &copy.name, game, request.deep, &mut stats)?;
+            let parsed = records::scan(
+                file,
+                &stamp,
+                &copy.name,
+                game,
+                request.deep,
+                cached.as_ref().map(|c| (&c.digest, &c.header)),
+                &mut stats,
+            )?;
             let after =
                 fs::symlink_metadata(path).map_err(|e| io_error("Recheck plugin file", e))?;
             if is_link(&after) || Stamp::new(&after) != stamp {
@@ -711,8 +711,8 @@ impl PluginAnalyzer {
             cache.insert(
                 path.to_path_buf(),
                 CachedHeader {
-                    stamp,
                     game: game.into(),
+                    digest: parsed.header_digest,
                     header: parsed.header,
                 },
             );
@@ -832,7 +832,10 @@ fn open_regular(path: &Path, limit: u64) -> Result<(File, Stamp), CoreError> {
     #[cfg(windows)]
     {
         use std::os::windows::fs::OpenOptionsExt;
-        options.custom_flags(0x0020_0000);
+        // Do not admit writers/deletion while a plugin snapshot is being read.
+        // A writer that is already active makes the audit explicitly unknown
+        // instead of producing mixed bytes with an unchanged coarse mtime.
+        options.custom_flags(0x0020_0000).share_mode(0x0000_0001);
     }
     let file = options
         .open(path)

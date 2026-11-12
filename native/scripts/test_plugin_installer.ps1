@@ -39,7 +39,7 @@ function New-MO2Fixture([string]$Name) {
     return $Directory
 }
 
-function Invoke-FixtureInstaller([string]$Directory, [bool]$MustSucceed = $true) {
+function Invoke-FixtureInstaller([string]$Directory, [bool]$MustSucceed = $true, [string]$ExpectedError = 'Refusing to preserve linked') {
     $StartInfo = [Diagnostics.ProcessStartInfo]::new()
     $StartInfo.FileName = $WindowsPowerShell
     $StartInfo.UseShellExecute = $false
@@ -56,8 +56,8 @@ function Invoke-FixtureInstaller([string]$Directory, [bool]$MustSucceed = $true)
         $Output = $StandardOutput.GetAwaiter().GetResult() + $StandardError.GetAwaiter().GetResult()
         if ($MustSucceed) { Require ($Child.ExitCode -eq 0) "Fixture installer failed: $Output" }
         else {
-            Require ($Child.ExitCode -ne 0) 'Installer accepted a linked data directory.'
-            Require ($Output -match 'Refusing to preserve linked') "Installer failed for an unrelated reason: $Output"
+            Require ($Child.ExitCode -ne 0) 'Installer accepted an invalid upgrade fixture.'
+            Require ($Output -match $ExpectedError) "Installer failed for an unrelated reason: $Output"
         }
     }
     finally {
@@ -77,7 +77,9 @@ try {
     Write-FixtureFile (Join-Path $Source 'plugin.py') '# new fixture implementation'
     Write-FixtureFile (Join-Path $Source 'web/index.html') '<html>New fixture dashboard</html>'
     Write-FixtureFile (Join-Path $Source 'bin/modhunter-cli.exe') 'New Rust helper fixture marker; never execute this file.'
+    Write-FixtureFile (Join-Path $Source 'bin/modhunter-qt-bridge.dll') 'New Qt helper fixture marker; never load this file.'
     Write-FixtureFile (Join-Path $Source 'bin/unrelated.exe') 'Unrelated fixture marker; must not be installed.'
+    Write-FixtureFile (Join-Path $Source 'bin/Qt6Core.dll') 'SDK runtime fixture marker; MO2 owns its Qt runtime.'
 
     $Upgrade = New-MO2Fixture 'upgrade'
     $Installed = Join-Path $Upgrade 'plugins/mo2_update_arsenal'
@@ -85,7 +87,9 @@ try {
     Write-FixtureFile (Join-Path $Installed 'previous-plugin-sentinel.txt') 'Keep the original plugin in its backup.'
     Write-FixtureFile (Join-Path $Installed 'web/index.html') '<html>Previous fixture dashboard</html>'
     Write-FixtureFile (Join-Path $Installed 'bin/modhunter-cli.exe') 'Previous Rust helper fixture marker; never execute this file.'
+    Write-FixtureFile (Join-Path $Installed 'bin/modhunter-qt-bridge.dll') 'Previous Qt helper fixture marker; never load this file.'
     $OldHelperHash = Hash (Join-Path $Installed 'bin/modhunter-cli.exe')
+    $OldQtHelperHash = Hash (Join-Path $Installed 'bin/modhunter-qt-bridge.dll')
     $DataFiles = @{
         'chronicle.json' = '{"profiles":{"fixture":{"score":4321,"progress":{"rows":{"one":{"done":true}}}}}}'
         'nexus-cache.json' = '{"fixture":"cached metadata"}'
@@ -107,7 +111,9 @@ try {
     Require ((Hash (Join-Path $Installed '__init__.py')) -eq (Hash (Join-Path $Source '__init__.py'))) 'Upgrade did not replace the plugin implementation.'
     Require ((Hash (Join-Path $Installed 'web/index.html')) -eq (Hash (Join-Path $Source 'web/index.html'))) 'Upgrade did not replace the dashboard.'
     Require ((Hash (Join-Path $Installed 'bin/modhunter-cli.exe')) -eq (Hash (Join-Path $Source 'bin/modhunter-cli.exe'))) 'Upgrade did not install the packaged Rust audit helper.'
+    Require ((Hash (Join-Path $Installed 'bin/modhunter-qt-bridge.dll')) -eq (Hash (Join-Path $Source 'bin/modhunter-qt-bridge.dll'))) 'Upgrade did not install the packaged Qt bridge helper.'
     Require (!(Test-Path -LiteralPath (Join-Path $Installed 'bin/unrelated.exe'))) 'Upgrade copied an unrelated executable.'
+    Require (!(Test-Path -LiteralPath (Join-Path $Installed 'bin/Qt6Core.dll'))) 'Upgrade copied an SDK Qt runtime into the plugin.'
     Require (!(Test-Path -LiteralPath (Join-Path $Installed 'previous-plugin-sentinel.txt'))) 'The replaced plugin still contains an obsolete implementation sentinel.'
     $Backups = @(Get-ChildItem -LiteralPath (Join-Path $Upgrade 'ModhunterBackups') -Directory)
     Require ($Backups.Count -eq 1) 'Upgrade did not retain exactly one previous-plugin backup.'
@@ -115,6 +121,7 @@ try {
     Require (!$Backup.StartsWith((Join-Path $Upgrade 'plugins') + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) 'The previous plugin backup is still inside the active plugins directory.'
     Require ((Hash (Join-Path $Backup '__init__.py')) -eq $OldPluginHash) 'Upgrade changed the previous plugin before backing it up.'
     Require ((Hash (Join-Path $Backup 'bin/modhunter-cli.exe')) -eq $OldHelperHash) 'Upgrade changed or lost the previous Rust helper backup.'
+    Require ((Hash (Join-Path $Backup 'bin/modhunter-qt-bridge.dll')) -eq $OldQtHelperHash) 'Upgrade changed or lost the previous Qt helper backup.'
     Require (Test-Path -LiteralPath (Join-Path $Backup 'previous-plugin-sentinel.txt')) 'The previous plugin backup lost its sentinel.'
     foreach ($Relative in $DataFiles.Keys) {
         Require ((Hash (Join-Path (Join-Path $Installed 'data') $Relative)) -eq $DataHashes[$Relative]) "Upgrade changed or lost active data: $Relative"
@@ -130,11 +137,25 @@ try {
     Require ((Hash (Join-Path $FreshPlugin 'plugin.py')) -eq (Hash (Join-Path $Source 'plugin.py'))) 'New installation did not copy the plugin.'
     Require ((Hash (Join-Path $FreshPlugin 'web/index.html')) -eq (Hash (Join-Path $Source 'web/index.html'))) 'New installation did not copy the dashboard.'
     Require ((Hash (Join-Path $FreshPlugin 'bin/modhunter-cli.exe')) -eq (Hash (Join-Path $Source 'bin/modhunter-cli.exe'))) 'New installation did not copy the Rust audit helper.'
+    Require ((Hash (Join-Path $FreshPlugin 'bin/modhunter-qt-bridge.dll')) -eq (Hash (Join-Path $Source 'bin/modhunter-qt-bridge.dll'))) 'New installation did not copy the Qt bridge helper.'
     Require (!(Test-Path -LiteralPath (Join-Path $FreshPlugin 'bin/unrelated.exe'))) 'New installation copied an unrelated executable.'
     Require (!(Test-Path -LiteralPath (Join-Path $Fresh 'ModhunterBackups'))) 'A new installation created an unnecessary previous-plugin backup.'
     Require (!(Test-Path -LiteralPath (Join-Path $FreshPlugin 'data'))) 'New installation included unrelated fixture progress.'
     Assert-NoStaging $Fresh
     $Checks.Add(@{ name = 'new_install_has_clean_state'; passed = $true })
+
+    $MissingHelper = New-MO2Fixture 'missing-qt-helper'
+    $Previous = Join-Path $MissingHelper 'plugins/mo2_update_arsenal'
+    Write-FixtureFile (Join-Path $Previous '__init__.py') '# unchanged previous plugin'
+    $PreviousHash = Hash (Join-Path $Previous '__init__.py')
+    $QtHelper = Join-Path $Source 'bin/modhunter-qt-bridge.dll'
+    Move-Item -LiteralPath $QtHelper -Destination "$QtHelper.fixture-backup"
+    try { Invoke-FixtureInstaller $MissingHelper $false 'native Qt bridge helper is missing' }
+    finally { Move-Item -LiteralPath "$QtHelper.fixture-backup" -Destination $QtHelper }
+    Require ((Hash (Join-Path $Previous '__init__.py')) -eq $PreviousHash) 'Missing-helper preflight changed the active plugin.'
+    Require (!(Test-Path -LiteralPath (Join-Path $MissingHelper 'ModhunterBackups'))) 'Missing-helper preflight moved the active plugin.'
+    Assert-NoStaging $MissingHelper
+    $Checks.Add(@{ name = 'missing_qt_helper_rejected_without_mutation'; passed = $true })
 
     foreach ($Case in @('linked-data-root', 'linked-data-child')) {
         $Fixture = New-MO2Fixture $Case

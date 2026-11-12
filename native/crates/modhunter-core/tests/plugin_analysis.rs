@@ -107,6 +107,24 @@ fn hash(path: &Path) -> String {
     format!("{:x}", Sha256::digest(fs::read(path).unwrap()))
 }
 
+fn restore_modified(path: &Path, modified: std::time::SystemTime) {
+    #[cfg(windows)]
+    let file = {
+        use std::os::windows::fs::OpenOptionsExt;
+        // FILE_WRITE_ATTRIBUTES plus BACKUP_SEMANTICS also permits setting
+        // directory timestamps; no data write or inherited handle is needed.
+        fs::OpenOptions::new()
+            .access_mode(0x0000_0100)
+            .custom_flags(0x0200_0000)
+            .open(path)
+            .unwrap()
+    };
+    #[cfg(not(windows))]
+    let file = fs::File::open(path).unwrap();
+    file.set_times(fs::FileTimes::new().set_modified(modified))
+        .unwrap();
+}
+
 #[test]
 fn fast_header_facts_are_cached_without_claiming_conversion_eligibility() {
     let mut f = Fixture::new();
@@ -127,10 +145,18 @@ fn fast_header_facts_are_cached_without_claiming_conversion_eligibility() {
     let warm = engine.audit(&f.request).unwrap();
     assert_eq!(warm.stats.header_cache_hits, 1);
     assert_eq!(warm.stats.directory_cache_hits, 1);
-    assert_eq!(warm.stats.bytes_read, 0);
+    assert_eq!(warm.stats.directories_read, 1);
+    assert_eq!(warm.stats.files_read, 1);
+    assert_eq!(warm.stats.bytes_read, first.stats.bytes_read);
+    assert!(warm.stats.bytes_read > 0 && warm.stats.bytes_read < bytes.len() as u64);
+    let old_time = fs::metadata(root.join("Example.esp"))
+        .unwrap()
+        .modified()
+        .unwrap();
     let mut changed = bytes.clone();
     changed[8..12].copy_from_slice(&0x200_u32.to_le_bytes());
     fs::write(root.join("Example.esp"), &changed).unwrap();
+    restore_modified(&root.join("Example.esp"), old_time);
     let refreshed = engine.audit(&f.request).unwrap();
     assert_eq!(
         refreshed.mods["Source"].plugins[0].eligibility.status,
@@ -140,6 +166,149 @@ fn fast_header_facts_are_cached_without_claiming_conversion_eligibility() {
     fs::write(root.join("Added.esl"), plugin(0, 1.7, &[], &[])).unwrap();
     assert_eq!(engine.audit(&f.request).unwrap().stats.plugin_copies, 2);
     assert_eq!(fs::read(root.join("Example.esp")).unwrap(), changed);
+}
+
+#[test]
+fn fast_header_revalidation_reads_master_version_and_invalid_magic_with_preserved_mtime() {
+    let mut f = Fixture::new();
+    let root = f.add("Source", 0, true);
+    let path = root.join("Example.esp");
+    let original = plugin(0, 1.7, &["Skyrim.esm"], &[("MISC", 0x0100_0800)]);
+    fs::write(&path, &original).unwrap();
+    let old_time = fs::metadata(&path).unwrap().modified().unwrap();
+    f.request.deep = false;
+    let engine = PluginAnalyzer::new();
+    engine.audit(&f.request).unwrap();
+
+    let changed = plugin(0, 1.71, &["Update.esm"], &[("MISC", 0x0100_0800)]);
+    assert_eq!(changed.len(), original.len());
+    fs::write(&path, &changed).unwrap();
+    restore_modified(&path, old_time);
+    let current = engine.audit(&f.request).unwrap();
+    let copy = &current.mods["Source"].plugins[0];
+    let header = copy.header.as_ref().unwrap();
+    assert_eq!(header.version, 1.71);
+    assert_eq!(header.masters, ["Update.esm"]);
+    assert_eq!(current.stats.header_cache_hits, 0);
+    assert!(copy.records.is_none());
+    assert!(copy.fingerprint.as_ref().unwrap().sha256.is_none());
+
+    let mut invalid = changed;
+    invalid[..4].copy_from_slice(b"BAD!");
+    fs::write(&path, invalid).unwrap();
+    restore_modified(&path, old_time);
+    let rejected = engine.audit(&f.request).unwrap();
+    let copy = &rejected.mods["Source"].plugins[0];
+    assert!(copy.header.is_none());
+    assert_eq!(copy.eligibility.status, "unknown");
+    assert!(!copy.errors.is_empty());
+    assert_eq!(rejected.stats.header_cache_hits, 0);
+}
+
+#[test]
+fn plugin_membership_changes_are_visible_with_preserved_directory_mtime() {
+    let mut f = Fixture::new();
+    let root = f.add("Source", 0, true);
+    fs::write(root.join("Original.esp"), plugin(0, 1.7, &[], &[])).unwrap();
+    let old_time = fs::metadata(&root).unwrap().modified().unwrap();
+    f.request.deep = false;
+    let engine = PluginAnalyzer::new();
+    assert_eq!(engine.audit(&f.request).unwrap().stats.plugin_copies, 1);
+
+    fs::write(root.join("Added.esl"), plugin(0, 1.7, &[], &[])).unwrap();
+    restore_modified(&root, old_time);
+    let added = engine.audit(&f.request).unwrap();
+    assert_eq!(added.stats.plugin_copies, 2);
+    assert_eq!(added.stats.directory_cache_hits, 0);
+
+    fs::remove_file(root.join("Original.esp")).unwrap();
+    restore_modified(&root, old_time);
+    let removed = engine.audit(&f.request).unwrap();
+    assert_eq!(removed.stats.plugin_copies, 1);
+    assert_eq!(removed.mods["Source"].plugins[0].name, "Added.esl");
+    assert_eq!(
+        removed.mods["Source"].plugins[0].eligibility.status,
+        "already-light"
+    );
+
+    fs::rename(root.join("Added.esl"), root.join("Renamed.esp")).unwrap();
+    restore_modified(&root, old_time);
+    let renamed = engine.audit(&f.request).unwrap();
+    assert_eq!(renamed.stats.plugin_copies, 1);
+    assert_eq!(renamed.mods["Source"].plugins[0].name, "Renamed.esp");
+    assert_eq!(
+        renamed.mods["Source"].plugins[0].eligibility.status,
+        "unknown"
+    );
+    assert_eq!(renamed.stats.directory_cache_hits, 0);
+}
+
+#[test]
+fn deep_record_changes_are_not_hidden_by_cached_headers_or_preserved_mtime() {
+    let mut f = Fixture::new();
+    let root = f.add("Source", 0, true);
+    let path = root.join("Example.esp");
+    let original = plugin(0, 1.7, &["Skyrim.esm"], &[("MISC", 0x0100_0800)]);
+    fs::write(&path, &original).unwrap();
+    let old_time = fs::metadata(&path).unwrap().modified().unwrap();
+    let engine = PluginAnalyzer::new();
+    let first = engine.audit(&f.request).unwrap();
+    let previous = &first.mods["Source"].plugins[0];
+    assert_eq!(previous.eligibility.status, "flag-only-candidate");
+
+    let changed = plugin(0, 1.7, &["Skyrim.esm"], &[("MISC", 0x0100_1000)]);
+    assert_eq!(changed.len(), original.len());
+    fs::write(&path, &changed).unwrap();
+    restore_modified(&path, old_time);
+    let current = engine.audit(&f.request).unwrap();
+    let copy = &current.mods["Source"].plugins[0];
+    assert_eq!(copy.eligibility.status, "requires-compaction");
+    assert_eq!(
+        copy.records.as_ref().unwrap().maximum_new_local_id,
+        Some(0x1000)
+    );
+    assert_ne!(
+        copy.fingerprint.as_ref().unwrap().sha256,
+        previous.fingerprint.as_ref().unwrap().sha256
+    );
+    assert_eq!(current.stats.deep_scanned, 1);
+    assert_eq!(current.stats.header_cache_hits, 0);
+    assert_eq!(current.stats.bytes_read, changed.len() as u64);
+
+    f.request.deep = false;
+    let fast = engine.audit(&f.request).unwrap();
+    let copy = &fast.mods["Source"].plugins[0];
+    assert_eq!(copy.eligibility.status, "unknown");
+    assert!(copy.records.is_none());
+    assert!(copy.fingerprint.as_ref().unwrap().sha256.is_none());
+    assert_eq!(fast.stats.header_cache_hits, 1);
+}
+
+#[cfg(windows)]
+#[test]
+fn active_windows_writer_prevents_a_mixed_plugin_snapshot() {
+    use std::os::windows::fs::OpenOptionsExt;
+    let mut f = Fixture::new();
+    let root = f.add("Source", 0, true);
+    let path = root.join("Example.esp");
+    fs::write(&path, plugin(0x200, 1.7, &[], &[])).unwrap();
+    let writer = fs::OpenOptions::new()
+        .write(true)
+        .share_mode(0x0000_0003)
+        .open(&path)
+        .unwrap();
+    let engine = PluginAnalyzer::new();
+    let busy = engine.audit(&f.request).unwrap();
+    let copy = &busy.mods["Source"].plugins[0];
+    assert_eq!(copy.eligibility.status, "unknown");
+    assert!(copy.header.is_none());
+    assert!(!copy.errors.is_empty());
+    drop(writer);
+    let stable = engine.audit(&f.request).unwrap();
+    assert_eq!(
+        stable.mods["Source"].plugins[0].eligibility.status,
+        "already-light"
+    );
 }
 
 #[test]
@@ -196,6 +365,10 @@ fn new_formids_exclude_master_overrides_and_deep_audit_hashes_fresh_bytes() {
         .unwrap();
     let fresh = engine.audit(&f.request).unwrap();
     assert_eq!(fresh.stats.deep_scanned, 1);
+    assert_eq!(
+        fresh.mods["Source"].plugins[0].eligibility.status,
+        "already-light"
+    );
     assert_ne!(
         fresh.mods["Source"].plugins[0]
             .fingerprint

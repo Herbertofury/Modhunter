@@ -33,7 +33,7 @@ JSON backups, CSV reports and PowerShell exports save to Windows **Downloads** w
 
 ## Responsiveness and update reliability
 
-- Import workers are bounded and reused. Unchanged `meta.ini` files use cached parsing, while DLL locations are checked on every import. The engine reads metadata rather than traversing entire mod asset trees.
+- Import workers are bounded and reused. Each import verifies bounded fresh `meta.ini` and TES4 header bytes before reusing cached parsing; root plugin membership and DLL locations are checked again. Same-size changes with preserved timestamps cannot retain old installed versions, source URLs, masters or ESL flags. The engine reads metadata rather than traversing entire mod asset trees.
 - MO2 connection checks use a small `/api/health` response, bounded deadlines and a reused HTTP client. A failed health check marks the connection unavailable; read-only recovery reloads the current session without replaying update commands.
 - Large-list search is coalesced to animation frames. Cosmetic updates avoid rebuilding mod rows. Concurrent reads are shared, progress writes are serialized, and scan/queue polls do not pile up behind slow replies.
 - Profile changes carry epochs through browser reads, background scans and queued commands. Results from profile A cannot replace profile B, including A→B→A switches. A command that times out before execution is canceled; an operation already executing retains its duplicate guard until the native result arrives.
@@ -46,13 +46,13 @@ Five-sample medians on identical generated Linux metadata fixtures, with 8 Rust 
 
 | Import measurement | 2,500 mods: previous Node | 2,500 mods: Rust | 10,000 mods: previous Node | 10,000 mods: Rust |
 |---|---:|---:|---:|---:|
-| Fresh importer, full engine call | 286.40 ms | 59.45 ms | 1,075.33 ms | 297.39 ms |
-| Worker launch, import, serialize and exit | 360.91 ms | 93.42 ms | 1,167.68 ms | 481.96 ms |
-| Repeated import, persistent process | 261.45 ms | 42.10 ms | 979.68 ms | 213.43 ms |
+| Fresh importer, full engine call | 477.03 ms | 70.78 ms | 1,629.28 ms | 330.42 ms |
+| Worker launch, import, serialize and exit | 581.38 ms | 119.26 ms | 1,781.75 ms | 512.82 ms |
+| Repeated import, persistent process | 323.25 ms | 45.36 ms | 1,870.32 ms | 239.74 ms |
 
-Fresh import-engine medians improved **4.82×** and **3.62×**, respectively. These measurements include the current fast plugin-inventory path. The generated fixtures contain no ESP payloads, so deep-audit speed, Windows GUI startup, real MO2/Nexus operations and download speed are not measured. OS filesystem caches were not forcibly evicted; “fresh” means an empty application cache. The comparison validates common metadata field by field and separately verifies Rust's corrected MO2 priority order. [Raw measurements, all samples, environment and source hashes](../native/evidence/import-comparison.json); [reproduction script](../scripts/benchmark_native_import.py).
+Fresh import-engine medians improved **6.74×** and **4.93×**, respectively. These measurements include fresh metadata-content verification and root plugin inventory. Cache hits mean verified unchanged content or membership with parsed results reused; they do not mean the filesystem was skipped. The generated fixtures contain no ESP payloads, so deep-audit speed, Windows GUI startup, real MO2/Nexus operations and download speed are not measured. OS filesystem caches were not forcibly evicted; “fresh” means an empty application cache. The comparison validates common metadata field by field and separately verifies Rust's corrected MO2 priority order. [Raw measurements, all samples, environment and source hashes](../native/evidence/import-comparison.json); [reproduction script](../scripts/benchmark_native_import.py).
 
-The earlier metadata-only comparison is retained as [historical evidence](../native/evidence/import-comparison-metadata-only.json). [Current local QoL verification](../native/evidence/qol-local-verification.md) separates executed checks from the pending Windows/MO2 gates.
+The [earlier metadata-only comparison](../native/evidence/import-comparison-metadata-only.json), [pre-freshness comparison](../native/evidence/import-comparison-before-freshness.json) and [first QoL local receipt](../native/evidence/qol-local-verification.md) remain historical evidence. Current [live public API observations](../native/evidence/source-adapter-live.json) and [Python-to-Rust source protocol proof](../native/evidence/source-bridge-protocol.json) bind their tested source and helper hashes. Consult the workflow below for the latest Windows/MO2 commit and its acceptance receipts.
 
 ## Release verification
 
@@ -64,7 +64,7 @@ The [Rust desktop and MO2 readiness workflow](https://github.com/Herbertofury/Mo
 | Python and Node regressions | MO2 command/download/install lifecycle, scan epochs, source identities, frontend polling and rendering behavior, preserved legacy importer |
 | Actual Chromium | Built dashboard interactions, update actions, search responsiveness, profile changes, connection recovery and existing update workshop flows |
 | Actual Windows WebView2 | Compiled application launch, native toolbar IPC, three-mod profile import into the real dashboard, actual JSON backup download and rejection of native IPC from game content |
-| Actual MO2 2.5.2 fixture | Production plugin loading inside the official Windows organizer with a disposable test game/profile, real loopback API, refresh and Qt focus |
+| Actual MO2 2.5.2 fixture | Production plugin loading in official Windows MO2, actual C++ QObject/raw QVariant binding with synthetic callbacks, real loopback API and Qt focus, and a completed Rust plugin/hash audit of a disposable fixture |
 
 CI uploads JSON receipts and browser proof alongside the portable app and NSIS installer. Inspect the linked run for the exact commit and outcome; a workflow definition is not proof that a particular run passed.
 

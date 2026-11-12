@@ -109,7 +109,7 @@ fn actual_mo2_priority_separators_foreign_and_unlisted_are_preserved() {
 }
 
 #[test]
-fn cache_avoids_metadata_reads_and_invalidates_changes_and_deletions() {
+fn metadata_cache_verifies_fresh_bytes_before_reusing_parsed_values() {
     let f = Fixture::new("+First\n");
     f.add("First", "[General]\nversion=1.0\n");
     let engine = ProfileImporter::new();
@@ -117,7 +117,8 @@ fn cache_avoids_metadata_reads_and_invalidates_changes_and_deletions() {
     let warm = engine.import(&f.request()).unwrap();
     assert_eq!(cold.stats.metadata_cache_hits, 0);
     assert_eq!(warm.stats.metadata_cache_hits, 1);
-    assert_eq!(warm.stats.files_read, 2);
+    assert_eq!(warm.stats.files_read, 3);
+    assert_eq!(warm.stats.bytes_read, cold.stats.bytes_read);
     assert_eq!(cold.catalog["items"], warm.catalog["items"]);
     f.add("First", "[General]\nversion=2.0\n");
     let changed = engine.import(&f.request()).unwrap();
@@ -126,6 +127,80 @@ fn cache_avoids_metadata_reads_and_invalidates_changes_and_deletions() {
     fs::remove_file(f.mods.join("First/meta.ini")).unwrap();
     let removed = engine.import(&f.request()).unwrap();
     assert_eq!(item(&removed.catalog, "First")["installedVersion"], "?");
+}
+
+#[test]
+fn equal_length_metadata_edits_with_restored_mtime_refresh_versions_and_source_identity() {
+    let f = Fixture::new("+First\n");
+    let original =
+        "[General]\nversion=1.0\nnewestVersion=2.0\nmodid=0\nurl=https://github.com/owner/first\n";
+    let changed =
+        "[General]\nversion=2.0\nnewestVersion=3.0\nmodid=0\nurl=https://github.com/owner/other\n";
+    assert_eq!(original.len(), changed.len());
+    f.add("First", original);
+    let path = f.mods.join("First/meta.ini");
+    let modified = fs::metadata(&path).unwrap().modified().unwrap();
+    let engine = ProfileImporter::new();
+    let first = engine.import(&f.request()).unwrap();
+    assert_eq!(item(&first.catalog, "First")["installedVersion"], "1.0");
+
+    let replace = |bytes: &[u8]| {
+        fs::write(&path, bytes).unwrap();
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_times(fs::FileTimes::new().set_modified(modified))
+            .unwrap();
+    };
+    replace(changed.as_bytes());
+    let current = engine.import(&f.request()).unwrap();
+    let row = item(&current.catalog, "First");
+    assert_eq!(row["installedVersion"], "2.0");
+    assert_eq!(row["latestKnownVersion"], "3.0");
+    assert_eq!(row["source"]["url"], "https://github.com/owner/other");
+    assert_eq!(current.stats.metadata_cache_hits, 0);
+    assert_eq!(
+        engine
+            .import(&f.request())
+            .unwrap()
+            .stats
+            .metadata_cache_hits,
+        1
+    );
+
+    let mut malformed = changed.as_bytes().to_vec();
+    malformed[8] = b'[';
+    replace(&malformed);
+    let rejected = engine.import(&f.request()).unwrap();
+    let row = item(&rejected.catalog, "First");
+    assert_eq!(row["installedVersion"], "?");
+    assert_ne!(row["source"]["url"], "https://github.com/owner/other");
+    assert_eq!(rejected.stats.metadata_cache_hits, 0);
+    assert!(!rejected.warnings.is_empty());
+}
+
+#[cfg(windows)]
+#[test]
+fn active_windows_metadata_writer_cannot_reuse_a_previous_installed_version() {
+    use std::os::windows::fs::OpenOptionsExt;
+    let f = Fixture::new("+First\n");
+    f.add("First", "[General]\nversion=1.0\n");
+    let engine = ProfileImporter::new();
+    engine.import(&f.request()).unwrap();
+    let writer = fs::OpenOptions::new()
+        .write(true)
+        .share_mode(0x0000_0003)
+        .open(f.mods.join("First/meta.ini"))
+        .unwrap();
+    let busy = engine.import(&f.request()).unwrap();
+    assert_eq!(item(&busy.catalog, "First")["installedVersion"], "?");
+    assert_eq!(busy.stats.metadata_cache_hits, 0);
+    assert!(!busy.warnings.is_empty());
+    drop(writer);
+    let stable = engine.import(&f.request()).unwrap();
+    assert_eq!(item(&stable.catalog, "First")["installedVersion"], "1.0");
+    assert_eq!(stable.stats.metadata_cache_hits, 1);
 }
 
 #[test]

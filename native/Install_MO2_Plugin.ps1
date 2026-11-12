@@ -17,8 +17,10 @@ if (!(Test-Path -LiteralPath $source -PathType Container)) {
 if (!(Test-Path -LiteralPath (Join-Path $source '__init__.py')) -or !(Test-Path -LiteralPath (Join-Path $source 'web\index.html'))) { throw 'The complete Modhunter MO2 plugin is missing from this package.' }
 $helper = Join-Path $source 'bin\modhunter-cli.exe'
 if (!(Test-Path -LiteralPath $helper -PathType Leaf)) { throw 'The Rust plugin audit helper is missing. Use the complete Windows package containing MO2\mo2_update_arsenal\bin\modhunter-cli.exe.' }
-foreach ($path in @((Join-Path $source 'bin'), $helper)) {
-    if ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Refusing to install a linked Rust helper: $path" }
+$qtHelper = Join-Path $source 'bin\modhunter-qt-bridge.dll'
+if (!(Test-Path -LiteralPath $qtHelper -PathType Leaf)) { throw 'The native Qt bridge helper is missing. Use the complete Windows package containing MO2\mo2_update_arsenal\bin\modhunter-qt-bridge.dll.' }
+foreach ($path in @((Join-Path $source 'bin'), $helper, $qtHelper)) {
+    if ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Refusing to install a linked native helper: $path" }
 }
 $plugins = Join-Path $MO2Directory 'plugins'
 New-Item -ItemType Directory -Force -Path $plugins | Out-Null
@@ -58,6 +60,7 @@ try {
     Copy-Item -LiteralPath (Join-Path $source 'web\index.html') -Destination (Join-Path $staging 'web\index.html')
     New-Item -ItemType Directory -Path (Join-Path $staging 'bin') | Out-Null
     Copy-Item -LiteralPath $helper -Destination (Join-Path $staging 'bin\modhunter-cli.exe')
+    Copy-Item -LiteralPath $qtHelper -Destination (Join-Path $staging 'bin\modhunter-qt-bridge.dll')
     if (Test-Path -LiteralPath $destination) {
         # Older MO2 builds can store Chronicle progress, cache and operation
         # history in plugin/data. Carry that state into the new plugin while

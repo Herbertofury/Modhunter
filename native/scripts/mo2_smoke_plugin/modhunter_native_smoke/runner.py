@@ -6,6 +6,7 @@ organizer, model, bridge, dispatcher, request handler or native selection API.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import subprocess
 import sys
@@ -18,8 +19,9 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-from PyQt6 import QtCore, QtGui, QtWidgets
+from PyQt6 import QtCore, QtGui, QtWidgets, sip
 
+from mo2_update_arsenal.bridge import UIRequest
 from mo2_update_arsenal.focus import find_mo2_view, name_column
 from mo2_update_arsenal.plugin import ModUpdateArsenal
 
@@ -80,6 +82,73 @@ def repository_api_metadata(organizer):
     except Exception as exc:
         details["diagnosticError"] = str(exc)[:300]
     return details
+
+
+def exercise_native_nexus_binding(gateway):
+    """Use the real MO2-created QObject with synthetic Qt data and no requests."""
+    assert gateway.files_available, gateway.files_error
+    native = gateway._qt_bridge
+    assert native is not None and not sip.ispycreated(native), "Expected MO2's C++-created repository QObject"
+    helper = gateway._qt_sender
+    assert helper is not None
+    helper_hash = hashlib.sha256(helper.path.read_bytes()).hexdigest()
+    assert helper_hash == os.environ["MODHUNTER_NATIVE_SMOKE_QT_BRIDGE_SHA256"], "The loaded Qt helper differs from the compiled fixture helper"
+    assert helper.info == {"abi": 1, "buildQt": "6.7.1", "runtimeQt": "6.7.1", "mechanism": "typed-qt-sender"}, helper.info
+    assert helper.sender(native) is None, "Qt sender leaked outside a callback"
+
+    class NexusInterface(QtCore.QObject):
+        description = QtCore.pyqtSignal(str, int, "QVariant", "QVariant")
+        nxmFilesAvailable = QtCore.pyqtSignal(str, int, "QVariant", "QVariant", int)
+
+    source = NexusInterface()
+    # This is Qt signal-to-signal forwarding through the actual native bridge,
+    # never a direct call to the gateway's Python completion method.
+    source.description.connect(native.descriptionAvailable)
+    requests = []
+    def owned(kind, ticket):
+        request = UIRequest(kind, {"game": "skyrimspecialedition", "modId": 7})
+        assert request.begin()
+        gateway.pending[ticket] = request
+        request.add_done_callback(lambda: gateway._forget(ticket))
+        requests.append(request)
+        return request
+
+    try:
+        meta = owned("nexus-metadata", "modhunter:ci:metadata")
+        source.description.emit("skyrimspecialedition", 7, "other-plugin:fixture", {"version": "2"})
+        assert meta.state == "running" and gateway._raw_source is None
+        source.description.emit("skyrimspecialedition", 7, "modhunter:ci:metadata", {"version": "2"})
+        assert meta.result.get("ok") is True and meta.result["meta"]["version"] == "2", meta.result
+        assert gateway.file_transport == "qt-raw-variant" and gateway._raw_source is source, gateway.files_error
+        files = owned("nexus-files", "modhunter:ci:files")
+        payload = {"files": [{"file_id": 12, "file_name": "Fixture.zip", "size_in_bytes": 3072}]}
+        source.nxmFilesAvailable.emit("skyrimspecialedition", 7, "other-plugin:fixture", payload, 3)
+        assert files.state == "running"
+        source.nxmFilesAvailable.emit("skyrimspecialedition", 7, "modhunter:ci:files", payload, 3)
+        assert files.result.get("ok") is True, files.result
+        assert len(files.result["files"]) == 1
+        normalized = files.result["files"][0]
+        assert normalized["fileId"] == 12 and normalized["fileName"] == "Fixture.zip" and normalized["sizeInKB"] == 3
+        cancelled = owned("nexus-files", "modhunter:ci:cancelled")
+        assert cancelled.cancel()
+        source.nxmFilesAvailable.emit("skyrimspecialedition", 7, "modhunter:ci:cancelled", payload, 4)
+        assert cancelled.state == "cancelled" and not cancelled.result.get("ok")
+        assert not gateway.pending
+        return {**helper.info, "helperSha256": helper_hash, "nativeQObject": True,
+                "nativeBridgeClass": native.metaObject().className(), "metadataCompleted": True,
+                "rawFilesCompleted": True, "unownedIgnored": True, "cancelledIgnored": True,
+                "qtVersion": QtCore.qVersion(), "pyqtVersion": QtCore.PYQT_VERSION_STR,
+                "networkRequests": 0, "accountAuthentication": False,
+                "scope": "Actual MO2 C++ QObject signal forwarding and raw QVariant JSON with synthetic data; no authenticated transport or downloads"}
+    finally:
+        for request in requests:
+            request.cancel()
+        source.description.disconnect(native.descriptionAvailable)
+        if gateway._raw_source is source:
+            source.nxmFilesAvailable.disconnect(gateway._raw_files)
+            source.destroyed.disconnect(gateway._source_destroyed)
+            gateway._source_destroyed()
+        source.deleteLater()
 
 
 class HarnessSignals(QtCore.QObject):
@@ -185,6 +254,8 @@ class NativeSmokePlugin(ModUpdateArsenal):
         try:
             self._check("native_ui_initialized", self._on_qt_thread()
                         and self._main_window is not None)
+            self._check("native_nexus_qt_binding", True,
+                        **exercise_native_nexus_binding(self._native_nexus))
             self._check("fixture_instance_selected",
                         Path(self.org.basePath()).resolve()
                         == Path(os.environ["MODHUNTER_NATIVE_SMOKE_INSTANCE"]).resolve())

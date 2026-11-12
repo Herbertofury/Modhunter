@@ -654,12 +654,27 @@ pub fn thunderstore(
         .get("community_listings")
         .and_then(Value::as_array)
         .ok_or("Missing Thunderstore community bindings")?;
-    let community_match = id.community.as_ref().is_some_and(|community| {
-        listings.iter().any(|l| {
-            l.get("community").and_then(Value::as_str) == Some(community)
-                && l.get("review_status").and_then(Value::as_str) == Some("approved")
+    if listings.len() > 300 {
+        return Err("Too many Thunderstore community listings for one bounded review".into());
+    }
+    let matching_listings: Vec<_> = listings
+        .iter()
+        .filter(|listing| {
+            id.community.as_deref().is_some_and(|community| {
+                listing.get("community").and_then(Value::as_str) == Some(community)
+            })
         })
-    });
+        .collect();
+    if matching_listings.len() > 1 {
+        return Err("Duplicate Thunderstore community identity".into());
+    }
+    let moderation = matching_listings
+        .first()
+        .and_then(|listing| listing.get("review_status"))
+        .and_then(Value::as_str)
+        .filter(|status| matches!(*status, "approved" | "unreviewed" | "rejected"))
+        .unwrap_or("unknown");
+    let community_match = matches!(moderation, "approved" | "unreviewed");
     let profile_match = id.community.as_ref().is_some_and(|community| {
         game_key(&request.game) != "unknown" && game_key(&request.game) == game_key(community)
     });
@@ -697,6 +712,7 @@ pub fn thunderstore(
     )
     .into();
     result["dependencies"] = dependencies.into();
+    result["moderationStatus"] = moderation.into();
     result["releaseAssets"] = json!([{"assetKey":format!("thunderstore:{}/{version}",id.project_id),"name":format!("{namespace}-{name}-{version}.zip"),
         "url":expected,"size":Value::Null,"provider":"thunderstore","projectId":id.project_id,"releaseId":version,"hashes":{},"installable":true}]);
     result["compatibility"] = json!({"status":"community-matched","community":id.community,"reason":"Selected game matches the package's declared community; runtime/loader compatibility still requires review."});
@@ -704,7 +720,7 @@ pub fn thunderstore(
     if !community_match {
         set_review(
             &mut result,
-            "The selected source does not establish an approved listing in an exact Thunderstore community.",
+            "The selected source has no exact public Thunderstore community listing, or its moderation status is rejected or unknown.",
             "community-required",
         );
     } else if !profile_match {

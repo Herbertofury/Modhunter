@@ -79,7 +79,7 @@ impl FileStamp {
 }
 #[derive(Clone)]
 struct CachedMeta {
-    stamp: FileStamp,
+    digest: [u8; 32],
     parsed: Arc<Ini>,
 }
 
@@ -646,21 +646,13 @@ impl ProfileImporter {
             ));
         }
         let stamp = FileStamp::from(&meta);
-        if let Some(cached) = self
-            .cache
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .get(path)
-            .filter(|c| c.stamp == stamp)
-            .cloned()
-        {
-            stats.metadata_cache_hits += 1;
-            return Ok(Some(cached.parsed));
-        }
+        // Mod managers can preserve timestamps, and Windows may report the
+        // same metadata for a quick equal-length rewrite. Verify bounded fresh
+        // bytes before reusing parsed versions, game IDs or source links.
         let bytes = read_bounded(path, META_LIMIT)?;
         stats.files_read += 1;
         stats.bytes_read += bytes.len();
-        let parsed = Arc::new(Ini::parse(&decode_text(&bytes)?)?);
+        let digest: [u8; 32] = Sha256::digest(&bytes).into();
         let after =
             fs::symlink_metadata(path).map_err(|e| io_error("Recheck meta.ini after import", e))?;
         if is_link(&after) || FileStamp::from(&after) != stamp {
@@ -668,6 +660,18 @@ impl ProfileImporter {
                 "meta.ini changed during import; refresh once MO2 finishes writing".into(),
             ));
         }
+        if let Some(cached) = self
+            .cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(path)
+            .filter(|c| c.digest == digest)
+            .cloned()
+        {
+            stats.metadata_cache_hits += 1;
+            return Ok(Some(cached.parsed));
+        }
+        let parsed = Arc::new(Ini::parse(&decode_text(&bytes)?)?);
         let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
         if cache.len() >= CACHE_LIMIT && !cache.contains_key(path) {
             cache.clear();
@@ -675,7 +679,7 @@ impl ProfileImporter {
         cache.insert(
             path.to_path_buf(),
             CachedMeta {
-                stamp,
+                digest,
                 parsed: Arc::clone(&parsed),
             },
         );
@@ -748,7 +752,9 @@ fn read_bounded(path: &Path, limit: usize) -> Result<Vec<u8>, CoreError> {
     #[cfg(windows)]
     {
         use std::os::windows::fs::OpenOptionsExt;
-        options.custom_flags(0x0020_0000);
+        // A live writer must finish before these bytes can establish installed
+        // versions or source identity. Other readers remain permitted.
+        options.custom_flags(0x0020_0000).share_mode(0x0000_0001);
     }
     let file: File = options
         .open(path)

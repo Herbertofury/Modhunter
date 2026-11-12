@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "ok": true,
-  "generatedAt": "2026-11-12T09:17:11.732280Z",
+  "generatedAt": "2026-11-12T16:50:45.022063Z",
   "scope": {
     "kind": "synthetic-python-rust-json-protocol",
     "realMO2": false,
@@ -19,16 +19,16 @@
   },
   "sourceHashes": {
     "native/scripts/verify_plugin_bridge.py": "6377846899e9a75fe70c5dc036dc6319fb7a65528b933c310ba4101c9b50fd3c",
-    "mo2_update_arsenal/plugin_intelligence.py": "6eb6044de68b122f9fb0806a535f81611d602254a50ae722bb3035160fdc25b0",
-    "native/crates/modhunter-core/src/lib.rs": "be5de120567025febec67d0c0513974d2ce2184aef68961bb95272e3873fe70e",
-    "native/crates/modhunter-core/src/importer.rs": "ed8fdef63ed3f0e8ab94076505eb2ee010f97f208d02fa5f41e1fd37c8df47a6",
-    "native/crates/modhunter-core/src/plugin_analysis/mod.rs": "61c4bbd7ceaff505e5e826018018fa19c25116c80ceab1b162da0b88d012b2bc",
-    "native/crates/modhunter-core/src/plugin_analysis/records.rs": "3df185c6b4c9eb81ef9c176845c30e54f51f52fc59e39be4352f988cd5ae8542",
+    "mo2_update_arsenal/plugin_intelligence.py": "731004830ebbb66f8ad8a27366179d3cfff04761fa9713dcfdfd89fabf24bb7b",
+    "native/crates/modhunter-core/src/lib.rs": "9bfeaf6290f88f4453ed10cc8294d22d3d658a5860da8fc32da5a360547b5b44",
+    "native/crates/modhunter-core/src/importer.rs": "47ef14b37295c9225294d87e3097b1ae6294dafd0600f8631388616bc9ba78d6",
+    "native/crates/modhunter-core/src/plugin_analysis/mod.rs": "06fba6283831c5355432e4b325cb02a3c9bf27c029b5dc04305e817e018b5e21",
+    "native/crates/modhunter-core/src/plugin_analysis/records.rs": "470b3d4dc33fb874af0354f60e36b12abd5854640a7db1d2dc2c2b76f0557d37",
     "native/crates/modhunter-core/src/plugin_analysis/provenance.rs": "20bd3f6fd3c33c2874e75319cd12764c3f74434cd372e14b7e9db341593dc160",
-    "native/crates/modhunter-core/src/bin/modhunter-cli.rs": "154552240de4f7dccc053114477589eb68ddb70b1c2677955e376a33bcf0ed52",
-    "native/Cargo.lock": "4b0168b1f526300bd6641a03a69fddc37d851a307645630a8700ce4123fbc1ea"
+    "native/crates/modhunter-core/src/bin/modhunter-cli.rs": "bfdad48c937375fcf07d7e0f14506c379acdcb60f2af630b070d1982fbdfa352",
+    "native/Cargo.lock": "86beefcf821c855ea66a338bfdb44db13a598b8be9b337ff49fd347091daf12d"
   },
-  "rustCliSha256": "7cdb9653194203249e1d13b5c0a799ccf75e753543cfbef1662439b2e70744c8",
+  "rustCliSha256": "0fb1fc7654f07e5debbd72a8ff2d550117cd2182c685bbfa462625afdfd5764a",
   "checks": [
     {
       "name": "production_request_captures_owned_paths",
@@ -106,8 +106,8 @@
     "changedSourceState": "source-changed",
     "installedVersionUnchanged": true,
     "unknownGameHeaderBytes": 42,
-    "initialRunnerElapsedMs": 4.026,
-    "changedSourceRunnerElapsedMs": 3.828
+    "initialRunnerElapsedMs": 8.639,
+    "changedSourceRunnerElapsedMs": 5.272
   },
   "limitations": "Actual Python request capture and subprocess runner invoke the actual Rust parser on synthetic files. Organizer methods are fixture doubles. No native MO2, Windows GUI, Nexus, download, installation, game, conversion or save-safety claim is made. Timings are single fixture runs, not benchmarks."
 }

@@ -377,6 +377,137 @@ fn gitlab_future_prerelease_and_wrong_tag_are_not_update_evidence() {
         );
     }
 }
+
+#[test]
+fn gitlab_latest_redirect_revalidates_only_the_same_resolved_release() {
+    for (location, target) in [
+        (
+            "/api/v4/projects/42/releases/v2.0",
+            "https://gitlab.com/api/v4/projects/42/releases/v2.0",
+        ),
+        (
+            "https://gitlab.com/api/v4/projects/group%2Fsubgroup%2Fmod/releases/v2.0",
+            "https://gitlab.com/api/v4/projects/group%2Fsubgroup%2Fmod/releases/v2.0",
+        ),
+    ] {
+        let mut req = request("https://gitlab.com/group/subgroup/mod/-/releases");
+        let url = project_identity(&req.items[0].source.url)
+            .unwrap()
+            .api_url();
+        let mock = Mock::new();
+        mock.reply(&url, 302, Value::Null, &[("location", location)]);
+        mock.reply(target, 200, gitlab(), &[("etag", "\"release-two\"")]);
+        let first = scan_sources_with(&req, &mock, NOW).unwrap();
+        assert_eq!(first.item_records["row"]["outcome"], "release");
+        assert_eq!(first.cache.entries[0].url, url);
+        assert_eq!(first.cache.entries[0].resolved_url.as_deref(), Some(target));
+        req.cache = first.cache;
+        let warm = scan_sources_with(&req, &mock, NOW + 1).unwrap();
+        assert_eq!(warm.item_records["row"]["freshness"], "cached");
+        assert_eq!(mock.count(), 2);
+        req.force = true;
+        mock.reply(&url, 302, Value::Null, &[("location", location)]);
+        mock.reply(target, 304, Value::Null, &[]);
+        let revalidated = scan_sources_with(&req, &mock, NOW + 2).unwrap();
+        assert_eq!(revalidated.item_records["row"]["freshness"], "revalidated");
+        let calls = mock.calls.lock().unwrap();
+        assert_eq!(calls.len(), 4);
+        assert!(calls[2].1.etag.is_none());
+        assert_eq!(calls[3].1.etag.as_deref(), Some("\"release-two\""));
+    }
+}
+
+#[test]
+fn gitlab_latest_redirect_cannot_escape_the_original_api_project() {
+    for target in [
+        "https://external.example/api/v4/projects/42/releases/v2.0",
+        "http://gitlab.com/api/v4/projects/42/releases/v2.0",
+        "https://person:secret@gitlab.com/api/v4/projects/42/releases/v2.0",
+        "https://gitlab.com:8080/api/v4/projects/42/releases/v2.0",
+        "/api/v4/projects/other%2Fmod/releases/v2.0",
+        "/api/v4/projects/42/releases/v2.0?private_token=secret",
+        "/api/v4/projects/42/releases/v2.0#fragment",
+        "/api/v4/projects/0/releases/v2.0",
+        "/api/v4/projects/42/releases/permalink/latest",
+        "/api/v4/projects/42/jobs/1/artifacts",
+    ] {
+        let req = request("https://gitlab.com/group/subgroup/mod");
+        let url = project_identity(&req.items[0].source.url)
+            .unwrap()
+            .api_url();
+        let mock = Mock::new();
+        mock.reply(&url, 302, Value::Null, &[("location", target)]);
+        let result = scan_sources_with(&req, &mock, NOW).unwrap();
+        assert_eq!(
+            result.item_records["row"]["outcome"], "unavailable",
+            "{target}"
+        );
+        assert_eq!(result.item_records["row"]["availability"], "source-moved");
+        assert_eq!(mock.count(), 1);
+    }
+}
+
+#[test]
+fn gitlab_redirect_requires_final_project_tag_proof_and_never_follows_twice() {
+    let target = "https://gitlab.com/api/v4/projects/42/releases/v2.0";
+    for change in ["project", "tag", "second-redirect"] {
+        let req = request("https://gitlab.com/group/subgroup/mod");
+        let url = project_identity(&req.items[0].source.url)
+            .unwrap()
+            .api_url();
+        let mock = Mock::new();
+        mock.reply(&url, 302, Value::Null, &[("location", target)]);
+        let mut data = gitlab();
+        match change {
+            "project" => {
+                data["_links"]["self"] = "https://gitlab.com/foreign/mod/-/releases/v2.0".into();
+                mock.reply(target, 200, data, &[]);
+            }
+            "tag" => {
+                data["tag_name"] = "v3.0".into();
+                data["_links"]["self"] =
+                    "https://gitlab.com/group/subgroup/mod/-/releases/v3.0".into();
+                mock.reply(target, 200, data, &[]);
+            }
+            _ => mock.reply(target, 302, Value::Null, &[("location", &url)]),
+        }
+        let result = scan_sources_with(&req, &mock, NOW).unwrap();
+        assert_eq!(
+            result.item_records["row"]["outcome"], "unavailable",
+            "{change}"
+        );
+        assert_eq!(mock.count(), 2);
+    }
+}
+
+#[test]
+fn gitlab_new_latest_tag_cannot_reuse_old_release_304_or_cache() {
+    let old_target = "https://gitlab.com/api/v4/projects/42/releases/v2.0";
+    let new_target = "https://gitlab.com/api/v4/projects/42/releases/v3.0";
+    let mut req = request("https://gitlab.com/group/subgroup/mod");
+    let url = project_identity(&req.items[0].source.url)
+        .unwrap()
+        .api_url();
+    let mock = Mock::new();
+    mock.reply(&url, 302, Value::Null, &[("location", old_target)]);
+    mock.reply(old_target, 200, gitlab(), &[("etag", "\"release-two\"")]);
+    req.cache = scan_sources_with(&req, &mock, NOW).unwrap().cache;
+    req.force = true;
+    mock.reply(&url, 302, Value::Null, &[("location", new_target)]);
+    mock.reply(new_target, 304, Value::Null, &[]);
+    let changed = scan_sources_with(&req, &mock, NOW + 1).unwrap();
+    assert_eq!(changed.item_records["row"]["outcome"], "unavailable");
+    assert_eq!(
+        changed.item_records["row"]["availability"],
+        "invalid-response"
+    );
+    assert!(mock.calls.lock().unwrap()[3].1.etag.is_none());
+    req.cache = changed.cache;
+    req.force = false;
+    let retry = scan_sources_with(&req, &mock, NOW + 2).unwrap();
+    assert_eq!(retry.item_records["row"]["outcome"], "unavailable");
+    assert_eq!(mock.count(), 4);
+}
 #[test]
 fn modrinth_exact_game_loader_version_and_dependencies_are_bound() {
     let mut req = request("https://modrinth.com/mod/example");
@@ -551,6 +682,49 @@ fn thunderstore_rejects_foreign_package_and_download_and_missing_listing() {
         mock.reply(&url, 200, data, &[]);
         let result = scan_sources_with(&req, &mock, NOW).unwrap();
         assert_ne!(result.item_records["row"]["outcome"], "release", "{change}");
+    }
+}
+
+#[test]
+fn thunderstore_preserves_unreviewed_moderation_without_claiming_approval() {
+    let mut req = request("https://thunderstore.io/c/valheim/p/Team/Example/");
+    req.game = "valheim".into();
+    let url = project_identity(&req.items[0].source.url)
+        .unwrap()
+        .api_url();
+    for (status, expected) in [
+        ("approved", "release"),
+        ("unreviewed", "release"),
+        ("rejected", "review"),
+        ("novel-status", "review"),
+        ("duplicate", "unavailable"),
+    ] {
+        let mut data = thunderstore();
+        if status == "duplicate" {
+            data["community_listings"] = json!([
+                {"community":"valheim","review_status":"approved"},
+                {"community":"valheim","review_status":"rejected"}
+            ]);
+        } else {
+            data["community_listings"][0]["review_status"] = status.into();
+        }
+        let mock = Mock::new();
+        mock.reply(&url, 200, data, &[]);
+        let result = scan_sources_with(&req, &mock, NOW).unwrap();
+        let row = &result.item_records["row"];
+        assert_eq!(row["outcome"], expected, "{status}");
+        if matches!(status, "approved" | "unreviewed" | "rejected") {
+            assert_eq!(row["moderationStatus"], status);
+        }
+        if expected == "review" {
+            assert_eq!(row["releaseAssets"][0]["installable"], false);
+        }
+        if status == "unreviewed" {
+            req.cache = result.cache;
+            let cached = scan_sources_with(&req, &mock, NOW + 1).unwrap();
+            assert_eq!(cached.item_records["row"]["moderationStatus"], "unreviewed");
+            req.cache.entries.clear();
+        }
     }
 }
 #[test]

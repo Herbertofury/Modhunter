@@ -29,17 +29,18 @@ VERIFICATION_NAME = f"Modhunter-{VERSION}-Verification.zip"
 JSON_LIMIT = 4 * 1024 * 1024
 PNG_LIMIT = 32 * 1024 * 1024
 PORTABLE_EXPANDED_LIMIT = 512 * 1024 * 1024
-PRODUCTION_FILES = ("plugin.py", "bridge.py", "model.py", "focus.py", "intelligence.py",
+PRODUCTION_FILES = ("plugin.py", "bridge.py", "model.py", "focus.py", "native_nexus.py", "qt_bridge.py", "intelligence.py",
                     "plugin_intelligence.py", "mod_health.py", "source_adapters.py",
                     "source_registry.py", "update_plan.py", "quick_update.py",
                     "install_brief.py", "web/index.html")
 BUNDLED_HELPER = "MO2/mo2_update_arsenal/bin/modhunter-cli.exe"
+BUNDLED_QT_HELPER = "MO2/mo2_update_arsenal/bin/modhunter-qt-bridge.dll"
 FIXTURE_PLUGIN_SHA256 = hashlib.sha256(
     struct.pack("<4sIIIIHH", b"TES4", 18, 0, 0, 0, 44, 0)
     + b"HEDR" + struct.pack("<HfII", 12, 1.7, 0, 0x800)
 ).hexdigest()
 REQUIRED_MO2_CHECKS = {
-    "native_plugin_initialized", "native_nexus_gateway_created", "native_ui_initialized",
+    "native_plugin_initialized", "native_nexus_gateway_created", "native_nexus_qt_binding", "native_ui_initialized",
     "native_profile_snapshot", "loopback_health", "protected_snapshot_authentication",
     "queued_refresh", "queued_focus", "native_dispatch_thread", "native_view_selection",
     "native_window_screenshot", "compact_game_response", "rust_cli_live_probe", "rust_plugin_audit",
@@ -217,9 +218,24 @@ def validate_mo2(result: dict, receipt: dict) -> None:
             and re.fullmatch(r"[0-9a-f]{64}", helper_hash) is not None
             and helper_hash == cli.get("sha256"),
             "Native Rust audit helper differs from the supplied compiled CLI")
+    qt_checks = [check for check in checks if check.get("name") == "native_nexus_qt_binding"]
+    require(len(qt_checks) == 1, "Expected one actual MO2 Qt binding receipt")
+    qt = qt_checks[0]
+    require(type(qt.get("abi")) is int and qt["abi"] == 1
+            and qt.get("buildQt") == qt.get("runtimeQt") == qt.get("qtVersion") == "6.7.1"
+            and qt.get("mechanism") == "typed-qt-sender"
+            and all(qt.get(name) is True for name in ("nativeQObject", "metadataCompleted", "rawFilesCompleted", "unownedIgnored", "cancelledIgnored"))
+            and type(qt.get("networkRequests")) is int and qt["networkRequests"] == 0
+            and qt.get("accountAuthentication") is False,
+            "Native MO2 proof did not verify the matching Qt helper and owned raw JSON binding fixture")
+    qt_binary = result.get("qtBridge") or {}
+    require(qt_binary.get("required") is True and isinstance(qt.get("helperSha256"), str)
+            and re.fullmatch(r"[0-9a-f]{64}", qt["helperSha256"]) is not None
+            and qt["helperSha256"] == qt_binary.get("sha256") and qt_binary.get("buildQt") == "6.7.1",
+            "Loaded MO2 Qt helper differs from the supplied compiled helper")
 
 
-def portable_contents(path: Path, commit: str, run_url: str, native_report: dict, mo2_result: dict) -> dict[str, bytes]:
+def portable_contents(path: Path, commit: str, run_url: str, native_report: dict, mo2_result: dict, qt_helper_hash: str) -> dict[str, bytes]:
     public: dict[str, bytes] = {}
     try:
         with ZipFile(path) as archive:
@@ -233,7 +249,7 @@ def portable_contents(path: Path, commit: str, run_url: str, native_report: dict
                 require(name not in index, f"Duplicate portable archive member: {name}")
                 require(not stat.S_ISLNK(entry.external_attr >> 16), "Linked member in portable archive")
                 index[name] = entry
-            for name in ("BUILD_INFO.json", "Modhunter.exe", "modhunter-cli.exe", BUNDLED_HELPER, "Install_MO2_Plugin.ps1", "Install_MO2_Plugin.bat", "Evidence/native-smoke.json"):
+            for name in ("BUILD_INFO.json", "Modhunter.exe", "modhunter-cli.exe", BUNDLED_HELPER, BUNDLED_QT_HELPER, "Install_MO2_Plugin.ps1", "Install_MO2_Plugin.bat", "Evidence/native-smoke.json"):
                 require(name in index and not index[name].is_dir() and index[name].file_size > 0, f"Portable package is missing {name}")
             require(archive.testzip() is None, "Portable ZIP failed its CRC check")
             build = json_object(archive.read(index["BUILD_INFO.json"]), "BUILD_INFO.json")
@@ -254,6 +270,10 @@ def portable_contents(path: Path, commit: str, run_url: str, native_report: dict
             # receipt; independent Windows builds need not be byte-identical.
             require(binary_hash(BUNDLED_HELPER) == binary_hash("modhunter-cli.exe"),
                     "Packaged MO2 Rust helper differs from the portable diagnostic CLI")
+            require(binary_hash(BUNDLED_QT_HELPER) == qt_helper_hash,
+                    "Packaged MO2 Qt helper differs from the same Windows job's compiled helper")
+            require(not any(PurePosixPath(name).name.lower().startswith("qt6") and name.lower().endswith(".dll") for name in index),
+                    "The portable plugin must use MO2's Qt runtime; SDK Qt DLLs must not be packaged")
             source_hashes = mo2_result.get("productionFileHashes")
             require(isinstance(source_hashes, dict), "MO2 orchestration omitted tested production source hashes")
             for relative in PRODUCTION_FILES:
@@ -283,7 +303,7 @@ MO2's Python/Qt plugin remains the in-process adapter for MO2's authenticated Ne
 
 ## Download and run
 
-- **{PORTABLE_NAME}** includes Modhunter.exe, the compiled diagnostic CLI, the MO2 plugin and its installer scripts. Extract it and run Modhunter.exe. The portable app requires Microsoft Edge WebView2 Runtime.
+- **{PORTABLE_NAME}** includes Modhunter.exe, the compiled diagnostic CLI, the MO2 plugin with its narrow Qt interoperability helper, and its installer scripts. Extract it and run Modhunter.exe. The portable app requires Microsoft Edge WebView2 Runtime.
 - **{installer_name}** installs the Rust desktop for the current Windows user and bootstraps WebView2 when needed. Use the portable ZIP's included plugin installer for live MO2 integration.
 - **{VERIFICATION_NAME}** contains the selected native receipts, screenshots, build identity and available benchmark evidence. **SHA256SUMS.txt** verifies the release files.
 
@@ -300,6 +320,7 @@ JSON, CSV and PowerShell exports are saved to Windows Downloads with unique file
 - Rust tests, formatting and Clippy, Python MO2 lifecycle tests, and dashboard interaction checks in Chromium.
 - A compiled Windows application running in real WebView2: fixture-profile import, rendered dashboard, actual backup export/readback, and denial of toolbar-native commands from the game view.
 - The production plugin inside official **MO2 2.5.2**, using a disposable fixture game/profile: native initialization, real Qt dispatch, profile snapshot, protected loopback requests, row focus/selection, a native screenshot, and a compiled Rust CLI health probe against that running service. Its bundled Rust helper also completed the real plugin-audit endpoint, decorated both fixture mods, and verified the header and fresh SHA256 of an inert disabled plugin within a bounded background job.
+- The compiled Qt 6.7.1 helper loaded against MO2's existing Qt runtime. Synthetic metadata passed through the actual MO2-created C++ repository QObject, captured the Qt sender, and completed the raw JSON file callback while rejecting unowned and cancelled requests. This binding fixture makes no Nexus account or network requests and does not exercise authenticated downloads.
 - Release preparation verifies the commit inside the portable ZIP, matching native receipts, matching tested MO2 source hashes, complete passing required checks, and nonempty valid screenshot evidence before staging these files.
 
 The native MO2 fixture does not sign into Nexus, download mod archives, exercise account-specific callbacks or FOMOD choices, or launch an owned game. Its synthetic game does not prove ESL eligibility, conversion safety or the behavior of a populated personal installation. The application is not code-signed.
@@ -334,7 +355,9 @@ def prepare(artifacts_dir: Path, output_dir: Path, commit: str, run_url: str) ->
     mo2_result = read_json(mo2 / "result.json")
     mo2_receipt = read_json(mo2 / "native-receipt.json")
     validate_mo2(mo2_result, mo2_receipt)
-    public = portable_contents(portable, commit, run_url, native_report, mo2_result)
+    qt_helper = regular_file(windows / "qt-bridge/Release/modhunter-qt-bridge.dll")
+    require(qt_helper.stat().st_size > 0, "The same Windows job's compiled Qt helper is empty")
+    public = portable_contents(portable, commit, run_url, native_report, mo2_result, file_hash(qt_helper))
     public.update({"windows/native-smoke.json": public_json(native_report), "mo2/result.json": public_json(mo2_result), "mo2/native-receipt.json": public_json(mo2_receipt), "mo2/mo2-fixture.png": png_bytes(mo2 / "mo2-fixture.png")})
     screenshots = sorted(browser.rglob("*.png"))
     require(bool(screenshots), "Browser proof contains no PNG screenshots")
@@ -385,11 +408,14 @@ def self_test() -> None:
             self.windows = self.artifacts / "Modhunter-Rust-Windows"
             self.mo2 = self.artifacts / "Modhunter-MO2-Native-Proof"
             self.browser = self.artifacts / "Modhunter-Rust-Browser-Proof"
-            for path in (self.windows / "release/bundle/nsis", self.windows / "native-smoke", self.mo2, self.browser):
+            for path in (self.windows / "release/bundle/nsis", self.windows / "native-smoke", self.windows / "qt-bridge/Release", self.mo2, self.browser):
                 path.mkdir(parents=True)
             self.native = {"ok": True, "nativeWebView2": True, "shellIpc": True, "exportDownloadVerified": True, "gameViewNativeIpcDenied": "1"}
             self.cli_bytes = b"non-executable synthetic test fixture"
             self.cli_hash = hashlib.sha256(self.cli_bytes).hexdigest()
+            self.qt_bytes = b"non-loadable synthetic Qt bridge fixture"
+            self.qt_hash = hashlib.sha256(self.qt_bytes).hexdigest()
+            (self.windows / "qt-bridge/Release/modhunter-qt-bridge.dll").write_bytes(self.qt_bytes)
             self.receipt = {"ok": True, "nativeMO2": True, "profileId": "fixture-profile",
                             "checks": [{"name": name, "passed": True} for name in sorted(REQUIRED_MO2_CHECKS)]}
             self.audit = next(check for check in self.receipt["checks"] if check["name"] == "rust_plugin_audit")
@@ -399,9 +425,14 @@ def self_test() -> None:
                              "Smoke Disabled": {"itemId": "disabled", "pluginCount": 1}},
                 syntheticPlugin={"name": "ModhunterSmoke.esp", "owner": "Smoke Disabled", "verified": True,
                                  "bytes": 42, "declaredRecords": 0, "sha256": FIXTURE_PLUGIN_SHA256})
+            self.qt = next(check for check in self.receipt["checks"] if check["name"] == "native_nexus_qt_binding")
+            self.qt.update(abi=1, buildQt="6.7.1", runtimeQt="6.7.1", qtVersion="6.7.1", mechanism="typed-qt-sender",
+                helperSha256=self.qt_hash, nativeQObject=True, metadataCompleted=True, rawFilesCompleted=True,
+                unownedIgnored=True, cancelledIgnored=True, networkRequests=0, accountAuthentication=False)
             self.sources = {name: ("test fixture " + name).encode() for name in PRODUCTION_FILES}
             self.result = {"ok": True, "phase": "completed", "nativeExitCode": 0, "release": {"version": "2.5.2"},
                            "rustCli": {"required": True, "sha256": self.cli_hash}, "nativeReceipt": self.receipt,
+                           "qtBridge": {"required": True, "sha256": self.qt_hash, "buildQt": "6.7.1"},
                            "productionFileHashes": {name: hashlib.sha256(body).hexdigest() for name, body in self.sources.items()}}
             self.write_json(self.windows / "native-smoke/native-smoke.json", self.native)
             self.write_json(self.mo2 / "result.json", self.result)
@@ -426,13 +457,15 @@ def self_test() -> None:
                 return struct.pack(">I", len(content)) + kind + content + struct.pack(">I", zlib.crc32(kind + content) & 0xFFFFFFFF)
             return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(b"\0\0\0\0\0")) + chunk(b"IEND", b"")
 
-        def write_portable(self, commit=None, *, include_helper=True, helper_bytes=None):
+        def write_portable(self, commit=None, *, include_helper=True, helper_bytes=None, include_qt_helper=True, qt_bytes=None):
             with ZipFile(self.zip_path, "w") as archive:
                 archive.writestr("BUILD_INFO.json", b"\xef\xbb\xbf" + public_json({"version": VERSION, "commit": commit or self.commit, "workflow": self.run}))
                 for name in ("Modhunter.exe", "modhunter-cli.exe", "Install_MO2_Plugin.ps1", "Install_MO2_Plugin.bat"):
                     archive.writestr(name, self.cli_bytes)
                 if include_helper:
                     archive.writestr(BUNDLED_HELPER, self.cli_bytes if helper_bytes is None else helper_bytes)
+                if include_qt_helper:
+                    archive.writestr(BUNDLED_QT_HELPER, self.qt_bytes if qt_bytes is None else qt_bytes)
                 archive.writestr("Evidence/native-smoke.json", public_json(self.native))
                 for name, body in self.sources.items():
                     archive.writestr("MO2/mo2_update_arsenal/" + name, body)
@@ -501,7 +534,7 @@ def self_test() -> None:
                 prepare(self.artifacts, self.output, self.commit, self.run)
 
         def test_intelligence_and_adapter_sources_are_bound_to_native_proof(self):
-            for name in ("intelligence.py", "plugin_intelligence.py", "mod_health.py",
+            for name in ("native_nexus.py", "qt_bridge.py", "intelligence.py", "plugin_intelligence.py", "mod_health.py",
                          "source_adapters.py", "source_registry.py", "update_plan.py",
                          "quick_update.py", "install_brief.py"):
                 with self.subTest(name=name):
@@ -533,6 +566,27 @@ def self_test() -> None:
             self.write_json(self.mo2 / "result.json", self.result)
             self.write_portable()
             prepare(self.artifacts, self.output, self.commit, self.run)
+
+        def test_qt_helper_is_bound_to_actual_native_fixture_and_same_job_binary(self):
+            self.write_portable(include_qt_helper=False)
+            with self.assertRaisesRegex(ReleaseError, "missing.*modhunter-qt-bridge"):
+                prepare(self.artifacts, self.output, self.commit, self.run)
+            self.write_portable(qt_bytes=b"different synthetic Qt helper build")
+            with self.assertRaisesRegex(ReleaseError, "Qt helper differs from the same Windows"):
+                prepare(self.artifacts, self.output, self.commit, self.run)
+            self.write_portable()
+            self.qt["rawFilesCompleted"] = False
+            self.write_json(self.mo2 / "native-receipt.json", self.receipt)
+            self.write_json(self.mo2 / "result.json", self.result)
+            with self.assertRaisesRegex(ReleaseError, "raw JSON binding fixture"):
+                prepare(self.artifacts, self.output, self.commit, self.run)
+            self.qt["rawFilesCompleted"] = True
+            self.qt["helperSha256"] = "0" * 64
+            self.write_json(self.mo2 / "native-receipt.json", self.receipt)
+            self.write_json(self.mo2 / "result.json", self.result)
+            with self.assertRaisesRegex(ReleaseError, "Loaded MO2 Qt helper differs"):
+                prepare(self.artifacts, self.output, self.commit, self.run)
+            self.assertFalse(self.output.exists())
 
         def test_credential_fields_and_old_output_are_rejected(self):
             self.native["token"] = "never-publish"

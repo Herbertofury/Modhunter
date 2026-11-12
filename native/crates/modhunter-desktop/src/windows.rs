@@ -346,9 +346,12 @@ fn inject_catalog(app: &tauri::AppHandle, label: &str) -> Result<()> {
             const c=qa?.getCatalog();
             const ok=!!(c?.offline && c.items?.length>=3 && document.getElementById('unifiedCommand')
                 && typeof window.modhunterImportCatalog==='function');
+            window.__modhunterNativeSmokeProof=()=>{
+                delete window.__modhunterNativeSmokeProof;
+                window.location.href='modhunter-proof://result?ok='+(ok?'1':'0')+'&denied='+(denied?'1':'0')
+                    +'&items='+(c?.items?.length||0)+'&profile='+encodeURIComponent(c?.profileName||'');
+            };
             document.getElementById('backupBtn').click();
-            window.location.href='modhunter-proof://result?ok='+(ok?'1':'0')+'&denied='+(denied?'1':'0')
-                +'&items='+(c?.items?.length||0)+'&profile='+encodeURIComponent(c?.profileName||'');
         })();"#).map_err(err)?;
     }
     Ok(())
@@ -461,7 +464,7 @@ fn open_tab(app: &tauri::AppHandle, mode: Mode) -> Result<u64> {
             }
             NewWindowResponse::Deny
         })
-        .on_download(move |_, event| match event {
+        .on_download(move |view, event| match event {
             DownloadEvent::Requested { url, destination } => {
                 smoke_event(
                     &download_app,
@@ -525,6 +528,18 @@ fn open_tab(app: &tauri::AppHandle, mode: Mode) -> Result<u64> {
                                 .smoke_export
                                 .lock()
                                 .unwrap_or_else(|e| e.into_inner()) = Some(path.clone());
+                            // Even a cancelled navigation can interrupt an
+                            // in-flight WebView2 blob transfer. Submit the
+                            // fixture's UI proof only after the real download
+                            // completes; finish_smoke still reads its bytes.
+                            if let Err(error) = view.eval("window.__modhunterNativeSmokeProof?.();")
+                            {
+                                smoke_event(
+                                    &download_app,
+                                    "dashboard-proof-dispatch-error",
+                                    json!({"error": error.to_string()}),
+                                );
+                            }
                             finish_smoke(&download_app);
                         }
                         alert(&download_app, format!("Export saved to {}", path.display()));

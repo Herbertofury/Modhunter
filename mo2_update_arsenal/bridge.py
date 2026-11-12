@@ -116,6 +116,8 @@ class ArsenalService:
         self.selected_mod_id = ""
         self.api_key = ""  # Volatile: never persisted, sent to the browser, or included in backup files.
         self.native_nexus_available = False
+        self.native_nexus_files_available: bool | None = None
+        self.native_nexus_files_error = ""
         self._snapshot = snapshot
         self._items_by_id = {str(i.get("id")): i for i in snapshot.get("items", [])}
         self._labels_to_ids = self._label_index(snapshot)
@@ -533,8 +535,12 @@ class ArsenalService:
             cached = self._file_cache.get((domain, mod_id))
             if cached:
                 return deepcopy(cached)
-            key, native_nexus = self.api_key, self.native_nexus_available
+            key = self.api_key
+            native_nexus = self.native_nexus_available and self.native_nexus_files_available is not False
             if not key and not native_nexus:
+                if self.native_nexus_available and self.native_nexus_files_error:
+                    return {"ok": False, "error": "MO2 Nexus file list unavailable: " + self.native_nexus_files_error
+                            + " Install the matching Modhunter MO2 package or supply an optional personal Nexus API key.", "mo2Login": True}
                 return {"ok": False, "error": "Connect to Nexus in MO2 Settings > Nexus or supply a fallback key.", "mo2Login": True}
             identity = (profile, domain, mod_id, epoch)
             flight = self._file_inflight.get(identity)
@@ -1290,7 +1296,7 @@ class ArsenalService:
                     item_id = query.get("itemId", [""])[0]
                     return self._reply(service.review_files(mid, item_id) if item_id else service.fetch_files(mid))
                 if uri.path == "/api/capabilities":
-                    return self._reply({"ok": True, "app": "MO2 Update Arsenal", "live": True, "nexusKeySession": bool(service.api_key), "nativeNexusAvailable": bool(service.native_nexus_available), "keyStorage": "RAM only", "features": ["rust-plugin-audit", "eslifier-provenance", "per-mod-health", "nexus-public-bugs", "master-order-checks", "snapshot", "local-check", "nexus-quick", "nexus-deep", "nexus-files", "native-mo2-nexus-login", "github-release-checks", "gitlab-release-checks", "rust-site-adapters", "modrinth-release-checks", "thunderstore-release-checks", "source-details", "provider-capabilities", "manual-source-review", "github-direct-downloads", "reviewed-provider-downloads", "mixed-source-batch-updates", "reviewed-update-workshop", "one-click-matched-update", "background-bulk-queue", "mo2-download", "mo2-install", "install-preview", "operation-journal", "read-only-recovery-history", "backup", "focus-mod", "chronicle", "verified-achievements", "ranked-full-clear", "persistent-profile-progress", "realm-wallet", "realm-purchase", "realm-save", "siege-targets", "siege-state", "siege-bounties", "siege-mod-focus"]})
+                    return self._reply({"ok": True, "app": "MO2 Update Arsenal", "live": True, "nexusKeySession": bool(service.api_key), "nativeNexusAvailable": bool(service.native_nexus_available), "nativeNexusFilesAvailable": bool(service.native_nexus_available and service.native_nexus_files_available is not False), "nativeNexusFilesError": service.native_nexus_files_error, "keyStorage": "RAM only", "features": ["rust-plugin-audit", "eslifier-provenance", "per-mod-health", "nexus-public-bugs", "master-order-checks", "snapshot", "local-check", "nexus-quick", "nexus-deep", "nexus-files", "native-mo2-nexus-login", "github-release-checks", "gitlab-release-checks", "rust-site-adapters", "modrinth-release-checks", "thunderstore-release-checks", "source-details", "provider-capabilities", "manual-source-review", "github-direct-downloads", "reviewed-provider-downloads", "mixed-source-batch-updates", "reviewed-update-workshop", "one-click-matched-update", "background-bulk-queue", "mo2-download", "mo2-install", "install-preview", "operation-journal", "read-only-recovery-history", "backup", "focus-mod", "chronicle", "verified-achievements", "ranked-full-clear", "persistent-profile-progress", "realm-wallet", "realm-purchase", "realm-save", "siege-targets", "siege-state", "siege-bounties", "siege-mod-focus"]})
                 return self._reply({"ok": False, "error": "Unknown endpoint"}, 404)
 
             def do_POST(self):

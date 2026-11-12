@@ -12,7 +12,7 @@ import shutil
 import time
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import expect, sync_playwright
 
 from mo2_update_arsenal.file_advisor import advise_nexus_files
 from mo2_update_arsenal.update_plan import plan_updates
@@ -418,8 +418,19 @@ with sync_playwright() as pw:
     source_page.set_content(fixture_html(source_mock),wait_until='load',timeout=30000)
     source_page.locator('#workshopResults .workshop-item').first.wait_for(timeout=15000)
     source_page.locator('#sourceCoverage > summary').click()
-    assert 'GitLab' in source_page.locator('#sourceCoverageRows').inner_text()
-    assert 'Public release API' in source_page.locator('#sourceCoverageRows').inner_text()
+    # The browser dispatches <details> toggle asynchronously. Wait for the
+    # resulting evidence table, not merely completion of the pointer action.
+    try:
+        expect(source_page.locator('#sourceCoverageRows')).to_contain_text('GitLab',timeout=5000)
+        expect(source_page.locator('#sourceCoverageRows')).to_contain_text('Public release API')
+    except AssertionError:
+        source_page.screenshot(path=str(OUTPUT/'source-coverage-failure.png'),full_page=False)
+        print(json.dumps({"sourceCoverageFailure":source_page.evaluate("""()=>({
+            open:document.getElementById('sourceCoverage').open,
+            text:document.getElementById('sourceCoverageRows').textContent,
+            providers:window.__ARSENAL_QA__.getCatalog().items.map(m=>({id:m.id,source:m.source,provider:m.update?.provider}))
+        })"""),"jsErrors":source_errors},indent=2))
+        raise
     source_page.locator('#row-live-a button[data-act="inspect"]').click()
     source_page.locator('#drawerNote').fill('Keep my custom FOMOD choices.')
     source_page.locator('#modSourceDetails .source-person strong').wait_for(timeout=10000)

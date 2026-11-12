@@ -15,6 +15,7 @@ param(
     [string]$EvidenceDirectory = '',
     [string]$WorkDirectory = '',
     [string]$RustCliPath = '',
+    [string]$QtBridgePath = '',
     [ValidateRange(30, 600)][int]$TimeoutSeconds = 150
 )
 
@@ -47,7 +48,7 @@ $PortableRoot = $null
 $Process = $null
 $Failure = $null
 $StartedAt = [DateTime]::UtcNow
-$CriticalProductionFiles = @('plugin.py', 'bridge.py', 'model.py', 'focus.py',
+$CriticalProductionFiles = @('plugin.py', 'bridge.py', 'model.py', 'focus.py', 'native_nexus.py', 'qt_bridge.py',
     'intelligence.py', 'plugin_intelligence.py', 'mod_health.py',
     'source_adapters.py', 'source_registry.py', 'update_plan.py', 'quick_update.py',
     'install_brief.py', 'web/index.html')
@@ -83,6 +84,14 @@ try {
             required = $true
             sha256 = (Get-FileHash -LiteralPath $RustCliPath -Algorithm SHA256).Hash.ToLowerInvariant()
         }
+    }
+    if (!$QtBridgePath) { throw 'Supply the matching compiled Qt bridge with -QtBridgePath; native Nexus binding proof is mandatory.' }
+    $QtBridgePath = [IO.Path]::GetFullPath($QtBridgePath)
+    if (!(Test-Path -LiteralPath $QtBridgePath -PathType Leaf)) { throw "The compiled Qt bridge does not exist: $QtBridgePath" }
+    $Summary['qtBridge'] = @{
+        required = $true
+        sha256 = (Get-FileHash -LiteralPath $QtBridgePath -Algorithm SHA256).Hash.ToLowerInvariant()
+        buildQt = '6.7.1'
     }
     $ProductionSource = Join-Path $RepositoryRoot 'mo2_update_arsenal'
     $HarnessSource = Join-Path $PSScriptRoot 'mo2_smoke_plugin'
@@ -221,6 +230,9 @@ log_level=0
         New-Item -ItemType Directory -Path $HelperDirectory -Force | Out-Null
         Copy-Item -LiteralPath $RustCliPath -Destination (Join-Path $HelperDirectory 'modhunter-cli.exe')
     }
+    $HelperDirectory = Join-Path $PluginDestination 'bin'
+    New-Item -ItemType Directory -Path $HelperDirectory -Force | Out-Null
+    Copy-Item -LiteralPath $QtBridgePath -Destination (Join-Path $HelperDirectory 'modhunter-qt-bridge.dll')
     $Summary['productionFileHashes'] = $SourceHashes
     Copy-Item -LiteralPath (Join-Path $HarnessSource 'game_modhunter_smoke.py') -Destination (Join-Path $BasicGames 'games/game_modhunter_smoke.py')
     $TestPlugin = Join-Path $PortableRoot 'plugins/modhunter_native_smoke'
@@ -237,11 +249,15 @@ log_level=0
     $StartInfo.Environment['MODHUNTER_NATIVE_SMOKE'] = '1'
     $StartInfo.Environment['MODHUNTER_NATIVE_SMOKE_RESULT'] = $ReceiptPath
     $StartInfo.Environment['MODHUNTER_NATIVE_SMOKE_INSTANCE'] = $InstanceRoot
+    $StartInfo.Environment['MODHUNTER_NATIVE_SMOKE_QT_BRIDGE_SHA256'] = $Summary.qtBridge.sha256
     if ($RustCliPath) { $StartInfo.Environment['MODHUNTER_NATIVE_SMOKE_RUST_CLI'] = $RustCliPath }
     else { $StartInfo.Environment.Remove('MODHUNTER_NATIVE_SMOKE_RUST_CLI') | Out-Null }
     $StartInfo.Environment['PYTHONNOUSERSITE'] = '1'
     $StartInfo.Environment.Remove('PYTHONHOME') | Out-Null
     $StartInfo.Environment.Remove('PYTHONPATH') | Out-Null
+    foreach ($QtVariable in @('QT_PLUGIN_PATH', 'QML2_IMPORT_PATH', 'QML_IMPORT_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH', 'QTWEBENGINEPROCESS_PATH')) {
+        $StartInfo.Environment.Remove($QtVariable) | Out-Null
+    }
     $Process = [Diagnostics.Process]::Start($StartInfo)
     $Deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     while (!(Test-Path -LiteralPath $ReceiptPath) -and !$Process.HasExited -and [DateTime]::UtcNow -lt $Deadline) {
@@ -255,7 +271,7 @@ log_level=0
     }
     $Receipt = Get-Content -LiteralPath $ReceiptPath -Raw | ConvertFrom-Json
     if (!$Receipt.ok -or !$Receipt.nativeMO2) { throw "Native MO2 checks failed: $($Receipt.error)" }
-    $RequiredChecks = @('native_plugin_initialized', 'native_nexus_gateway_created', 'native_ui_initialized',
+    $RequiredChecks = @('native_plugin_initialized', 'native_nexus_gateway_created', 'native_nexus_qt_binding', 'native_ui_initialized',
         'native_profile_snapshot', 'loopback_health', 'protected_snapshot_authentication', 'queued_refresh',
         'queued_focus', 'native_dispatch_thread', 'native_view_selection', 'native_window_screenshot', 'compact_game_response')
     if ($RustCliPath) { $RequiredChecks += @('rust_cli_live_probe', 'rust_plugin_audit') }

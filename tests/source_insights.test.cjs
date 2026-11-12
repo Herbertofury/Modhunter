@@ -30,6 +30,12 @@ test('provider declarations and original authors are not inferred from uploaders
  const mod=row();mod.update.publisher={name:'Release maintainer',url:'https://gitlab.com/publisher'};mod.update.dependencies=[{projectId:'dep',kind:'required',url:'https://gitlab.com/group/dep'}];
  const html=sources.details(mod);assert.match(html,/Release publisher/);assert.doesNotMatch(html,/>Author</);assert.match(html,/do not establish installed versions/);
 });
+test('public moderation evidence is labeled separately from game compatibility',()=>{
+ const mod=row();mod.update.provider='thunderstore';mod.update.moderationStatus='unreviewed';
+ const html=sources.details(mod);
+ assert.match(html,/Provider moderation/);assert.match(html,/unreviewed/);
+ assert.match(html,/not a compatibility assessment/);assert.doesNotMatch(html,/approved release/i);
+});
 test('remote release notes and names cannot inject markup or executable links',()=>{
  const mod=row();mod.update.changelog='<script>alert(1)</script><img onerror="x">';mod.update.publisher={name:'<svg onload=x>',url:'javascript:alert(1)'};mod.update.releaseUrl='https://secret:password@example.com/file';
  const html=sources.details(mod);assert.doesNotMatch(html,/<script|<svg|<img|javascript:|secret:password/);assert.match(html,/&lt;script&gt;/);

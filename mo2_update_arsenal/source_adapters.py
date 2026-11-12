@@ -148,7 +148,7 @@ def normalize_adapter_record(item: dict, raw: dict, *, now=None) -> dict:
     if not same_source:
         result.update(outcome="unavailable", verdict="unknown", reason="Source identity changed or the adapter result does not match the selected project.")
         return result
-    for field in ("projectId", "releaseId", "latestVersion", "publishedAt", "releaseName", "channel", "publisherId", "projectTeamId", "teamId", "title", "projectStatus"):
+    for field in ("projectId", "releaseId", "latestVersion", "publishedAt", "releaseName", "channel", "publisherId", "projectTeamId", "teamId", "title", "projectStatus", "moderationStatus"):
         if isinstance(raw.get(field), (str, int, float)) and not isinstance(raw.get(field), bool):
             result[field] = str(raw[field])[:240]
     if type(raw.get("manualAssetCount")) is int and raw["manualAssetCount"] >= 0:
@@ -298,7 +298,7 @@ def compact_source_update(update: dict) -> dict:
         return deepcopy(update)
     fields = {"provider", "source", "sourceUrl", "projectId", "releaseId", "releaseUrl", "releaseName",
               "verdict", "latestVersion", "checkedAt", "expiresAt", "retryAt", "availability", "freshness",
-              "outcome", "reason", "capabilities", "sourceEngine", "publishedAt", "manualAssetCount", "channel"}
+              "outcome", "reason", "capabilities", "sourceEngine", "publishedAt", "manualAssetCount", "channel", "moderationStatus"}
     result = {key: deepcopy(value) for key, value in update.items() if key in fields}
     compatibility = update.get("compatibility")
     if isinstance(compatibility, dict):

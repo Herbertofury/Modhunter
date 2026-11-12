@@ -10,7 +10,7 @@ Modhunter checks exact projects, retains every installed mod in the profile, and
 | **GitHub** | Public stable release API, exact owner/repository | Review published ZIP/7z/RAR assets, with release and asset IDs; queue through MO2 | Private repositories, missing releases, prereleases and non-archive files need source-page review. Published SHA-256 is displayed when supplied. |
 | **GitLab** | Public releases for the exact project, including nested groups | Review release archive links bound to that project and tag; queue vetted links through MO2 | The original link target is checked as well as any provider download alias. Arbitrary external links do not become trusted assets. |
 | **Modrinth** | Project and release API with explicit game-version and loader context | Inspect release files, published hashes, declared dependencies and release notes; vetted archive formats can use MO2 | Wrong game, absent context and loader mismatch require review. JAR and MRPACK files remain metadata/source-page workflows; this tool does not become a Minecraft installer. |
-| **Thunderstore** | Exact namespace/package and community API context | Inspect package releases, dependencies and ZIP archives; vetted files can use MO2 | Community/game mismatch and deprecated packages require review. Provider declarations do not prove game compatibility or an installed dependency graph. |
+| **Thunderstore** | Exact namespace/package and community API context | Inspect package releases, dependencies and ZIP archives; vetted files can use MO2 | Community/game mismatch and deprecated packages require review. Moderation status is displayed separately; an active unreviewed listing can supply release facts without being represented as approved. Provider declarations do not prove game compatibility or an installed dependency graph. |
 | **CurseForge** | Capability shown as **Provider API key required** | Open the original project | This build does not configure a CurseForge API session. It does not claim automatic checks or bypass the provider's key requirements. |
 | **Patreon, LoversLab, Mod DB, Modding Guild, Dwemer Mods** | Exact source retained; **Source-page review** | Open the original release using the user's browser and ordinary provider workflow | A source link does not establish authentication or a newer downloadable release. |
 | **Ko-fi, Boosty, Afdian, SubscribeStar and other creator sites** | Source-page review | Open the original project or post | Post dates and creator names are not treated as installed-mod versions. |
@@ -58,7 +58,7 @@ Project URLs use HTTPS and reject credential-bearing identities. A changed sourc
 2. Choose **Check all mod sources**. Inspect the Workshop's candidates, review and manual lanes, and expand source coverage to identify missing capabilities.
 3. Open **Choose file** or the inspector's **Review release files**. Compare the release notes, dependencies, game/runtime and exact archive. A uniquely eligible file can also use **Update now**.
 4. Select an archive. The browser submits its stable identity and a review fingerprint; it does not choose a download URL. The server rechecks provider, project, release, filename, URL, size and published hashes against its owned record.
-5. Queue selected files. That association is checked again at native dispatch. A changed file under the same release/asset ID invalidates the old review. Native MO2 handles the download.
+5. Queue selected files. That association is checked again at native dispatch. Newly observed file changes under the same release/asset ID invalidate the old review. Native MO2 handles the download.
 6. Open the completed file with MO2. Install preflight repeats the profile, installed/target-version and reviewed-file checks. The normal MO2 installer owns FOMOD and overwrite choices. A per-mod **Update now** request may open that file's installer when its download completes; batch queueing remains download-only.
 7. Check activation, conflicts, plugin masters and patches after installation. Refresh the profile to establish whether the installed version advanced. ESLifier provenance is rechecked separately when relevant files change.
 
@@ -70,7 +70,7 @@ Public checks deduplicate shared projects and use four workers by default, cappe
 
 API responses, retained cache data and detailed output have explicit size limits. A single helper request accepts up to 25,000 rows and 2,048 distinct public projects. Limits return an explicit result/error instead of dropping installed rows from the dashboard. Provider availability, scan budgets and rate limits still govern network speed.
 
-No provider credentials or account cookies are read by the public adapters. API targets are fixed HTTPS provider hosts, redirects are disabled for metadata requests, and archive links must match the established source. Scans stop on profile/runtime/loader changes and plugin shutdown.
+No provider credentials or account cookies are read by the public adapters. API targets are fixed HTTPS provider hosts. Metadata redirects are blocked except for one validated GitLab latest-release redirect whose final project and tag are checked; its cache validators stay bound to that resolved endpoint. Archive links must match the established source. Scans stop on profile/runtime/loader changes and plugin shutdown.
 
 ## Verification
 

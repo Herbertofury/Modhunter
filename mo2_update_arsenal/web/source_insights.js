@@ -14,6 +14,7 @@ function provider(mod){return text(mod.update?.provider||mod.provider||mod.sourc
 function label(value){return names[value]||text(value||'Original source').replace(/[-_]/g,' ')}
 function checked(value){if(value===null||value===undefined||value==='')return'Not checked';const d=new Date(typeof value==='number'?value*1000:value);return Number.isFinite(d.getTime())?d.toLocaleString():'Time unavailable'}
 function hasAssets(mod){const update=mod.update||mod;return (number(update.releaseAssetCount)??list(update.releaseAssets).length)>0}
+function canReview(mod){const s=state(mod);return hasAssets(mod)&&mod.update?.verdict==='candidate'&&!s.stale&&!s.rateLimited&&!compatibilityAlerts[mod.update?.compatibility?.status]}
 function state(mod,now=Date.now()/1000){
  const u=mod.update||{},caps=u.capabilities||mod.sourceCapabilities||(provider(mod)==='nexus'?{checkMode:'native-api',reviewedDownload:true,authentication:'mo2',reason:'Uses the connected MO2 Nexus integration.'}:{});
  const stale=u.freshness==='stale'||(Number(u.expiresAt)>0&&Number(u.expiresAt)<=now);
@@ -28,7 +29,7 @@ function state(mod,now=Date.now()/1000){
 }
 function chips(mod){
  const u=mod.update||{},s=state(mod);
- if(!u.capabilities&&!u.freshness&&!u.releaseId&&!u.outcome)return'';
+ if(!u.capabilities&&!u.freshness&&!u.releaseId&&!u.outcome&&!u.checkedAt&&!u.expiresAt&&!u.retryAt)return'';
  const detail=s.caps.reason||u.reason||'Open source details for evidence and supported actions.';
  const tag=(value,tone,title)=>'<button type="button" class="insight-chip '+tone+'" data-source-act="inspect" data-id="'+esc(mod.id)+'" title="'+esc(title)+'">'+esc(value)+'</button>';
  return '<div class="mod-insights source-chips" aria-label="Source adapter evidence">'+tag(label(s.provider),'neutral',detail)+tag(s.status,s.tone,u.reason||s.status)+(s.dependencies?tag(s.dependencies+' declared dependenc'+(s.dependencies===1?'y':'ies'),'info','Provider declarations; installed dependency compatibility requires review.'):'')+'</div>';
@@ -60,7 +61,7 @@ function details(mod,{live=false,loading=false,error=''}={}){
  if(loading)html+='<p class="insight-note" role="status">Loading release details…</p>';
  if(error)html+='<p class="insight-alert">'+esc(error)+'</p>';
  html+='<p class="insight-note">'+esc(u.reason||caps.reason||'Check this exact source to establish its release information.')+'</p>';
- html+='<dl class="source-facts"><dt>Adapter</dt><dd>'+esc(mode)+'</dd><dt>Source checked</dt><dd>'+esc(checked(u.checkedAt))+'</dd><dt>Release published</dt><dd>'+esc(checked(u.publishedAt))+'</dd><dt>Download support</dt><dd>'+esc(caps.reviewedDownload?'Reviewed provider files → MO2':caps.authentication==='mo2'?'MO2 native download manager':'Open the original provider')+'</dd></dl>';
+ html+='<dl class="source-facts"><dt>Adapter</dt><dd>'+esc(mode)+'</dd><dt>Source checked</dt><dd>'+esc(checked(u.checkedAt))+'</dd><dt>Release published</dt><dd>'+esc(checked(u.publishedAt))+'</dd><dt>Download support</dt><dd>'+esc(caps.reviewedDownload?'Reviewed provider files → MO2':caps.authentication==='mo2'?'MO2 native download manager':'Open the original provider')+'</dd>'+(u.moderationStatus?'<dt>Provider moderation</dt><dd>'+esc(u.moderationStatus)+' · provider listing status; not a compatibility assessment</dd>':'')+'</dl>';
  if(u.retryAt)html+='<p class="insight-note">Provider retry time: '+esc(checked(u.retryAt))+'.</p>';
  if(u.summary)html+='<p class="source-summary">'+esc(text(u.summary).slice(0,4000))+'</p>';
  html+='<div class="source-people">'+person(u.author,'Author')+person(u.publisher,'Release publisher')+'</div>';
@@ -74,7 +75,7 @@ function details(mod,{live=false,loading=false,error=''}={}){
  if(u.changelog)html+='<details class="source-disclosure" data-source-section="changelog"><summary>Release notes / changelog</summary><pre class="source-changelog">'+esc(text(u.changelog).slice(0,24000))+'</pre><p class="insight-note">Text supplied by the provider. Open the release for the original formatting and full content.</p></details>';
  if(s.assets)html+='<p class="insight-note">'+s.assets+' published file'+(s.assets===1?'':'s')+' in this release.</p>';
  html+='<div class="insight-links">'+link(u.releaseUrl,'Release & changelog')+link(mod.source?.url,'Original project')+'</div>';
- if(live)html+='<div class="insight-actions"><button type="button" data-source-act="scan" data-id="'+esc(mod.id)+'">Check mod sources</button>'+(hasAssets(mod)&&u.verdict==='candidate'&&!s.stale&&!s.rateLimited&&!compatibilityAlerts[u.compatibility?.status]?'<button type="button" data-source-act="files" data-id="'+esc(mod.id)+'">Review release files</button>':'')+'</div>';
+ if(live)html+='<div class="insight-actions"><button type="button" data-source-act="scan" data-id="'+esc(mod.id)+'">Check mod sources</button>'+(canReview(mod)?'<button type="button" data-source-act="files" data-id="'+esc(mod.id)+'">Review release files</button>':'')+'</div>';
  if(!live)html+='<p class="insight-note">Connect the MO2 plugin for source checks and reviewed downloads.</p>';
  return html+'</section>';
 }
@@ -91,6 +92,6 @@ function matches(mod,filter){const s=state(mod);return filter==='source-stale'?s
 function searchText(mod){const u=mod.update||{},s=state(mod);return [s.provider,label(s.provider),s.status,u.latestVersion,u.releaseId,u.availability,u.compatibility?.status,u.author?.name,u.publisher?.name,...list(u.dependencies).slice(0,128).map(d=>d.name||d.projectId||d.versionId)].map(text).join(' ').toLowerCase()}
 const csvHeaders=['Release provider','Release version','Release ID','Release URL','Release published at','Source checked at','Source expires at','Source freshness','Source availability','Adapter mode','Provider compatibility','Declared dependencies','Release files'];
 function csv(mod){const u=mod.update||{},s=state(mod);return [s.provider,u.latestVersion||'',u.releaseId||'',safeURL(u.releaseUrl),u.publishedAt||'',u.checkedAt||'',u.expiresAt||'',u.freshness||'',u.availability||'',s.caps.checkMode||'',u.compatibility?.status||'',s.dependenciesKnown?s.dependencies:'',s.assetsKnown?s.assets:'']}
-const api={provider,label,checked,state,hasAssets,chips,details,coverage,searchText,matches,csv,csvHeaders,assetCards,assetIdentity,safeURL};
+const api={provider,label,checked,state,hasAssets,canReview,chips,details,coverage,searchText,matches,csv,csvHeaders,assetCards,assetIdentity,safeURL};
 root.ModhunterSources=api;if(typeof module==='object'&&module.exports)module.exports=api;
 })(typeof window==='object'?window:globalThis);

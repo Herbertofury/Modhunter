@@ -113,6 +113,15 @@ test('loading source evidence preserves unsaved inspector notes',async()=>{
  h.context.document.getElementById('drawerNote').value='Keep my unsaved setup notes';await h.api.loadSourceDetails(mod);await h.settle();
  assert.equal(h.nodes.get('drawerNote').value,'Keep my unsaved setup notes');
 });
+test('expired public source evidence replaces update actions with an actionable source review',async()=>{
+ const h=harness({count:1});await h.settle();const data=catalog('a',1);
+ data.items[0].source={type:'gitlab',verified:true,url:'https://gitlab.com/team/project'};
+ data.items[0].update={provider:'gitlab',verdict:'candidate',latestVersion:'2.0',releaseAssetCount:1,expiresAt:1};
+ h.state.catalog=data;await h.qa.setCatalog(data);
+ const html=h.nodes.get('workshopResults').innerHTML;
+ assert.match(html,/Review source status/);assert.match(html,/Refresh needed/);
+ assert.doesNotMatch(html,/data-workshop-act="quick"|data-workshop-act="review"/);
+});
 
 test('initial connection failure retries automatically and restores connected status',async()=>{
  const h=harness({failSnapshots:1});await h.settle();assert.equal(h.api.state().connected,false);

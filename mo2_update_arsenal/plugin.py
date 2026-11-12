@@ -118,6 +118,8 @@ class ModUpdateArsenal(mobase.IPluginTool):
                     folder = Path(__file__).parent / "data"
                 self.server = ArsenalService(doc, folder / "nexus-cache.json", self.dispatcher.submitted.emit, snap)
                 self.server.native_nexus_available = self._native_nexus is not None
+                self.server.native_nexus_files_available = bool(self._native_nexus and self._native_nexus.files_available)
+                self.server.native_nexus_files_error = self._native_nexus.files_error if self._native_nexus else self._native_nexus_error
             else:
                 self._refresh_snapshot(force_metadata=True)
             address = self.server.start()
@@ -278,7 +280,12 @@ class ModUpdateArsenal(mobase.IPluginTool):
                 self.server.set_key(key)
                 field.clear()
                 return {"ok": True, "keyConnected": True, "message": "API key active in memory for this MO2 session"}
-            return {"ok": True, "keyConnected": bool(self.server.api_key), "nativeNexus": bool(self._native_nexus), "message": "MO2 native Nexus connection ready" if self._native_nexus else "Open MO2 Settings > Nexus > Connect to Nexus, or use a fallback key"}
+            native_files = bool(self._native_nexus and self._native_nexus.files_available)
+            message = ("MO2 native Nexus bridge ready" if native_files else
+                       "MO2 metadata bridge ready; install the matching native helper or supply a fallback key for file lists" if self._native_nexus else
+                       "Open MO2 Settings > Nexus > Connect to Nexus, or use a fallback key")
+            return {"ok": True, "keyConnected": bool(self.server.api_key), "nativeNexus": bool(self._native_nexus),
+                    "nativeNexusFiles": native_files, "message": message}
         return {"ok": False, "error": "Connection dialog canceled"}
 
     def _focus_mod(self, payload: dict) -> dict:

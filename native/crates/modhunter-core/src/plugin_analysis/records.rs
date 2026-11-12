@@ -11,6 +11,7 @@ const GROUP_DEPTH_LIMIT: usize = 64;
 
 pub(super) struct Parsed {
     pub header: PluginHeader,
+    pub header_digest: [u8; 32],
     pub records: Option<RecordSummary>,
     pub sha256: Option<String>,
 }
@@ -48,6 +49,7 @@ pub(super) fn scan(
     name: &str,
     game: &str,
     deep: bool,
+    cached_header: Option<(&[u8; 32], &PluginHeader)>,
     stats: &mut PluginAuditStats,
 ) -> Result<Parsed, CoreError> {
     let mut input = Input {
@@ -79,7 +81,21 @@ pub(super) fn scan(
         }
         let mut payload = vec![0_u8; payload_len];
         input.exact(&mut payload)?;
-        let header = parse_header(&payload, &raw, name, game)?;
+        // File length/mtime can be unchanged after a flag, master or HEDR
+        // edit, particularly on Windows. Cached parsing is reusable only when
+        // the entire bounded TES4 record still has identical fresh bytes.
+        let mut header_hash = Sha256::new();
+        header_hash.update(&raw[..width]);
+        header_hash.update(&payload);
+        let header_digest: [u8; 32] = header_hash.finalize().into();
+        let header = if let Some((_, header)) =
+            cached_header.filter(|(digest, _)| **digest == header_digest)
+        {
+            stats.header_cache_hits += 1;
+            header.clone()
+        } else {
+            parse_header(&payload, &raw, name, game)?
+        };
         let records = if deep && !matches!(game, "starfield" | "morrowind" | "unknown") {
             let mut records = scan_records(&mut input, stamp.size, width, header.masters.len())?;
             records.scan_complete = records.total_records + records.groups
@@ -102,6 +118,7 @@ pub(super) fn scan(
         let sha256 = input.hash.take().map(|h| format!("{:x}", h.finalize()));
         Ok(Parsed {
             header,
+            header_digest,
             records,
             sha256,
         })

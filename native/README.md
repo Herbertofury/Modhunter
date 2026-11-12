@@ -2,7 +2,7 @@
 
 The Windows desktop, profile import/cache engine, connection probing, tab lifecycle and native file dialogs run in Rust. Microsoft Edge WebView2 renders the existing Modhunter dashboard, Questbound, AetherFX, Shiverfell, Siege and Atlas. The shipped desktop does not require Node or Electron.
 
-MO2's Python/Qt plugin remains the supported in-process adapter for MO2's authenticated Nexus bridge, native downloads, FOMOD installer, focus and verified rewards. The dashboard/game presentation remains HTML/CSS/JavaScript. This release does not claim those components have been rewritten into Rust.
+MO2's Python/Qt plugin remains the supported in-process adapter for MO2's authenticated Nexus bridge, native downloads, FOMOD installer, focus and verified rewards. A small Qt Core C++ helper bridges the protected callback-sender binding needed by MO2 2.5.2's public file-list integration. The dashboard/game presentation remains HTML/CSS/JavaScript. Public site adapters, import/cache and plugin analysis run in Rust.
 
 ## Run
 
@@ -14,7 +14,7 @@ MO2's Python/Qt plugin remains the supported in-process adapter for MO2's authen
 
 Dashboard JSON, CSV and PowerShell exports are saved in your Windows **Downloads** folder with a unique filename. The native toolbar shows the saved path. Use **Export backup** before moving progress from the older Electron edition, then import that backup in the Rust edition.
 
-The MO2 package includes its matching `bin/modhunter-cli.exe` helper. A manually copied Python-only plugin can still show native MO2 facts, but deeper plugin/hash analysis reports the missing helper explicitly. The native build requires the included protocol-1 plugin. Old plugins receive a clear upgrade message. Connections have bounded deadlines, do not use environment HTTP proxies, and cannot redirect to another server. A dropped connection is visibly marked; recovered read-only sessions reconnect without replaying update commands.
+The MO2 package includes its matching `bin/modhunter-cli.exe` and `bin/modhunter-qt-bridge.dll`. A manually copied Python-only plugin can still show native MO2 facts, but source/deep-analysis and native file-list capabilities report missing helpers explicitly. The installer checks both helpers before replacing an existing plugin. The native app requires the included protocol-1 plugin. Old plugins receive a clear upgrade message. Local MO2 connections have bounded deadlines, bypass HTTP proxies, and cannot redirect to another server. Public source adapters use system certificate trust and proxy configuration. A dropped connection is visibly marked; recovered read-only sessions reconnect without replaying update commands.
 
 Existing Electron/standalone outputs remain available. Browser progress lives in each runtime's local storage; moving from Electron to WebView2 does not automatically migrate Electron's private browser database. Export/import existing Modhunter progress with the dashboard controls when moving runtimes. Live MO2 Chronicle progress remains owned by the plugin.
 
@@ -31,7 +31,29 @@ cd crates/modhunter-desktop
 npx --yes @tauri-apps/cli@2 build
 ```
 
-For a manual source-tree MO2 installation, copy the built `native/target/release/modhunter-cli.exe` into `mo2_update_arsenal/bin/modhunter-cli.exe` before running the installer. CI performs this step when assembling the portable package.
+### Build the MO2 Qt helper
+
+The supported native fixture is official **MO2 2.5.2 with Qt/PyQt 6.7.1**. Install the Qt **6.7.1 `win64_msvc2019_64` Qt Base SDK** and CMake, then run these commands from the repository root in a Visual Studio developer PowerShell. Adjust the SDK path to its actual location:
+
+```powershell
+$qtSdk = 'C:\Qt\6.7.1\msvc2019_64'
+cmake -S native/qt_bridge -B native/target/qt-bridge -A x64 "-DCMAKE_PREFIX_PATH=$qtSdk" -DBUILD_TESTING=ON
+cmake --build native/target/qt-bridge --config Release --parallel 2
+cmake -E env "PATH=$qtSdk\bin;$env:PATH" ctest --test-dir native/target/qt-bridge -C Release --output-on-failure
+New-Item -ItemType Directory -Force mo2_update_arsenal/bin
+Copy-Item native/target/release/modhunter-cli.exe mo2_update_arsenal/bin/
+Copy-Item native/target/qt-bridge/Release/modhunter-qt-bridge.dll mo2_update_arsenal/bin/
+```
+
+Copy these two matching helpers before running `native/Install_MO2_Plugin.ps1` from a source tree. CI performs the same assembly for released packages. The helper dynamically uses **MO2's own Qt Core**; do not copy SDK Qt DLLs into MO2. Runtime ABI/version and GUI-thread checks reject an incompatible helper. The standalone Rust app does not need the Qt SDK.
+
+The real portable-MO2 fixture takes both binaries explicitly:
+
+```powershell
+./native/scripts/mo2_native_smoke.ps1 -RustCliPath "$PWD/native/target/release/modhunter-cli.exe" -QtBridgePath "$PWD/native/target/qt-bridge/Release/modhunter-qt-bridge.dll" -EvidenceDirectory "$PWD/native/target/mo2-proof"
+```
+
+Use a new, empty evidence directory for each run. This fixture checks the actual MO2-created QObject and raw QVariant binding using owned synthetic callbacks; it performs no login, authenticated Nexus request or mod download. See [`qt_bridge/README.md`](qt_bridge/README.md) for the narrow helper contract and compiled binding tests.
 
 Windows builds need the Rust MSVC toolchain and Visual Studio C++ build tools. The resulting executable is `native/target/release/Modhunter.exe`; installer output is under `native/target/release/bundle/nsis`. Node is used only to run the build-time Tauri CLI. `cargo install tauri-cli --locked --version '^2'` and `cargo tauri build` can replace that build-time step.
 
@@ -51,4 +73,4 @@ The `Rust desktop and MO2 readiness` workflow builds the Windows executable and 
 
 Fixture-based Windows smoke is separate from a user's actual populated MO2 installation. Real Nexus account download behavior, account-specific callbacks, FOMOD choices and in-game results require testing against that installation; no automated fixture is labeled as that evidence. Provider sign-in and network failures cannot be guaranteed absent. The application is not code-signed; the Windows installer is built from the linked repository workflow.
 
-See `wiki/Mod-Intelligence.md` for the new ESL, provenance and source-health controls. See the repository's `wiki/Rust-Desktop.md` and `native/evidence/` for the exact tests and measured performance associated with this release.
+See [`Mod Intelligence`](../wiki/Mod-Intelligence.md) for ESL, provenance and source-health controls, and [`Source Coverage`](../wiki/Updater-Source-Coverage.md) for GitHub/GitLab/Modrinth/Thunderstore adapters. [`Rust Desktop`](../wiki/Rust-Desktop.md) and [`evidence/`](evidence/) record the tests and measured performance associated with this release.

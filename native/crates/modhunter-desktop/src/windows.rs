@@ -143,7 +143,23 @@ fn notify(app: &tauri::AppHandle) {
     let _ = app.emit_to("chrome", "modhunter-state", state);
 }
 fn alert(app: &tauri::AppHandle, message: impl Into<String>) {
-    let _ = app.emit_to("chrome", "modhunter-message", message.into());
+    let message = message.into();
+    smoke_event(app, "message", json!({"message": message}));
+    let _ = app.emit_to("chrome", "modhunter-message", message);
+}
+
+fn smoke_event(app: &tauri::AppHandle, stage: &str, details: Value) {
+    let state = app.state::<Runtime>();
+    let Some(path) = &state.smoke_output else {
+        return;
+    };
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path.with_extension("events.jsonl"))
+    {
+        let _ = writeln!(file, "{}", json!({"stage": stage, "details": details}));
+    }
 }
 
 fn page_url(mode: Mode, endpoint: Option<&str>) -> String {
@@ -216,6 +232,7 @@ fn handle_external(app: &tauri::AppHandle, url: &Url) {
 }
 
 fn smoke_result(app: &tauri::AppHandle, url: &Url, view_label: &str) {
+    smoke_event(app, "dashboard-proof", json!({"url": url.as_str()}));
     let state = app.state::<Runtime>();
     let Some(path) = &state.smoke_output else {
         return;
@@ -236,6 +253,7 @@ fn smoke_result(app: &tauri::AppHandle, url: &Url, view_label: &str) {
         "state": snapshot, "fixtureOnly": true});
     let _ = path;
     *state.smoke_ui.lock().unwrap_or_else(|e| e.into_inner()) = Some(report);
+    smoke_event(app, "dashboard-proof-accepted", json!({"passed": pass}));
     finish_smoke(app);
 }
 
@@ -255,6 +273,7 @@ fn finish_smoke(app: &tauri::AppHandle) {
         .unwrap_or_else(|e| e.into_inner())
         .clone();
     let (Some(mut report), Some(export)) = (report, export) else {
+        smoke_event(app, "waiting-for-dashboard-or-export", json!({}));
         return;
     };
     let exported = std::fs::read(&export)
@@ -271,10 +290,16 @@ fn finish_smoke(app: &tauri::AppHandle) {
     }
     let written =
         std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap_or_default()).is_ok();
+    smoke_event(
+        app,
+        "report-written",
+        json!({"passed": pass, "written": written}),
+    );
     app.exit(if pass && written { 0 } else { 1 });
 }
 
 fn inject_catalog(app: &tauri::AppHandle, label: &str) -> Result<()> {
+    smoke_event(app, "catalog-injection-requested", json!({"label": label}));
     let state = app.state::<Runtime>();
     let catalog = {
         let m = state.model.lock().map_err(err)?;
@@ -310,6 +335,7 @@ fn inject_catalog(app: &tauri::AppHandle, label: &str) -> Result<()> {
         .replace('\u{2029}', "\\u2029");
     view.eval(format!("window.modhunterImportCatalog?.({data});"))
         .map_err(err)?;
+    smoke_event(app, "catalog-injection-scheduled", json!({"label": label}));
     if state.smoke_output.is_some() && !state.smoke_sent.swap(true, Ordering::AcqRel) {
         view.eval(r#"(async()=>{
             let denied=false;
@@ -392,6 +418,11 @@ fn open_tab(app: &tauri::AppHandle, mode: Mode) -> Result<u64> {
     let download_app = app.clone();
     let builder = WebviewBuilder::new(&label, WebviewUrl::External(Url::parse(&url).map_err(err)?))
         .on_navigation(move |url| {
+            smoke_event(
+                &nav_app,
+                "dashboard-navigation",
+                json!({"url": url.as_str()}),
+            );
             if url.scheme() == "modhunter-proof" {
                 smoke_result(&nav_app, url, &nav_label);
                 return false;
@@ -432,6 +463,11 @@ fn open_tab(app: &tauri::AppHandle, mode: Mode) -> Result<u64> {
         })
         .on_download(move |_, event| match event {
             DownloadEvent::Requested { url, destination } => {
+                smoke_event(
+                    &download_app,
+                    "export-requested",
+                    json!({"url": url.as_str(), "destination": destination}),
+                );
                 let state = download_app.state::<Runtime>();
                 let endpoint = state
                     .model
@@ -439,6 +475,7 @@ fn open_tab(app: &tauri::AppHandle, mode: Mode) -> Result<u64> {
                     .map(|m| m.endpoint.clone())
                     .unwrap_or(None);
                 if !policy::export_blob(&url, endpoint.as_deref()) {
+                    smoke_event(&download_app, "export-origin-rejected", json!({}));
                     return false;
                 }
                 let Some(name) = destination
@@ -446,6 +483,7 @@ fn open_tab(app: &tauri::AppHandle, mode: Mode) -> Result<u64> {
                     .and_then(|s| s.to_str())
                     .and_then(policy::export_name)
                 else {
+                    smoke_event(&download_app, "export-filename-rejected", json!({}));
                     return false;
                 };
                 let directory = if let Some(report) = &state.smoke_output {
@@ -474,6 +512,11 @@ fn open_tab(app: &tauri::AppHandle, mode: Mode) -> Result<u64> {
                 true
             }
             DownloadEvent::Finished { path, success, .. } => {
+                smoke_event(
+                    &download_app,
+                    "export-finished",
+                    json!({"success": success, "path": path}),
+                );
                 if success {
                     if let Some(path) = path {
                         if download_app.state::<Runtime>().smoke_output.is_some() {
@@ -498,6 +541,11 @@ fn open_tab(app: &tauri::AppHandle, mode: Mode) -> Result<u64> {
         })
         .on_page_load(move |view, payload| {
             let done = payload.event() == PageLoadEvent::Finished;
+            smoke_event(
+                &load_app,
+                "dashboard-load",
+                json!({"finished": done, "url": payload.url().as_str()}),
+            );
             {
                 let state = load_app.state::<Runtime>();
                 if let Ok(mut m) = state.model.lock()
@@ -507,7 +555,13 @@ fn open_tab(app: &tauri::AppHandle, mode: Mode) -> Result<u64> {
                 }
             }
             if done {
-                let _ = inject_catalog(&load_app, view.label());
+                if let Err(error) = inject_catalog(&load_app, view.label()) {
+                    smoke_event(
+                        &load_app,
+                        "catalog-injection-error",
+                        json!({"error": error}),
+                    );
+                }
                 let active = load_app
                     .state::<Runtime>()
                     .model
@@ -759,6 +813,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
     match kind {
         "state" => return Ok(json!({"ok": true, "state": state.snapshot()})),
         "ready" => {
+            smoke_event(app, "shell-ready-command", json!({}));
             let restore = {
                 let mut m = state.model.lock().map_err(err)?;
                 if m.shell_ready {
@@ -1057,6 +1112,7 @@ pub fn run() {
                 smoke_ui: Mutex::new(None),
                 smoke_export: Mutex::new(None),
             });
+            smoke_event(app.handle(), "runtime-created", json!({}));
             let window = WindowBuilder::new(app, "main")
                 .title("Modhunter · Rust")
                 .inner_size(1480.0, 960.0)
@@ -1079,7 +1135,9 @@ pub fn run() {
                 tauri::LogicalPosition::new(0.0, 0.0),
                 tauri::LogicalSize::new(1480.0, BAR_HEIGHT),
             )?;
+            smoke_event(app.handle(), "chrome-created", json!({}));
             open_tab(app.handle(), Mode::Dashboard).map_err(std::io::Error::other)?;
+            smoke_event(app.handle(), "dashboard-created", json!({}));
             Ok(())
         })
         .run(tauri::generate_context!())

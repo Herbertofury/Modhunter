@@ -122,7 +122,10 @@ jobs:
           path: |
             native/target/Modhunter-Rust-Windows.zip
             native/target/release/bundle/nsis/*.exe
-            native/target/native-smoke/native-smoke.json
+            native/target/native-smoke/*.json
+            native/target/native-smoke/*.jsonl
+            native/target/native-smoke/*.log
+            native/target/native-smoke/*.png
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [contracts, windows, mo2]

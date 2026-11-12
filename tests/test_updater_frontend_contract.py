@@ -28,6 +28,17 @@ class UpdaterFrontendContractTests(unittest.TestCase):
         self.assertIn('id="workshopResults"', PAGE)
         self.assertIn('id="workshopQueue"', PAGE)
 
+    def test_desktop_can_import_a_user_selected_mo2_profile_without_plugin(self):
+        root = ROOT / "desktop"
+        main = (root / "main.cjs").read_text(encoding="utf-8")
+        bar = (root / "chrome.html").read_text(encoding="utf-8")
+        chrome = (root / "chrome.js").read_text(encoding="utf-8")
+        self.assertIn('id="importMo2"', bar)
+        self.assertIn("if(kind==='importMo2')return importProfile()", main)
+        self.assertIn("window.modhunterImportCatalog", APP)
+        self.assertIn("offline_mo2.cjs", main)
+        self.assertIn("invoke('importMo2')", chrome)
+
     def test_packaged_dashboard_is_built_from_original_source_not_a_mockup(self):
         self.assertIn("/*__SCRIPT__*/", PAGE)
         self.assertIn("/*__CATALOG__*/", PAGE)

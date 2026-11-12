@@ -11,7 +11,7 @@ let LIVE_SCAN=null,LIVE_CATALOG=null,SCAN_TIMER=null,FILE_PICKER_MOD=null,LIVE_G
 let WORKSHOP_PLAN=null,WORKSHOP_CHOICES=new Map(),WORKSHOP_BUSY=false,WORKSHOP_REVIEW_ID=null,FAST_PICKER_ID=null;
 let QUICK_RUNNING=false,QUICK_POLL=null,QUICK_SKIPPED=new Map();
 let QUEUE_PENDING=null,INSTALL_PREVIEW_ID=0,INSTALL_PREVIEW_PROFILE='',PREVIEW_RETURN_FOCUS=null;
-let WORKSHOP_TICKETS={},WORKSHOP_TICKET_SIGNATURE='',DOWNLOAD_REFRESH_BUSY=false;
+let WORKSHOP_TICKETS={},WORKSHOP_TICKET_SIGNATURE='',DOWNLOAD_REFRESH_BUSY=false,DOWNLOAD_REFRESH_AGAIN=false;
 let ACTIVITY_RECORDS=[],ACTIVITY_GENERATION=0,ACTIVITY_WARNING='';
 let GAME=null,GAME_SEEN=-1,PROGRESS_READY=false,PROGRESS_TIMER=null,NATIVE_SELECTED='',VICTORY_ACTIVE=null,VICTORY_TIMERS=[],PRACTICE_CROWNED=false;
 const BADGE_META=[['first-blood','First Blood','⚔',1],['apprentice','Apprentice Smith','🔨',5],['veteran','Veteran of the Forge','🛡',10],['archmage','Master Enchanter','✦',25],['dragonborn','Dragonborn','🐉',50],['legend','Legendary Smith','♛',100],['world-eater','World-Eater Defeated','👑',null]];
@@ -759,7 +759,8 @@ $('pulseReviewFailures').onclick=()=>{
 };
 
 async function refreshDownloads(){
- if(!BRIDGE.active||!LIVE_CATALOG||DOWNLOAD_REFRESH_BUSY)return;
+ if(!BRIDGE.active||!LIVE_CATALOG)return;
+ if(DOWNLOAD_REFRESH_BUSY){DOWNLOAD_REFRESH_AGAIN=true;return;}
  DOWNLOAD_REFRESH_BUSY=true;
  try{
   const profile=LIVE_CATALOG.profileId,r=await bridgeRequest('GET','downloads');
@@ -781,7 +782,10 @@ async function refreshDownloads(){
   renderWorkshop();
   await refreshActivity();
  }catch(ex){SET('liveSync','Download status unavailable: '+ex.message)}
- finally{DOWNLOAD_REFRESH_BUSY=false}
+ finally{
+  DOWNLOAD_REFRESH_BUSY=false;
+  if(DOWNLOAD_REFRESH_AGAIN){DOWNLOAD_REFRESH_AGAIN=false;void refreshDownloads();}
+ }
 }
 function filterFilePicker(){
  const query=$('filePickerSearch').value.trim().toLowerCase();

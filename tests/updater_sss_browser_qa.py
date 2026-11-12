@@ -71,8 +71,11 @@ window.fetch=async(url,opts={})=>{
  else if(endpoint==='update-plan')result=x.data.plan;
  else if(endpoint.startsWith('files?'))result=x.data.review[String(new URLSearchParams(endpoint.split('?')[1]).get('modId'))]||{ok:false,error:'Missing mod'};
  else if(endpoint==='downloads')result={ok:true,downloads:x.tickets};
- else if(endpoint==='activity')result={ok:true,profileId:x.data.catalog.profileId,
+ else if(endpoint==='activity'){
+  if(x.delayActivityMs)await new Promise(resolve=>setTimeout(resolve,x.delayActivityMs));
+  result={ok:true,profileId:x.data.catalog.profileId,
       records:x.data.history,count:x.data.history.length,durable:true,warning:''};
+ }
  else if(endpoint==='revision')result={ok:true,generation:x.generation||1,profileId:x.data.catalog.profileId};
  else if(endpoint==='scan')result={ok:true,scan:{state:'completed',mode:'deep',queried:2}};
  else if(endpoint==='progress')result={ok:true,profileId:x.data.catalog.profileId,progress:{rows:{},prefs:{}}};
@@ -348,6 +351,7 @@ with sync_playwright() as pw:
     recovery.locator('#workshopResults .workshop-item').first.wait_for(timeout=15000)
     recovery.evaluate("""()=>{
       const m=window.__SSS_MOCK__,profile=m.data.catalog.profileId,runtime=m.data.catalog.gameRuntime;
+      m.delayActivityMs=850; // Force overlapping download refreshes during rapid clicks.
       m.tickets[801]={status:'failed',provider:'nexus',modId:44,fileId:144,
         itemId:'live-a',installedVersion:'1.0',targetVersion:'2.0',profileId:profile,gameRuntime:runtime};
       m.tickets[802]={status:'complete',provider:'nexus',modId:45,fileId:145,
@@ -359,7 +363,7 @@ with sync_playwright() as pw:
     assert recovery.locator('#pulseFailed').inner_text()=='1'
     recovery.locator('[data-retry-download-id="801"]').click()
     recovery.wait_for_function("window.__SSS_MOCK__.tickets[801].retriedBy === 803")
-    recovery.locator('.ticket-requeued').first.wait_for(timeout=10000)
+    recovery.locator('.ticket-requeued').first.wait_for(timeout=3500)
     assert recovery.locator('.ticket-requeued').count()==1
     assert recovery.evaluate("window.__SSS_MOCK__.calls.at(-1).endpoint")=='retry-download'
     recovery.locator('#installAllReady').click()

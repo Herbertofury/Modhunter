@@ -12,5 +12,6 @@ assert '/*__' not in page
 assert '<!--__MO2_BOOT__-->' in page
 (WEB/'index.html').write_text(page,encoding='utf8')
 out=Path('/mnt/data/MO2_Update_Arsenal.html')
+out.parent.mkdir(parents=True,exist_ok=True)
 out.write_text(page,encoding='utf8')
 print(json.dumps({'file':str(out),'modCount':len(model['items']),'groups':len(model['groups']),'bytes':out.stat().st_size,'sha256':hashlib.sha256(out.read_bytes()).hexdigest()},indent=2))

@@ -208,6 +208,11 @@ class UpdateScanner:
                 try:
                     _, meta = future.result()
                     if meta.get("status") == "skipped":
+                        unknown = {"verdict": "unknown", "source": "nexus-api",
+                                   "reason": "Nexus audit was interrupted; latest version could not be verified"}
+                        output[str(mid)] = unknown
+                        for item in grouped[mid]:
+                            item_records[str(item.get("id", ""))] = unknown
                         continue
                     self.cache.set(game, mid, {"checkedAt": now, "meta": meta})
                     for item in grouped[mid]:
@@ -217,6 +222,11 @@ class UpdateScanner:
                 except (QuotaDepleted, MissingAuth) as ex:
                     halt.set()
                     errors.append(str(ex))
+                    unknown = {"verdict": "unknown", "source": "nexus-api",
+                               "reason": "Nexus quota or authentication failed; verification incomplete"}
+                    output[str(mid)] = unknown
+                    for item in grouped[mid]:
+                        item_records[str(item.get("id", ""))] = unknown
                 except (NexusError, ValueError) as ex:
                     errors.append(f"{mid}: {ex}")
                     output[str(mid)] = {"verdict": "unknown", "reason": str(ex)}
@@ -236,6 +246,8 @@ def local_mo2_candidates(snapshot: dict) -> dict:
         if mid <= 0:
             continue
         verdict = version_verdict(item.get("installedVersion", ""), latest) if latest else "unverified"
+        if verdict in ("current", "newer-installed"):
+            verdict = "unverified"  # Cached equality cannot prove current server truth.
         info={"verdict": verdict, "latestVersion": latest, "source": "mo2-cached-metadata", "reason": "Cached MO2 metadata only. Connect Nexus for a verified current check."}
         output[str(mid)] = info
         item_records[str(item.get("id", ""))]=info

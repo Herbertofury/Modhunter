@@ -10,6 +10,7 @@
 * [🚀 Installation](Getting-Started)
 * [🖥️ Desktop App](Desktop-App)
 * [🛠️ MO2 Plugin](MO2-Plugin)
+* [🔎 Updater Sources](Updater-Source-Coverage)
 * [⚒ Update Workshop](Update-Workshop)
 
 **Under the hood**

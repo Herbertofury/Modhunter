@@ -18,6 +18,8 @@ concurrency:
 jobs:
   package:
     runs-on: ubuntu-latest
+    env:
+      MODHUNTER_ARTIFACT_DIR: ${{ runner.temp }}/modhunter-artifacts
     steps:
       - uses: actions/checkout@v4
         with:
@@ -55,11 +57,11 @@ jobs:
           python3 release_v08.py
           mkdir -p web dist
           cp mo2_update_arsenal/web/index.html web/Modhunter.html
-          cp /mnt/data/Modhunter-MO2-Plugin.zip dist/Modhunter-MO2-Plugin.zip
-          cp /mnt/data/Modhunter-Desktop-Source.zip dist/Modhunter-Desktop-Source.zip
-          cp /mnt/data/Modhunter.html dist/Modhunter.html
-          cp /mnt/data/Modhunter-Complete-Source.zip dist/Modhunter-Complete-Source.zip
-          cp /mnt/data/Modhunter-0.8/dist/manifest.json dist/manifest.json
+          cp "$MODHUNTER_ARTIFACT_DIR"/Modhunter-MO2-Plugin.zip dist/Modhunter-MO2-Plugin.zip
+          cp "$MODHUNTER_ARTIFACT_DIR"/Modhunter-Desktop-Source.zip dist/Modhunter-Desktop-Source.zip
+          cp "$MODHUNTER_ARTIFACT_DIR"/Modhunter.html dist/Modhunter.html
+          cp "$MODHUNTER_ARTIFACT_DIR"/Modhunter-Complete-Source.zip dist/Modhunter-Complete-Source.zip
+          cp "$MODHUNTER_ARTIFACT_DIR"/Modhunter-0.8/dist/manifest.json dist/manifest.json
           python3 - <<'PY'
           from zipfile import ZipFile
           from pathlib import Path

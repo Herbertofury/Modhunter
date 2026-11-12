@@ -38,6 +38,39 @@ def utc_now():
     return datetime.now(timezone.utc).isoformat()
 
 
+def repository_api_metadata(organizer):
+    """Read public binding names/signatures only; never inspect account values."""
+    details = {}
+    try:
+        import mobase
+
+        details["createNexusBridgeDoc"] = str(
+            getattr(organizer.createNexusBridge, "__doc__", "") or "")[:2000]
+        exported = [name for name in dir(mobase)
+                    if not name.startswith("_") and ("nexus" in name.lower()
+                                                       or "repository" in name.lower())]
+        details["mobaseExports"] = {}
+        for name in exported[:30]:
+            symbol = getattr(mobase, name)
+            details["mobaseExports"][name] = {
+                "members": [member for member in dir(symbol)
+                            if not member.startswith("_")][:100],
+                "doc": str(getattr(symbol, "__doc__", "") or "")[:4000],
+            }
+        bridge = organizer.createNexusBridge()
+        details["bridgeType"] = type(bridge).__module__ + "." + type(bridge).__qualname__
+        details["bridgeMembers"] = [name for name in dir(bridge)
+                                    if not name.startswith("_")][:180]
+        if bridge is not None and hasattr(bridge, "metaObject"):
+            meta = bridge.metaObject()
+            details["qtSignatures"] = [
+                bytes(meta.method(index).methodSignature()).decode("utf-8", "replace")[:500]
+                for index in range(min(meta.methodCount(), 120))]
+    except Exception as exc:
+        details["diagnosticError"] = str(exc)[:300]
+    return details
+
+
 class HarnessSignals(QtCore.QObject):
     finished = QtCore.pyqtSignal(object)
 
@@ -107,6 +140,7 @@ class NativeSmokePlugin(ModUpdateArsenal):
                         and self._on_qt_thread())
             self._check("native_nexus_gateway_created", self._native_nexus is not None,
                         error=self._native_nexus_error,
+                        api=repository_api_metadata(organizer) if self._native_nexus is None else None,
                         scope="Construction and Qt signal binding only; no account or requests")
             accepted = organizer.onUserInterfaceInitialized(self._ui_ready)
             self._check("native_ui_callback_registered", bool(accepted))

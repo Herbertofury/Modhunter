@@ -184,9 +184,28 @@ mod tests {
                     Err(e) => panic!("Live session was starved by stale discovery hints: {e}"),
                 }
             };
-            let mut request = [0_u8; 1024];
-            let n = stream.read(&mut request).unwrap();
-            assert!(String::from_utf8_lossy(&request[..n]).starts_with("GET /api/health"));
+            // Winsock can inherit the listener's nonblocking mode. The
+            // listener polls a bounded deadline, but this accepted fixture
+            // connection must wait for the client's complete HTTP headers.
+            stream.set_nonblocking(false).unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            stream
+                .set_write_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0_u8; 1024];
+            while !request.windows(4).any(|part| part == b"\r\n\r\n") {
+                let n = stream.read(&mut buffer).unwrap();
+                assert!(n > 0, "Health client closed before sending HTTP headers");
+                request.extend_from_slice(&buffer[..n]);
+                assert!(
+                    request.len() <= 8192,
+                    "Health request headers exceeded fixture limit"
+                );
+            }
+            assert!(String::from_utf8_lossy(&request).starts_with("GET /api/health"));
             let body = r#"{"ok":true,"app":"Modhunter","protocol":1,"live":true,"version":"0.9.0","profileId":"qa","generation":1}"#;
             write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
         });

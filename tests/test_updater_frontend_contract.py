@@ -22,7 +22,8 @@ class UpdaterFrontendContractTests(unittest.TestCase):
         self.assertIn("if(v.scan.state==='completed'||v.scan.state==='partial')", APP)
 
     def test_workshop_uses_same_authenticated_batch_dispatch_for_nexus_and_github(self):
-        self.assertIn("async function queueWorkshop()", APP)
+        self.assertIn("function queueWorkshop()", APP)
+        self.assertIn("async function performQueuedWorkshop(", APP)
         self.assertIn("bridgeRequest('POST','update-queue'", APP)
         self.assertIn('data-source-kind="github"', APP)
         self.assertIn('id="workshopResults"', PAGE)
@@ -64,6 +65,18 @@ class UpdaterFrontendContractTests(unittest.TestCase):
             with self.subTest(feature=feature):
                 self.assertIn(feature, APP)
         self.assertIn("'files?modId='+m.nexusId+'&itemId='+encodeURIComponent(m.id)", APP)
+
+    def test_aaa_operations_require_reviewed_queue_and_live_install_preflight(self):
+        for marker in ('queueReviewVeil', 'queueReviewRows', 'queueReviewConfirm',
+                       'installPreviewVeil', 'installBriefTitle', 'installBriefDetails',
+                       'installPreviewConfirm', 'workshopVisibleCount'):
+            with self.subTest(marker=marker):
+                self.assertIn(f'id="{marker}"', PAGE)
+        self.assertIn("install-preview?downloadId=", APP)
+        self.assertIn("function showInstallPreview(", APP)
+        self.assertIn("function closeInstallPreview()", APP)
+        self.assertIn("data-lane", APP)
+        self.assertIn("EXACT FILES TO REQUEST", PAGE)
 
     def test_desktop_can_import_a_user_selected_mo2_profile_without_plugin(self):
         root = ROOT / "desktop"

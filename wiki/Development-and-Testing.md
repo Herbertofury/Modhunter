@@ -45,3 +45,11 @@ The GitHub repository holds source code as normal text files and the complete re
 - **Not yet proven:** native Windows MO2 2.5.3/Qt signal integration, premium/free Nexus behavior, actual FOMOD reinstall on a populated profile, post-install game runtime or dependency correctness. CI checks are not substitutes for these gates.
 
 Official upstream reference: [MO2 Python plugin development](https://www.modorganizer.org/python-plugins-doc/).
+
+## Installation briefing QA and upstream API reference
+
+The `mo2_update_arsenal/install_brief.py` module creates an advisory, non-mutating pre-install snapshot for a single MO2 download. `tests/test_install_brief.py` checks exact archive provenance, authorization, stale profile/game/runtime/installed-version/target-version rejection, new compatibility warnings, and truthful profile-backup scope. The installer dispatch runs the same checks again rather than trusting browser text.
+
+The 2026 SSS interface adds a complete batch review manifest, explicit install briefing with source/file/version details, clickable filter metrics, readiness lane, count of displayed mods, keyboard shortcuts (`Alt+U` and `Alt+R`), and stable responsive ticket cards. `tests/updater_sss_browser_qa.py` exercises approved, canceled and blocked interactions and checks a 390px mobile viewport. It uses deterministic fake MO2 replies and does **not** prove the native Windows API. CI installs a pinned Playwright Chromium to prevent silently shipping broken UI interactions.
+
+Upstream API reference: [Mod Organizer 2 Python plugin documentation](https://www.modorganizer.org/python-plugins-doc/autoapi/mobase/index.html), including `IDownloadManager.startDownloadNexusFile`, `startDownloadURLs`, `downloadPath`, and native download callbacks. MO2 does not expose a documented synchronous `downloadState` through that interface, so ticket states remain native-event-driven and session-scoped.

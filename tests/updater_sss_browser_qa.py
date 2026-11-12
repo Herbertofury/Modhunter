@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import copy
 import json
+import os
+import shutil
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
@@ -15,7 +17,7 @@ from mo2_update_arsenal.file_advisor import advise_nexus_files
 from mo2_update_arsenal.update_plan import plan_updates
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT = Path('/mnt/data/modhunter-sss/browser-proof')
+OUTPUT = Path(os.environ.get('MODHUNTER_QA_OUTPUT', '/mnt/data/modhunter-sss/browser-proof'))
 OUTPUT.mkdir(parents=True, exist_ok=True)
 
 src = json.loads((ROOT / 'mo2_update_arsenal/web/catalog.json').read_text('utf8'))
@@ -66,9 +68,24 @@ window.fetch=async(url,opts={})=>{
  else if(endpoint==='revision')result={ok:true,generation:1,profileId:x.data.catalog.profileId};
  else if(endpoint==='scan')result={ok:true,scan:{state:'completed',mode:'deep',queried:2}};
  else if(endpoint==='progress')result={ok:true,profileId:x.data.catalog.profileId,progress:{rows:{},prefs:{}}};
+ else if(endpoint.startsWith('install-preview?')){
+  const id=String(new URLSearchParams(endpoint.split('?')[1]).get('downloadId'));
+  const ticket=x.tickets[id],active=x.data.catalog;
+  const blocked=ticket?.gameRuntime&&ticket.gameRuntime!==active.gameRuntime;
+  result={ok:true,canInstall:!!ticket&&!blocked,downloadId:Number(id),modName:'Arcane Example',
+   archiveName:'latest-se.zip',provider:'nexus',installedVersion:'1.0',targetVersion:'2.0',
+   gameRuntime:active.gameRuntime,profileName:active.profileName,backup:{files:['modlist.txt','plugins.txt','loadorder.txt','archives.txt','lockedorder.txt']},
+   errors:blocked?['Your target game runtime changed: review this file again']:[],
+   warnings:['Confirm the exact game runtime and FOMOD choices']};
+ }
+ else if(endpoint==='install'){
+  const body=JSON.parse(opts.body||'{}');x.calls.push({endpoint,body});
+  if(x.tickets[String(body.downloadId)])x.tickets[String(body.downloadId)].status='installing';
+  result={ok:true,state:'installing',message:'MO2 native installer started'};
+ }
  else if(endpoint==='update-queue'){
   const body=JSON.parse(opts.body||'{}');x.calls.push({endpoint,body});
-  const queued=body.entries.map((e,i)=>{const id=301+x.calls.length+i;x.tickets[id]={status:'downloading',provider:'nexus',modId:e.modId,itemId:e.itemId,installedVersion:e.installedVersion,profileId:body.profileId};return {itemId:e.itemId,downloadId:id,provider:'nexus'}});
+  const queued=body.entries.map((e,i)=>{const id=301+x.calls.length+i;x.tickets[id]={status:'downloading',provider:'nexus',modId:e.modId,itemId:e.itemId,installedVersion:e.installedVersion,profileId:body.profileId,gameRuntime:x.data.catalog.gameRuntime};return {itemId:e.itemId,downloadId:id,provider:'nexus'}});
   result={ok:true,queued,failed:[],partial:false,message:'Queued '+queued.length+' reviewed file'};
  }
  return new Response(JSON.stringify(result),{status:200,headers:{'content-type':'application/json'}});
@@ -79,7 +96,10 @@ html=(ROOT/'mo2_update_arsenal/web/index.html').read_text('utf8')
 assert '<!--__MO2_BOOT__-->' in html
 html=html.replace('<!--__MO2_BOOT__-->',bootstrap)
 with sync_playwright() as pw:
-    browser=pw.chromium.launch(headless=True,executable_path='/usr/bin/chromium',args=['--no-sandbox','--disable-gpu','--disable-dev-shm-usage'])
+    browser_args={'headless':True,'args':['--no-sandbox','--disable-gpu','--disable-dev-shm-usage']}
+    chromium_path=shutil.which('chromium') or shutil.which('chromium-browser')
+    if chromium_path:browser_args['executable_path']=chromium_path
+    browser=pw.chromium.launch(**browser_args)
     errors=[]
     page=browser.new_page(viewport={"width":1440,"height":1000})
     page.on('pageerror',lambda e: errors.append(str(e)))
@@ -108,12 +128,53 @@ with sync_playwright() as pw:
     assert page.locator('#filePickerTitle').inner_text()=='Quest Example'
     page.locator('#filePickerClose').click()
     page.locator('#workshopQueue').click()
+    page.locator('#queueReviewVeil').wait_for(state='visible')
+    assert page.locator('#queueReviewRows .queue-review-row').count()==1
+    assert 'latest-se.zip' in page.locator('#queueReviewRows').inner_text() or 'Exact latest main' in page.locator('#queueReviewRows').inner_text()
+    page.screenshot(path=str(OUTPUT/'batch-review.png'),full_page=False)
+    page.locator('#queueReviewCancel').click()
+    assert page.locator('#queueReviewVeil').is_hidden()
+    page.locator('#workshopQueue').click()
+    page.locator('#queueReviewConfirm').click()
     page.locator('#liveDownloadList .download-ticket').wait_for(timeout=10000)
     calls=page.evaluate('window.__SSS_MOCK__.calls')
     assert len(calls)==1 and calls[0]['endpoint']=='update-queue',calls
     assert page.locator('.download-ticket').count()==1
     page.screenshot(path=str(OUTPUT/'queued-download.png'),full_page=False)
+    page.evaluate("window.__SSS_MOCK__.tickets[302].status='complete'")
+    page.locator('#workshopRefreshDownloads').click()
+    page.locator('button[data-download-id]').wait_for(timeout=10000)
+    page.locator('#workshopSummary button[data-lane="ready"]').click()
+    assert '1 of 3 mods shown' in page.locator('#workshopVisibleCount').inner_text()
+    page.locator('button[data-download-id]').click()
+    page.locator('#installPreviewVeil').wait_for(state='visible')
+    page.locator('#installPreviewConfirm').wait_for(state='attached')
+    assert page.locator('#installBriefTitle').inner_text()=='Arcane Example'
+    assert 'latest-se.zip' in page.locator('#installBriefDetails').inner_text()
+    assert 'mod folders are not backed up' in page.locator('#installBriefBackup').inner_text()
+    page.screenshot(path=str(OUTPUT/'install-brief.png'),full_page=False)
+    page.keyboard.press('Escape')
+    assert page.locator('#installPreviewVeil').is_hidden()
+    page.locator('button[data-download-id]').click()
+    page.locator('#installPreviewConfirm').click()
+    page.wait_for_function('window.__SSS_MOCK__.tickets[302].status === "installing"')
+    calls=page.evaluate('window.__SSS_MOCK__.calls')
+    assert len(calls)==2 and calls[-1]['endpoint']=='install',calls
+    assert calls[-1]['body']['downloadId']==302
+    # Switch runtime between ready and install to show a blocked preflight.
+    page.evaluate("window.__SSS_MOCK__.tickets[302].status='complete';window.__SSS_MOCK__.data.catalog.gameRuntime='1.6.1170'")
+    page.locator('#workshopRefreshDownloads').click()
+    page.locator('button[data-download-id]').click()
+    page.locator('#installPreviewVeil').wait_for(state='visible')
+    page.wait_for_function("document.getElementById('installBriefWarnings').textContent.includes('runtime changed')")
+    assert page.locator('#installPreviewConfirm').is_disabled()
+    page.screenshot(path=str(OUTPUT/'blocked-install.png'),full_page=False)
+    page.set_viewport_size({'width':390,'height':844})
+    page.screenshot(path=str(OUTPUT/'mobile-install-brief.png'),full_page=False)
+    rect=page.locator('#installPreviewVeil .operation-dialog').bounding_box()
+    assert rect and rect['x']>=-1 and rect['x']+rect['width']<=392,rect
+    assert page.locator('#installPreviewConfirm').is_disabled()
     assert not errors,errors
     print(json.dumps({"result":"passed","modCards":3,"fileChoices":3,
-        "recommended":1,"queuedCalls":len(calls),"screenshots":str(OUTPUT),"jsErrors":errors},indent=2))
+        "recommended":1,"queuedCalls":1,"installCalls":1,"screenshots":str(OUTPUT),"jsErrors":errors},indent=2))
     browser.close()

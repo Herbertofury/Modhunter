@@ -56,6 +56,21 @@ jobs:
           assert 'async function queueWorkshop' in page
           print('Verified',len(scripts),'scripts and standalone workshop')
           PY
+      - name: Exercise real Chromium update and install-briefing workflow
+        timeout-minutes: 12
+        run: |
+          python3 -m venv /tmp/modhunter-browser-qa
+          /tmp/modhunter-browser-qa/bin/pip install -q --disable-pip-version-check playwright==1.57.0
+          /tmp/modhunter-browser-qa/bin/python -m playwright install --with-deps chromium
+          PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-browser-proof /tmp/modhunter-browser-qa/bin/python tests/updater_sss_browser_qa.py
+      - name: Preserve Chromium interaction proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Modhunter-Chromium-Review-and-Install-QA
+          if-no-files-found: ignore
+          retention-days: 30
+          path: /tmp/modhunter-browser-proof/
       - name: Regenerate self-contained desktop, MO2 plugin and source packages
         run: |
           python3 release_v08.py

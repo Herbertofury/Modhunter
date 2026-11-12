@@ -19,8 +19,9 @@ from .gameplay import Chronicle
 from html import unescape
 import re
 from .source_registry import SourceScanner, canonical_source_url, source_record
-from .update_plan import PlanError, plan_updates, validate_batch_selection, validate_release_asset
+from .update_plan import PlanError, plan_updates, validate_batch_selection, validate_release_asset, risk_reasons
 from .file_advisor import advise_nexus_files
+from .install_brief import build_install_brief
 
 MAX_REQUEST = 16_384
 MAX_PROGRESS_REQUEST = 8_000_000
@@ -385,14 +386,18 @@ class ArsenalService:
                         "error": "An update for this MO2 mod is already queued. Finish its download or installation first."}
         # Preflight ALL Nexus file identities. GitHub assets were validated
         # against server-owned release results above, never client URLs.
+        exact_files: dict[tuple[int, int], dict] = {}
         for item in approved:
             available = self.fetch_files(item["modId"])
             if not available.get("ok"):
                 return {"ok": False, "queued": [], "failed": [{"itemId": item["itemId"],
                         "error": available.get("error", "Nexus file list unavailable")}]}
-            if item["fileId"] not in {int(f["fileId"]) for f in available.get("files", [])}:
+            matched = next((f for f in available.get("files", [])
+                            if int(f.get("fileId") or 0) == item["fileId"]), None)
+            if not matched:
                 return {"ok": False, "queued": [], "failed": [{"itemId": item["itemId"],
                         "error": "Exact Nexus file is no longer in the live Files list"}]}
+            exact_files[(item["modId"], item["fileId"])] = matched
         queued, failed = [], []
         for item in approved + sources:
             live = self.snapshot()
@@ -427,6 +432,24 @@ class ArsenalService:
                 result = self.request_download(item["modId"], item["fileId"], "DOWNLOAD",
                                                item["itemId"], item["installedVersion"])
             if result.get("ok"):
+                with self._guard:
+                    selected_row = current or {}
+                    live_ticket = self._downloads.get(int(result["downloadId"]))
+                    if live_ticket:
+                        metadata = exact_files.get((item.get("modId"), item.get("fileId")), {})
+                        live_ticket.update({
+                            "itemId": item["itemId"], "installedVersion": item["installedVersion"],
+                            "targetVersion": str((selected_row.get("update") or {}).get("latestVersion") or ""),
+                            "profileName": str(live.get("profileName") or ""),
+                            "game": str(live.get("game") or ""),
+                            "gameRuntime": str(live.get("gameRuntime") or "unknown"),
+                            "riskReasons": risk_reasons(selected_row), "reviewed": True,
+                            "fileName": metadata.get("fileName") or metadata.get("name") or item.get("name") or "",
+                            "fileVersion": str(metadata.get("version") or ""),
+                        })
+                        if item.get("kind") == "source":
+                            live_ticket["assetId"] = item.get("assetId")
+                            live_ticket["fileName"] = item.get("name") or live_ticket.get("name") or ""
                 queued.append({"itemId": item["itemId"], "provider": item.get("provider", "nexus"),
                                "downloadId": result.get("downloadId")})
             else:
@@ -446,6 +469,12 @@ class ArsenalService:
         with self._guard:
             return deepcopy({k:v for k,v in self._downloads.items() if v.get("profileId")==self._snapshot.get("profileId")})
 
+    def preview_install(self, download_id: int) -> dict:
+        """The browser sees only an immutable, profile-scoped advisory briefing."""
+        with self._guard:
+            ticket = deepcopy(self._downloads.get(download_id))
+        return build_install_brief(self.snapshot(), ticket, download_id)
+
     def install_reviewed_download(self, download_id: int) -> dict:
         """Start one interactive MO2 installer without blocking the browser.
 
@@ -463,15 +492,9 @@ class ArsenalService:
                 ticket = self._downloads.get(download_id)
                 if not ticket or ticket.get("profileId") != self._snapshot.get("profileId"):
                     return {"ok": False, "error": "Download does not belong to this active MO2 profile"}
-                if ticket.get("status") != "complete":
-                    return {"ok": False, "error": "This download is not ready to install"}
-                item_id = ticket.get("itemId")
-                if item_id:
-                    current = next((m for m in self._snapshot.get("items", [])
-                                    if str(m.get("id")) == item_id), None)
-                    if (current is None or
-                            str(current.get("installedVersion") or "") != ticket.get("installedVersion")):
-                        return {"ok": False, "error": "Installed mod changed since queueing; rescan and review this file again"}
+                preflight = build_install_brief(self.snapshot(), ticket, download_id)
+                if not preflight["canInstall"]:
+                    return {"ok": False, "error": "; ".join(preflight["errors"])}
                 ticket["status"] = "installing"
                 ticket.pop("lastError", None)
             threading.Thread(target=self._complete_native_install,
@@ -622,6 +645,13 @@ class ArsenalService:
                     return self._reply(plan_updates(service.snapshot()))
                 if uri.path == "/api/downloads":
                     return self._reply({"ok": True, "downloads": service.downloads()})
+                if uri.path == "/api/install-preview":
+                    query = urllib.parse.parse_qs(uri.query)
+                    try:
+                        did = int(query.get("downloadId", ["0"])[0])
+                    except (ValueError, TypeError):
+                        did = 0
+                    return self._reply(service.preview_install(did))
                 if uri.path == "/api/files":
                     query = urllib.parse.parse_qs(uri.query)
                     try:
@@ -631,7 +661,7 @@ class ArsenalService:
                     item_id = query.get("itemId", [""])[0]
                     return self._reply(service.review_files(mid, item_id) if item_id else service.fetch_files(mid))
                 if uri.path == "/api/capabilities":
-                    return self._reply({"ok": True, "app": "MO2 Update Arsenal", "live": True, "nexusKeySession": bool(service.api_key), "nativeNexusAvailable": bool(service.native_nexus_available), "keyStorage": "RAM only", "features": ["snapshot", "local-check", "nexus-quick", "nexus-deep", "nexus-files", "native-mo2-nexus-login", "github-release-checks", "gitlab-release-checks", "manual-source-review", "github-direct-downloads", "mixed-source-batch-updates", "reviewed-update-workshop", "mo2-download", "mo2-install", "backup", "focus-mod", "chronicle", "verified-achievements", "ranked-full-clear", "persistent-profile-progress", "realm-wallet", "realm-purchase", "realm-save", "siege-targets", "siege-state", "siege-bounties", "siege-mod-focus"]})
+                    return self._reply({"ok": True, "app": "MO2 Update Arsenal", "live": True, "nexusKeySession": bool(service.api_key), "nativeNexusAvailable": bool(service.native_nexus_available), "keyStorage": "RAM only", "features": ["snapshot", "local-check", "nexus-quick", "nexus-deep", "nexus-files", "native-mo2-nexus-login", "github-release-checks", "gitlab-release-checks", "manual-source-review", "github-direct-downloads", "mixed-source-batch-updates", "reviewed-update-workshop", "mo2-download", "mo2-install", "install-preview", "backup", "focus-mod", "chronicle", "verified-achievements", "ranked-full-clear", "persistent-profile-progress", "realm-wallet", "realm-purchase", "realm-save", "siege-targets", "siege-state", "siege-bounties", "siege-mod-focus"]})
                 return self._reply({"ok": False, "error": "Unknown endpoint"}, 404)
 
             def do_POST(self):

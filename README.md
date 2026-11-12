@@ -16,7 +16,7 @@
 
 ## One Modhunter. Everything combined.
 
-**[Download the complete Modhunter All-in-One.zip](dist/Modhunter-All-in-One.zip)**. One extracted folder contains a runnable standalone HTML, an Electron desktop edition, the optional MO2 updater plugin, all game modes, full source, and the Wiki. **Mod updating remains the primary purpose:** the same interface includes Questbound achievements, AetherFX, Shiverfell/Mythforge survival, Modhunter Siege and Atlas. No historical feature is replaced or removed, and all [36 original release outputs](wiki/Original-Releases-and-Output-Audit.md) remain separately preserved.
+**[Download Modhunter EVERYTHING Combined]( https://drive.google.com/file/d/1UZzjHQQX3hceSWcJWFX2yygH6htzXqHE/view)** includes the current working editions, source, documentation and all 36 authentic historical outputs. Alternatively, **[Download the complete Modhunter All-in-One.zip](dist/Modhunter-All-in-One.zip)**. One extracted folder contains a runnable standalone HTML, an Electron desktop edition, the optional MO2 updater plugin, all game modes, full source, and the Wiki. **Mod updating remains the primary purpose:** the same interface includes Questbound achievements, AetherFX, Shiverfell/Mythforge survival, Modhunter Siege and Atlas. No historical feature is replaced or removed, and all [36 original release outputs](wiki/Original-Releases-and-Output-Audit.md) remain separately preserved.
 
 The **[Unified Command Center guide](wiki/Unified-Modhunter.md)** documents all three independent entry points and the updater-first workflow for **MO2 2.5.x, including 2.5.3 as a target**. Native Windows 2.5.3 integration testing is still required; a successful source build is not an installation guarantee.
 

@@ -293,7 +293,7 @@ class ArsenalService:
             else:
                 failed.append({"itemId": item["itemId"],
                                "error": str(result.get("error") or "Download rejected")})
-        return {"ok": not failed, "queued": queued, "failed": failed,
+        return {"ok": True, "partial": bool(failed), "queued": queued, "failed": failed,
                 "message": f"Queued {len(queued)} reviewed file(s) in MO2. Install separately."}
 
     def set_download_status(self, download_id: int, state: str) -> None:

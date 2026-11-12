@@ -201,6 +201,34 @@ body.victory-open{overflow:hidden}
 /* Update file metadata readable without opening a second browser window */
 .picker-file-desc{font-size:12px;color:var(--text-muted,#b6c8c8);line-height:1.5;margin:7px 0 1px;max-width:65ch;white-space:normal;overflow-wrap:anywhere}
 
+/* The unified product entrance: updater first, companion worlds in one app. */
+.unified-command{margin:18px 0 22px;border:1px solid rgba(183,202,190,.35);border-radius:16px;padding:21px;background:radial-gradient(circle at 92% -10%,rgba(102,199,181,.15),transparent 40%),linear-gradient(125deg,#10212b,#131d29 55%,#24232c);box-shadow:0 13px 34px rgba(0,0,0,.25)}
+.unified-intro{display:flex;gap:12px;justify-content:space-between;flex-wrap:wrap;align-items:flex-start}
+.unified-intro>div{min-width:0;flex:1 1 460px}
+.unified-intro h2{font:normal clamp(22px,2.5vw,31px)/1.2 Georgia,serif;color:#f3ecdd;margin:8px 0}
+.unified-intro h2 em{color:#e7c890}
+.unified-intro p{font-size:12px;color:#b6cccb;line-height:1.7;max-width:83ch;margin:0}
+.unified-intro p strong{color:#e9e1c8}
+.unified-edition{font-size:10px;letter-spacing:.08em;border:1px solid #568879;background:#13382f;color:#b7efd4;padding:8px 11px;border-radius:6px;max-width:100%}
+.unified-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin-top:19px}
+.unified-tile{padding:17px;border-radius:11px;display:flex;flex-direction:column;gap:8px;background:#142632;border:1px solid #38515a;min-width:0}
+.unified-tile.primary{background:linear-gradient(140deg,#173d3a,#17313e);border-color:#83bf98;box-shadow:inset 0 0 0 1px #6bc79a22}
+.unified-no{font-size:10px;letter-spacing:.11em;color:#91b9b2;font-weight:800}
+.unified-tile h3{font-family:Georgia,serif;color:#f7ebd4;font-size:19px;line-height:1.3;margin:0}
+.unified-tile p{color:#b4c6ca;font-size:12px;line-height:1.55;margin:0;flex:1}
+.unified-meta{font-size:11px;color:#b7eed3;font-weight:600}
+.unified-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:6px}
+.unified-actions button,.unified-link{display:inline-flex;align-items:center;justify-content:center;min-height:38px;font-size:11px;text-decoration:none;border-radius:6px}
+.unified-footer{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:10px;margin-top:16px;padding-top:13px;border-top:1px solid #ffffff22;color:#a9c0c4}
+body[data-theme="snow"] .unified-command{background:linear-gradient(125deg,#e8f5ee,#dce8f0);border-color:#6b8987}
+body[data-theme="snow"] .unified-tile{background:#f4f7f4;border-color:#b3c1ba}
+body[data-theme="snow"] .unified-tile.primary{background:#e0efe6;border-color:#619e8b}
+body[data-theme="snow"] .unified-intro h2,body[data-theme="snow"] .unified-tile h3{color:#1b3d42}
+body[data-theme="snow"] .unified-intro p,body[data-theme="snow"] .unified-intro p strong,body[data-theme="snow"] .unified-tile p{color:#31595f}
+body[data-theme="snow"] .unified-meta{color:#247058}
+@media(max-width:840px){.unified-grid{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:550px){.unified-command{padding:14px}.unified-actions button,.unified-link{width:100%}}
+
 /* Questbound v0.4 AetherFX: cinematic DOM+Canvas feedback, independent of checklist and MO2 state. */
 #aetherCanvas{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:85;contain:strict}
 #aetherStage{position:fixed;inset:0;pointer-events:none;z-index:86;overflow:hidden;contain:layout style}
@@ -469,6 +497,37 @@ html.realm-route #realmRoot[hidden]{display:none!important}html.realm-route #rea
      <div class="orb-holder"><div class="orb-outer"><div class="orb-inner"><span class="orb-label">QUEST COMPLETE</span><strong id="heroPercent">0%</strong><span id="heroProgressLabel">0 / 227 mods</span></div></div></div>
      <div class="hero-side-bottom"><span class="tiny-roman">I ━ II ━ III</span><span id="heroMotivation">THE JOURNEY BEGINS</span></div>
     </div>
+   </section>
+   <section class="unified-command" id="unifiedCommand" aria-labelledby="unifiedTitle">
+    <header class="unified-intro">
+     <div><span class="label-overline">ONE MODHUNTER · ALL SYSTEMS UNITED</span><h2 id="unifiedTitle">Your entire modding world, <em>one command center.</em></h2>
+      <p><strong>Keeping your MO2 mods current comes first.</strong> Every quest, finisher, survival realm and Siege run belongs to the same product, with optional live MO2 proof.</p></div>
+     <span class="unified-edition" id="unifiedEdition" role="status">OFFLINE · READ ONLY</span>
+    </header>
+    <div class="unified-grid">
+     <article class="unified-tile primary">
+      <span class="unified-no">01 / PRIMARY MISSION</span><h3>◈ Update every MO2 mod</h3>
+      <p>Scan installed mods, identify sources and exact newer files, review compatibility, and queue downloads through MO2.</p>
+      <strong class="unified-meta" id="unifiedUpdateState">Sample checklist · no remote verification</strong>
+      <div class="unified-actions"><button type="button" class="button-bright" id="unifiedScan">⌁ Check mod sources</button><button type="button" class="quiet-button" id="unifiedReview">◈ Update Workshop</button></div>
+     </article>
+     <article class="unified-tile">
+      <span class="unified-no">02 / QUESTBOUND + AETHERFX</span><h3>✧ Chronicle of the Forge</h3>
+      <p>Real-update achievements, the raid and victory effects. Customizable cinematic finishers remain in the same dashboard.</p>
+      <div class="unified-actions"><button type="button" class="quiet-button" id="unifiedQuest">✦ Achievements</button><button type="button" class="quiet-button" id="unifiedFX">✧ FX Studio</button></div>
+     </article>
+     <article class="unified-tile">
+      <span class="unified-no">03 / SHIVERFELL + MYTHFORGE</span><h3>ᛟ Your survival world</h3>
+      <p>Persistent exploration, crafting, companions, Dawnshard and Ashen Warden. Runs from this exact HTML app.</p>
+      <div class="unified-actions"><a class="quiet-button unified-link" href="?realm=1" target="_blank" rel="noopener noreferrer">⚔ Enter Shiverfell ↗</a></div>
+     </article>
+     <article class="unified-tile">
+      <span class="unified-no">04 / SIEGE + ATLAS</span><h3>♛ Hunt the unfinished</h3>
+      <p>Survivor squads, real-mod bosses, the bestiary, 12 campaign regions and 480 first-clear conditions.</p>
+      <div class="unified-actions"><a class="quiet-button unified-link" href="?realm=1&amp;siege=1" target="_blank" rel="noopener noreferrer">♜ Open Siege + Atlas ↗</a></div>
+     </article>
+    </div>
+    <div class="unified-footer"><span>◈ Same game and dashboard code in all editions</span><span>Standalone HTML · Desktop · MO2 plugin</span><span>Each works alone; live updates require MO2</span></div>
    </section>
    <section class="metrics" aria-label="Quick status">
     <div class="metric"><div class="metric-icon c-teal">◈</div><div><span>MODS IN THE ARSENAL</span><strong id="metricTotal">227</strong><small id="metricSections">115 hand-sorted sections</small></div></div>
@@ -1067,6 +1126,24 @@ function activateLiveCatalog(c){
  applyAppearance();updateStorageIndicator();render();renderLiveStats();if(newProfile){hydrateProgress(c.profileId);refreshGame()}refreshWorkshop().catch(ex=>workshopSetStatus('Plan unavailable: '+ex.message));if(changedRuntime||changedMods)toast('⚠ Previous cleared checks need review: runtime or installed version changed.');
 }
 
+function refreshUnifiedCommand(){
+ const el=$('unifiedEdition');if(!el)return;
+ const live=BRIDGE.active&&!!LIVE_CATALOG;
+ const imported=!!DATA?.offline&&!live;
+ const count=DATA?.items?.length||0;
+ el.textContent=live?'● LIVE MO2 · '+LIVE_CATALOG.profileName:imported?'◈ IMPORTED MO2 · READ ONLY':'◌ STANDALONE · PRACTICE';
+ const plan=typeof currentWorkshopPlan==='function'?currentWorkshopPlan():null;
+ const candidates=plan?.summary?.candidates||0;
+ const checked=live&&WORKSHOP_PLAN?candidates+' candidate'+(candidates===1?'':'s')+' · '+count+' installed mods':imported?count+' imported mods · remote status unverified':'Sample archive · live updates unavailable';
+ SET('unifiedUpdateState',checked);
+ $('unifiedScan').textContent=live?'ϟ Check all mod sources':'⌁ Connect MO2 for live scan';
+}
+function unifiedScroll(id){const target=$(id);if(target){target.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'});}}
+$('unifiedScan').onclick=()=>{if(BRIDGE.active&&LIVE_CATALOG)scanLive('all');else{unifiedScroll('liveHub');workshopSetStatus(DATA?.offline?'Imported profile is read only. Launch the MO2 plugin for real update checks.':'Standalone sample mode. Install or launch the optional MO2 plugin to verify and download updates.')}};
+$('unifiedReview').onclick=()=>{unifiedScroll('updateWorkshop');$('workshopFilter').value='all';renderWorkshop()};
+$('unifiedQuest').onclick=()=>unifiedScroll('gameBoard');
+$('unifiedFX').onclick=()=>{$('fxSettingsToggle').click()};
+
 function workshopSource(item){
  const u=getSrc(item),link=validUrl(u.url);
  return link&&u.verified?link:'';
@@ -1100,6 +1177,7 @@ function renderWorkshop(){
  $('workshopQueue').disabled=!BRIDGE.active||!selected.length||WORKSHOP_BUSY;
  $('workshopRefresh').disabled=WORKSHOP_BUSY;
  $('workshopExport').disabled=WORKSHOP_BUSY;
+ refreshUnifiedCommand();
 }
 async function refreshWorkshop(){
  if(!BRIDGE.active){WORKSHOP_PLAN=workshopLocalPlan();renderWorkshop();workshopSetStatus('Standalone checklist ready. No live MO2 installation or download actions are available.');return}

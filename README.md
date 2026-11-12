@@ -30,7 +30,7 @@
 2. **Use MO2:** download the [`dist/Modhunter-MO2-Plugin.zip`](dist/Modhunter-MO2-Plugin.zip), unzip it and run `Install_to_MO2.bat`; restart MO2 and open **Tools → Update Arsenal - Quest Board**.
 3. **Use the desktop app:** download [`dist/Modhunter-Desktop-Source.zip`](dist/Modhunter-Desktop-Source.zip), install Node.js, run `Run_ModHunter.bat` in `desktop/`, and optionally paste the MO2 plugin's loopback URL into **Connect**.
 
-> **Current stage:** v0.8 development build. Browser gameplay and Python tests are exercised. A prebuilt Windows executable and native Windows MO2 integration have **not** been verified in this environment. The content catalogue describes 480 campaign clear conditions, not 80 hours of independently playtested authored content.
+> **Current stage:** v0.8 development build. Browser gameplay and the expanded 81-test Python/HTTP suite are exercised. A prebuilt Windows executable and native Windows MO2 integration have **not** been verified in this environment. The content catalogue describes 480 campaign clear conditions, not 80 hours of independently playtested authored content.
 
 ## Update Workshop: maintain an entire MO2 profile
 

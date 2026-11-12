@@ -17,6 +17,18 @@ Modhunter now presents a unified **Update Workshop** in the standalone HTML, Ele
 
 Nothing silently replaces mod files. A click on **Update now** deliberately authorizes the associated native MO2 installer after that file downloads; **Queue matched updates** downloads only. The no-friction UX removes redundant *Modhunter* prompts, not MO2's actual installer controls. Free Nexus accounts may still need to initiate downloads from the website using **Mod Manager Download** when Nexus requires it.
 
+## Instant recovery and one-click install queue
+
+The **MO2 Download Queue** now has a live command deck with exact counts for ready archives, downloads/installers in progress, failures needing attention, and verified updates. The list is never truncated and can still show every previous ticket.
+
+- **Install all ready** is one user action: Modhunter opens completed downloads through MO2's native installer **sequentially**, so normal FOMOD dialogs and overwrite decisions stay interactive. No second Modhunter confirmation, no overlapping native installation windows. Files whose profile, game/runtime, version or compatibility evidence changed are skipped and remain available for individual review.
+- **Retry now** on a failed download reuses the exact file previously reviewed and verifies the current source and profile before requeueing. It does not make you choose the same archive again. **Choose another file** remains one click away if a release has changed, a provider login failed, or the recommended archive was not valid.
+- Downloads that finish *before* MO2 reports their new download ID are reconciled. This fixes a real race where very fast local/native downloads could stay incorrectly stuck as "downloading" without offering Install now.
+- Live downloads refresh even when the previous ticket list was empty, so completed jobs from the background quick updater appear without requiring a manual reload. Unchanged tickets retain their DOM and keyboard focus.
+- Failed archives replaced by a retry remain in the operation timeline, while the active queue shows which new MO2 download superseded them. Previous-session receipts remain read-only and are never automatically installed after restarting MO2.
+
+Everything remains **current-session and explicit**. One-click **Update now** still opens the native installer after that specific download completes; **Queue matched updates** still downloads only. **Install all ready** starts a sequential native installer session only after you click it. Ordinary file-choice and compatibility controls are never hidden or quantity-capped.
+
 ## Open any mod's original website directly
 
 **Click a mod's name** in the installed-mod list or the Update Workshop to open its original source page in a new browser tab. This works **while connected to MO2**, in the standalone HTML, and in the desktop app. Your browser's ordinary keyboard **Enter**, Ctrl-click and middle-click tab behavior is preserved. You do not need to open a modal, reveal the mod in MO2, or approve another action first.

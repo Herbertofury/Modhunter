@@ -91,6 +91,22 @@ window.fetch=async(url,opts={})=>{
   if(x.tickets[String(body.downloadId)])x.tickets[String(body.downloadId)].status='installing';
   result={ok:true,state:'installing',message:'MO2 native installer started'};
  }
+ else if(endpoint==='install-ready'){
+  const ready=Object.entries(x.tickets).filter(([id,t])=>t.status==='complete');
+  x.calls.push({endpoint,body:{}});
+  if(ready.length)x.tickets[ready[0][0]].status='installing';
+  result={ok:true,armed:ready.length,blocked:[],state:ready.length?'installing':'idle',
+    message:'Opening ready MO2 installers sequentially'};
+ }
+ else if(endpoint==='retry-download'){
+  const body=JSON.parse(opts.body||'{}');x.calls.push({endpoint,body});
+  const old=x.tickets[String(body.downloadId)];
+  if(old&&old.status==='failed'){
+   old.retriedBy=803;
+   x.tickets[803]={...old,status:'downloading',retriedBy:undefined};
+   result={ok:true,queued:[{itemId:old.itemId,downloadId:803}],failed:[],message:'Reviewed archive retried'};
+  }else result={ok:false,error:'Failed download no longer present'};
+ }
  else if(endpoint==='quick-update'){
   const body=JSON.parse(opts.body||'{}');x.calls.push({endpoint,body});
   if(body.all){
@@ -323,6 +339,36 @@ with sync_playwright() as pw:
     assert bulk.locator('#installPreviewVeil').is_hidden()
     assert bulk.evaluate('window.__SSS_MOCK__.calls[0].body.all') is True
     bulk.screenshot(path=str(OUTPUT/'one-click-bulk.png'),full_page=False)
+    # Recovery cockpit: one click to retry the SAME file, one click to
+    # sequentially open ready MO2 installers, no additional approval forms.
+    recovery=browser.new_page(viewport={"width":1320,"height":940})
+    recovery_errors=[]
+    recovery.on('pageerror',lambda e: recovery_errors.append(str(e)))
+    recovery.set_content(html,wait_until='load',timeout=30000)
+    recovery.locator('#workshopResults .workshop-item').first.wait_for(timeout=15000)
+    recovery.evaluate("""()=>{
+      const m=window.__SSS_MOCK__,profile=m.data.catalog.profileId,runtime=m.data.catalog.gameRuntime;
+      m.tickets[801]={status:'failed',provider:'nexus',modId:44,fileId:144,
+        itemId:'live-a',installedVersion:'1.0',targetVersion:'2.0',profileId:profile,gameRuntime:runtime};
+      m.tickets[802]={status:'complete',provider:'nexus',modId:45,fileId:145,
+        itemId:'live-b',installedVersion:'1.5',targetVersion:'2.3',profileId:profile,gameRuntime:runtime};
+    }""")
+    recovery.locator('#workshopRefreshDownloads').click()
+    recovery.locator('#downloadPulse').wait_for(state='visible')
+    assert recovery.locator('#pulseReady').inner_text()=='1'
+    assert recovery.locator('#pulseFailed').inner_text()=='1'
+    recovery.locator('[data-retry-download-id="801"]').click()
+    recovery.wait_for_function("window.__SSS_MOCK__.tickets[801].retriedBy === 803")
+    assert recovery.locator('.ticket-requeued').count()==1
+    assert recovery.evaluate("window.__SSS_MOCK__.calls.at(-1).endpoint")==='retry-download'
+    recovery.locator('#installAllReady').click()
+    recovery.wait_for_function("window.__SSS_MOCK__.tickets[802].status === 'installing'")
+    assert recovery.evaluate("window.__SSS_MOCK__.calls.at(-1).endpoint")==='install-ready'
+    assert recovery.locator('#installPreviewVeil').is_hidden()
+    assert recovery.locator('#queueReviewVeil').is_hidden()
+    recovery.screenshot(path=str(OUTPUT/'recovery-cockpit.png'),full_page=False)
+    assert not recovery_errors,recovery_errors
+    recovery.close()
     bulk.close();fast.close()
     print(json.dumps({"result":"passed","modCards":3,"fileChoices":3,
         "recommended":1,"queuedCalls":1,"installCalls":1,"screenshots":str(OUTPUT),"jsErrors":errors},indent=2))

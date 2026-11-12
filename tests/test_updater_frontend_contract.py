@@ -115,6 +115,21 @@ class UpdaterFrontendContractTests(unittest.TestCase):
         self.assertIn("data-lane", APP)
         self.assertIn("EXACT FILES TO REQUEST", PAGE)
 
+    def test_live_queue_pulse_and_one_click_recovery_are_wired(self):
+        for element in ("downloadPulse", "downloadPulseHint", "installAllReady",
+                        "pulseReviewFailures", "pulseReady", "pulseMoving",
+                        "pulseFailed", "pulseVerified"):
+            with self.subTest(element=element):
+                self.assertIn(f'id="{element}"', PAGE)
+        for marker in ("function renderDownloadPulse(downloads)",
+                       "bridgeRequest('POST','install-ready'",
+                       "bridgeRequest('POST','retry-download'",
+                       "data-retry-download-id",
+                       "data-retry-item-id", "renderDownloadPulse(next)",
+                       "await refreshGame();await refreshDownloads()"):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, APP)
+
     def test_durable_activity_ui_is_read_only_and_profile_scoped(self):
         for element in ('activityPanel', 'activityTitle', 'activitySearch',
                         'activityFilter', 'activityResults', 'activityExport',

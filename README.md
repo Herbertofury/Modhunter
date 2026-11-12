@@ -54,6 +54,10 @@ Automated evidence includes Python/HTTP guards, a simulated MO2 lifecycle, brows
 
 **Open mods without detours:** Click a mod name in either the installed-mod list or Update Workshop to open its exact original Nexus/GitHub/other source. A small adjacent **⌖** button still reveals the mod inside MO2. Unknown source identities are labeled as searches instead of pretending to be verified project pages. Custom URLs in the inspector can be previewed and copied before saving. These links work in all three editions and never interfere with **Update now**.
 
+### Faster recoveries without more approval screens
+
+The live MO2 queue now shows ready, running, failed and verified counts. Click **Install all ready** to open ready archives in MO2 one at a time, preserving its real FOMOD choices. A failed ticket offers **Retry now** to revalidate and requeue the same reviewed file, or **Choose another file** when a release changed. Instant native completion events are reconciled, and the queue refreshes even when it was previously empty. See the [recovery workflow](wiki/Update-Workshop.md).
+
 ## Update Workshop: maintain an entire MO2 profile
 
 **SSS updater cockpit:** the live Workshop now presents a complete reviewed-file manifest before queueing any downloads and a polished per-archive installation briefing before opening MO2. Every install is rechecked against the exact profile, game/runtime, mod version, target release, and newly introduced warnings. Downloads remain in MO2; FOMOD, overwrite choices and installed mods remain under your control. One-click dashboard lanes surface candidates, manual sources, compatibility issues and ready-to-install archives, with `Alt+U` to focus the Workshop and `Alt+R` to review the next update. A profile backup covers load-order text files, **not** prior mod directories.

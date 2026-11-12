@@ -62,6 +62,10 @@ class ArsenalService:
         self._scan: dict[str, Any] = {"state": "idle"}
         self._file_cache: dict[int, dict] = {}
         self._downloads: dict[int, dict] = {}
+        # MO2 can emit a download-complete signal before startDownload returns
+        # its ID. Keep only events seen during a native start dispatch.
+        self._download_dispatches = 0
+        self._early_download_events: dict[int, str] = {}
         self.journal = OperationJournal(cache_path.with_name("update-operations.jsonl"))
         self._stopped = False
         self._generation = 1
@@ -333,6 +337,29 @@ class ArsenalService:
         advisory = advise_nexus_files(item, response["files"])
         return {**response, **advisory, "itemId": item_id}
 
+    def _start_native_download(self, command: str, native_payload: dict, ticket: dict) -> dict:
+        """Register native IDs atomically with any completion signal received early."""
+        with self._guard:
+            self._download_dispatches += 1
+        result: dict = {"ok": False, "error": "MO2 did not return a download"}
+        try:
+            result = self.call_ui(command, native_payload)
+            return result
+        finally:
+            with self._guard:
+                self._download_dispatches -= 1
+                if result.get("ok"):
+                    try:
+                        download_id = int(result.get("downloadId") or 0)
+                    except (TypeError, ValueError, OverflowError):
+                        download_id = 0
+                    if download_id > 0:
+                        ticket["status"] = self._early_download_events.pop(download_id, "downloading")
+                        self._downloads[download_id] = ticket
+                        self.journal.record(ticket, download_id)
+                if not self._download_dispatches:
+                    self._early_download_events.clear()
+
     def request_download(self, mod_id: int, file_id: int, confirmation: str,
                          item_id: str = "", installed_version: str = "") -> dict:
         if confirmation != "DOWNLOAD":
@@ -340,20 +367,15 @@ class ArsenalService:
         files = self.fetch_files(mod_id)
         if not files.get("ok") or file_id not in {int(f["fileId"]) for f in files["files"]}:
             return {"ok": False, "error": "The selected file must be verified in the Nexus Files list first"}
-        result = self.call_ui("download", {"modId": mod_id, "fileId": file_id})
-        if result.get("ok"):
-            with self._guard:
-                ticket = {"provider": "nexus", "modId": mod_id, "fileId": file_id,
-                    "operationId": secrets.token_hex(12), "itemId": item_id,
-                    "installedVersion": installed_version, "status": "downloading",
-                    "profileId": self._snapshot.get("profileId"),
-                    "profileName": self._snapshot.get("profileName", ""),
-                    "game": self._snapshot.get("game", ""),
-                    "gameRuntime": self._snapshot.get("gameRuntime", "unknown")}
-                self._downloads[int(result["downloadId"])] = ticket
-                if not item_id:
-                    self.journal.record(ticket, int(result["downloadId"]))
-        return result
+        with self._guard:
+            ticket = {"provider": "nexus", "modId": mod_id, "fileId": file_id,
+                "operationId": secrets.token_hex(12), "itemId": item_id,
+                "installedVersion": installed_version, "status": "downloading",
+                "profileId": self._snapshot.get("profileId"),
+                "profileName": self._snapshot.get("profileName", ""),
+                "game": self._snapshot.get("game", ""),
+                "gameRuntime": self._snapshot.get("gameRuntime", "unknown")}
+        return self._start_native_download("download", {"modId": mod_id, "fileId": file_id}, ticket)
 
     def quick_update(self, payload: dict) -> dict:
         """One click: select a verified unique archive; no extra form or approval.
@@ -479,31 +501,97 @@ class ArsenalService:
         return result
 
     def _maybe_autoinstall(self) -> None:
-        """Only user-requested quick updates can open an interactive MO2 installer."""
+        """Drain explicitly armed tickets sequentially, without recursive retries."""
         if self._stopped or self._install_lock.locked():
             return
-        with self._guard:
-            profile = self._snapshot.get("profileId")
-            candidates = [(did, t) for did, t in self._downloads.items()
-                          if t.get("profileId") == profile and t.get("status") == "complete"
-                          and t.get("autoInstallRequested") is True]
-            if not candidates:
-                return
-            download_id, ticket = candidates[0]
-            # Mark attempted before dispatch: a stale preflight cannot spin.
-            ticket["autoInstallRequested"] = False
-        result = self.install_reviewed_download(download_id)
-        if not result.get("ok"):
+        while not self._stopped and not self._install_lock.locked():
+            with self._guard:
+                profile = self._snapshot.get("profileId")
+                selected = next(((did, ticket) for did, ticket in self._downloads.items()
+                                 if ticket.get("profileId") == profile
+                                 and ticket.get("status") == "complete"
+                                 and ticket.get("autoInstallRequested") is True), None)
+                if selected is None:
+                    return
+                did, ticket = selected
+                ticket["autoInstallRequested"] = False
+            result = self.install_reviewed_download(did)
+            if result.get("ok"):
+                return  # The native worker drains the next ticket when MO2 finishes.
             if "already open" in str(result.get("error") or ""):
                 with self._guard:
-                    if self._downloads.get(download_id) is ticket:
+                    if self._downloads.get(did) is ticket:
                         ticket["autoInstallRequested"] = True
-                return  # The active native installer will drain ready items.
+                return
             with self._guard:
-                if self._downloads.get(download_id) is ticket:
-                    ticket["lastError"] = str(result.get("error") or "Choose a file in MO2")[:240]
-                    self.journal.record(ticket, download_id)
-            self._maybe_autoinstall()  # Another completed ticket may be ready.
+                if self._downloads.get(did) is ticket:
+                    ticket["lastError"] = str(result.get("error") or "Review this archive in MO2")[:240]
+                    self.journal.record(ticket, did)
+
+    def install_ready_queue(self) -> dict:
+        """One click arms all completed, valid downloads for sequential MO2 dialogs.
+
+        Each native installer remains interactive. Nothing is installed while the
+        user is away, and a changed profile/runtime/version fails a live preflight.
+        """
+        current = self.snapshot()
+        profile = current.get("profileId")
+        armed, blocked = [], []
+        with self._guard:
+            for did, ticket in self._downloads.items():
+                if ticket.get("profileId") != profile or ticket.get("status") != "complete":
+                    continue
+                brief = build_install_brief(current, deepcopy(ticket), did)
+                if brief.get("canInstall"):
+                    ticket["autoInstallRequested"] = True
+                    armed.append(did)
+                else:
+                    blocked.append({"downloadId": did, "reason": "; ".join(brief.get("errors") or ["Recheck this update"])})
+        self._maybe_autoinstall()
+        return {"ok": True, "armed": len(armed), "blocked": blocked,
+                "state": "installing" if self._install_lock.locked() else "idle",
+                "message": (f"Opening {len(armed)} ready MO2 installer(s), one at a time."
+                            if armed else "No ready downloads passed installation checks.")}
+
+    def retry_failed_download(self, download_id: int) -> dict:
+        """Requeue the same previously reviewed archive with no approval screens."""
+        if isinstance(download_id, bool) or not isinstance(download_id, int) or download_id <= 0:
+            return {"ok": False, "error": "Invalid download ID"}
+        snapshot = self.snapshot()
+        with self._guard:
+            old = deepcopy(self._downloads.get(download_id))
+        if not old or old.get("profileId") != snapshot.get("profileId") or old.get("status") != "failed":
+            return {"ok": False, "error": "Only failed downloads from the active MO2 profile can be retried"}
+        item_id = str(old.get("itemId") or "")
+        mod = next((m for m in snapshot.get("items", []) if str(m.get("id")) == item_id), None)
+        if (not mod or (mod.get("update") or {}).get("verdict") != "candidate"
+                or str(mod.get("installedVersion") or "") != str(old.get("installedVersion") or "")
+                or str((mod.get("update") or {}).get("latestVersion") or "") != str(old.get("targetVersion") or "")
+                or risk_reasons(mod) != old.get("riskReasons")):
+            return {"ok": False, "error": "Mod, release, or compatibility changed. Choose the correct file again."}
+        base = {"itemId": item_id, "installedVersion": old["installedVersion"],
+                "targetVersion": old["targetVersion"], "reviewed": True, "riskAcknowledged": True,
+                "autoInstall": old.get("autoInstallRequested") is True or
+                               old.get("selectionMode") == "verified-match"}
+        if old.get("provider") == "nexus":
+            if int(mod.get("nexusId") or 0) != int(old.get("modId") or 0) or not old.get("fileId"):
+                return {"ok": False, "error": "Source identity changed. Choose the file again."}
+            entry = {**base, "modId": int(old["modId"]), "fileId": int(old["fileId"])}
+        elif old.get("provider") == "github":
+            if (mod.get("update") or {}).get("source") != "github-release-api" or not old.get("assetId"):
+                return {"ok": False, "error": "GitHub release changed. Choose the file again."}
+            entry = {**base, "kind": "source", "assetId": int(old["assetId"])}
+        else:
+            return {"ok": False, "error": "Source unavailable. Choose another file."}
+        result = self.queue_reviewed_downloads({"profileId": snapshot["profileId"],
+                                                "confirm": "QUEUE_REVIEWED_DOWNLOADS",
+                                                "entries": [entry]})
+        if result.get("queued"):
+            with self._guard:
+                recorded = self._downloads.get(download_id)
+                if recorded and recorded.get("status") == "failed":
+                    recorded["retriedBy"] = int(result["queued"][0]["downloadId"])
+        return result
 
     def queue_reviewed_downloads(self, payload: dict) -> dict:
         """Serialize reviewed batches so concurrent clicks cannot enqueue duplicates."""
@@ -584,15 +672,13 @@ class ArsenalService:
                 except PlanError as exc:
                     failed.append({"itemId": item["itemId"], "error": str(exc)})
                     break
-                result = self.call_ui("download-url", {"url": renewed["url"],
-                    "name": renewed["name"], "itemId": renewed["itemId"]})
-                if result.get("ok"):
-                    with self._guard:
-                        self._downloads[int(result["downloadId"])] = {
-                            "provider": "github", "name": renewed["name"],
-                            "operationId": secrets.token_hex(12),
-                            "itemId": item["itemId"], "installedVersion": item["installedVersion"],
-                            "status": "downloading", "profileId": live.get("profileId")}
+                ticket = {
+                    "provider": "github", "name": renewed["name"],
+                    "operationId": secrets.token_hex(12),
+                    "itemId": item["itemId"], "installedVersion": item["installedVersion"],
+                    "status": "downloading", "profileId": live.get("profileId")}
+                result = self._start_native_download("download-url", {"url": renewed["url"],
+                    "name": renewed["name"], "itemId": renewed["itemId"]}, ticket)
             else:
                 if int(current.get("nexusId") or 0) != item["modId"]:
                     failed.append({"itemId": item["itemId"], "error": "Nexus project changed"})
@@ -632,13 +718,17 @@ class ArsenalService:
                 "message": f"Queued {len(queued)} reviewed archive(s). Install each separately in MO2."}
 
     def set_download_status(self, download_id: int, state: str) -> None:
+        if state not in ("complete", "downloading", "paused", "failed", "removed"):
+            return
         with self._guard:
             if download_id in self._downloads:
-                # Late download callbacks must not turn an installed/active installer
-                # back into an actionable "complete" ticket.
+                # An old callback cannot reactivate an installing or installed archive.
                 if self._downloads[download_id]["status"] not in ("installing", "installed"):
                     self._downloads[download_id]["status"] = state
                     self.journal.record(self._downloads[download_id], download_id)
+            elif self._download_dispatches and isinstance(download_id, int) and download_id > 0:
+                # Early native callback raced ahead of startDownload's return ID.
+                self._early_download_events[download_id] = state
         if state == "complete":
             self._maybe_autoinstall()
 
@@ -916,6 +1006,14 @@ class ArsenalService:
                     return self._reply(service.begin_scan(data.get("mode", "quick")))
                 if uri.path == "/api/update-queue":
                     return self._reply(service.queue_reviewed_downloads(data))
+                if uri.path == "/api/install-ready":
+                    return self._reply(service.install_ready_queue())
+                if uri.path == "/api/retry-download":
+                    try:
+                        download_id = int(data.get("downloadId") or 0)
+                    except (ValueError, TypeError, OverflowError):
+                        download_id = 0
+                    return self._reply(service.retry_failed_download(download_id))
                 if uri.path == "/api/quick-update":
                     return self._reply(service.quick_update(data))
                 if uri.path == "/api/download":

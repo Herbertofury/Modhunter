@@ -125,6 +125,15 @@
       <div class="workshop-result-count" id="workshopVisibleCount" role="status"></div><div class="workshop-results" id="workshopResults" aria-live="polite"></div>
       <p class="workshop-foot">Update now selects an unambiguous version-matched main archive and opens the regular MO2 installer when ready. Complex editions remain selectable, with runtime and requirements visible. Offline HTML stays read-only.</p>
     </section>
+    <section class="download-pulse" id="downloadPulse" aria-label="MO2 download queue overview" hidden>
+      <div class="download-pulse-head"><div><span class="label-overline">LIVE MO2 / UPDATE OPERATIONS</span><h3>Ready for <em>installation</em></h3>
+        <p id="downloadPulseHint">Your current download queue is monitored by Modhunter.</p></div>
+        <div class="download-pulse-actions"><button class="button-bright" id="installAllReady" type="button" disabled>ϟ Install all ready</button><button class="quiet-button" id="pulseReviewFailures" type="button" disabled>↻ Review failures</button></div>
+      </div>
+      <div class="download-pulse-stats" aria-live="polite">
+        <span><strong id="pulseReady">0</strong> Ready</span><span><strong id="pulseMoving">0</strong> In progress</span><span><strong id="pulseFailed">0</strong> Need retry</span><span><strong id="pulseVerified">0</strong> Verified</span>
+      </div>
+    </section>
     <div id="liveDownloadList" class="live-downloads" aria-live="polite"></div>
     <section class="activity-panel" id="activityPanel" aria-labelledby="activityTitle">
       <div class="activity-heading">

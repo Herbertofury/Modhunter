@@ -1,12 +1,18 @@
 # Modhunter Desktop
 
-The **optional** Electron companion opens the same Modhunter HTML in native Chromium tabs. It works offline without MO2 or a Nexus account. The other components do not need Electron.
+The **optional** Electron companion opens the same Modhunter HTML in native Chromium tabs. It works independently without the MO2 plugin and has its own **user-selected read-only profile import**. The other components do not need Electron.
 
 ## Start
 
 1. On Windows install a current [Node.js LTS](https://nodejs.org/) once.
 2. From the source root, run `cd desktop`, `npm install`, `npm start`; or run `Run_ModHunter.bat` in the desktop directory.
 3. Use **Mods**, **Siege**, **Realm** to open the three in-app tabs. The same standalone HTML also works separately in a browser.
+
+## Import a real MO2 profile without the plugin
+
+Click **⌁ IMPORT MO2** in the desktop tab bar, then choose the exact `profiles/<your profile>/modlist.txt` file from an MO2 instance. Modhunter reads the nearby `mods/` directories and `meta.ini` records **on demand**, including enabled state, installed version, Nexus ID, source URL, notes and DLL warnings. Unlisted installed mods are shown too. The snapshot persists locally and reloads in the desktop app.
+
+This mode **does not require the MO2 plugin, log into Nexus, silently download files, alter MO2, or award verified achievements.** For actual authenticated Nexus/GitHub checks and download/install operations, use the optional MO2 plugin connection. If MO2's `profiles` and `mods` directories live in different locations, use the live plugin instead of guessing paths. Re-import after changing your mods; no file system watchdog runs in the background.
 
 ## Optional live MO2
 

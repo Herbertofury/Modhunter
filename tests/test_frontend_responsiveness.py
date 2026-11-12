@@ -1,0 +1,219 @@
+"""Real Chromium checks for polling, profile races and large-list responsiveness.
+
+The HTTP contract is deliberately delayed in memory. These tests exercise the
+shipped frontend, not native Windows MO2 or a real Nexus account.
+"""
+from __future__ import annotations
+
+import copy
+import json
+import shutil
+import unittest
+from pathlib import Path
+
+try:
+    from playwright.sync_api import sync_playwright
+except ImportError:
+    sync_playwright = None
+
+ROOT = Path(__file__).resolve().parents[1]
+WEB = ROOT / "mo2_update_arsenal" / "web"
+
+
+def build_page():
+    """Compile source in memory; do not rewrite another worker's artifacts."""
+    replacements = {
+        "/*__STYLE__*/": "\n".join((WEB / name).read_text("utf8") for name in
+            ("style.css", "aether_fx.css", "realm.css", "siege.css", "atelier.css")),
+        "/*__SCRIPT__*/": (WEB / "app.js").read_text("utf8").replace(
+            "/*__POWERSHELL__*/", json.dumps("")),
+        "/*__CATALOG__*/": (WEB / "catalog.json").read_text("utf8").replace("</", "<\\/"),
+        "/*__AETHER_SCRIPT__*/": (WEB / "aether_fx.js").read_text("utf8"),
+        "/*__REALM_SCRIPT__*/": (WEB / "realm.js").read_text("utf8"),
+        "/*__SIEGE_SCRIPT__*/": (WEB / "siege.js").read_text("utf8"),
+        "<!--__REALM_LAYOUT__-->": (WEB / "realm_layout.html").read_text("utf8").replace(
+            "<!--__SIEGE_LAYOUT__-->", (WEB / "siege_layout.html").read_text("utf8")),
+    }
+    page = (WEB / "app.template.html").read_text("utf8")
+    for marker, content in replacements.items():
+        page = page.replace(marker, content)
+    return page
+
+
+def catalog(profile="profile-a", count=3):
+    seed = json.loads((WEB / "catalog.json").read_text("utf8"))["items"][0]
+    items = []
+    for index in range(count):
+        item = copy.deepcopy(seed)
+        item.update(id=f"item-{index}", name=f"Unique Fixture {index}", groupId="group",
+                    group="Fixtures", priority=index, installedVersion="1.0", nexusId=index+1,
+                    flags=[], audit={}, screenshotNote="", author="Test Author",
+                    source={"type":"nexus", "verified":True,
+                            "url":f"https://www.nexusmods.com/skyrimspecialedition/mods/{index+1}"},
+                    update={"verdict":"candidate", "latestVersion":"2.0"})
+        items.append(item)
+    return {"catalogId":profile, "profileId":profile, "profileName":profile,
+            "game":"skyrimspecialedition", "gameRuntime":"1.5.97", "items":items,
+            "groups":[{"id":"group", "name":"Fixtures", "count":count,
+                       "startPriority":0, "color":"mint"}]}
+
+
+BOOT = r"""
+<script>
+window.__MO2_BRIDGE_BOOT__={active:true,token:'test-only'};
+const realTimeout=window.setTimeout.bind(window);
+// Only scale background polling. Request deadlines and animation frames retain
+// their real timing, and delayed fetches are explicitly released by each test.
+window.setTimeout=(fn,ms,...args)=>realTimeout(fn,[1100,1200,4200].includes(ms)?ms/10:ms,...args);
+window.__RESP__={catalog:__CATALOG__,generation:1,counts:{},active:{},max:{},defer:{},pending:[],failSnapshots:__FAIL__,scan:{state:'idle'},quick:{state:'idle'},gameScore:0};
+window.__RESP__.release=path=>{const x=window.__RESP__;x.defer[path]=false;for(const pending of x.pending.filter(p=>p.path===path))pending.resolve();x.pending=x.pending.filter(p=>p.path!==path)};
+window.fetch=async(url,options={})=>{
+ const x=window.__RESP__,path=String(url).slice(5),method=options.method||'GET',key=method+' '+path;
+ x.counts[key]=(x.counts[key]||0)+1;x.active[key]=(x.active[key]||0)+1;x.max[key]=Math.max(x.max[key]||0,x.active[key]);
+ const c=structuredClone(x.catalog),body=JSON.parse(options.body||'{}');
+ let result={ok:true};
+ try{
+  if(path==='snapshot'){
+   if(x.failSnapshots>0){x.failSnapshots--;throw Error('MO2 has not started yet');}
+   result={ok:true,catalog:c,generation:x.generation};
+  }else if(path==='revision')result={ok:true,profileId:c.profileId,generation:x.generation};
+  else if(path==='update-plan')result={ok:true,profileId:c.profileId,profileName:c.profileName,
+   summary:{candidates:c.items.length,total:c.items.length,review:0,manual:0,current:0,risky:0},
+   items:c.items.map(m=>({...m,lane:'candidate',latestVersion:'2.0',risks:[]}))};
+  else if(path==='progress')result={ok:true,profileId:c.profileId,progress:{rows:{},prefs:{}}};
+  else if(path==='game?compact=1')result={ok:true,profileId:c.profileId,score:x.gameScore,feed:[],updates:0};
+  else if(path==='downloads')result={ok:true,profileId:c.profileId,downloads:{}};
+  else if(path==='activity')result={ok:true,profileId:c.profileId,records:[]};
+  else if(path==='scan'){
+   if(method==='POST'){x.scan={state:'running',mode:body.mode,checked:0,total:c.items.length};result={ok:true,state:'running',profileId:c.profileId};}
+   else result={ok:true,profileId:c.profileId,scan:structuredClone(x.scan)};
+  }else if(path==='quick-update')result={ok:true,profileId:c.profileId,state:body.all?'running':'completed',queued:[],skipped:[{itemId:'item-0',reason:'Choose a file'}]};
+  else if(path==='quick-state')result={ok:true,profileId:c.profileId,state:'running',completed:0,total:3,queued:[],skipped:[]};
+  if(x.defer[path])await new Promise(resolve=>x.pending.push({path,resolve}));
+  return new Response(JSON.stringify(result),{status:200,headers:{'Content-Type':'application/json'}});
+ }finally{x.active[key]--;}
+};
+</script>
+"""
+
+
+@unittest.skipUnless(sync_playwright and shutil.which("chromium"), "Chromium/Playwright unavailable")
+class FrontendResponsivenessTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.runtime = sync_playwright().start()
+        try:
+            cls.browser = cls.runtime.chromium.launch(executable_path=shutil.which("chromium"),
+                headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
+        except Exception as error:
+            cls.runtime.stop()
+            if "socket() failed: Operation not permitted" in str(error):
+                raise unittest.SkipTest("Runner blocks Chromium IPC sockets; browser checks not executed") from error
+            raise
+        cls.html = build_page()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.browser.close()
+        cls.runtime.stop()
+
+    def setUp(self):
+        self.context = self.browser.new_context(viewport={"width":1440,"height":900},
+                                                reduced_motion="reduce")
+        self.page = self.context.new_page()
+        self.errors = []
+        self.page.on("pageerror", lambda error: self.errors.append(str(error)))
+
+    def tearDown(self):
+        self.context.close()
+        self.assertEqual(self.errors, [])
+
+    def open_live(self, fail=0):
+        boot = BOOT.replace("__CATALOG__", json.dumps(catalog())).replace("__FAIL__", str(fail))
+        self.page.set_content(self.html.replace("<!--__MO2_BOOT__-->", boot), wait_until="domcontentloaded")
+        self.page.wait_for_function("!!window.__ARSENAL_QA__")
+
+    def connected(self):
+        self.page.wait_for_function("document.getElementById('livePill').classList.contains('connected')")
+        self.page.wait_for_function("window.__ARSENAL_QA__.game()?.profileId==='profile-a'")
+
+    def test_initial_connection_failure_recovers_without_reload(self):
+        self.open_live(fail=1)
+        self.page.wait_for_function("document.getElementById('livePill').textContent.includes('DISCONNECTED')")
+        self.assertFalse(self.page.locator("#livePill").evaluate("e=>e.classList.contains('connected')"))
+        self.connected()
+        self.assertGreaterEqual(self.page.evaluate("__RESP__.counts['GET snapshot']"), 2)
+
+    def test_concurrent_game_reads_coalesce_and_old_profile_results_are_ignored(self):
+        self.open_live(); self.connected()
+        self.page.evaluate("""()=>{const x=__RESP__;x.defer['game?compact=1']=true;x.gameScore=9000;
+            window.firstRead=__ARSENAL_QA__.refreshGame();window.secondRead=__ARSENAL_QA__.refreshGame();}""")
+        self.page.wait_for_function("__RESP__.pending.some(p=>p.path==='game?compact=1')")
+        other = catalog("profile-b")
+        self.page.evaluate("c=>{__RESP__.catalog=c;__RESP__.gameScore=12;__RESP__.defer['game?compact=1']=false;__ARSENAL_QA__.setCatalog(c);}", other)
+        self.page.wait_for_function("__ARSENAL_QA__.game()?.profileId==='profile-b'")
+        self.page.evaluate("__RESP__.release('game?compact=1')")
+        self.page.evaluate("Promise.all([firstRead,secondRead])")
+        self.assertEqual(self.page.evaluate("__ARSENAL_QA__.game().score"), 12)
+        self.assertEqual(self.page.evaluate("__ARSENAL_QA__.game().profileId"), "profile-b")
+        # One old-context request plus one new-context request can coexist; two
+        # callers in the same context must share their single fetch.
+        self.assertEqual(self.page.evaluate("__RESP__.max['GET game?compact=1']"), 2)
+
+    def test_scan_polling_does_not_overlap_when_mo2_is_slow(self):
+        self.open_live(); self.connected()
+        self.page.evaluate("""()=>{__RESP__.defer.scan=true;
+            document.getElementById('liveAll').onclick();document.getElementById('liveAll').onclick();}""")
+        self.page.wait_for_function("__RESP__.pending.some(p=>p.path==='scan')")
+        self.assertEqual(self.page.evaluate("__RESP__.counts['POST scan']"), 1)
+        self.page.evaluate("__RESP__.release('scan')")
+        self.page.wait_for_function("document.getElementById('liveScanProgress').textContent.includes('Beginning')")
+        self.page.evaluate("__RESP__.defer.scan=true")
+        self.page.wait_for_function("__RESP__.pending.some(p=>p.path==='scan')")
+        self.page.wait_for_timeout(450)
+        self.assertEqual(self.page.evaluate("__RESP__.max['GET scan']"), 1)
+        self.page.evaluate("__RESP__.scan={state:'completed',mode:'all',checked:3,total:3};__RESP__.release('scan')")
+        self.page.wait_for_function("!document.getElementById('liveAll').disabled")
+
+    def test_quick_polling_does_not_overlap_and_profile_switch_stops_old_job(self):
+        self.open_live(); self.connected()
+        self.page.evaluate("__RESP__.defer['quick-state']=true")
+        self.page.locator("#workshopQuickAll").click()
+        self.page.wait_for_function("__RESP__.pending.some(p=>p.path==='quick-state')")
+        self.page.wait_for_timeout(400)
+        self.assertEqual(self.page.evaluate("__RESP__.max['GET quick-state']"), 1)
+        self.page.evaluate("c=>{__RESP__.catalog=c;__ARSENAL_QA__.setCatalog(c);}", catalog("profile-b"))
+        self.page.evaluate("__RESP__.release('quick-state')")
+        self.page.wait_for_function("!document.getElementById('workshopQuickAll').disabled")
+        self.assertTrue(self.page.locator("#filePickerVeil").is_hidden())
+        self.assertEqual(self.page.evaluate("__ARSENAL_QA__.getCatalog().profileId"), "profile-b")
+
+    def test_appearance_changes_preserve_catalog_nodes_and_keyboard_focus(self):
+        self.open_live(); self.connected()
+        self.page.evaluate("window.originalRow=document.querySelector('#modList .mod-row')")
+        self.page.locator("#densityToggle").click()
+        self.assertTrue(self.page.evaluate("originalRow===document.querySelector('#modList .mod-row')"))
+        self.page.evaluate("window.originalLink=document.querySelector('#modList .source-title');originalLink.focus()")
+        self.page.evaluate("__ARSENAL_QA__.refreshGame()")
+        self.assertTrue(self.page.evaluate("document.activeElement===originalLink"))
+
+    def test_large_catalog_search_coalesces_input_without_dropping_records(self):
+        self.page.set_content(self.html, wait_until="domcontentloaded")
+        data = catalog(count=2500); data["offline"] = True
+        self.page.evaluate("c=>window.modhunterImportCatalog(c)", data)
+        self.assertEqual(self.page.locator("#modList .mod-row").count(), 2500)
+        self.page.evaluate("""()=>{window.searchMutations=0;
+          new MutationObserver(rs=>searchMutations+=rs.length).observe(document.getElementById('modList'),{childList:true});
+          const input=document.getElementById('search');
+          for(const value of ['Unique','Unique Fixture','Unique Fixture 2','Unique Fixture 2499']){
+            input.value=value;input.dispatchEvent(new Event('input',{bubbles:true}));
+          }}""")
+        self.page.wait_for_function("document.querySelectorAll('#modList .mod-row').length===1")
+        self.assertEqual(self.page.evaluate("searchMutations"), 1)
+        self.assertEqual(self.page.evaluate("__ARSENAL_QA__.getCatalog().items.length"), 2500)
+        self.page.locator("#clearSearch").click()
+        self.assertEqual(self.page.locator("#modList .mod-row").count(), 2500)
+
+
+if __name__ == "__main__":
+    unittest.main()

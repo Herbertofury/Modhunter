@@ -6,6 +6,7 @@ does not inspect MO2 credentials or invent an OAuth integration.
 """
 from __future__ import annotations
 import secrets
+import threading
 from typing import Any
 
 
@@ -47,34 +48,68 @@ class NativeNexusGateway:
         if self.bridge is None:
             raise RuntimeError("MO2 did not supply a Nexus repository bridge")
         self.pending: dict[str, Any] = {}
+        self._pending_lock = threading.Lock()
         self.bridge.descriptionAvailable.connect(self._description)
         self.bridge.filesAvailable.connect(self._files)
         self.bridge.requestFailed.connect(self._failed)
 
     def request(self, request) -> None:
         """Dispatch without blocking Qt. UIRequest is completed by a later Qt signal."""
+        if request.state == "queued" and not request.begin():
+            return
+        if request.state != "running":
+            return
         kind = request.cmd
         payload = request.payload
         if kind not in ("nexus-metadata", "nexus-files"):
             request.finish({"ok": False, "error": "Unsupported MO2 Nexus operation"})
             return
-        game, mod_id = str(payload.get("game") or ""), int(payload.get("modId") or 0)
+        try:
+            game, mod_id = str(payload.get("game") or ""), int(payload.get("modId") or 0)
+        except (TypeError, ValueError, OverflowError):
+            request.finish({"ok": False, "error": "Invalid MO2 Nexus game or mod ID"})
+            return
         if not game or mod_id <= 0:
             request.finish({"ok": False, "error": "Missing MO2 Nexus game or mod ID"})
             return
         ticket = "modhunter:" + secrets.token_hex(12)
-        self.pending[ticket] = request
+        with self._pending_lock:
+            self.pending[ticket] = request
+        # Timeout cancellation runs on the waiting worker; only Python
+        # bookkeeping is touched here, never QObject or repository APIs.
+        request.add_done_callback(lambda: self._forget(ticket))
+        if request.state != "running":
+            return
         try:
             if kind == "nexus-metadata":
                 self.bridge.requestDescription(game, mod_id, ticket)
             else:
                 self.bridge.requestFiles(game, mod_id, ticket)
         except Exception as exc:
-            self.pending.pop(ticket, None)
+            self._forget(ticket)
             request.finish({"ok": False, "error": "MO2 Nexus request unavailable: " + str(exc)[:200]})
 
+    def _forget(self, ticket):
+        with self._pending_lock:
+            return self.pending.pop(str(ticket), None)
+
+    def _take(self, game, mod_id, ticket, kind=None):
+        request = self._forget(ticket)
+        if request is None or request.state != "running":
+            return None
+        try:
+            same = (str(game) == str(request.payload.get("game"))
+                    and int(mod_id) == int(request.payload.get("modId"))
+                    and (kind is None or request.cmd == kind))
+        except (TypeError, ValueError, OverflowError):
+            same = False
+        if not same:
+            request.finish({"ok": False, "error": "MO2 Nexus response identity did not match the requested game, mod, and operation"})
+            return None
+        return request
+
     def _description(self, game, mod_id, ticket, data):
-        request = self.pending.pop(str(ticket), None)
+        request = self._take(game, mod_id, ticket, "nexus-metadata")
         if request is None:
             return
         try:
@@ -92,7 +127,7 @@ class NativeNexusGateway:
             request.finish({"ok": False, "error": "Could not decode MO2 Nexus metadata: " + str(exc)[:160]})
 
     def _files(self, game, mod_id, ticket, data):
-        request = self.pending.pop(str(ticket), None)
+        request = self._take(game, mod_id, ticket, "nexus-files")
         if request is None:
             return
         try:
@@ -105,7 +140,7 @@ class NativeNexusGateway:
         # Native requestFailed(game, modId, fileId, userData, code, message).
         if len(args) < 4:
             return
-        request = self.pending.pop(str(args[3]), None)
+        request = self._take(args[0], args[1], args[3])
         if request is not None:
             request.finish({
                 "ok": False,

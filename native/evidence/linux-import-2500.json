@@ -1,0 +1,79 @@
+{
+  "architecture": "x86_64",
+  "cold": {
+    "bytesRead": 434000,
+    "directoriesRead": 51,
+    "elapsedMs": 24.89653,
+    "filesRead": 2502,
+    "foreignMods": 0,
+    "metadataCacheHits": 0,
+    "mods": 2500,
+    "warnings": 0,
+    "workers": 8
+  },
+  "fixture": "generated MO2 metadata; no live MO2/game/Nexus operations",
+  "metadataCacheVerified": true,
+  "mods": 2500,
+  "note": "Cold means an empty Modhunter metadata cache; OS filesystem caches are not forcibly evicted. Timings are measurements, not release guarantees.",
+  "platform": "linux",
+  "rowIdentityAndMetadataEquivalent": true,
+  "warm": [
+    {
+      "bytesRead": 47607,
+      "directoriesRead": 51,
+      "elapsedMs": 16.392788,
+      "filesRead": 2,
+      "foreignMods": 0,
+      "metadataCacheHits": 2500,
+      "mods": 2500,
+      "warnings": 0,
+      "workers": 8
+    },
+    {
+      "bytesRead": 47607,
+      "directoriesRead": 51,
+      "elapsedMs": 14.658262,
+      "filesRead": 2,
+      "foreignMods": 0,
+      "metadataCacheHits": 2500,
+      "mods": 2500,
+      "warnings": 0,
+      "workers": 8
+    },
+    {
+      "bytesRead": 47607,
+      "directoriesRead": 51,
+      "elapsedMs": 16.750334,
+      "filesRead": 2,
+      "foreignMods": 0,
+      "metadataCacheHits": 2500,
+      "mods": 2500,
+      "warnings": 0,
+      "workers": 8
+    },
+    {
+      "bytesRead": 47607,
+      "directoriesRead": 51,
+      "elapsedMs": 20.306003999999998,
+      "filesRead": 2,
+      "foreignMods": 0,
+      "metadataCacheHits": 2500,
+      "mods": 2500,
+      "warnings": 0,
+      "workers": 8
+    },
+    {
+      "bytesRead": 47607,
+      "directoriesRead": 51,
+      "elapsedMs": 15.456940000000001,
+      "filesRead": 2,
+      "foreignMods": 0,
+      "metadataCacheHits": 2500,
+      "mods": 2500,
+      "warnings": 0,
+      "workers": 8
+    }
+  ],
+  "warmMedianMs": 16.392788,
+  "workers": 8
+}

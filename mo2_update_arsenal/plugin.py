@@ -11,7 +11,7 @@ import mobase
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from .bridge import ArsenalService, UIRequest
-from .model import take_snapshot
+from .model import LocalMetadataCache, take_snapshot
 from .focus import navigate, find_mo2_view, name_column
 from .scanner import version_verdict
 from .native_nexus import NativeNexusGateway
@@ -37,6 +37,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
         self._selection_connected = False
         self._native_nexus = None
         self._native_nexus_error = ''
+        self._metadata_cache = LocalMetadataCache()
 
     def name(self) -> str:
         return "MO2 Update Arsenal"
@@ -51,7 +52,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
         return "Animated MO2 update command center with Modhunter Atlas campaigns, survivor squads, mod-named bosses and verified Forge Sigil bounties."
 
     def version(self):
-        return mobase.VersionInfo("0.8.0")
+        return mobase.VersionInfo("0.9.0")
 
     def settings(self):
         return []
@@ -100,7 +101,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
             return
         try:
             if not self.server:
-                snap = take_snapshot(self.org, self._runtime)
+                snap = take_snapshot(self.org, self._runtime, metadata_cache=self._metadata_cache)
                 page = Path(__file__).with_name("web") / "index.html"
                 doc = page.read_text(encoding="utf-8")
                 try:
@@ -110,7 +111,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
                 self.server = ArsenalService(doc, folder / "nexus-cache.json", self.dispatcher.submitted.emit, snap)
                 self.server.native_nexus_available = self._native_nexus is not None
             else:
-                self._refresh_snapshot()
+                self._refresh_snapshot(force_metadata=True)
             address = self.server.start()
             self._bind_native_selection()
             QtGui.QDesktopServices.openUrl(QtCore.QUrl(address))
@@ -127,12 +128,13 @@ class ModUpdateArsenal(mobase.IPluginTool):
         self._dirty = True
         QtCore.QTimer.singleShot(150, self._refresh_snapshot)
 
-    def _refresh_snapshot(self) -> dict:
+    def _refresh_snapshot(self, *, force_metadata: bool = False) -> dict:
         self._dirty = False
         if not self.server:
             return {"ok": False, "error": "Launch Arsenal first"}
         try:
-            snapshot = take_snapshot(self.org, self._runtime)
+            snapshot = take_snapshot(self.org, self._runtime, metadata_cache=self._metadata_cache,
+                                     force_metadata=force_metadata)
             self.server.set_snapshot(snapshot)
             return {"ok": True, "count": len(snapshot["items"]), "profile": snapshot["profileName"], "catalog": snapshot}
         except Exception as exc:
@@ -199,7 +201,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
             installed = self.org.installMod(str(source))
             if not installed:
                 return {"ok": False, "error": "Installation was canceled or failed; MO2 files were not removed", "backup": backup}
-            self._refresh_snapshot()
+            self._refresh_snapshot(force_metadata=True)
             # MO2 installMod returned a real installed mod; only that exact row
             # may receive verified XP (never every mod sharing a Nexus ID).
             after = self.server.snapshot()
@@ -298,7 +300,40 @@ class ModUpdateArsenal(mobase.IPluginTool):
             self.server.set_selected("")
 
     def _dispatch(self, request: UIRequest):
+        if not request.begin():
+            return  # Expired/cancelled Qt events can never execute later.
         try:
+            if request.cmd in ("download", "download-url", "install"):
+                if not self.server or request.payload.get("profileId") != self.server.profile_id():
+                    request.finish({"ok": False, "error": "MO2 profile changed before native execution; refresh and review again"})
+                    return
+                context = self.server.selection_snapshot([])
+                if str(self.org.profileName()) != str(context.get("profileName") or ""):
+                    # Profile-change refresh is debounced. Recheck the actual
+                    # organizer instead of trusting that still-old snapshot.
+                    request.finish({"ok": False, "error": "Active MO2 profile changed before native execution; refresh and review again"})
+                    return
+                if (request.payload.get("gameRuntime") is not None
+                        and request.payload["gameRuntime"] != context.get("gameRuntime", "unknown")):
+                    request.finish({"ok": False, "error": "Game runtime changed before native execution; review the file again"})
+                    return
+                item_id = request.payload.get("itemId")
+                if item_id:
+                    current = self.server.selection_snapshot([str(item_id)]).get("items", [])
+                    if (not current or str(current[0].get("installedVersion") or "")
+                            != str(request.payload.get("installedVersion") or "")):
+                        request.finish({"ok": False, "error": "Installed mod changed before native execution; refresh and review again"})
+                        return
+                    native_mod = self.org.modList().getMod(current[0].get("mo2InternalName"))
+                    if native_mod is None:
+                        request.finish({"ok": False, "error": "Selected mod was removed before native execution"})
+                        return
+                    native_version = str(native_mod.version())
+                    if native_version in ("Invalid", "None", "0", "0.0", ""):
+                        native_version = "?"
+                    if native_version != str(request.payload.get("installedVersion") or ""):
+                        request.finish({"ok": False, "error": "Native installed version changed before execution; refresh and review again"})
+                        return
             if request.cmd in ("nexus-metadata", "nexus-files"):
                 if self._native_nexus is None:
                     request.finish({"ok": False, "error": "MO2 native Nexus unavailable: " + self._native_nexus_error})
@@ -306,7 +341,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
                     self._native_nexus.request(request)
                 return
             if request.cmd == "refresh":
-                result = self._refresh_snapshot()
+                result = self._refresh_snapshot(force_metadata=True)
             elif request.cmd == "download":
                 result = self._download(int(request.payload["modId"]), int(request.payload["fileId"]))
             elif request.cmd == "download-url":

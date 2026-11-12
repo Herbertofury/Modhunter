@@ -6,6 +6,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from .source_registry import discover_local_source
 
 COLORS = ("mint", "violet", "sky", "pink", "ochre", "green", "slate", "rose", "gold", "cyan", "blue")
 
@@ -110,7 +111,11 @@ def take_snapshot(organizer: Any, target_runtime: str = "unknown") -> dict[str, 
                 enabled = "ACTIVE" in str(raw_state).upper()
         except Exception:
             enabled = False
-        flags = inspect_local_flags(Path(call_str(mod, "absolutePath", ""))) if call_str(mod, "absolutePath") else []
+        mod_path = call_str(mod, "absolutePath", "")
+        flags = inspect_local_flags(Path(mod_path)) if mod_path else []
+        notes = call_str(mod, "notes")
+        detected_source = discover_local_source(Path(mod_path), notes) if mod_path else {}
+        actual_source = detected_source if detected_source.get("verified") else source_url(game, nexus_id)
         hint = "Contains native DLL files. Select a build for the exact game runtime." if flags else ""
         mod_id = "live-" + identity(profile_id + "|" + name)
         if mod_id in present:
@@ -125,13 +130,13 @@ def take_snapshot(organizer: Any, target_runtime: str = "unknown") -> dict[str, 
             "latestKnownVersion": latest,
             "enabled": enabled,
             "nexusId": nexus_id,
-            "screenshotNote": call_str(mod, "notes"),
+            "screenshotNote": notes,
             "author": "",
             "flags": flags,
             "groupId": group["id"],
             "group": group["name"],
             "audit": {"verdict": "check", "note": hint, "evidence": "MO2 local metadata only"} if flags else {},
-            "source": source_url(game, nexus_id),
+            "source": actual_source,
             "repository": call_str(mod, "repository"),
             "screenshot": 0,
         })

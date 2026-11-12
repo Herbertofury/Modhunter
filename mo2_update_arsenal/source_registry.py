@@ -170,8 +170,14 @@ class SourceScanner:
 
     def scan(self, snapshot: dict, progress: Callable[[dict], None] | None = None) -> dict:
         """Check all non-Nexus sources, de-duplicated by public release project."""
+        # A Nexus-linked mod with no confirmed external source remains the
+        # Nexus scanner's responsibility. Never overwrite a real Nexus verdict
+        # with an unrelated "unverified" provider result.
         items = [i for i in snapshot.get("items", []) if
-                 int(i.get("nexusId") or 0) <= 0 or provider_of((i.get("source") or {}).get("url", "")) != "nexus"]
+                 int(i.get("nexusId") or 0) <= 0 or (
+                     bool((i.get("source") or {}).get("verified"))
+                     and provider_of((i.get("source") or {}).get("url", "")) not in ("nexus", "unknown")
+                 )]
         checked_at = time.time()
         grouped: dict[tuple[str, str, str], list[dict]] = {}
         output: dict[str, dict] = {}

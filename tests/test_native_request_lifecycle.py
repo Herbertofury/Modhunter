@@ -228,6 +228,28 @@ class NexusLifetimeTests(unittest.TestCase):
         self.assertTrue(request.result["ok"])
         self.assertEqual(request.result["meta"]["version"], "2")
 
+    def test_unavailable_metadata_keeps_explicit_status_without_claiming_a_version(self):
+        from mo2_update_arsenal.scanner import summary_from_metadata
+        request, ticket = self.request("nexus-metadata")
+        self.native.descriptionAvailable.emit("skyrimspecialedition", 7, ticket,
+            {"status": "hidden", "available": False, "mod_id": 7, "domain_name": "skyrimspecialedition",
+             "updated_timestamp": 1800000000, "description": "not retained", "api_key": "not retained"})
+        self.assertTrue(request.result["ok"])
+        metadata = request.result["meta"]
+        self.assertEqual(metadata["status"], "hidden")
+        self.assertFalse(metadata["available"])
+        self.assertNotIn("version", metadata)
+        self.assertNotIn("description", metadata)
+        self.assertNotIn("api_key", metadata)
+        self.assertNotEqual(summary_from_metadata({"installedVersion": "1"}, metadata, 1800000000)["verdict"], "current")
+
+    def test_metadata_body_identity_must_match_callback_and_empty_remains_error(self):
+        for data in ({}, {"version": "2", "mod_id": 8}, {"version": "2", "domain_name": "fallout4"}):
+            request, ticket = self.request("nexus-metadata")
+            self.native.descriptionAvailable.emit("skyrimspecialedition", 7, ticket, data)
+            self.assertFalse(request.result["ok"])
+            self.assertEqual(self.gateway.pending, {})
+
 
 if __name__ == "__main__":
     unittest.main()

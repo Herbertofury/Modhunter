@@ -3,7 +3,7 @@
   "cold": {
     "bytesRead": 434000,
     "directoriesRead": 51,
-    "elapsedMs": 24.89653,
+    "elapsedMs": 180.417451,
     "filesRead": 2502,
     "foreignMods": 0,
     "metadataCacheHits": 0,
@@ -21,7 +21,7 @@
     {
       "bytesRead": 47607,
       "directoriesRead": 51,
-      "elapsedMs": 16.392788,
+      "elapsedMs": 36.416046,
       "filesRead": 2,
       "foreignMods": 0,
       "metadataCacheHits": 2500,
@@ -32,7 +32,7 @@
     {
       "bytesRead": 47607,
       "directoriesRead": 51,
-      "elapsedMs": 14.658262,
+      "elapsedMs": 27.741083,
       "filesRead": 2,
       "foreignMods": 0,
       "metadataCacheHits": 2500,
@@ -43,7 +43,7 @@
     {
       "bytesRead": 47607,
       "directoriesRead": 51,
-      "elapsedMs": 16.750334,
+      "elapsedMs": 29.152860999999998,
       "filesRead": 2,
       "foreignMods": 0,
       "metadataCacheHits": 2500,
@@ -54,7 +54,7 @@
     {
       "bytesRead": 47607,
       "directoriesRead": 51,
-      "elapsedMs": 20.306003999999998,
+      "elapsedMs": 25.815417,
       "filesRead": 2,
       "foreignMods": 0,
       "metadataCacheHits": 2500,
@@ -65,7 +65,7 @@
     {
       "bytesRead": 47607,
       "directoriesRead": 51,
-      "elapsedMs": 15.456940000000001,
+      "elapsedMs": 27.365636,
       "filesRead": 2,
       "foreignMods": 0,
       "metadataCacheHits": 2500,
@@ -74,6 +74,6 @@
       "workers": 8
     }
   ],
-  "warmMedianMs": 16.392788,
+  "warmMedianMs": 27.741083,
   "workers": 8
 }

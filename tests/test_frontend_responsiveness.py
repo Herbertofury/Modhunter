@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import shutil
 import unittest
 from pathlib import Path
@@ -24,8 +25,8 @@ def build_page():
     """Compile source in memory; do not rewrite another worker's artifacts."""
     replacements = {
         "/*__STYLE__*/": "\n".join((WEB / name).read_text("utf8") for name in
-            ("style.css", "aether_fx.css", "realm.css", "siege.css", "atelier.css")),
-        "/*__SCRIPT__*/": (WEB / "app.js").read_text("utf8").replace(
+            ("style.css", "aether_fx.css", "realm.css", "siege.css", "atelier.css", "mod_insights.css")),
+        "/*__SCRIPT__*/": (WEB / "mod_insights.js").read_text("utf8") + "\n" + (WEB / "app.js").read_text("utf8").replace(
             "/*__POWERSHELL__*/", json.dumps("")),
         "/*__CATALOG__*/": (WEB / "catalog.json").read_text("utf8").replace("</", "<\\/"),
         "/*__AETHER_SCRIPT__*/": (WEB / "aether_fx.js").read_text("utf8"),
@@ -97,18 +98,31 @@ window.fetch=async(url,options={})=>{
 """
 
 
-@unittest.skipUnless(sync_playwright and shutil.which("chromium"), "Chromium/Playwright unavailable")
 class FrontendResponsivenessTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        required = os.environ.get("MODHUNTER_REQUIRE_BROWSER") == "1"
+        if sync_playwright is None:
+            if required:
+                raise RuntimeError("MODHUNTER_REQUIRE_BROWSER=1 but Playwright is unavailable")
+            raise unittest.SkipTest("Playwright unavailable; browser checks not executed")
         cls.runtime = sync_playwright().start()
+        # CI installs Playwright's managed Chromium. A system installation is
+        # optional; omitting executable_path selects the managed browser.
+        browser_args = {"headless":True, "args":["--no-sandbox", "--disable-dev-shm-usage"]}
+        chromium_path = shutil.which("chromium") or shutil.which("chromium-browser")
+        if chromium_path:
+            browser_args["executable_path"] = chromium_path
         try:
-            cls.browser = cls.runtime.chromium.launch(executable_path=shutil.which("chromium"),
-                headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
+            cls.browser = cls.runtime.chromium.launch(**browser_args)
         except Exception as error:
             cls.runtime.stop()
+            if required:
+                raise
             if "socket() failed: Operation not permitted" in str(error):
                 raise unittest.SkipTest("Runner blocks Chromium IPC sockets; browser checks not executed") from error
+            if "Executable doesn't exist" in str(error):
+                raise unittest.SkipTest("Playwright Chromium is not installed; browser checks not executed") from error
             raise
         cls.html = build_page()
 

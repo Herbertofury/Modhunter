@@ -7,6 +7,7 @@ Authenticated/non-API pages are retained as manual-review sources: never infer
 from __future__ import annotations
 import concurrent.futures
 import configparser
+import ipaddress
 import json
 import re
 import time
@@ -29,6 +30,24 @@ PROVIDER_HOSTS = {
     "thunderstore.io": "thunderstore", "ko-fi.com": "ko-fi",
 }
 ARCHIVE_SUFFIXES = (".zip", ".7z", ".rar")
+PRIVATE_QUERY_KEYS = frozenset({
+    "token", "access_token", "refresh_token", "id_token", "apikey", "api_key", "api-key", "key",
+    "auth", "authorization", "password", "passwd", "secret", "client_secret", "session", "sessionid",
+    "session_id", "sid", "signature", "sig", "fbclid", "gclid", "dclid", "msclkid", "igshid",
+    "ref_src", "ref_url",
+})
+
+
+def _public_query(query: str) -> str:
+    # Keep raw surviving components: form re-encoding would change forum
+    # routes such as index.php?/topic/123/ into a different destination.
+    kept = []
+    for component in query.split("&"):
+        key = urllib.parse.unquote_plus(component.split("=", 1)[0]).lower()
+        if key in PRIVATE_QUERY_KEYS or key.startswith(("utm_", "x-amz-", "x-goog-", "__cf_chl_")):
+            continue
+        kept.append(component)
+    return "&".join(kept)
 
 
 def canonical_source_url(raw: str) -> str:
@@ -39,11 +58,18 @@ def canonical_source_url(raw: str) -> str:
         host = (u.hostname or "").lower()
         if u.scheme.lower() != "https" or not host or u.username or u.password or u.port:
             return ""
-        if host in {"localhost", "127.0.0.1", "::1"} or host.endswith(".local"):
+        if host == "localhost" or host.endswith((".local", ".localhost")) or "." not in host:
             return ""
         if not re.fullmatch(r"[a-z0-9.-]+", host) or ".." in host:
             return ""
-        return urllib.parse.urlunsplit(("https", host, u.path or "/", "", ""))
+        if re.fullmatch(r"(?:[0-9]+|0x[0-9a-f]+)", host.rstrip(".").rsplit(".", 1)[-1]):
+            return ""  # Also reject browser-normalized shorthand/octal/hex IPv4 forms.
+        try:
+            ipaddress.ip_address(host)
+            return ""  # Source identities must be public domain names, not local/IP endpoints.
+        except ValueError:
+            pass
+        return urllib.parse.urlunsplit(("https", host, u.path or "/", _public_query(u.query), ""))
     except (TypeError, ValueError):
         return ""
 
@@ -74,26 +100,45 @@ def discover_local_source(mod_directory: Path, notes: str = "") -> dict:
     """Read only a mod's own small meta.ini and its existing notes."""
     ini = Path(mod_directory) / "meta.ini"
     candidates: list[tuple[str, str]] = []
+    custom_enabled = None
+    metadata_notes = ""
     try:
         if ini.is_file() and ini.stat().st_size <= 65536:
             parser = configparser.ConfigParser(interpolation=None, strict=False)
-            parser.read_string(ini.read_text(encoding="utf-8", errors="replace"))
+            parser.read_string(ini.read_text(encoding="utf-8-sig", errors="replace"))
+            general = next((section for section in parser.sections() if section.lower() == "general"), None)
+            if general:
+                value = parser.get(general, "hascustomurl", fallback="").strip().lower()
+                custom_enabled = False if value in ("false", "0") else True if value in ("true", "1") else None
+                metadata_notes = parser.get(general, "notes", fallback="")
             for section in parser.sections():
-                for key in ("url", "modurl", "updateurl", "homepage", "website", "source"):
+                for key in ("url", "customurl", "modurl", "updateurl", "homepage", "website", "source"):
                     if parser.has_option(section, key):
                         candidates.append((parser.get(section, key), "MO2 meta.ini"))
     except (OSError, UnicodeError, configparser.Error):
         pass
-    for url in re.findall(r"https://[^\s<>'\"\]\)]+", str(notes or "")[:24000], flags=re.I):
-        candidates.append((url, "MO2 notes"))
-    for url, origin in candidates:
+    for url, origin in candidates if custom_enabled is not False else []:
         record = source_record(url, origin)
         if record["verified"]:
             return record
-    return source_record("", "")
+    for url in re.findall(r"https://[^\s<>'\"\]\)]+", (str(notes or "")[:24000] + " " + metadata_notes[:24000]), flags=re.I):
+        record = source_record(url, "MO2 notes")
+        if record["verified"]:
+            # Notes also link dependencies and troubleshooting. Keep the link
+            # available for inspection without claiming it identifies this mod.
+            record.update(verified=False, kind="advisory", label="Unverified link from MO2 notes")
+            if custom_enabled is False:
+                record["customUrlEnabled"] = False
+            return record
+    record = source_record("", "")
+    if custom_enabled is False:
+        record["customUrlEnabled"] = False
+    return record
 
 
 def _release_identity(source: dict) -> tuple[str, str, str] | None:
+    if not source.get("verified") or source.get("kind") == "advisory":
+        return None
     url = source.get("url") or ""
     provider = provider_of(url)
     parts = [urllib.parse.unquote(p) for p in urllib.parse.urlsplit(url).path.split("/") if p]

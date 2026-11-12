@@ -70,14 +70,15 @@ window.fetch=async(url,opts={})=>{
  if(endpoint==='snapshot')result={ok:true,catalog:x.data.catalog,generation:x.generation||1};
  else if(endpoint==='update-plan')result=x.data.plan;
  else if(endpoint.startsWith('files?'))result=x.data.review[String(new URLSearchParams(endpoint.split('?')[1]).get('modId'))]||{ok:false,error:'Missing mod'};
- else if(endpoint==='downloads')result={ok:true,downloads:x.tickets};
+ else if(endpoint==='downloads')result={ok:true,profileId:x.data.catalog.profileId,downloads:x.tickets};
+ else if(endpoint==='game?compact=1')result={ok:true,profileId:x.data.catalog.profileId,feed:[],updates:0};
  else if(endpoint==='activity'){
   if(x.delayActivityMs)await new Promise(resolve=>setTimeout(resolve,x.delayActivityMs));
   result={ok:true,profileId:x.data.catalog.profileId,
       records:x.data.history,count:x.data.history.length,durable:true,warning:''};
  }
  else if(endpoint==='revision')result={ok:true,generation:x.generation||1,profileId:x.data.catalog.profileId};
- else if(endpoint==='scan')result={ok:true,scan:{state:'completed',mode:'deep',queried:2}};
+ else if(endpoint==='scan')result={ok:true,profileId:x.data.catalog.profileId,scan:{state:'completed',mode:'deep',queried:2}};
  else if(endpoint==='progress')result={ok:true,profileId:x.data.catalog.profileId,progress:{rows:{},prefs:{}}};
  else if(endpoint.startsWith('install-preview?')){
   const id=String(new URLSearchParams(endpoint.split('?')[1]).get('downloadId'));

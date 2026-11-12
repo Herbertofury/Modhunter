@@ -80,7 +80,7 @@ def call_str(obj: Any, method: str, fallback: str = "") -> str:
 
 
 def source_url(game: str, mod_id: int) -> dict[str, Any]:
-    if mod_id > 0 and game and game.replace("-", "").isalnum():
+    if mod_id > 0 and game and game != "unknown" and game.replace("-", "").isalnum():
         return {"type": "nexus", "verified": True, "kind": "project", "label": "Nexus / Files", "url": f"https://www.nexusmods.com/{game}/mods/{mod_id}?tab=files"}
     return {"type": "unknown", "verified": False, "kind": "unresolved", "label": "Source unlinked", "url": ""}
 
@@ -177,8 +177,12 @@ def take_snapshot(organizer: Any, target_runtime: str = "unknown", *,
         else:
             flags = inspect_local_flags(Path(mod_path)) if mod_path else []
             detected_source = discover_local_source(Path(mod_path), notes) if mod_path else {}
-        native_url = source_record(call_str(mod, "url"), "MO2 official mod URL")
-        actual_source = native_url if native_url.get("verified") else detected_source if detected_source.get("verified") else source_url(game, nexus_id)
+        custom_enabled = detected_source.pop("customUrlEnabled", None)
+        native_url = source_record(call_str(mod, "url") if custom_enabled is not False else "", "MO2 official mod URL")
+        nexus_source = source_url(game, nexus_id)
+        actual_source = (native_url if native_url.get("verified") else detected_source if detected_source.get("verified")
+                         else nexus_source if nexus_source.get("verified") else detected_source if detected_source.get("url")
+                         else nexus_source)
         hint = "Contains native DLL files. Select a build for the exact game runtime." if flags else ""
         mod_id = "live-" + identity(profile_id + "|" + name)
         if mod_id in present:

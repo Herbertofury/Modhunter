@@ -12,7 +12,7 @@ use std::{
 };
 use tauri::{
     Emitter, Manager, Webview, WebviewUrl,
-    webview::{NewWindowResponse, PageLoadEvent, WebviewBuilder},
+    webview::{DownloadEvent, NewWindowResponse, PageLoadEvent, WebviewBuilder},
     window::WindowBuilder,
 };
 use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -33,6 +33,8 @@ struct Preferences {
     mods_path: Option<PathBuf>,
     #[serde(default)]
     endpoint: Option<String>,
+    #[serde(default)]
+    eslifier_data_path: Option<PathBuf>,
 }
 
 #[derive(Clone, Serialize)]
@@ -69,36 +71,67 @@ struct Runtime {
     prefs_path: PathBuf,
     epoch: AtomicU64,
     importing: AtomicBool,
+    auditing: AtomicBool,
     probing: AtomicBool,
     smoke_output: Option<PathBuf>,
     smoke_sent: AtomicBool,
+    smoke_ui: Mutex<Option<Value>>,
+    smoke_export: Mutex<Option<PathBuf>>,
 }
 
 impl Runtime {
     fn snapshot(&self) -> Value {
         let m = self.model.lock().unwrap_or_else(|e| e.into_inner());
         json!({"tabs": m.tabs, "activeId": m.active_id, "connected": m.connected,
+            "epoch": self.epoch.load(Ordering::Acquire),
             "endpoint": m.endpoint, "connectionError": m.connection_error, "latencyMs": m.latency_ms,
             "offlineProfile": m.catalog.as_ref().and_then(|c| c.get("profileName")),
             "offlineModCount": m.catalog.as_ref().and_then(|c| c.get("items")).and_then(Value::as_array).map_or(0, Vec::len),
             "stats": m.stats, "warnings": m.warnings, "importing": self.importing.load(Ordering::Acquire),
+            "auditing": self.auditing.load(Ordering::Acquire),
             "configPath": m.prefs.ini_path, "modsPath": m.prefs.mods_path,
+            "eslifierDataPath": m.prefs.eslifier_data_path,
+            "pluginAnalysis": m.catalog.as_ref().and_then(|c| c.get("pluginAnalysis")).map(|a| json!({
+                "depth": a.get("depth"), "checkedAt": a.get("checkedAt"), "stats": a.get("stats")
+            })),
             "version": env!("CARGO_PKG_VERSION"), "runtime": "Rust · WebView2"})
     }
     fn save(&self) -> Result<()> {
         let _save = self.save_guard.lock().map_err(err)?;
         let prefs = self.model.lock().map_err(err)?.prefs.clone();
+        self.persist_preferences(&prefs)
+    }
+    fn persist_preferences(&self, prefs: &Preferences) -> Result<()> {
+        // Callers serialize disk writes with save_guard. Keep file IO outside
+        // the model lock so toolbar snapshots can still be read while saving.
         let parent = self
             .prefs_path
             .parent()
             .ok_or("Invalid preferences directory")?;
         std::fs::create_dir_all(parent).map_err(err)?;
         let mut tmp = tempfile::NamedTempFile::new_in(parent).map_err(err)?;
-        serde_json::to_writer_pretty(&mut tmp, &prefs).map_err(err)?;
+        serde_json::to_writer_pretty(&mut tmp, prefs).map_err(err)?;
         tmp.flush().map_err(err)?;
         tmp.as_file().sync_all().map_err(err)?;
         tmp.persist(&self.prefs_path).map_err(err)?;
         Ok(())
+    }
+    fn set_eslifier_data_path(&self, path: Option<PathBuf>) -> Result<bool> {
+        let _save = self.save_guard.lock().map_err(err)?;
+        let mut prospective = self.model.lock().map_err(err)?.prefs.clone();
+        prospective.eslifier_data_path = path;
+        self.persist_preferences(&prospective).map_err(|e| {
+            format!("Could not save the ESLifier setting; the previous setting remains in use: {e}")
+        })?;
+
+        let mut m = self.model.lock().map_err(err)?;
+        // Another command may update an unrelated preference while disk IO is
+        // in progress. Publish only this field; its waiting save() will persist
+        // the combined current preferences after this save guard is released.
+        m.prefs.eslifier_data_path = prospective.eslifier_data_path;
+        self.epoch.fetch_add(1, Ordering::AcqRel);
+        invalidate_analysis(&mut m);
+        Ok(m.endpoint.is_none() && m.catalog.is_some() && m.prefs.profile.is_some())
     }
 }
 
@@ -201,6 +234,38 @@ fn smoke_result(app: &tauri::AppHandle, url: &Url, view_label: &str) {
     let report = json!({"ok": pass, "nativeWebView2": true, "shellIpc": true,
         "gameViewNativeIpcDenied": values.get("denied"), "proof": values,
         "state": snapshot, "fixtureOnly": true});
+    let _ = path;
+    *state.smoke_ui.lock().unwrap_or_else(|e| e.into_inner()) = Some(report);
+    finish_smoke(app);
+}
+
+fn finish_smoke(app: &tauri::AppHandle) {
+    let state = app.state::<Runtime>();
+    let Some(path) = &state.smoke_output else {
+        return;
+    };
+    let report = state
+        .smoke_ui
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    let export = state
+        .smoke_export
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
+    let (Some(mut report), Some(export)) = (report, export) else {
+        return;
+    };
+    let exported = std::fs::read(&export)
+        .ok()
+        .and_then(|b| serde_json::from_slice::<Value>(&b).ok());
+    let export_ok = exported.as_ref().is_some_and(|v| {
+        v["format"] == "Mod Update Arsenal Backup" && v["items"].as_u64().unwrap_or(0) >= 3
+    });
+    let pass = report["ok"] == true && export_ok;
+    report["ok"] = json!(pass);
+    report["exportDownloadVerified"] = json!(export_ok);
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
@@ -219,7 +284,7 @@ fn inject_catalog(app: &tauri::AppHandle, label: &str) -> Result<()> {
         if !m
             .tabs
             .iter()
-            .any(|t| t.label == label && t.mode == Mode::Dashboard)
+            .any(|t| t.label == label && t.mode == Mode::Dashboard && !t.loading)
         {
             return Ok(());
         }
@@ -255,9 +320,43 @@ fn inject_catalog(app: &tauri::AppHandle, label: &str) -> Result<()> {
             const c=qa?.getCatalog();
             const ok=!!(c?.offline && c.items?.length>=3 && document.getElementById('unifiedCommand')
                 && typeof window.modhunterImportCatalog==='function');
+            document.getElementById('backupBtn').click();
             window.location.href='modhunter-proof://result?ok='+(ok?'1':'0')+'&denied='+(denied?'1':'0')
                 +'&items='+(c?.items?.length||0)+'&profile='+encodeURIComponent(c?.profileName||'');
         })();"#).map_err(err)?;
+    }
+    Ok(())
+}
+
+fn invalidate_analysis(model: &mut Model) {
+    if let Some(catalog) = model.catalog.as_mut() {
+        let catalog = Arc::make_mut(catalog);
+        if let Some(object) = catalog.as_object_mut() {
+            object.remove("pluginAnalysis");
+        }
+        if let Some(items) = catalog.get_mut("items").and_then(Value::as_array_mut) {
+            for item in items {
+                if let Some(object) = item.as_object_mut() {
+                    object.remove("localAnalysis");
+                }
+            }
+        }
+    }
+}
+
+fn refresh_catalog_views(app: &tauri::AppHandle) -> Result<()> {
+    let labels = app
+        .state::<Runtime>()
+        .model
+        .lock()
+        .map_err(err)?
+        .tabs
+        .iter()
+        .filter(|t| t.mode == Mode::Dashboard)
+        .map(|t| t.label.clone())
+        .collect::<Vec<_>>();
+    for label in labels {
+        inject_catalog(app, &label)?;
     }
     Ok(())
 }
@@ -290,6 +389,7 @@ fn open_tab(app: &tauri::AppHandle, mode: Mode) -> Result<u64> {
     let nav_label = label.clone();
     let new_app = app.clone();
     let load_app = app.clone();
+    let download_app = app.clone();
     let builder = WebviewBuilder::new(&label, WebviewUrl::External(Url::parse(&url).map_err(err)?))
         .on_navigation(move |url| {
             if url.scheme() == "modhunter-proof" {
@@ -302,6 +402,7 @@ fn open_tab(app: &tauri::AppHandle, mode: Mode) -> Result<u64> {
                     return false;
                 };
                 policy::owned_page(url, m.endpoint.as_deref())
+                    || policy::export_blob(url, m.endpoint.as_deref())
             };
             if !allowed {
                 handle_external(&nav_app, url);
@@ -328,6 +429,72 @@ fn open_tab(app: &tauri::AppHandle, mode: Mode) -> Result<u64> {
                 handle_external(&new_app, &url);
             }
             NewWindowResponse::Deny
+        })
+        .on_download(move |_, event| match event {
+            DownloadEvent::Requested { url, destination } => {
+                let state = download_app.state::<Runtime>();
+                let endpoint = state
+                    .model
+                    .lock()
+                    .map(|m| m.endpoint.clone())
+                    .unwrap_or(None);
+                if !policy::export_blob(&url, endpoint.as_deref()) {
+                    return false;
+                }
+                let Some(name) = destination
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .and_then(policy::export_name)
+                else {
+                    return false;
+                };
+                let directory = if let Some(report) = &state.smoke_output {
+                    report
+                        .parent()
+                        .unwrap_or_else(|| std::path::Path::new("."))
+                        .to_path_buf()
+                } else {
+                    match download_app.path().download_dir() {
+                        Ok(p) => p,
+                        Err(e) => {
+                            alert(&download_app, e.to_string());
+                            return false;
+                        }
+                    }
+                };
+                if let Err(e) = std::fs::create_dir_all(&directory) {
+                    alert(&download_app, e.to_string());
+                    return false;
+                }
+                let stamp = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_nanos())
+                    .unwrap_or_default();
+                *destination = directory.join(format!("{stamp}-{name}"));
+                true
+            }
+            DownloadEvent::Finished { path, success, .. } => {
+                if success {
+                    if let Some(path) = path {
+                        if download_app.state::<Runtime>().smoke_output.is_some() {
+                            *download_app
+                                .state::<Runtime>()
+                                .smoke_export
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner()) = Some(path.clone());
+                            finish_smoke(&download_app);
+                        }
+                        alert(&download_app, format!("Export saved to {}", path.display()));
+                    }
+                } else {
+                    alert(
+                        &download_app,
+                        "Export could not be saved. Try again from the dashboard.",
+                    );
+                }
+                true
+            }
+            _ => false,
         })
         .on_page_load(move |view, payload| {
             let done = payload.event() == PageLoadEvent::Finished;
@@ -398,24 +565,49 @@ impl Drop for FlagGuard<'_> {
     }
 }
 
-fn import_profile(app: &tauri::AppHandle, refresh: bool) -> Result<Value> {
+struct ImportGuard<'a> {
+    state: &'a Runtime,
+    app: &'a tauri::AppHandle,
+}
+
+impl Drop for ImportGuard<'_> {
+    fn drop(&mut self) {
+        self.state.auditing.store(false, Ordering::Release);
+        self.state.importing.store(false, Ordering::Release);
+        notify(self.app);
+    }
+}
+
+fn import_profile(app: &tauri::AppHandle, refresh: bool, deep: bool) -> Result<Value> {
     let state = app.state::<Runtime>();
     if state.importing.swap(true, Ordering::AcqRel) {
-        return Err("A profile is already loading.".into());
+        return Err("A profile import or plugin audit is already running.".into());
     }
-    let guard = FlagGuard(&state.importing);
-    let (old, ini_path, mods_path, live) = {
+    state.auditing.store(deep, Ordering::Release);
+    let guard = ImportGuard { state: &state, app };
+    let (old, ini_path, mods_path, eslifier_data_paths, epoch) = {
         let m = state.model.lock().map_err(err)?;
+        if m.endpoint.is_some() {
+            return Err(if deep {
+                "For live MO2, use Plugin audit in the dashboard to inspect the current profile."
+                    .into()
+            } else {
+                "Unlink live MO2 before importing a local profile.".into()
+            });
+        }
         (
             m.prefs.profile.clone(),
             m.prefs.ini_path.clone(),
             m.prefs.mods_path.clone(),
-            m.endpoint.is_some(),
+            m.prefs
+                .eslifier_data_path
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>(),
+            state.epoch.fetch_add(1, Ordering::AcqRel) + 1,
         )
     };
-    if live {
-        return Err("Unlink live MO2 before importing a local profile.".into());
-    }
+    notify(app);
     let request = if refresh {
         let mut request = old.ok_or("Import a profile first.")?;
         request.ini_path = ini_path;
@@ -438,17 +630,15 @@ fn import_profile(app: &tauri::AppHandle, refresh: bool) -> Result<Value> {
             workers: None,
         }
     };
-    let epoch = state.epoch.fetch_add(1, Ordering::AcqRel) + 1;
-    notify(app);
-    let result = state.importer.import(&request).map_err(err);
-    drop(guard);
-    let result = match result {
-        Ok(r) => r,
-        Err(e) => {
-            notify(app);
-            return Err(e);
-        }
-    };
+    if state.epoch.load(Ordering::Acquire) != epoch {
+        return Err(
+            "Profile settings or connection changed; start the import or audit again.".into(),
+        );
+    }
+    let result = state
+        .importer
+        .import_with_analysis(&request, deep, &eslifier_data_paths)
+        .map_err(err)?;
     let count = result.catalog["items"].as_array().map_or(0, Vec::len);
     let profile = result.catalog["profileName"]
         .as_str()
@@ -456,8 +646,10 @@ fn import_profile(app: &tauri::AppHandle, refresh: bool) -> Result<Value> {
         .to_owned();
     let dashboard = {
         let mut m = state.model.lock().map_err(err)?;
-        if state.epoch.load(Ordering::Acquire) != epoch {
-            return Err("Connection changed while loading; the old result was discarded.".into());
+        if state.epoch.load(Ordering::Acquire) != epoch || m.endpoint.is_some() {
+            return Err(
+                "Profile settings or connection changed; the old result was discarded.".into(),
+            );
         }
         m.catalog = Some(Arc::new(result.catalog));
         m.stats = Some(serde_json::to_value(result.stats).map_err(err)?);
@@ -479,27 +671,30 @@ fn import_profile(app: &tauri::AppHandle, refresh: bool) -> Result<Value> {
         None => open_tab(app, Mode::Dashboard)?,
     };
     activate(app, id)?;
-    let labels = state
-        .model
-        .lock()
-        .map_err(err)?
-        .tabs
-        .iter()
-        .filter(|t| t.mode == Mode::Dashboard)
-        .map(|t| t.label.clone())
-        .collect::<Vec<_>>();
-    for label in labels {
-        inject_catalog(app, &label)?;
-    }
-    notify(app);
-    Ok(
-        json!({"ok": true, "count": count, "message": format!("Loaded {count} mods from {profile}."), "state": state.snapshot()}),
-    )
+    refresh_catalog_views(app)?;
+    // Return the settled state to the caller as well as notifying the toolbar.
+    drop(guard);
+    let message = if deep {
+        format!(
+            "Plugin audit finished for {profile}. Review each mod's plugin evidence in the dashboard."
+        )
+    } else {
+        format!("Loaded {count} mods from {profile}.")
+    };
+    Ok(json!({"ok": true, "count": count, "message": message, "state": state.snapshot()}))
 }
 
 fn connect(app: &tauri::AppHandle, endpoint: &str) -> Result<Value> {
     let state = app.state::<Runtime>();
     let epoch = state.epoch.fetch_add(1, Ordering::AcqRel) + 1;
+    connect_at_epoch(app, endpoint, epoch)
+}
+
+fn connect_at_epoch(app: &tauri::AppHandle, endpoint: &str, epoch: u64) -> Result<Value> {
+    let state = app.state::<Runtime>();
+    if state.epoch.load(Ordering::Acquire) != epoch {
+        return Err("A newer connection request replaced this one.".into());
+    }
     let health = state.client.probe(endpoint).map_err(err)?;
     {
         let mut m = state.model.lock().map_err(err)?;
@@ -573,7 +768,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
                 (m.prefs.endpoint.clone(), m.prefs.profile.is_some())
             };
             if restore.1 {
-                if let Err(e) = import_profile(app, true) {
+                if let Err(e) = import_profile(app, true, false) {
                     alert(app, e);
                 }
             }
@@ -618,8 +813,9 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
                 }
             }
         }
-        "importMo2" => return import_profile(app, false),
-        "refreshProfile" => return import_profile(app, true),
+        "importMo2" => return import_profile(app, false, false),
+        "refreshProfile" => return import_profile(app, true, false),
+        "pluginAudit" => return import_profile(app, true, true),
         "configureIni" => {
             let picked = app
                 .dialog()
@@ -628,8 +824,12 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
                 .add_filter("MO2 configuration", &["ini"])
                 .blocking_pick_file();
             if let Some(file) = picked {
-                state.model.lock().map_err(err)?.prefs.ini_path =
-                    Some(file.into_path().map_err(err)?);
+                let path = file.into_path().map_err(err)?;
+                {
+                    let mut m = state.model.lock().map_err(err)?;
+                    state.epoch.fetch_add(1, Ordering::AcqRel);
+                    m.prefs.ini_path = Some(path);
+                }
                 state.save()?;
                 alert(
                     app,
@@ -644,8 +844,12 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
                 .set_title("Choose the configured MO2 mods directory")
                 .blocking_pick_folder()
             {
-                state.model.lock().map_err(err)?.prefs.mods_path =
-                    Some(file.into_path().map_err(err)?);
+                let path = file.into_path().map_err(err)?;
+                {
+                    let mut m = state.model.lock().map_err(err)?;
+                    state.epoch.fetch_add(1, Ordering::AcqRel);
+                    m.prefs.mods_path = Some(path);
+                }
                 state.save()?;
                 alert(
                     app,
@@ -655,6 +859,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
         }
         "clearPaths" => {
             let mut m = state.model.lock().map_err(err)?;
+            state.epoch.fetch_add(1, Ordering::AcqRel);
             m.prefs.ini_path = None;
             m.prefs.mods_path = None;
             drop(m);
@@ -664,8 +869,59 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
                 "Using automatically detected instance paths on the next import.",
             );
         }
+        "configureEslifierData" => {
+            let picked = app
+                .dialog()
+                .file()
+                .set_title("Choose ESLifier_Data or ESLifier_FO4_Data beside ESLifier's executable")
+                .blocking_pick_folder();
+            if let Some(file) = picked {
+                let path = policy::eslifier_data_directory(&file.into_path().map_err(err)?)?;
+                let audit_now = state.set_eslifier_data_path(Some(path))?;
+                refresh_catalog_views(app)?;
+                notify(app);
+                if audit_now && !state.importing.load(Ordering::Acquire) {
+                    return import_profile(app, true, true);
+                }
+                alert(
+                    app,
+                    "ESLifier data folder saved for offline plugin audits. Live MO2 uses its own ESLifier configuration.",
+                );
+            }
+        }
+        "clearEslifierData" => {
+            let audit_now = state.set_eslifier_data_path(None)?;
+            refresh_catalog_views(app)?;
+            notify(app);
+            if audit_now && !state.importing.load(Ordering::Acquire) {
+                return import_profile(app, true, true);
+            }
+            alert(
+                app,
+                "ESLifier data folder cleared. Offline conversion history will be unknown until a data folder is selected.",
+            );
+        }
         "connect" => return connect(app, value.as_str().ok_or("Enter the MO2 loopback address")?),
         "probe" => return probe(app),
+        "discover" => {
+            let epoch = state.epoch.fetch_add(1, Ordering::AcqRel) + 1;
+            let directory = std::env::var_os("LOCALAPPDATA")
+                .map(PathBuf::from)
+                .ok_or("Windows LOCALAPPDATA directory is unavailable")?
+                .join("Modhunter")
+                .join("mo2-sessions");
+            let client =
+                BridgeClient::with_timeout(std::time::Duration::from_millis(800)).map_err(err)?;
+            let sessions = crate::discovery::discover(&directory, &client).map_err(err)?;
+            if state.epoch.load(Ordering::Acquire) != epoch {
+                return Err("A newer connection request replaced this discovery.".into());
+            }
+            match sessions.len() {
+                0 => return Err("No live Modhunter session found. Start MO2 and open Tools → Update Arsenal, then use Find MO2 again.".into()),
+                1 => return connect_at_epoch(app, &sessions[0].endpoint, epoch),
+                _ => return Ok(json!({"ok":true,"sessions":sessions,"message":"Multiple MO2 sessions found. Choose a profile address from the address field, then Connect."})),
+            }
+        }
         "disconnect" => {
             state.epoch.fetch_add(1, Ordering::AcqRel);
             let mut m = state.model.lock().map_err(err)?;
@@ -767,6 +1023,7 @@ pub fn run() {
                     prefs.ini_path = None;
                     prefs.mods_path = None;
                     prefs.endpoint = None;
+                    prefs.eslifier_data_path = None;
                 }
                 if let Some(path) = arg.strip_prefix("--smoke-output=") {
                     smoke_output = Some(PathBuf::from(path));
@@ -793,9 +1050,12 @@ pub fn run() {
                 prefs_path,
                 epoch: AtomicU64::new(0),
                 importing: AtomicBool::new(false),
+                auditing: AtomicBool::new(false),
                 probing: AtomicBool::new(false),
                 smoke_output,
                 smoke_sent: AtomicBool::new(false),
+                smoke_ui: Mutex::new(None),
+                smoke_export: Mutex::new(None),
             });
             let window = WindowBuilder::new(app, "main")
                 .title("Modhunter · Rust")

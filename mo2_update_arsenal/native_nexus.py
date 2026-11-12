@@ -116,14 +116,24 @@ class NativeNexusGateway:
             if not isinstance(data, dict):
                 data = dict(data)
             # The MO2 repository bridge returns the authoritative Nexus mod JSON.
-            # Never interpret an empty/error payload as proof of current versions.
-            if not data or not data.get("version"):
+            # Hidden/removed/under-moderation mods legitimately omit version and
+            # text. Preserve their explicit listing state for health reporting;
+            # the scanner still cannot call a missing version current.
+            known_status = str(data.get("status") or "").lower() in {
+                "published", "hidden", "removed", "wastebinned", "under_moderation",
+                "not_published", "publish_with_game", "not_found"}
+            if not data or not (data.get("version") or known_status or isinstance(data.get("available"), bool)):
                 request.finish({"ok": False, "error": "MO2 returned no usable Nexus version metadata"})
                 return
+            if ((data.get("mod_id") is not None and int(data["mod_id"]) != int(mod_id))
+                    or (data.get("domain_name") is not None and str(data["domain_name"]) != str(game))):
+                request.finish({"ok": False, "error": "MO2 Nexus metadata identity did not match the requested game and mod"})
+                return
             meta = {str(k): v for k, v in data.items() if k in
-                    {"version", "name", "status", "updated_timestamp", "latest_file_update"}}
+                    {"version", "name", "status", "available", "mod_id", "domain_name",
+                     "updated_timestamp", "updated_time", "latest_file_update"}}
             request.finish({"ok": True, "meta": meta, "transport": "mo2-native-nexus"})
-        except (TypeError, ValueError, RuntimeError) as exc:
+        except (TypeError, ValueError, OverflowError, RuntimeError) as exc:
             request.finish({"ok": False, "error": "Could not decode MO2 Nexus metadata: " + str(exc)[:160]})
 
     def _files(self, game, mod_id, ticket, data):

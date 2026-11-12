@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "generatedAt": "2026-11-12T09:17:11.732280Z",
+  "scope": {
+    "kind": "synthetic-python-rust-json-protocol",
+    "realMO2": false,
+    "nativeGUI": false,
+    "network": false,
+    "gameOrModInstallation": false,
+    "conversionOrSaveSafetyAssessed": false,
+    "disposableFixtures": true
+  },
+  "environment": {
+    "system": "Linux",
+    "architecture": "x86_64",
+    "python": "3.12.14",
+    "rustCliVersion": "Modhunter Rust engine 0.9.0"
+  },
+  "sourceHashes": {
+    "native/scripts/verify_plugin_bridge.py": "6377846899e9a75fe70c5dc036dc6319fb7a65528b933c310ba4101c9b50fd3c",
+    "mo2_update_arsenal/plugin_intelligence.py": "6eb6044de68b122f9fb0806a535f81611d602254a50ae722bb3035160fdc25b0",
+    "native/crates/modhunter-core/src/lib.rs": "be5de120567025febec67d0c0513974d2ce2184aef68961bb95272e3873fe70e",
+    "native/crates/modhunter-core/src/importer.rs": "ed8fdef63ed3f0e8ab94076505eb2ee010f97f208d02fa5f41e1fd37c8df47a6",
+    "native/crates/modhunter-core/src/plugin_analysis/mod.rs": "61c4bbd7ceaff505e5e826018018fa19c25116c80ceab1b162da0b88d012b2bc",
+    "native/crates/modhunter-core/src/plugin_analysis/records.rs": "3df185c6b4c9eb81ef9c176845c30e54f51f52fc59e39be4352f988cd5ae8542",
+    "native/crates/modhunter-core/src/plugin_analysis/provenance.rs": "20bd3f6fd3c33c2874e75319cd12764c3f74434cd372e14b7e9db341593dc160",
+    "native/crates/modhunter-core/src/bin/modhunter-cli.rs": "154552240de4f7dccc053114477589eb68ddb70b1c2677955e376a33bcf0ed52",
+    "native/Cargo.lock": "4b0168b1f526300bd6641a03a69fddc37d851a307645630a8700ce4123fbc1ea"
+  },
+  "rustCliSha256": "7cdb9653194203249e1d13b5c0a799ccf75e753543cfbef1662439b2e70744c8",
+  "checks": [
+    {
+      "name": "production_request_captures_owned_paths",
+      "passed": true
+    },
+    {
+      "name": "production_request_discovers_real_eslifier_setting",
+      "passed": true
+    },
+    {
+      "name": "initial_schema_profile_depth",
+      "passed": true
+    },
+    {
+      "name": "native_winner_path_crosses_json_boundary",
+      "passed": true
+    },
+    {
+      "name": "original_observes_light_override",
+      "passed": true
+    },
+    {
+      "name": "current_matches_recorded_original_and_output",
+      "passed": true
+    },
+    {
+      "name": "valid_record_counts_and_conditional_eligibility",
+      "passed": true
+    },
+    {
+      "name": "initial_audit_does_not_modify_mod_files",
+      "passed": true
+    },
+    {
+      "name": "staleness_test_preserves_installed_version",
+      "passed": true
+    },
+    {
+      "name": "changed_source_schema_profile_depth",
+      "passed": true
+    },
+    {
+      "name": "updated_original_uses_fresh_sha256",
+      "passed": true
+    },
+    {
+      "name": "changed_source_is_detected_from_recorded_hashes",
+      "passed": true
+    },
+    {
+      "name": "audit_preserves_updated_source_output_and_tool_records",
+      "passed": true
+    },
+    {
+      "name": "unknown_game_schema_profile_depth",
+      "passed": true
+    },
+    {
+      "name": "unknown_game_inert_header_and_fingerprint",
+      "passed": true
+    },
+    {
+      "name": "unknown_game_does_not_gain_eligibility_or_light_claim",
+      "passed": true
+    },
+    {
+      "name": "source_files_and_executable_stayed_unchanged",
+      "passed": true
+    }
+  ],
+  "observed": {
+    "originalCopies": 2,
+    "initialLightOverride": true,
+    "initialRecordedOutputState": "current",
+    "changedSourceState": "source-changed",
+    "installedVersionUnchanged": true,
+    "unknownGameHeaderBytes": 42,
+    "initialRunnerElapsedMs": 4.026,
+    "changedSourceRunnerElapsedMs": 3.828
+  },
+  "limitations": "Actual Python request capture and subprocess runner invoke the actual Rust parser on synthetic files. Organizer methods are fixture doubles. No native MO2, Windows GUI, Nexus, download, installation, game, conversion or save-safety claim is made. Timings are single fixture runs, not benchmarks."
+}

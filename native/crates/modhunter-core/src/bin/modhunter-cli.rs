@@ -1,6 +1,9 @@
-use modhunter_core::{BridgeClient, ImportRequest, ProfileImporter};
+use modhunter_core::{
+    BridgeClient, ImportRequest, PluginAuditRequest, ProfileImporter, audit_plugins,
+};
 use serde_json::json;
 use std::fs;
+use std::io::Read;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -52,10 +55,31 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 serde_json::to_string(&BridgeClient::new()?.probe(&endpoint)?)?
             );
         }
+        Some("audit-plugins") => {
+            let path = value(&args, "--request")?
+                .ok_or("audit-plugins requires --request PATH or --request - for stdin")?;
+            const REQUEST_LIMIT: u64 = 16 * 1024 * 1024;
+            let mut bytes = Vec::new();
+            if path == "-" {
+                std::io::stdin()
+                    .take(REQUEST_LIMIT + 1)
+                    .read_to_end(&mut bytes)?;
+            } else {
+                fs::File::open(path)?
+                    .take(REQUEST_LIMIT + 1)
+                    .read_to_end(&mut bytes)?;
+            }
+            if bytes.len() as u64 > REQUEST_LIMIT {
+                return Err("Plugin audit request exceeds the 16 MiB limit".into());
+            }
+            let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes);
+            let request: PluginAuditRequest = serde_json::from_slice(bytes)?;
+            println!("{}", serde_json::to_string(&audit_plugins(&request)?)?);
+        }
         Some("benchmark") => benchmark(&args)?,
         Some("--version") => println!("Modhunter Rust engine {}", env!("CARGO_PKG_VERSION")),
         None | Some("--help") | Some("help") => println!(
-            "Modhunter Rust engine\n\nimport --modlist PATH [--ini PATH] [--mods PATH] [--workers 1..32]\nprobe --endpoint http://127.0.0.1:PORT/\nbenchmark [--mods 2500] [--rounds 5] [--workers 8]\n\nImport is read-only. The live MO2 plugin remains responsible for downloads and FOMOD installation. Benchmark uses a generated fixture, not a user's MO2 installation."
+            "Modhunter Rust engine\n\nimport --modlist PATH [--ini PATH] [--mods PATH] [--workers 1..32]\nprobe --endpoint http://127.0.0.1:PORT/\naudit-plugins --request PATH|-\nbenchmark [--mods 2500] [--rounds 5] [--workers 8]\n\nImport and plugin audits are read-only. ESL eligibility is conditional; save, dependent-mod, asset and external-reference safety is not certified. The live MO2 plugin remains responsible for downloads and FOMOD installation. Benchmark uses a generated fixture, not a user's MO2 installation."
         ),
         Some(command) => {
             return Err(format!("Unknown command: {command}. Run modhunter-cli --help").into());

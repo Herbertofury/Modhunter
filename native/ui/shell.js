@@ -6,22 +6,31 @@
  const busy=new Set(),tabNodes=new Map();
  function message(text){clearTimeout(messageTimer);$('message').textContent=String(text||'');$('message').title=String(text||'');messageTimer=setTimeout(()=>{$('message').textContent=''},12000)}
  function render(next){
+  if(Number.isFinite(next.epoch)&&Number.isFinite(state.epoch)&&next.epoch<state.epoch)return;
   state=next;
-  const connected=!!state.connected,waiting=busy.has('connect')||!!state.importing;
+  const connected=!!state.connected,auditing=!!state.auditing||busy.has('pluginAudit'),waiting=auditing||busy.has('connect')||busy.has('discover')||!!state.importing;
   $('status').className='status'+(waiting?' busy':connected?' live':state.endpoint?' error':'');
-  $('sourceText').textContent=waiting?'Working in background…':connected?'LIVE MO2 · CONNECTED':state.endpoint?'MO2 DISCONNECTED':state.offlineProfile?state.offlineProfile+' · '+state.offlineModCount.toLocaleString()+' MODS':'OFFLINE PRACTICE';
+  $('sourceText').textContent=auditing?'Auditing plugins in background…':waiting?'Working in background…':connected?'LIVE MO2 · CONNECTED':state.endpoint?'MO2 DISCONNECTED':state.offlineProfile?state.offlineProfile+' · '+state.offlineModCount.toLocaleString()+' MODS':'OFFLINE PRACTICE';
   $('sourceText').title=state.connectionError||$('sourceText').textContent;
   $('connect').textContent=busy.has('connect')?'CONNECTING…':connected?'LINKED':'CONNECT';
   $('connect').disabled=busy.has('connect');
+  $('discover').disabled=busy.has('discover');
+  $('discover').textContent=busy.has('discover')?'FINDING…':'FIND MO2';
   $('importMo2').disabled=!!state.endpoint||!!state.importing||busy.has('importMo2')||busy.has('refreshProfile');
   $('refreshProfile').disabled=!!state.endpoint||!state.offlineProfile||!!state.importing||busy.has('importMo2')||busy.has('refreshProfile');
-  $('disconnect').disabled=!state.endpoint&&!busy.has('connect');
+  $('pluginAudit').disabled=!!state.importing||busy.has('pluginAudit')||busy.has('importMo2')||busy.has('refreshProfile')||(!state.endpoint&&!state.offlineProfile);
+  $('pluginAudit').textContent=auditing?'AUDITING…':'PLUGIN AUDIT';
+  $('pluginAudit').title=state.endpoint?'Use Plugin audit in the live MO2 dashboard for its active profile':'Read plugin records and check recorded ESLifier output for the imported profile';
+  for(const id of ['configureIni','configureMods','clearPaths','configureEslifierData'])$(id).disabled=!!state.importing||busy.has(id);
+  $('clearEslifierData').disabled=!state.eslifierDataPath||!!state.importing||busy.has('clearEslifierData');
+  $('disconnect').disabled=!state.endpoint&&!busy.has('connect')&&!busy.has('discover');
   if(state.endpoint&&document.activeElement!==$('endpoint'))$('endpoint').value=state.endpoint;
   const stats=state.stats;
-  $('metrics').textContent=connected&&Number.isFinite(state.latencyMs)?'MO2 link '+state.latencyMs.toFixed(1)+' ms · live updates':stats?stats.mods.toLocaleString()+' mods · '+stats.elapsedMs.toFixed(1)+' ms · '+stats.metadataCacheHits.toLocaleString()+' cached':'Ready · choose a profile or connect to MO2';
-  $('metrics').title=(state.warnings||[]).join('\n')||'Measured import and connection times from the Rust engine';
-  for(const [id,path] of [['configureIni',state.configPath],['configureMods',state.modsPath]]){
-   $(id).classList.toggle('selected',!!path);if(path)$(id).title=path;
+  const audit=state.pluginAnalysis,auditStats=audit?.stats;
+  $('metrics').textContent=connected&&Number.isFinite(state.latencyMs)?'MO2 link '+state.latencyMs.toFixed(1)+' ms · live updates':audit?.depth==='records'&&auditStats&&Number.isFinite(auditStats.elapsedMs)?'Plugin audit · '+auditStats.elapsedMs.toFixed(1)+' ms · '+(auditStats.winningPlugins||0).toLocaleString()+' winning plugins':stats?stats.mods.toLocaleString()+' mods · '+stats.elapsedMs.toFixed(1)+' ms · '+stats.metadataCacheHits.toLocaleString()+' cached':'Ready · choose a profile or connect to MO2';
+  $('metrics').title=(state.warnings||[]).join('\n')||(audit?.checkedAt?'Plugin evidence checked at '+audit.checkedAt:'Measured import and connection times from the Rust engine');
+  for(const [id,path,title] of [['configureIni',state.configPath,'Optional: select the instance configuration for separate MO2 data paths'],['configureMods',state.modsPath,'Optional: explicitly select the mods folder'],['configureEslifierData',state.eslifierDataPath,'Choose ESLifier_Data or ESLifier_FO4_Data for offline conversion history']]){
+   $(id).classList.toggle('selected',!!path);$(id).title=path||title;
   }
   const present=new Set(state.tabs.map(t=>t.id));
   for(const [id,node] of tabNodes)if(!present.has(id)){node.remove();tabNodes.delete(id)}
@@ -40,19 +49,21 @@
   }
  }
  async function command(kind,value){
-  const exclusive=['connect','importMo2','refreshProfile','configureIni','configureMods'].includes(kind);
+  const exclusive=['connect','discover','importMo2','refreshProfile','pluginAudit','configureIni','configureMods','configureEslifierData','clearEslifierData'].includes(kind);
   if(exclusive&&busy.has(kind))return null;
   if(exclusive){busy.add(kind);render(state)}
   try{
    const result=await api.core.invoke('shell_command',{kind,value:value??null});
    if(result?.state)render(result.state);
+   if(result?.sessions){$('mo2Sessions').replaceChildren();for(const session of result.sessions){const option=document.createElement('option');option.value=session.endpoint;option.label=session.profileName;$('mo2Sessions').append(option)}$('endpoint').focus()}
    if(result?.message)message(result.message);
    return result;
   }catch(error){message(String(error));return null}
   finally{if(exclusive){busy.delete(kind);render(state)}}
  }
- for(const [id,kind,value] of [['newDash','new','dashboard'],['newSiege','new','siege'],['newRealm','new','realm'],['back','back'],['forward','forward'],['reload','reload'],['open','external'],['copy','copy'],['disconnect','disconnect'],['importMo2','importMo2'],['refreshProfile','refreshProfile'],['configureIni','configureIni'],['configureMods','configureMods'],['clearPaths','clearPaths']])$(id).onclick=()=>command(kind,value);
+ for(const [id,kind,value] of [['newDash','new','dashboard'],['newSiege','new','siege'],['newRealm','new','realm'],['back','back'],['forward','forward'],['reload','reload'],['open','external'],['copy','copy'],['disconnect','disconnect'],['importMo2','importMo2'],['refreshProfile','refreshProfile'],['pluginAudit','pluginAudit'],['configureIni','configureIni'],['configureMods','configureMods'],['clearPaths','clearPaths'],['configureEslifierData','configureEslifierData'],['clearEslifierData','clearEslifierData']])$(id).onclick=()=>command(kind,value);
  $('connect').onclick=()=>command('connect',$('endpoint').value.trim());
+ $('discover').onclick=()=>command('discover');
  $('endpoint').addEventListener('keydown',event=>{if(event.key==='Enter')$('connect').click()});
  document.addEventListener('keydown',event=>{
   if(event.ctrlKey&&event.key.toLowerCase()==='r'){event.preventDefault();command('reload')}

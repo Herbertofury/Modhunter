@@ -1,0 +1,75 @@
+# Rust Desktop 0.9
+
+[Home](Home.md) / [Windows releases](https://github.com/Herbertofury/Modhunter/releases) / [Native build results](https://github.com/Herbertofury/Modhunter/actions/workflows/native-rust.yml)
+
+## What changed
+
+Modhunter now has a compiled Rust Windows desktop. Rust owns the window and tab lifecycle, file dialogs, background profile import, cached metadata parsing, local preferences, MO2 discovery, connection health, export destinations and plugin record/hash analysis. WebView2 renders the shared updater and all existing game modes. The shipped app does not run Electron or require Node.
+
+The presentation remains HTML/CSS/JavaScript. The Python/Qt plugin remains inside MO2 because it owns the organizer, authenticated Nexus interface, native download callbacks and interactive installer. This is a Rust desktop and engine with the existing supported MO2 adapter.
+
+## Install and connect
+
+1. Download **Modhunter-Rust-Windows.zip** from the linked release and extract it. Run **Modhunter.exe**. The NSIS installer is another option and bootstraps Microsoft Edge WebView2 when needed.
+2. For local inspection, click **Import MO2** and select the profile's `modlist.txt`. Portable instances are inferred. For separate configuration/data directories, first select **Instance INI**; **Mods path** provides an explicit override. **Auto paths** clears those overrides.
+3. Click **Refresh** after changing files. The toolbar reports measured import duration, metadata cache hits and warnings. Importing never changes the MO2 profile or installed mod files.
+4. To enable live updating, close MO2 and run **Install_MO2_Plugin.bat** from the portable package. Select the directory containing `ModOrganizer.exe`. The previous plugin is preserved in `ModhunterBackups`, outside MO2's plugin directory, and a failed replacement is rolled back.
+5. Start MO2 and open **Tools → Update Arsenal – Quest Board**. In the Rust app, click **Find MO2**. A single validated session connects; multiple sessions are offered for selection. Manual loopback URLs still work.
+6. Use the existing **Update now**, **Choose file**, background queue and **Install all ready** controls. MO2 supplies Nexus sign-in and its real FOMOD/replace dialogs. Network and disk analysis run in background workers. Native installer calls cross MO2's Qt queue; the dashboard stays responsive while MO2 owns its installer prompts.
+
+The MO2 plugin and Rust executable should come from the same release. Old plugins without protocol-1 health support receive an upgrade error. Session descriptors contain the local address/profile identity and process ID, never an API key or HTTP session secret. Discovery validates every candidate with the actual running service.
+
+## Plugin and source intelligence
+
+Use **Plugin audit** in the native toolbar for an imported offline profile, or **Analyze plugins** in the live dashboard. **ESLIFIER DATA** connects the converter's real data folder for offline checks; live MO2 recognizes ESLifier's official setting or offers **Connect ESLifier records** in the inspector. The matching MO2 package includes `bin/modhunter-cli.exe`; no Node process is needed for plugin analysis.
+
+[Per-mod intelligence](Mod-Intelligence.md) documents winning-copy state, conditional ESL candidates, stale conversion hashes, master/order issues, source availability and public bug-tab observations. Compact row summaries are supplemented by exact-row details on demand. The analyzer is read-only.
+
+## Progress and exports
+
+Read-only profile identifiers preserve the old Windows import identity scheme, so compatible exported progress still maps to the same profile and rows. WebView2 has its own browser storage; it does not automatically read Electron's private storage database. Export your backup in the earlier edition and import it in the new dashboard when moving runtimes. The live MO2 Chronicle remains plugin-owned.
+
+JSON backups, CSV reports and PowerShell exports save to Windows **Downloads** with unique filenames. The toolbar shows the full saved path. Downloads are limited to exports created by the current Modhunter page; ordinary source links open in the system browser.
+
+## Responsiveness and update reliability
+
+- Import workers are bounded and reused. Unchanged `meta.ini` files use cached parsing, while DLL locations are checked on every import. The engine reads metadata rather than traversing entire mod asset trees.
+- MO2 connection checks use a small `/api/health` response, bounded deadlines and a reused HTTP client. A failed health check marks the connection unavailable; read-only recovery reloads the current session without replaying update commands.
+- Large-list search is coalesced to animation frames. Cosmetic updates avoid rebuilding mod rows. Concurrent reads are shared, progress writes are serialized, and scan/queue polls do not pile up behind slow replies.
+- Profile changes carry epochs through browser reads, background scans and queued commands. Results from profile A cannot replace profile B, including A→B→A switches. A command that times out before execution is canceled; an operation already executing retains its duplicate guard until the native result arrives.
+- Metadata snapshots and exact-row indexes avoid copying an entire catalog for one download. Shared Nexus lookups and correct callback matching prevent duplicate work and stale response reuse.
+- Source links preserve meaningful forum query routes. Notes-only URLs remain advisory and cannot displace authoritative Nexus identity. Unknown games cannot silently become Skyrim Nexus URLs.
+
+## Measured import performance
+
+Five-sample medians on identical generated Linux metadata fixtures, with 8 Rust workers and the previous Node importer's 24 workers:
+
+| Import measurement | 2,500 mods: previous Node | 2,500 mods: Rust | 10,000 mods: previous Node | 10,000 mods: Rust |
+|---|---:|---:|---:|---:|
+| Fresh importer, full engine call | 286.40 ms | 59.45 ms | 1,075.33 ms | 297.39 ms |
+| Worker launch, import, serialize and exit | 360.91 ms | 93.42 ms | 1,167.68 ms | 481.96 ms |
+| Repeated import, persistent process | 261.45 ms | 42.10 ms | 979.68 ms | 213.43 ms |
+
+Fresh import-engine medians improved **4.82×** and **3.62×**, respectively. These measurements include the current fast plugin-inventory path. The generated fixtures contain no ESP payloads, so deep-audit speed, Windows GUI startup, real MO2/Nexus operations and download speed are not measured. OS filesystem caches were not forcibly evicted; “fresh” means an empty application cache. The comparison validates common metadata field by field and separately verifies Rust's corrected MO2 priority order. [Raw measurements, all samples, environment and source hashes](../native/evidence/import-comparison.json); [reproduction script](../scripts/benchmark_native_import.py).
+
+The earlier metadata-only comparison is retained as [historical evidence](../native/evidence/import-comparison-metadata-only.json). [Current local QoL verification](../native/evidence/qol-local-verification.md) separates executed checks from the pending Windows/MO2 gates.
+
+## Release verification
+
+The [Rust desktop and MO2 readiness workflow](https://github.com/Herbertofury/Modhunter/actions/workflows/native-rust.yml) runs separate gates:
+
+| Gate | What it demonstrates |
+|---|---|
+| Rust format, tests and Clippy | Parser/cache correctness, split paths and encodings, bridge validation, discovery and navigation/export policies |
+| Python and Node regressions | MO2 command/download/install lifecycle, scan epochs, source identities, frontend polling and rendering behavior, preserved legacy importer |
+| Actual Chromium | Built dashboard interactions, update actions, search responsiveness, profile changes, connection recovery and existing update workshop flows |
+| Actual Windows WebView2 | Compiled application launch, native toolbar IPC, three-mod profile import into the real dashboard, actual JSON backup download and rejection of native IPC from game content |
+| Actual MO2 2.5.2 fixture | Production plugin loading inside the official Windows organizer with a disposable test game/profile, real loopback API, refresh and Qt focus |
+
+CI uploads JSON receipts and browser proof alongside the portable app and NSIS installer. Inspect the linked run for the exact commit and outcome; a workflow definition is not proof that a particular run passed.
+
+The MO2 fixture has no Nexus credentials, commercial game assets or actual mod downloads. Real free/premium account behavior, provider availability, native FOMOD choices, long-running sessions and the user's in-game result still require that environment. The executable is not code-signed. No universal zero-defect or mod-compatibility claim is made.
+
+## Build
+
+See [native/README.md](../native/README.md) for pinned-toolchain build commands and CLI examples. The previous Electron source and historical archives remain available for preservation and comparison.

@@ -6,7 +6,7 @@
 
 **Repair your load order. Hunt your unfinished mods. Build a legend.**
 
-[![Edition](https://img.shields.io/badge/Edition-Atlas%200.8-cfa76d?style=for-the-badge&labelColor=182b30)](wiki/Atlas-Campaign.md)
+[![Edition](https://img.shields.io/badge/Edition-Rust%200.9-cfa76d?style=for-the-badge&labelColor=182b30)](wiki/Rust-Desktop.md)
 [![MO2](https://img.shields.io/badge/MO2-Optional%20Live%20Link-78cfab?style=for-the-badge&labelColor=182b30)](wiki/MO2-Plugin.md)
 [![Modes](https://img.shields.io/badge/Modes-Siege%20%7C%20Survival%20%7C%20Atlas-9bb8f0?style=for-the-badge&labelColor=182b30)](wiki/Game-Modes.md)
 
@@ -14,11 +14,30 @@
 
 ---
 
+## Rust desktop 0.9
+
+The new Windows app runs its desktop shell, profile import/cache engine, connection discovery and native file operations in **Rust**, with WebView2 displaying the complete existing dashboard and games. Running the compiled app requires no Node or Electron. The Python plugin remains MO2's in-process adapter for authenticated Nexus requests and its native download/installer API.
+
+**[Windows releases](https://github.com/Herbertofury/Modhunter/releases)** · **[Install and use the Rust app](wiki/Rust-Desktop.md)** · **[Build and test results](https://github.com/Herbertofury/Modhunter/actions/workflows/native-rust.yml)**
+
+- **Find MO2** discovers running plugin sessions and validates their protocol and profile before connecting. A lightweight health request replaces full-dashboard connection probing.
+- Parallel, cached imports support portable and split-path MO2 configurations. In reproducible Linux fixtures, importing 2,500 mods took a median **59.45 ms** in Rust versus **286.40 ms** in the previous Node importer; 10,000 mods took **297.39 ms** versus **1,075.33 ms**. These include the new fast plugin-inventory path on generated metadata fixtures without ESP payloads; they are not deep-audit, Windows GUI startup or Nexus download timings. [Raw measurements and method](native/evidence/import-comparison.json).
+- Profile changes invalidate stale scans and delayed UI replies. Expired queued commands cannot execute later. Requests share exact file lookups, metadata caches and connection resources, while search and background polling avoid redundant work.
+- Windows CI builds the executable and installer and launches the actual WebView2 app; separate browser and MO2 fixture checks enforce their own contracts. Real account downloads, FOMOD decisions and a user's game setup remain environment-specific acceptance checks.
+
+## Per-mod ESL, conversion and source checks
+
+The checklist and Update Workshop now show **actual winning light/full plugin state**, **ESLifier changes**, **missing/inactive/late masters**, and **checked Nexus bug-tab evidence** on the mod row. The inspector adds plugin copies, timestamps, fresh hash comparisons and next steps. The Mod health filter and CSV/update-plan exports carry these facts too. [Full guide](wiki/Mod-Intelligence.md).
+
+Rust performs bounded TES4 record/ID inspection and fresh SHA-256 analysis. Live MO2 supplies the authoritative winning paths and load order. ESLifier's official MO2 setting is recognized, with native folder selection as a fallback. After profile/mod/plugin changes, the background audit invalidates old results and rechecks configured conversions. A changed original beneath an older converted output is visible on both relevant rows.
+
+**Flag-only candidate**, **compaction review**, **blocked**, **already light** and **unknown** stay distinct. A conversion check establishes consistency of the scanned plugin bytes, not universal save, script, asset or dependency safety. Public bug checks retain the actual displayed count and separate zero, unavailable, unobserved and explicitly restricted tab states; no author action is inferred from a missing tab. Detailed reports load for the inspected row, keeping the main catalog compact.
+
 ## One Modhunter. Everything combined.
 
-**[Download Modhunter EVERYTHING Combined]( https://drive.google.com/file/d/1UZzjHQQX3hceSWcJWFX2yygH6htzXqHE/view)** includes the current working editions, source, documentation and all 36 authentic historical outputs. Alternatively, **[Download the complete Modhunter All-in-One.zip](dist/Modhunter-All-in-One.zip)**. One extracted folder contains a runnable standalone HTML, an Electron desktop edition, the optional MO2 updater plugin, all game modes, full source, and the Wiki. **Mod updating remains the primary purpose:** the same interface includes Questbound achievements, AetherFX, Shiverfell/Mythforge survival, Modhunter Siege and Atlas. No historical feature is replaced or removed, and all [36 original release outputs](wiki/Original-Releases-and-Output-Audit.md) remain separately preserved.
+The **[earlier EVERYTHING Combined archive](https://drive.google.com/file/d/1UZzjHQQX3hceSWcJWFX2yygH6htzXqHE/view)** and **[legacy All-in-One.zip](dist/Modhunter-All-in-One.zip)** preserve the Electron edition, standalone HTML, optional MO2 plugin, all game modes, source and Wiki from the previous release series. The Rust release is distributed separately through the Windows releases above. **Mod updating remains the primary purpose:** the shared interface includes Questbound achievements, AetherFX, Shiverfell/Mythforge survival, Modhunter Siege and Atlas. All [36 original release outputs](wiki/Original-Releases-and-Output-Audit.md) remain separately preserved.
 
-The **[Unified Command Center guide](wiki/Unified-Modhunter.md)** documents all three independent entry points and the updater-first workflow for **MO2 2.5.x, including 2.5.3 as a target**. Native Windows 2.5.3 integration testing is still required; a successful source build is not an installation guarantee.
+The **[Unified Command Center guide](wiki/Unified-Modhunter.md)** documents the independent entry points and updater-first workflow. The new native MO2 smoke workflow targets the official **MO2 2.5.2** portable release. Earlier references to 2.5.3 describe a compatibility target, not a verified release.
 
 ## Visual direction and quality contract
 
@@ -28,7 +47,7 @@ The **[Unified Command Center guide](wiki/Unified-Modhunter.md)** documents all 
 
 | Component | What it does | Needs another component? |
 |---|---|---|
-| **Desktop App** | Real Chromium tabs, **Import MO2 Profile** (reads actual `modlist.txt` and installed metadata without the plugin), optional live MO2 updating | **No.** Native read-only import and offline games work alone; Electron/Node starts the source package |
+| **Rust Desktop App** | Native WebView2 tabs, **Import MO2** reads `modlist.txt` and metadata without the plugin, **Find MO2** connects live sessions | **No.** Compiled Windows app runs independently; the installer supplies WebView2 if missing |
 | **Standalone HTML** | Full mod update dashboard + both games in a single portable file | **No.** Open locally in a modern browser. Progress and rewards are **practice only** without live MO2 |
 | **MO2 Plugin** | Reads current profile, verifies updates, queues Nexus downloads, opens standard MO2 installer, exact row navigation, official Forge Sigil and boss-bounty economy | **No.** Runs in MO2 and serves its own browser dashboard |
 
@@ -41,10 +60,10 @@ All **36 authentic files across v0.1–v0.8** are preserved unchanged in the **[
 ## Start here
 
 1. **Just play:** download [`web/Modhunter.html`](web/Modhunter.html), open it, and click **Modhunter Siege** or **Survival Realm**. This always works in offline practice.
-2. **Use MO2:** download the [`dist/Modhunter-MO2-Plugin.zip`](dist/Modhunter-MO2-Plugin.zip), unzip it and run `Install_to_MO2.bat`; restart MO2 and open **Tools → Update Arsenal - Quest Board**.
-3. **Use the desktop app:** download [`dist/Modhunter-Desktop-Source.zip`](dist/Modhunter-Desktop-Source.zip), install Node.js, run `Run_ModHunter.bat` in `desktop/`. Click **⌁ Import MO2** and select `profiles/<name>/modlist.txt` for an actual read-only profile without the plugin. Paste a plugin loopback URL into **Connect** only when you want native update actions.
+2. **Use the Rust desktop:** download **Modhunter-Rust-Windows.zip** from [Windows releases](https://github.com/Herbertofury/Modhunter/releases), extract it and run `Modhunter.exe`, or use the NSIS installer. Click **Import MO2** and select `profiles/<name>/modlist.txt` for a read-only local snapshot. **Instance INI** and **Mods path** support custom layouts.
+3. **Connect live MO2:** close MO2, run the portable package's `Install_MO2_Plugin.bat`, and select the directory containing `ModOrganizer.exe`. Restart MO2, open **Tools → Update Arsenal - Quest Board**, then click **Find MO2** in Modhunter. The prior plugin is backed up outside MO2's plugin search directory.
 
-> **Current stage:** v0.8 development build. Browser gameplay, Python/HTTP unit tests, and the standalone desktop-import Node test suite are covered by automated checks. A prebuilt Windows executable and native Windows MO2 integration have **not** been verified in this environment. The content catalogue describes 480 campaign clear conditions, not 80 hours of independently playtested authored content.
+> **Evidence:** see [Rust Desktop](wiki/Rust-Desktop.md) for the exact native, browser, lifecycle and performance gates. The content catalogue describes 480 campaign clear conditions, not 80 hours of independently playtested authored content. An automated fixture does not prove account-specific Nexus downloads or compatibility of a particular mod list.
 
 ## SSS Update Workshop: exact-file guidance and effortless review
 
@@ -78,9 +97,10 @@ The new **[Update Workshop](wiki/Update-Workshop.md)** ([source coverage](wiki/U
 
 | Source | Description |
 |---|---|
+| [`native/`](native/) | Rust desktop, profile/cache engine, CLI, Windows packaging and native smoke tests |
 | [`mo2_update_arsenal/`](mo2_update_arsenal/) | MO2 tool plugin, local API, Nexus scanner, identity and rewards |
 | [`mo2_update_arsenal/web/`](mo2_update_arsenal/web/) | Editable HTML, CSS and JavaScript game engines |
-| [`desktop/`](desktop/) | Native Chromium-tabbed Electron app source and install script |
+| [`desktop/`](desktop/) | Preserved earlier Electron source and comparison importer |
 | [`wiki/`](wiki/) | Full Wiki source, styled navigation, screenshots, guides and architecture |
 | [`tests/`](tests/) | Python and real Chromium interaction/visual test suite |
 | [`dist/`](dist/) | Portable HTML and complete release packages |

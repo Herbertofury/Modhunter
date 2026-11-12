@@ -1,4 +1,5 @@
 use crate::ini::{Ini, decode_text};
+use crate::plugin_analysis::{PluginAnalyzer, PluginAuditRequest, PluginMod};
 use crate::{CoreError, io_error};
 use chrono::{SecondsFormat, Utc};
 use rayon::prelude::*;
@@ -42,6 +43,8 @@ pub struct ImportStats {
     pub workers: usize,
     pub mods: usize,
     pub foreign_mods: usize,
+    pub plugin_copies: usize,
+    pub plugin_header_cache_hits: usize,
     pub warnings: usize,
 }
 
@@ -86,6 +89,7 @@ struct CachedMeta {
 pub struct ProfileImporter {
     cache: Mutex<HashMap<PathBuf, CachedMeta>>,
     pools: Mutex<HashMap<usize, Arc<rayon::ThreadPool>>>,
+    plugins: PluginAnalyzer,
 }
 
 #[derive(Debug, Clone)]
@@ -108,9 +112,21 @@ impl ProfileImporter {
 
     pub fn clear_cache(&self) {
         self.cache.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        self.plugins.clear_cache();
     }
 
     pub fn import(&self, request: &ImportRequest) -> Result<ImportResult, CoreError> {
+        self.import_with_analysis(request, false, &[])
+    }
+
+    /// Explicit deep audits freshly hash plugin bytes. Ordinary imports retain
+    /// the cheap, cached header-only path and make no conversion safety claim.
+    pub fn import_with_analysis(
+        &self,
+        request: &ImportRequest,
+        deep: bool,
+        eslifier_data_paths: &[PathBuf],
+    ) -> Result<ImportResult, CoreError> {
         let started = Instant::now();
         let workers = request.workers.unwrap_or_else(|| {
             std::thread::available_parallelism()
@@ -369,13 +385,96 @@ impl ProfileImporter {
         {
             groups.remove(0);
         }
+        let plugin_mods = items
+            .iter()
+            .filter_map(|item| {
+                if item["foreign"] == true {
+                    return None;
+                }
+                let name = item["mo2InternalName"].as_str()?;
+                let actual = dirs.get(&name.to_lowercase())?;
+                Some(PluginMod {
+                    id: item["id"].as_str()?.into(),
+                    name: name.into(),
+                    path: mods_dir.join(actual),
+                    enabled: item["enabled"].as_bool().unwrap_or(false),
+                    priority: item["priority"].as_i64().unwrap_or(0),
+                    installed_version: item["installedVersion"].as_str().map(str::to_owned),
+                })
+            })
+            .collect();
+        let overwrite = configured_path(
+            settings
+                .get("settings", "overwrite_directory")
+                .filter(|s| !s.is_empty())
+                .unwrap_or("%BASE_DIR%/overwrite"),
+            &base_dir,
+            instance_dir,
+        )?;
+        let overwrite_path = optional_analysis_path(overwrite);
+        let game_data_path = settings
+            .get("general", "gamepath")
+            .filter(|s| !s.is_empty())
+            .and_then(|raw| match configured_path(raw, &base_dir, instance_dir) {
+                Ok(path) => optional_analysis_path(path.join("Data")),
+                Err(error) => {
+                    warnings.push(format!(
+                        "Game Data path could not be resolved for plugin analysis: {error}"
+                    ));
+                    None
+                }
+            });
+        let plugins_path = profile_dir.join("plugins.txt");
+        let loadorder_path = profile_dir.join("loadorder.txt");
+        let analysis = self.plugins.audit(&PluginAuditRequest {
+            game: game.clone(),
+            game_runtime: Some(runtime.into()),
+            profile_id: Some(profile_id.clone()),
+            profile_name: Some(profile_name.clone()),
+            mods: plugin_mods,
+            plugins_path: optional_analysis_path(plugins_path),
+            loadorder_path: optional_analysis_path(loadorder_path),
+            overwrite_path,
+            game_data_path,
+            plugin_states: None,
+            eslifier_data_paths: eslifier_data_paths.to_vec(),
+            deep,
+            workers: Some(workers),
+        })?;
+        stats.files_read += analysis.stats.files_read;
+        stats.bytes_read += analysis.stats.bytes_read as usize;
+        stats.directories_read += analysis.stats.directories_read;
+        stats.plugin_copies = analysis.stats.plugin_copies;
+        stats.plugin_header_cache_hits = analysis.stats.header_cache_hits;
+        warnings.extend(analysis.warnings.iter().cloned());
+        for item in &mut items {
+            let id = item["id"].as_str().unwrap_or_default();
+            let row_scanned = analysis.mods.contains_key(id);
+            item["localAnalysis"] = if let Some(audit) = analysis.mods.get(id) {
+                serde_json::to_value(audit)?
+            } else {
+                json!({"status":"unknown","plugins":[],"warnings":["This row has no directly owned plugin folder available for analysis."]})
+            };
+            item["localAnalysis"]["depth"] = json!(analysis.depth);
+            item["localAnalysis"]["inventoryComplete"] =
+                json!(row_scanned && analysis.inventory_complete);
+            item["localAnalysis"]["checkedAt"] = if deep {
+                json!(analysis.checked_at)
+            } else {
+                Value::Null
+            };
+        }
+        let plugin_analysis = json!({
+            "schemaVersion":analysis.schema_version,"profileId":analysis.profile_id,"checkedAt":analysis.checked_at,
+            "depth":analysis.depth,"inventoryComplete":analysis.inventory_complete,"activationSource":analysis.activation_source,
+            "plugins":analysis.plugins,"stats":analysis.stats,"warnings":analysis.warnings,
+        });
         let verified_links = items
             .iter()
             .filter(|i| i["source"]["verified"] == true)
             .count();
         stats.mods = items.len();
         stats.warnings = warnings.len();
-        stats.elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
         let stamp = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
         let catalog = json!({
             "schemaVersion":2,"catalogId":format!("offline-mo2-{profile_id}"),"profileId":profile_id,
@@ -383,9 +482,11 @@ impl ProfileImporter {
             "title":format!("Imported MO2 / {profile_name}"),"generatedAt":stamp,
             "build":{"count":items.len(),"groups":groups.len(),"verifiedLinks":verified_links,"unresolvedLinks":items.len()-verified_links},
             "groups":groups,"items":items,
+            "pluginAnalysis":plugin_analysis,
             "sources":[{"kind":"offline-modlist","name":"User-selected MO2 profile · Rust engine","timestamp":stamp}],
             "offline":true,"importedAt":stamp
         });
+        stats.elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
         Ok(ImportResult {
             catalog,
             stats,
@@ -472,11 +573,13 @@ impl ProfileImporter {
             .find(|s| s.starts_with("https://"))
             .map(|s| s.trim_matches(|c| "<>\"')]".contains(c)))
             .unwrap_or("");
-        let source = if e.foreign {
+        let authoritative_nexus = mod_id > 0 && effective_game != "unknown";
+        let notes_advisory = custom_url.is_empty() && !authoritative_nexus && !notes_url.is_empty();
+        let mut source = if e.foreign {
             unknown_source("Foreign / game-managed entry")
         } else {
             source_for(
-                if custom_url.is_empty() {
+                if notes_advisory {
                     notes_url
                 } else {
                     custom_url
@@ -485,6 +588,13 @@ impl ProfileImporter {
                 effective_game,
             )
         };
+        if notes_advisory && !e.foreign && source["verified"] == true {
+            // Notes frequently link dependencies or troubleshooting pages. Such
+            // links remain useful to inspect but do not establish mod identity.
+            source["verified"] = json!(false);
+            source["kind"] = json!("advisory");
+            source["label"] = json!("Unverified link from MO2 notes");
+        }
         let version = match meta.general("version") {
             "" => "?",
             s => s,
@@ -606,6 +716,14 @@ fn configured_path(raw: &str, base: &Path, instance: &Path) -> Result<PathBuf, C
     } else {
         instance.join(path)
     })
+}
+
+fn optional_analysis_path(path: PathBuf) -> Option<PathBuf> {
+    match fs::symlink_metadata(&path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        // Other errors go to the analyzer, where they become explicit warnings.
+        _ => Some(path),
+    }
 }
 
 fn read_bounded(path: &Path, limit: usize) -> Result<Vec<u8>, CoreError> {
@@ -856,7 +974,7 @@ fn source_for(raw: &str, mod_id: u64, game: &str) -> Value {
             && url.password().is_none()
             && url.port().is_none()
         {
-            url.set_query(None);
+            sanitize_source_query(&mut url);
             url.set_fragment(None);
             let host = url
                 .host_str()
@@ -887,6 +1005,59 @@ fn source_for(raw: &str, mod_id: u64, game: &str) -> Value {
     } else {
         unknown_source("Source unlinked")
     }
+}
+
+fn sanitize_source_query(url: &mut Url) {
+    let Some(query) = url.query() else {
+        return;
+    };
+    // Preserve raw surviving components. Re-encoding all pairs changes forum
+    // route queries such as index.php?/topic/123/ into a different destination.
+    let kept = query
+        .split('&')
+        .filter(|component| {
+            let key = url::form_urlencoded::parse(component.as_bytes())
+                .next()
+                .map(|(key, _)| key.to_ascii_lowercase())
+                .unwrap_or_default();
+            !key.starts_with("utm_")
+                && !key.starts_with("x-amz-")
+                && !key.starts_with("x-goog-")
+                && !key.starts_with("__cf_chl_")
+                && !matches!(
+                    key.as_str(),
+                    "token"
+                        | "access_token"
+                        | "refresh_token"
+                        | "id_token"
+                        | "apikey"
+                        | "api_key"
+                        | "api-key"
+                        | "key"
+                        | "auth"
+                        | "authorization"
+                        | "password"
+                        | "passwd"
+                        | "secret"
+                        | "client_secret"
+                        | "session"
+                        | "sessionid"
+                        | "session_id"
+                        | "sid"
+                        | "signature"
+                        | "sig"
+                        | "fbclid"
+                        | "gclid"
+                        | "dclid"
+                        | "msclkid"
+                        | "igshid"
+                        | "ref_src"
+                        | "ref_url"
+                )
+        })
+        .collect::<Vec<_>>()
+        .join("&");
+    url.set_query(if kept.is_empty() { None } else { Some(&kept) });
 }
 
 #[cfg(test)]

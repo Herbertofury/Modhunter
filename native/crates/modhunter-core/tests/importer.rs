@@ -262,6 +262,42 @@ fn an_explicit_unknown_mod_game_never_falls_back_to_profile_nexus_identity() {
 }
 
 #[test]
+fn meaningful_custom_source_queries_survive_credential_and_tracking_redaction() {
+    let f = Fixture::new("+Forum\n+File\n");
+    f.add("Forum", "[General]\nhasCustomURL=true\nurl=https://www.loverslab.com/index.php?/topic/123-exact-mod/&utm_source=test&%74oken=SECRET\n");
+    f.add("File", "[General]\nhasCustomURL=true\nurl=https://example.com/download.php?id=123&edition=se&api_key=SECRET&gclid=TRACKING\n");
+    let result = ProfileImporter::new().import(&f.request()).unwrap();
+    assert_eq!(
+        item(&result.catalog, "Forum")["source"]["url"],
+        "https://www.loverslab.com/index.php?/topic/123-exact-mod/"
+    );
+    assert_eq!(
+        item(&result.catalog, "File")["source"]["url"],
+        "https://example.com/download.php?id=123&edition=se"
+    );
+    assert!(!result.catalog.to_string().contains("SECRET"));
+}
+
+#[test]
+fn notes_links_cannot_override_authoritative_nexus_identity() {
+    let f = Fixture::new("+Native\n+Advisory\n");
+    f.add("Native", "[General]\nhasCustomURL=false\nurl=https://example.com/stale\nmodid=44\nnotes=Requires https://github.com/dependency/other-mod\n");
+    f.add(
+        "Advisory",
+        "[General]\nhasCustomURL=false\nnotes=See https://example.com/troubleshooting?id=4\n",
+    );
+    let result = ProfileImporter::new().import(&f.request()).unwrap();
+    assert_eq!(
+        item(&result.catalog, "Native")["source"]["url"],
+        "https://www.nexusmods.com/skyrimspecialedition/mods/44?tab=files"
+    );
+    let advisory = &item(&result.catalog, "Advisory")["source"];
+    assert_eq!(advisory["url"], "https://example.com/troubleshooting?id=4");
+    assert_eq!(advisory["verified"], false);
+    assert_eq!(advisory["kind"], "advisory");
+}
+
+#[test]
 fn no_arbitrary_names_or_secret_urls_are_imported() {
     let f = Fixture::new("+Valid\n+../evil\n+C:\\private\n+Valid\n");
     f.add("Valid", "[General]\nurl=https://127.0.0.1/private\n");

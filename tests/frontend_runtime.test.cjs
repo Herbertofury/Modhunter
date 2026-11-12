@@ -9,6 +9,7 @@ const path=require('node:path');
 const vm=require('node:vm');
 const {test}=require('node:test');
 const APP=fs.readFileSync(path.join(__dirname,'../mo2_update_arsenal/web/app.js'),'utf8');
+const INSIGHTS=fs.readFileSync(path.join(__dirname,'../mo2_update_arsenal/web/mod_insights.js'),'utf8');
 
 function catalog(profile='a',count=3){
  return {profileId:profile,catalogId:profile,profileName:profile,game:'skyrimspecialedition',gameRuntime:'1.5.97',
@@ -57,6 +58,12 @@ function harness({live=true,failSnapshots=0,count=3}={}){
    else if(endpoint==='progress')value={ok:true,profileId:c.profileId,progress:{rows:{},prefs:{}}};
    else if(endpoint==='downloads')value={ok:true,profileId:c.profileId,downloads:{}};
    else if(endpoint==='activity')value={ok:true,profileId:c.profileId,records:[]};
+   else if(endpoint==='plugin-audit')value={ok:true,profileId:c.profileId,state:'running',depth:'records'};
+   else if(endpoint==='mod-health'||endpoint.startsWith('mod-health?')){
+    const id=body.itemId||new URL('http://fixture/'+endpoint).searchParams.get('itemId');
+    const item=c.items.find(m=>m.id===id);
+    value={ok:true,profileId:c.profileId,itemId:id,health:state.health||{schema:1,provider:'nexus',bugs:{state:'available',displayedCount:0,checkedAt:1800000000},page:{status:'available'},job:{state:'completed'}},localAnalysis:item?.localAnalysis||null};
+   }
    else if(endpoint==='update-plan')value={ok:true,profileId:c.profileId,profileName:c.profileName,summary:{candidates:c.items.length,total:c.items.length,review:0,manual:0,current:0,risky:0},items:c.items.map(m=>({...m,lane:'candidate',latestVersion:'2.0',risks:[]}))};
    else if(endpoint==='scan'){
     if(method==='POST'){state.scan={state:'running',mode:body.mode,total:c.items.length};value={ok:true,profileId:c.profileId,state:'running'}}
@@ -67,9 +74,9 @@ function harness({live=true,failSnapshots=0,count=3}={}){
    return{ok:true,json:async()=>value};
   }finally{active.set(key,active.get(key)-1)}
  };
- const instrument='window.__RUNTIME__={bridgeRequest,scanLive,fastUpdateAll,refreshWorkshop,pollLiveBridge,updatePrefs,save,counts,filtered,render,importOfflineCatalog,scheduleSearchRender,state:()=>({connected:LIVE_CONNECTED,quick:QUICK_RUNNING,profileEpoch:PROFILE_EPOCH}),setRow:(id,value)=>{STORE.rows[id]=value;save()},setQuery:q=>{STORE.prefs.query=q;scheduleSearchRender()}};';
+ const instrument='window.__RUNTIME__={getSrc,bridgeRequest,scanLive,fastUpdateAll,refreshWorkshop,pollLiveBridge,updatePrefs,save,counts,filtered,render,importOfflineCatalog,scheduleSearchRender,analyzePlugins,refreshModHealth,drawInspector,loadModInsights,state:()=>({connected:LIVE_CONNECTED,quick:QUICK_RUNNING,profileEpoch:PROFILE_EPOCH}),setRow:(id,value)=>{STORE.rows[id]=value;save()},setQuery:q=>{STORE.prefs.query=q;scheduleSearchRender()}};';
  const source=APP.replace('/*__POWERSHELL__*/','""').replace(/\}\)\(\);\s*$/,instrument+'\n})();');
- vm.createContext(context);vm.runInContext(source,context,{filename:'app.js'});
+ vm.createContext(context);vm.runInContext(INSIGHTS,context,{filename:'mod_insights.js'});vm.runInContext(source,context,{filename:'app.js'});
  return{context,state,nodes,timers,calls,active,maximum,pending,api:context.__RUNTIME__,qa:context.__ARSENAL_QA__,
   release(key){state.defer.delete(key);for(const resolve of pending.get(key)||[])resolve();pending.delete(key)},
   async settle(){for(let i=0;i<6;i++)await new Promise(resolve=>setImmediate(resolve))},
@@ -125,4 +132,51 @@ test('cosmetic settings leave catalog DOM intact; large searches keep all record
  assert.equal([...h.timers.values()].filter(t=>t.ms==='frame').length,1);await h.tick('frame');
  assert.equal(h.api.filtered().length,1);assert.equal(h.qa.getCatalog().items.length,2500);
  assert.equal(h.nodes.get('modList').writes,writes+1);
+});
+
+test('an explicit unknown or foreign game never becomes a fabricated active-game Nexus link',async()=>{
+ const h=harness({live:false});await h.settle();
+ const data=catalog('imported');data.offline=true;
+ Object.assign(data.items[0],{sourceGame:'unknown',updateEligible:false,source:{type:'unknown',verified:false,url:''}});
+ Object.assign(data.items[1],{sourceGame:'fallout4',updateEligible:false,source:{type:'nexus',verified:true,url:'https://www.nexusmods.com/fallout4/mods/2'}});
+ Object.assign(data.items[2],{sourceGame:'unknown',updateEligible:false,source:{type:'loverslab',verified:false,url:'https://www.loverslab.com/index.php?/topic/123-fixture/'}});
+ h.api.importOfflineCatalog(data);
+ const [unknown,other,advisory]=h.qa.getCatalog().items.map(h.api.getSrc);
+ assert.equal(unknown.verified,false);assert.match(unknown.url,/google\.com\/search/);assert.ok(!decodeURIComponent(unknown.url).includes('site:nexusmods.com/skyrimspecialedition'));
+ assert.equal(other.url,'https://www.nexusmods.com/fallout4/mods/2');assert.equal(other.verified,true);
+ assert.equal(advisory.url,'https://www.loverslab.com/index.php?/topic/123-fixture/');assert.equal(advisory.verified,false);
+});
+
+test('health updates preserve unsaved inspector notes and show observed zero on the actual row',async()=>{
+ const h=harness();await h.settle();h.state.defer.add('POST mod-health');
+ h.api.drawInspector(h.qa.getCatalog().items[0]);await h.settle();
+ h.context.document.getElementById('drawerNote').value='Keep these unsaved install choices';
+ h.release('POST mod-health');await h.settle();
+ assert.equal(h.nodes.get('drawerNote').value,'Keep these unsaved install choices');
+ assert.match(h.nodes.get('modInsightDetails').innerHTML,/Bugs 0/);
+ assert.match(h.nodes.get('modList').innerHTML,/Bugs 0/);
+ assert.match(h.nodes.get('workshopResults').innerHTML,/Bugs 0/);
+});
+test('a late audit response cannot attach to a later A -> B -> A profile epoch',async()=>{
+ const h=harness();await h.settle();h.state.defer.add('POST plugin-audit');
+ const pending=h.api.analyzePlugins();await h.settle();
+ h.state.catalog=catalog('b');await h.qa.setCatalog(h.state.catalog);
+ h.state.catalog=catalog('a');await h.qa.setCatalog(h.state.catalog);
+ h.release('POST plugin-audit');await pending;
+ assert.equal(h.qa.getCatalog().pluginAuditState,undefined);
+});
+test('real checklist filters include stale conversion evidence and scoped inspection respects provider identity',async()=>{
+ const h=harness();await h.settle();const data=catalog('a');
+ data.items[0].localAnalysis={depth:'records',plugins:[{name:'Source.esp',winner:false,winnerKnown:true,active:true,lightOverride:true,winnerLight:true,provenance:{state:'source-changed'},eligibility:{status:'unknown'}}]};
+ data.items[0].modHealth={provider:'github',bugs:{state:'unsupported'}};
+ data.items[0].source={verified:true,type:'github',url:'https://github.com/example/project'};
+ h.state.catalog=data;await h.qa.setCatalog(data);
+ h.api.updatePrefs({insight:'stale-conversion'});
+ assert.equal(h.api.filtered().length,1);
+ assert.match(h.nodes.get('modList').innerHTML,/ESLifier needs review/);
+ const before=h.calls.filter(c=>c.endpoint==='mod-health'&&c.method==='POST').length;
+ h.state.health={provider:'github',bugs:{state:'unsupported'},page:{status:'unknown'}};
+ h.api.drawInspector(h.qa.getCatalog().items[0]);await h.settle();
+ assert.equal(h.calls.filter(c=>c.endpoint==='mod-health'&&c.method==='POST').length,before);
+ assert.ok(h.calls.some(c=>c.endpoint.startsWith('mod-health?itemId=item-0')));
 });

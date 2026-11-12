@@ -1,5 +1,15 @@
 # 🛠 Development & Testing
 
+## Rust 0.9 release gates
+
+The [native workflow](https://github.com/Herbertofury/Modhunter/actions/workflows/native-rust.yml) compiles and launches the actual Windows app, tests the production plugin inside an official MO2 2.5.2 fixture instance, runs Rust tests and strict Clippy, and executes browser and lifecycle regressions. See [Rust Desktop](Rust-Desktop.md) for the evidence boundaries and [native/README.md](../native/README.md) for build commands. Downloadable receipts identify each passing check and the compiled commit. The older acceptance notes below describe their original checkpoints.
+
+`tests/test_scan_lifecycle.py` covers stale completions, errors and progress, including A→B→A; `tests/test_source_identity.py` covers source authority and route-preserving URL cleanup. `tests/frontend_runtime.test.cjs` checks polling, stale reads, cosmetic rendering and source identity. `tests/test_frontend_responsiveness.py` runs the compiled dashboard in actual Chromium. CI requires the browser with `MODHUNTER_REQUIRE_BROWSER=1`, so a missing browser cannot silently pass that gate.
+
+`native/scripts/windows_smoke.ps1` launches the compiled WebView2 app and reads its import/export/IPC receipt. `native/scripts/mo2_native_smoke.ps1` creates a disposable native MO2 instance with a synthetic BasicGame and test-only tool, never a user's instance; those harness plugins are excluded from user packages. Fixture tests do not authenticate to Nexus, install real mod archives or launch a commercial game.
+
+`scripts/benchmark_native_import.py` compares complete Rust and previous Node import calls over identical metadata fixtures; all samples and environment details are stored in `native/evidence/import-comparison.json`. Full GUI startup and internet download speeds are outside that benchmark.
+
 ## Developer quick start
 
 ```shell

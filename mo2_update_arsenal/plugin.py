@@ -15,6 +15,7 @@ from .model import LocalMetadataCache, take_snapshot
 from .focus import navigate, find_mo2_view, name_column
 from .scanner import version_verdict
 from .native_nexus import NativeNexusGateway
+from .plugin_intelligence import attach_native_plugin_state, build_audit_request
 
 
 class Dispatcher(QtCore.QObject):
@@ -93,6 +94,12 @@ class ModUpdateArsenal(mobase.IPluginTool):
         except Exception:
             # Plugin remains usable without change subscriptions; Refresh is always available.
             pass
+        # Right-pane plugin changes also invalidate winning-copy and master facts.
+        for signal in ("onRefreshed", "onPluginMoved", "onPluginStateChanged"):
+            try:
+                getattr(organizer.pluginList(), signal)(lambda *_: self._schedule_refresh())
+            except (AttributeError, RuntimeError, TypeError):
+                pass
         return True
 
     def display(self) -> None:
@@ -102,6 +109,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
         try:
             if not self.server:
                 snap = take_snapshot(self.org, self._runtime, metadata_cache=self._metadata_cache)
+                attach_native_plugin_state(self.org, snap)
                 page = Path(__file__).with_name("web") / "index.html"
                 doc = page.read_text(encoding="utf-8")
                 try:
@@ -135,6 +143,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
         try:
             snapshot = take_snapshot(self.org, self._runtime, metadata_cache=self._metadata_cache,
                                      force_metadata=force_metadata)
+            attach_native_plugin_state(self.org, snapshot)
             self.server.set_snapshot(snapshot)
             return {"ok": True, "count": len(snapshot["items"]), "profile": snapshot["profileName"], "catalog": snapshot}
         except Exception as exc:
@@ -143,8 +152,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
     def _download(self, mod_id: int, file_id: int):
         if not self.server:
             return {"ok": False, "error": "Arsenal server is not running"}
-        snapshot = self.server.snapshot()
-        if mod_id not in {int(m.get("nexusId") or 0) for m in snapshot.get("items", [])}:
+        if not self.server.has_nexus_mod(mod_id):
             return {"ok": False, "error": "Nexus mod is not in active profile"}
         try:
             result = self.org.downloadManager().startDownloadNexusFile(mod_id, file_id)
@@ -170,7 +178,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
 
     def _profile_backup(self):
         profile_path = Path(self.org.profilePath()).resolve()
-        profile_id = self.server.snapshot().get("profileId", "unknown")
+        profile_id = self.server.profile_id() or "unknown"
         root = Path(self.org.pluginDataPath()) / "MO2UpdateArsenal" / "backups" / profile_id
         path = root / datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%fZ")
         path.mkdir(parents=True, exist_ok=False)
@@ -189,7 +197,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
         if status.get("status") != "installing":
             return {"ok": False, "error": "The download is not complete"}
         try:
-            before = self.server.snapshot()
+            before = self.server.native_snapshot()
             if str(self.org.profileName()) != str(before.get("profileName") or ""):
                 return {"ok": False, "error": "Active MO2 profile changed; reopen the Workshop before installing"}
             source = Path(self.org.downloadManager().downloadPath(download_id)).resolve()
@@ -204,7 +212,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
             self._refresh_snapshot(force_metadata=True)
             # MO2 installMod returned a real installed mod; only that exact row
             # may receive verified XP (never every mod sharing a Nexus ID).
-            after = self.server.snapshot()
+            after = self.server.native_snapshot()
             target = next((m for m in after.get("items", []) if m.get("mo2InternalName") == installed.name()), None)
             previous = next((m for m in before.get("items", []) if m.get("mo2InternalName") == installed.name()), None)
             verified = bool(after.get("profileId") == before.get("profileId")
@@ -263,7 +271,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
         return {"ok": False, "error": "Connection dialog canceled"}
 
     def _focus_mod(self, payload: dict) -> dict:
-        snapshot = self.server.snapshot()
+        snapshot = self.server.native_selection_snapshot([str(payload.get("modId") or "")])
         if payload.get("profileId") != snapshot.get("profileId") or self.org.profileName() != snapshot.get("profileName"):
             return {"ok": False, "error": "MO2 profile changed during navigation; refresh Arsenal"}
         mod = next((m for m in snapshot.get("items", []) if m.get("id") == payload.get("modId") and m.get("mo2InternalName") == payload.get("name")), None)
@@ -291,18 +299,35 @@ class ModUpdateArsenal(mobase.IPluginTool):
             return
         name_col = name_column(view.model(), QtCore)
         label = str(current.siblingAtColumn(name_col).data(QtCore.Qt.ItemDataRole.DisplayRole) or "")
-        items = self.server.snapshot().get("items", [])
-        hits = [m for m in items if m.get("name") == label]
-        # Avoid duplicate-display-name ambiguity, as required by MO2R.
-        if len(hits) == 1:
-            self.server.set_selected(hits[0]["id"])
-        else:
-            self.server.set_selected("")
+        # Exact, indexed matching avoids a full health-decorated snapshot on
+        # every arrow-key selection. Duplicate labels deliberately select none.
+        self.server.set_selected_by_label(label)
 
     def _dispatch(self, request: UIRequest):
         if not request.begin():
             return  # Expired/cancelled Qt events can never execute later.
         try:
+            if request.cmd in ("plugin-audit-input", "eslifier-data"):
+                if not self.server or request.payload.get("profileId") != self.server.profile_id():
+                    request.finish({"ok": False, "error": "MO2 profile changed before plugin analysis"})
+                    return
+                snapshot = self.server.native_snapshot()
+                if str(self.org.profileName()) != str(snapshot.get("profileName") or ""):
+                    request.finish({"ok": False, "error": "Active MO2 profile changed; refresh and retry"})
+                    return
+                if request.cmd == "plugin-audit-input":
+                    request.finish({"ok": True, "request": build_audit_request(self.org, snapshot,
+                        deep=request.payload.get("deep") is True,
+                        configured=self.server.intelligence.configured_paths())})
+                else:
+                    folder = QtWidgets.QFileDialog.getExistingDirectory(None, "Select ESLifier_Data or ESLifier_FO4_Data")
+                    if (str(self.org.profileName()) != str(snapshot.get("profileName") or "")
+                            or self.server.profile_id() != snapshot.get("profileId")):
+                        request.finish({"ok": False, "error": "Active MO2 profile changed while choosing ESLifier records; refresh and retry"})
+                        return
+                    request.finish(self.server.intelligence.configure_path(folder, snapshot["profileId"])
+                        if folder else {"ok": False, "cancelled": True, "error": "Folder selection canceled"})
+                return
             if request.cmd in ("download", "download-url", "install"):
                 if not self.server or request.payload.get("profileId") != self.server.profile_id():
                     request.finish({"ok": False, "error": "MO2 profile changed before native execution; refresh and review again"})

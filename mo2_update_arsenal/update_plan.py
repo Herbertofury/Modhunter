@@ -32,6 +32,19 @@ def risk_reasons(item: dict) -> list[str]:
     verdict = str((item.get("audit") or {}).get("verdict") or "").lower()
     if verdict in RISK_VERDICTS:
         risks.append("Existing compatibility advisory: " + verdict)
+    plugins = (item.get("localAnalysis") or {}).get("plugins") or []
+    for plugin in plugins:
+        name = str(plugin.get("name") or "Plugin")
+        provenance = (plugin.get("provenance") or {}).get("state")
+        if provenance in {"source-changed", "output-changed", "source-and-output-changed", "winner-changed"}:
+            risks.append("ESLifier conversion needs review: " + name)
+        if plugin.get("winner") and plugin.get("active") is True and plugin.get("masterIssues"):
+            risks.append("Active plugin has missing, inactive, or late-loading masters: " + name)
+        if (plugin.get("records") or {}).get("scanComplete") is False or plugin.get("recordScanComplete") is False:
+            risks.append("Plugin record scan is incomplete: " + name)
+        elif (plugin.get("eligibility") or {}).get("status") == "blocked":
+            risks.append("Plugin format, runtime, or dependency check needs review: " + name)
+    risks = list(dict.fromkeys(risks))
     return risks
 
 
@@ -72,6 +85,7 @@ def plan_updates(snapshot: dict) -> dict:
             "releaseAssets": update.get("releaseAssets") or [],
             "releaseUrl": str(update.get("releaseUrl") or source_url),
             "checkedAt": update.get("checkedAt"),
+            "localAnalysis": item.get("localAnalysis"), "modHealth": item.get("modHealth"),
         })
     return {"ok": True, "profileId": str(snapshot.get("profileId") or ""),
             "profileName": str(snapshot.get("profileName") or ""),

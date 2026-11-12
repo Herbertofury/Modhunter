@@ -5,7 +5,7 @@
 
 **Repair your load order · Hunt unfinished mods · Build a legend**
 
-![Version](https://img.shields.io/badge/Atlas-v0.8-cfa76d?style=for-the-badge&labelColor=17272c)
+![Version](https://img.shields.io/badge/Rust-v0.9-cfa76d?style=for-the-badge&labelColor=17272c)
 ![Play](https://img.shields.io/badge/Play-Offline-70d6b0?style=for-the-badge&labelColor=17272c)
 ![Integrations](https://img.shields.io/badge/MO2-Optional-9abcf5?style=for-the-badge&labelColor=17272c)
 
@@ -18,10 +18,14 @@
 | Enter the world | Standalone requirement | Optional link |
 | :-- | :-- | :-- |
 | **[Portable HTML](https://github.com/Herbertofury/Modhunter/blob/main/web/Modhunter.html)** | A modern browser | MO2 localhost |
-| **[Desktop App](Desktop-App.md)** | Node.js / Electron for source build | MO2 localhost |
+| **[Rust Desktop](Rust-Desktop.md)** | Windows and WebView2; compiled EXE/installer | MO2 localhost + Find MO2 |
 | **[MO2 Plugin](MO2-Plugin.md)** | Mod Organizer 2 | Desktop or browser |
 
 ## ✦ One product · One Command Center
+
+**[Download the Rust Windows app](https://github.com/Herbertofury/Modhunter/releases)** · **[Rust 0.9 installation and test evidence](Rust-Desktop.md)**
+
+The current desktop uses Rust for the shell, parallel profile importer, metadata cache, native operations and MO2 discovery. The shared dashboard and complete games continue in WebView2; MO2's Python adapter retains its native Nexus/download/install integration. Earlier combined archives below preserve the previous Electron release series.
 
 **[Download Everything Combined (current + 36 originals)](https://drive.google.com/file/d/1UZzjHQQX3hceSWcJWFX2yygH6htzXqHE/view)** · **[Download the complete All-in-One release](https://github.com/Herbertofury/Modhunter/blob/main/dist/Modhunter-All-in-One.zip)** · **[Unified guide](Unified-Modhunter.md)**
 
@@ -52,4 +56,4 @@ Keep the real MO2 load order updated first. The combined interface includes the 
 
 The HTML is an entirely portable play surface. The desktop app is a dedicated multi-tab Chromium shell. The MO2 plugin alone owns live profile inspection and verified update rewards. Optional loopback communication allows them to share the same active game/profile identity without requiring any of the other installations.
 
-**Release preservation:** all 36 original v0.1–v0.8 deliverables, including the authentic GIFs and historical source/plugin ZIPs, are recovered and SHA-256 audited. The later updater expansion passed 99 Python plus four Node desktop-import tests in CI. Native Windows MO2 and Electron acceptance testing remain to be performed.
+**Release preservation:** all 36 original v0.1–v0.8 deliverables, including the authentic GIFs and historical source/plugin ZIPs, are recovered and SHA-256 audited. The [Rust release workflow](https://github.com/Herbertofury/Modhunter/actions/workflows/native-rust.yml) adds actual Windows application and MO2 fixture gates; its run receipts distinguish them from account-specific Nexus and FOMOD acceptance.

@@ -80,7 +80,9 @@ class UpdaterFrontendContractTests(unittest.TestCase):
             'data-workshop-act="locate"',
             'target="_blank" rel="noopener noreferrer"',
             'Number.isSafeInteger(nexusId)',
-            "nexusId>0&&/^[a-z0-9_-]+$/.test(game)",
+            'm.updateEligible!==false',
+            "nexusId>0&&knownGame",
+            "game!=='unknown'",
             "return; // Native anchor behavior",
         ):
             with self.subTest(fragment=fragment):

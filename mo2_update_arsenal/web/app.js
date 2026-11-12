@@ -424,7 +424,7 @@ function renderWorkshop(){
  area.innerHTML=visible.map(m=>{
   const choice=WORKSHOP_CHOICES.get(m.id);
   const match=ITEM_MAP.get(m.id)||{id:m.id,name:m.name,group:m.group,nexusId:m.nexusId,source:{}};
-  const source=getSrc(match),official=validUrl(m.sourceUrl),src=official||source.url;
+  const source=getSrc(match),official=validUrl(m.sourceUrl),src=source.custom?source.url:(official||source.url);
   const exactSource=Boolean(official||source.verified);
   const release=validUrl(m.releaseUrl),hasAlternateRelease=Boolean(release&&release!==src);
   const compatible=m.lane==='candidate',warning=m.risks?.length;

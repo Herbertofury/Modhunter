@@ -169,6 +169,17 @@ with sync_playwright() as pw:
     opened.wait_for_load_state('domcontentloaded')
     assert opened.url.endswith('/mods/44') or opened.url=='chrome-error://chromewebdata/'
     opened.close()
+    # A custom source saved in the inspector wins consistently in every view.
+    page.locator('#row-live-a button[data-act="inspect"]').click()
+    page.locator('#drawerUrl').fill('https://github.com/example/custom-mod')
+    page.locator('#saveInspector').click()
+    assert page.locator('#row-live-a a.mod-title.source-title').get_attribute('href')=='https://github.com/example/custom-mod'
+    assert page.locator('[data-workshop-id="live-a"] a.workshop-item-title').get_attribute('href')=='https://github.com/example/custom-mod'
+    # Clearing the override restores the real native source, with no reassociation.
+    page.locator('#row-live-a button[data-act="inspect"]').click()
+    page.locator('#drawerUrl').fill('')
+    page.locator('#saveInspector').click()
+    assert page.locator('[data-workshop-id="live-a"] a.workshop-item-title').get_attribute('href')=='https://www.nexusmods.com/skyrimspecialedition/mods/44'
     page.locator('[data-workshop-id="live-a"] button.workshop-inline-locate').click()
     assert page.evaluate('window.__SSS_MOCK__.focusCalls.length')==2
     page.locator('#workshopFilter').select_option('all')

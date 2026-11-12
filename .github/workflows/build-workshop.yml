@@ -53,7 +53,7 @@ jobs:
                   name.write_text(script,encoding='utf-8')
                   subprocess.run(['node','--check',str(name)],check=True)
           assert 'The Update <em>Workshop</em>' in page
-          assert 'async function queueWorkshop' in page
+          assert 'function queueWorkshop(){' in page and 'async function performQueuedWorkshop' in page
           print('Verified',len(scripts),'scripts and standalone workshop')
           PY
       - name: Exercise real Chromium update and install-briefing workflow

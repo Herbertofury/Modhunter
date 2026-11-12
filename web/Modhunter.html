@@ -772,7 +772,7 @@ const validUrl=(s)=>{try{const u=new URL(s);return ['https:','http:'].includes(u
 const getRow=(id)=>STORE.rows[id]||{};
 const getStatus=(m)=>getRow(m.id).status||'pending';
 const getAudit=(m)=>{const a=m.audit||{};return{verdict:getRow(m.id).compat||a.verdict||'unknown',note:a.note||'',evidence:a.evidence||''}};
-const getSrc=(m)=>{const custom=validUrl(getRow(m.id).url),src=m.source||{};if(custom)return{url:custom,verified:true,custom:true,type:'custom',label:'Your link'};if(src.verified&&validUrl(src.url))return{url:src.url,verified:true,custom:false,type:src.type,label:src.label};const game=LIVE_CATALOG?.game||'skyrimspecialedition';return{url:'https://www.google.com/search?q='+encodeURIComponent((m.group==='Verified Creations'?'site:creations.bethesda.net/en/skyrim/details ':'site:nexusmods.com/'+game+'/mods/ ')+'"'+m.name+'"'),verified:false,custom:false,type:'lookup',label:'Unresolved search'}};
+const getSrc=(m)=>{const custom=validUrl(getRow(m.id).url),src=m.source||{};if(custom)return{url:custom,verified:true,custom:true,type:'custom',label:'Your link'};if(src.verified&&validUrl(src.url))return{url:src.url,verified:true,custom:false,type:src.type,label:src.label};const game=LIVE_CATALOG?.game||DATA?.game||'skyrimspecialedition';return{url:'https://www.google.com/search?q='+encodeURIComponent((m.group==='Verified Creations'?'site:creations.bethesda.net/en/skyrim/details ':'site:nexusmods.com/'+game+'/mods/ ')+'"'+m.name+'"'),verified:false,custom:false,type:'lookup',label:'Unresolved search'}};
 const isRisk=(m)=>{const {verdict}=getAudit(m);return ['hold','check','avoid','ae-only'].includes(verdict)||(m.flags||[]).some(f=>['HARD_ESP','HARD_ESM','DLL','NEMESIS'].includes(f))};
 const isUpdate=(m)=>m.update&&m.update.verdict==='candidate';
 const isDone=(m)=>getStatus(m)==='done';
@@ -1214,6 +1214,40 @@ window.addEventListener('storage',e=>{if(e.key===STORAGE){STORE=structuredClone(
 load();applyAppearance();updateStorageIndicator();render();
 // Development/test trace, harmless in release; does not expose filesystem privileges.
 if(BRIDGE.active){initLiveBridge();setInterval(async()=>{if(document.hidden||LIVE_REFRESH_BUSY||!LIVE_CATALOG)return;LIVE_REFRESH_BUSY=true;try{const revision=await bridgeRequest('GET','revision');if(revision.generation!==LIVE_GENERATION){const snap=await bridgeRequest('GET','snapshot');LIVE_GENERATION=snap.generation;activateLiveCatalog(snap.catalog);toast('⟳ MO2 changes synchronized');}if(revision.profileId===LIVE_CATALOG?.profileId&&NATIVE_SELECTED!==revision.selectedModId){NATIVE_SELECTED=revision.selectedModId||'';paintNativeSelection();if(NATIVE_SELECTED)window.AetherFX?.select($('row-'+NATIVE_SELECTED),{source:'mo2'})}await refreshGame();if($('liveDownloadList').children.length)await refreshDownloads()}catch(ex){SET('liveSync','Bridge disconnected: '+ex.message)}finally{LIVE_REFRESH_BUSY=false}},4200)}
+/**
+ * Electron-only offline profile import. The web page cannot read files or
+ * invoke privileged desktop APIs; Electron passes a sanitized data snapshot
+ * after an explicit native file chooser. No server trust or verified XP.
+ */
+function importOfflineCatalog(c){
+ if(BRIDGE.active)throw Error('Disconnect live MO2 before importing a local profile');
+ if(!c||c.offline!==true||!c.profileId||!Array.isArray(c.items)||!Array.isArray(c.groups))
+  throw Error('Not a valid local MO2 snapshot');
+ DATA=c;
+ ITEM_MAP=new Map(c.items.map(m=>[m.id,m]));
+ GROUP_MAP=new Map(c.groups.map(g=>[g.id,g]));
+ LIVE_CATALOG=null;GAME=null;GAME_SEEN=-1;NATIVE_SELECTED='';focusedRowId='';
+ WORKSHOP_PLAN=null;WORKSHOP_CHOICES.clear();
+ STORAGE='modhunter-offline-profile:v1:'+c.profileId;
+ STORE=structuredClone(BASE);load();
+ $('search').value=STORE.prefs.query||'';
+ $('livePill').textContent='◈ LOCAL MO2 SNAPSHOT';
+ $('livePill').classList.remove('connected');
+ $('liveProfile').textContent=c.profileName+' / '+c.game;
+ $('liveCount').textContent=c.items.length+' imported mods · '+c.groups.length+' sections';
+ $('liveUpdateCount').textContent='Not remotely verified';
+ $('liveCached').textContent='Source links are advisory until scanned through MO2';
+ $('liveSync').textContent='On-demand read-only profile import';
+ $('liveState').textContent='Imported your real MO2 modlist.txt and installed metadata. Re-import to refresh from disk; connect the optional MO2 plugin for native Nexus checks and downloads.';
+ $('heroSummary').textContent='Imported '+c.items.length+' actual mods from MO2 profile '+c.profileName+'. This desktop-only snapshot is read-only. Review exact sources, versions, and compatibility notes; native updating requires the MO2 plugin.';
+ $('runtimeBadge').innerHTML='<span class="status-light"></span><div><strong>'+escapeHTML(c.game)+' / '+escapeHTML(c.profileName)+'</strong><span>Local snapshot · target runtime '+escapeHTML(c.gameRuntime||'unknown')+'</span></div><span class="runtime-lock">IMPORTED</span>';
+ for(const id of ['liveAll','liveQuick','liveDeep','liveLocal','liveRefresh','liveRuntime','liveConnect','liveBackup'])$(id).disabled=true;
+ applyAppearance();updateStorageIndicator();render();
+ refreshWorkshop().catch(e=>workshopSetStatus('Local profile: '+e.message));
+ return{ok:true,count:c.items.length,profileId:c.profileId};
+}
+window.modhunterImportCatalog=importOfflineCatalog;
+
 window.__ARSENAL_QA__={game:()=>GAME,refreshGame,previewVictory:()=>launchVictory({verifiedMods:DATA.items.length,bonus:0,updates:counts().done},true),getVictory:()=>({active:!$('victoryOverlay').hidden,title:$('victoryTitle').innerText}),closeVictory,locate:locateInMO2,live:BRIDGE.active,setCatalog:activateLiveCatalog,finisher:(name,x,y)=>{STORE.prefs.effect=name;spawnFinisher({x,y})},count:DATA.items.length,groups:DATA.groups.length,getSnapshot:()=>({counts:counts(),search:STORE.prefs.query,filter:STORE.prefs.filter}),aether:()=>window.AetherFX?.getState(),previewAether:()=>window.AetherFX?.preview(),getCatalog:()=>DATA,verifyRow:(id)=>({id,exists:ITEM_MAP.has(id),state:getRow(id)})};
 })();
 </script><script>/* Shiverfell Chronicles v0.5: original, playable, procedural top-down fantasy survival game.

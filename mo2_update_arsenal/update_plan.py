@@ -6,6 +6,9 @@ The interactive MO2 install workflow remains a separate user-confirmed operation
 from __future__ import annotations
 
 from typing import Any
+import time
+
+from .source_adapters import PUBLIC_API_PROVIDERS, REVIEW_COMPATIBILITY_STATES, asset_matches_source, asset_proof
 
 RISK_FLAGS = frozenset({"DLL", "HARD_ESP", "HARD_ESM", "NEMESIS", "SKSE", "ROOT_BUILDER", "BEHAVIOR"})
 RISK_VERDICTS = frozenset({"hold", "check", "avoid", "ae-only"})
@@ -32,6 +35,22 @@ def risk_reasons(item: dict) -> list[str]:
     verdict = str((item.get("audit") or {}).get("verdict") or "").lower()
     if verdict in RISK_VERDICTS:
         risks.append("Existing compatibility advisory: " + verdict)
+    plugins = (item.get("localAnalysis") or {}).get("plugins") or []
+    for plugin in plugins:
+        name = str(plugin.get("name") or "Plugin")
+        provenance = (plugin.get("provenance") or {}).get("state")
+        if provenance in {"source-changed", "output-changed", "source-and-output-changed", "winner-changed"}:
+            risks.append("ESLifier conversion needs review: " + name)
+        if plugin.get("winner") and plugin.get("active") is True and plugin.get("masterIssues"):
+            risks.append("Active plugin has missing, inactive, or late-loading masters: " + name)
+        if (plugin.get("records") or {}).get("scanComplete") is False or plugin.get("recordScanComplete") is False:
+            risks.append("Plugin record scan is incomplete: " + name)
+        elif (plugin.get("eligibility") or {}).get("status") == "blocked":
+            risks.append("Plugin format, runtime, or dependency check needs review: " + name)
+    compatibility = (item.get("update") or {}).get("compatibility") or {}
+    if compatibility.get("status") in REVIEW_COMPATIBILITY_STATES:
+        risks.append("Source release does not match this game or loader")
+    risks = list(dict.fromkeys(risks))
     return risks
 
 
@@ -71,7 +90,13 @@ def plan_updates(snapshot: dict) -> dict:
             "provider": str(update.get("provider") or src.get("type") or "unknown"),
             "releaseAssets": update.get("releaseAssets") or [],
             "releaseUrl": str(update.get("releaseUrl") or source_url),
-            "checkedAt": update.get("checkedAt"),
+            "checkedAt": update.get("checkedAt"), "expiresAt": update.get("expiresAt"),
+            "releaseAssetCount": update.get("releaseAssetCount", len(update.get("releaseAssets") or [])),
+            "dependencyCount": update.get("dependencyCount", len(update.get("dependencies") or [])),
+            "capabilities": update.get("capabilities"), "compatibility": update.get("compatibility"),
+            "freshness": update.get("freshness"), "availability": update.get("availability"),
+            "sourceEvidence": update if not update.get("detailsAvailable") else None,
+            "localAnalysis": item.get("localAnalysis"), "modHealth": item.get("modHealth"),
         })
     return {"ok": True, "profileId": str(snapshot.get("profileId") or ""),
             "profileName": str(snapshot.get("profileName") or ""),
@@ -132,9 +157,8 @@ def validate_batch_selection(snapshot: dict, payload: dict) -> list[dict]:
     return result
 
 
-def validate_release_asset(snapshot: dict, raw: dict) -> dict:
-    """Resolve GitHub release assets only from MO2-owned server scan evidence."""
-    from urllib.parse import urlsplit
+def validate_release_asset(snapshot: dict, raw: dict, *, require_fresh=True) -> dict:
+    """Resolve only exact archives from owned provider/project/release evidence."""
     if not isinstance(raw, dict) or raw.get("kind") != "source":
         raise PlanError("Invalid reviewed source selection")
     item_id = str(raw.get("itemId") or "")
@@ -144,29 +168,41 @@ def validate_release_asset(snapshot: dict, raw: dict) -> dict:
     if str(item.get("installedVersion") or "") != str(raw.get("installedVersion") or ""):
         raise PlanError("Installed mod version changed; refresh source selections")
     update = item.get("update") or {}
-    if update.get("verdict") != "candidate" or update.get("source") != "github-release-api":
-        raise PlanError("Only fresh GitHub release candidates support direct source downloads")
+    provider = str(update.get("provider") or (item.get("source") or {}).get("type") or "")
+    if not provider and update.get("source") == "github-release-api":
+        provider = "github"
+    if update.get("verdict") != "candidate" or provider not in PUBLIC_API_PROVIDERS or update.get("source") != f"{provider}-release-api":
+        raise PlanError("Only verified public release candidates support direct source downloads")
+    if require_fresh and (update.get("freshness") in {"stale", "unverified"}
+            or isinstance(update.get("expiresAt"), (int, float)) and update["expiresAt"] <= time.time()):
+        raise PlanError("Source evidence expired; check this project again before downloading")
     if raw.get("targetVersion") is not None and str(raw["targetVersion"]) != str(update.get("latestVersion") or ""):
         raise PlanError("Published source release changed; review its archives again")
     if risk_reasons(item) and raw.get("riskAcknowledged") is not True:
         raise PlanError("Acknowledge source compatibility risks before download")
+    if (update.get("compatibility") or {}).get("status") in REVIEW_COMPATIBILITY_STATES:
+        raise PlanError("This release does not match the profile's game or loader")
     source = item.get("source") or {}
-    url = str(source.get("url") or "")
-    u = urlsplit(url)
-    parts = [p for p in u.path.strip("/").split("/") if p]
-    if u.scheme != "https" or u.hostname != "github.com" or len(parts) < 2:
-        raise PlanError("Source project is not a verified GitHub repository")
-    prefix = f"https://github.com/{parts[0]}/{parts[1]}/releases/download/"
+    asset_key = raw.get("assetKey")
     asset_id = _positive_int(raw.get("assetId"))
-    candidate = next((x for x in update.get("releaseAssets", [])
-                      if _positive_int(x.get("assetId")) == asset_id), None)
-    if candidate is None or asset_id <= 0:
-        raise PlanError("The selected file is not in this verified release")
-    download_url = str(candidate.get("url") or "")
-    name = str(candidate.get("name") or "")
-    if (not download_url.startswith(prefix) or "?" in download_url or
-            not name.lower().endswith((".zip", ".7z", ".rar"))):
-        raise PlanError("Release asset URL failed provider/format validation")
-    return {"kind": "source", "itemId": item_id, "assetId": asset_id,
-            "url": download_url, "provider": "github", "name": name,
+    if asset_key is not None and (not isinstance(asset_key, str) or not asset_key or len(asset_key) > 400):
+        raise PlanError("Invalid release asset identity")
+    matches = [asset for asset in update.get("releaseAssets", []) if isinstance(asset, dict)
+               and (asset.get("assetKey") == asset_key if asset_key else asset_id > 0 and _positive_int(asset.get("assetId")) == asset_id)]
+    if len(matches) != 1:
+        raise PlanError("The selected file is not uniquely present in this verified release")
+    candidate = matches[0]
+    if asset_key and raw.get("assetId") is not None and asset_id != _positive_int(candidate.get("assetId")):
+        raise PlanError("Conflicting release asset identities")
+    if candidate.get("installable") is False or not asset_matches_source(source, update, candidate):
+        raise PlanError("Release asset URL failed provider/project/release/format validation")
+    proof = asset_proof(source, update, candidate)
+    normalized = bool(update.get("outcome") or candidate.get("assetKey") or update.get("projectId") or update.get("releaseId"))
+    if (normalized and raw.get("assetProof") != proof) or (raw.get("assetProof") is not None and raw["assetProof"] != proof):
+        raise PlanError("The reviewed release archive changed; reopen its file details")
+    return {"kind": "source", "itemId": item_id, "assetId": _positive_int(candidate.get("assetId")),
+            "assetKey": str(candidate.get("assetKey") or ""), "assetProof": proof,
+            "projectId": str(update.get("projectId") or ""), "releaseId": str(update.get("releaseId") or ""),
+            "sourceUrl": str(source.get("url") or ""), "targetVersion": str(update.get("latestVersion") or ""),
+            "url": str(candidate.get("url") or ""), "provider": provider, "name": str(candidate.get("name") or ""),
             "installedVersion": str(item.get("installedVersion") or "")}

@@ -9,9 +9,10 @@ import copy
 import json
 import os
 import shutil
+import time
 from pathlib import Path
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import expect, sync_playwright
 
 from mo2_update_arsenal.file_advisor import advise_nexus_files
 from mo2_update_arsenal.update_plan import plan_updates
@@ -60,24 +61,32 @@ history=[{"key":"previous:101","sessionId":"previous","sessionActive":False,"nee
           "timeline":[{"at":"2026-11-10T00:00:00+00:00","status":"downloading","note":""},
                       {"at":"2026-11-10T00:01:00+00:00","status":"complete","note":""}]}]
 mock={"catalog":catalog,"plan":plan_updates(catalog),"review":review,"history":history}
-bootstrap = r"""
+bootstrap_template = r"""
 <script>
 window.__MO2_BRIDGE_BOOT__={active:true,token:'browser-qa'};
-window.__SSS_MOCK__={data:__DATA__,tickets:{},calls:[],focusCalls:[]};
+window.__SSS_MOCK__={data:__DATA__,tickets:{},calls:[],reads:[],focusCalls:[]};
 window.fetch=async(url,opts={})=>{
  const x=window.__SSS_MOCK__, endpoint=String(url).slice(5);
+ if(!opts.method||opts.method==='GET')x.reads.push(endpoint);
  let result={ok:true};
  if(endpoint==='snapshot')result={ok:true,catalog:x.data.catalog,generation:x.generation||1};
- else if(endpoint==='update-plan')result=x.data.plan;
+ else if(endpoint==='update-plan'||endpoint==='update-plan?details=full')result=x.data.plan;
+ else if(endpoint.startsWith('source-details?')){
+  const args=new URLSearchParams(endpoint.split('?')[1]),id=args.get('itemId');
+  if(x.data.detailDelayMs)await new Promise(resolve=>setTimeout(resolve,x.data.detailDelayMs));
+  const row=x.data.catalog.items.find(item=>item.id===id);
+  result={ok:true,profileId:x.data.catalog.profileId,itemId:id,update:x.data.sourceDetails?.[id]||row?.update||{}};
+ }
  else if(endpoint.startsWith('files?'))result=x.data.review[String(new URLSearchParams(endpoint.split('?')[1]).get('modId'))]||{ok:false,error:'Missing mod'};
- else if(endpoint==='downloads')result={ok:true,downloads:x.tickets};
+ else if(endpoint==='downloads')result={ok:true,profileId:x.data.catalog.profileId,downloads:x.tickets};
+ else if(endpoint==='game?compact=1')result={ok:true,profileId:x.data.catalog.profileId,feed:[],updates:0};
  else if(endpoint==='activity'){
   if(x.delayActivityMs)await new Promise(resolve=>setTimeout(resolve,x.delayActivityMs));
   result={ok:true,profileId:x.data.catalog.profileId,
       records:x.data.history,count:x.data.history.length,durable:true,warning:''};
  }
  else if(endpoint==='revision')result={ok:true,generation:x.generation||1,profileId:x.data.catalog.profileId};
- else if(endpoint==='scan')result={ok:true,scan:{state:'completed',mode:'deep',queried:2}};
+ else if(endpoint==='scan')result={ok:true,profileId:x.data.catalog.profileId,scan:{state:'completed',mode:'deep',queried:2}};
  else if(endpoint==='progress')result={ok:true,profileId:x.data.catalog.profileId,progress:{rows:{},prefs:{}}};
  else if(endpoint.startsWith('install-preview?')){
   const id=String(new URLSearchParams(endpoint.split('?')[1]).get('downloadId'));
@@ -128,16 +137,43 @@ window.fetch=async(url,opts={})=>{
  }
  else if(endpoint==='update-queue'){
   const body=JSON.parse(opts.body||'{}');x.calls.push({endpoint,body});
-  const queued=body.entries.map((e,i)=>{const id=301+x.calls.length+i;x.tickets[id]={status:'downloading',provider:'nexus',modId:e.modId,itemId:e.itemId,installedVersion:e.installedVersion,profileId:body.profileId,gameRuntime:x.data.catalog.gameRuntime};return {itemId:e.itemId,downloadId:id,provider:'nexus'}});
+  const queued=body.entries.map((e,i)=>{const id=301+x.calls.length+i,provider=e.kind==='source'?e.provider:'nexus';x.tickets[id]={status:'downloading',provider,modId:e.modId,itemId:e.itemId,installedVersion:e.installedVersion,profileId:body.profileId,gameRuntime:x.data.catalog.gameRuntime};return {itemId:e.itemId,downloadId:id,provider}});
   result={ok:true,queued,failed:[],partial:false,message:'Queued '+queued.length+' reviewed file'};
  }
  return new Response(JSON.stringify(result),{status:200,headers:{'content-type':'application/json'}});
 };
 </script>
-""".replace('__DATA__',json.dumps(mock).replace('</','<\\/'))
-html=(ROOT/'mo2_update_arsenal/web/index.html').read_text('utf8')
-assert '<!--__MO2_BOOT__-->' in html
-html=html.replace('<!--__MO2_BOOT__-->',bootstrap)
+"""
+raw_html=(ROOT/'mo2_update_arsenal/web/index.html').read_text('utf8')
+assert '<!--__MO2_BOOT__-->' in raw_html
+def fixture_html(data):
+    bootstrap=bootstrap_template.replace('__DATA__',json.dumps(data).replace('</','<\\/'))
+    return raw_html.replace('<!--__MO2_BOOT__-->',bootstrap)
+html=fixture_html(mock)
+source_catalog=copy.deepcopy(catalog)
+source_update={"verdict":"candidate","outcome":"release","provider":"gitlab",
+    "source":"gitlab-release-api","projectId":"example/team/arcane","latestVersion":"2.0",
+    "releaseId":"v2.0","releaseUrl":"https://gitlab.com/example/team/arcane/-/releases/v2.0",
+    "checkedAt":int(time.time()),"expiresAt":int(time.time())+3600,"freshness":"fresh",
+    "availability":"available","releaseAssetCount":1,"dependencyCount":1,"detailsAvailable":True,
+    "capabilities":{"provider":"gitlab","label":"GitLab","checkMode":"public-api",
+        "versionCheck":True,"reviewedDownload":True,"authentication":"none"},
+    "compatibility":{"status":"unknown","reason":"Review the release runtime and installer choices."}}
+source_catalog['items'][0].update({"source":{"type":"gitlab","verified":True,
+    "url":"https://gitlab.com/example/team/arcane"},"update":source_update})
+# Keep the old Nexus ID deliberately: the verified current provider must own file review.
+source_details={**source_update,"publisher":{"name":"Arcane Release Team",
+    "url":"https://gitlab.com/arcane-team"},"summary":"A release with a declared dependency.",
+    "changelog":"Improved runtime support.\n<script>window.__REMOTE_EXECUTED__=true</script>",
+    "dependencies":[{"projectId":"example/shared-runtime","name":"Shared Runtime",
+        "kind":"required","url":"https://gitlab.com/example/shared-runtime"}],
+    "releaseAssets":[{"assetKey":"gitlab:example/team/arcane:v2.0:archive",
+        "assetProof":"a"*64,"provider":"gitlab","projectId":"example/team/arcane",
+        "releaseId":"v2.0","name":"Arcane-2.0.zip","size":2048,
+        "url":"https://gitlab.com/example/team/arcane/-/releases/v2.0/downloads/Arcane-2.0.zip",
+        "hashes":{"sha256":"b"*64}}]}
+source_mock={"catalog":source_catalog,"plan":plan_updates(source_catalog),"review":review,
+    "history":[],"sourceDetails":{"live-a":source_details},"detailDelayMs":350}
 with sync_playwright() as pw:
     browser_args={'headless':True,'args':['--no-sandbox','--disable-gpu','--disable-dev-shm-usage']}
     chromium_path=shutil.which('chromium') or shutil.which('chromium-browser')
@@ -375,7 +411,113 @@ with sync_playwright() as pw:
     recovery.screenshot(path=str(OUTPUT/'recovery-cockpit.png'),full_page=False)
     assert not recovery_errors,recovery_errors
     recovery.close()
+    # Real browser acceptance of compact source rows, lazy details and exact archive review.
+    source_page=browser.new_page(viewport={"width":1440,"height":1000})
+    source_errors=[]
+    source_page.on('pageerror',lambda e:source_errors.append(str(e)))
+    source_page.set_content(fixture_html(source_mock),wait_until='load',timeout=30000)
+    source_page.locator('#workshopResults .workshop-item').first.wait_for(timeout=15000)
+    source_page.locator('#sourceCoverage > summary').click()
+    # The browser dispatches <details> toggle asynchronously. Wait for the
+    # resulting evidence table, not merely completion of the pointer action.
+    try:
+        expect(source_page.locator('#sourceCoverageRows')).to_contain_text('GitLab',timeout=5000)
+        expect(source_page.locator('#sourceCoverageRows')).to_contain_text('Public release API')
+    except AssertionError:
+        source_page.screenshot(path=str(OUTPUT/'source-coverage-failure.png'),full_page=False)
+        print(json.dumps({"sourceCoverageFailure":source_page.evaluate("""()=>({
+            open:document.getElementById('sourceCoverage').open,
+            text:document.getElementById('sourceCoverageRows').textContent,
+            providers:window.__ARSENAL_QA__.getCatalog().items.map(m=>({id:m.id,source:m.source,provider:m.update?.provider}))
+        })"""),"jsErrors":source_errors},indent=2))
+        raise
+    source_page.locator('#row-live-a button[data-act="inspect"]').click()
+    source_page.locator('#drawerNote').fill('Keep my custom FOMOD choices.')
+    source_page.locator('#modSourceDetails .source-person strong').wait_for(timeout=10000)
+    assert 'Arcane Release Team' in source_page.locator('#modSourceDetails').inner_text()
+    assert source_page.locator('#drawerNote').input_value()=='Keep my custom FOMOD choices.'
+    assert source_page.locator('#modSourceDetails .source-person > span').first.inner_text()=='Release publisher'
+    source_page.locator('#modSourceDetails [data-source-section="dependencies"] > summary').click()
+    source_page.locator('#modSourceDetails [data-source-section="changelog"] > summary').click()
+    assert 'Shared Runtime' in source_page.locator('#modSourceDetails').inner_text()
+    assert '<script>' in source_page.locator('.source-changelog').inner_text()
+    assert source_page.evaluate('window.__REMOTE_EXECUTED__ === undefined')
+    source_page.locator('.source-changelog').scroll_into_view_if_needed()
+    source_page.screenshot(path=str(OUTPUT/'source-adapter-inspector.png'),full_page=False)
+    source_page.locator('#drawerClose').click()
+    source_page.locator('[data-workshop-id="live-a"] [data-workshop-act="review"]').click()
+    source_page.locator('#filePickerFiles [data-source-kind="release"]').wait_for(timeout=10000)
+    assert source_page.locator('#filePickerFiles [data-file-id][data-mod-id]').count()==0
+    assert 'GitLab' in source_page.locator('#filePickerFiles').inner_text()
+    assert source_page.locator('#filePickerMatchCount').inner_text()=='1 / 1 files'
+    source_page.locator('.source-file-hashes > summary').click()
+    assert 'b'*64 in source_page.locator('.source-file-hashes').inner_text()
+    source_page.screenshot(path=str(OUTPUT/'source-release-files.png'),full_page=False)
+    source_page.locator('#filePickerFiles [data-source-kind="release"]').click()
+    source_page.locator('#workshopQueue').click()
+    source_page.locator('#liveDownloadList .download-ticket').wait_for(timeout=10000)
+    source_calls=source_page.evaluate('window.__SSS_MOCK__.calls')
+    source_entry=source_calls[-1]['body']['entries'][0]
+    assert source_calls[-1]['endpoint']=='update-queue'
+    assert source_entry['kind']=='source' and source_entry['provider']=='gitlab'
+    assert source_entry['assetKey']==source_details['releaseAssets'][0]['assetKey']
+    assert source_entry['assetProof']=='a'*64
+    assert 'url' not in source_entry and 'modId' not in source_entry
+    source_reads=source_page.evaluate('window.__SSS_MOCK__.reads')
+    assert sum(endpoint.startswith('source-details?itemId=live-a&') for endpoint in source_reads)==1
+    assert not any(endpoint.startswith('files?') for endpoint in source_reads)
+    assert source_page.evaluate('window.__ARSENAL_QA__.getCatalog().items[0].update.releaseAssets === undefined')
+    source_page.set_viewport_size({'width':390,'height':844})
+    source_page.locator('#row-live-a button[data-act="inspect"]').click()
+    source_page.locator('#modSourceDetails').scroll_into_view_if_needed()
+    source_page.screenshot(path=str(OUTPUT/'mobile-source-inspector.png'),full_page=False)
+    assert source_page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
+    assert not source_errors,source_errors
+    source_page.close()
+    # Importing a real profile must replace the sample Skyrim runtime guidance.
+    offline=browser.new_page(viewport={"width":1440,"height":1000})
+    offline_errors=[]
+    offline.on('pageerror',lambda e:offline_errors.append(str(e)))
+    offline.set_content(raw_html,wait_until='load',timeout=30000)
+    offline.wait_for_function("typeof window.modhunterImportCatalog === 'function'")
+    offline_catalog={"schemaVersion":2,"catalogId":"offline-runtime-proof",
+        "profileId":"offline-runtime-proof","profileName":"Imported Runtime QA",
+        "game":"fallout4","gameRuntime":"unknown","offline":True,
+        "groups":[{"id":"snapshot-group","name":"Imported Mods","startPriority":0,"count":1,"color":"mint"}],
+        "items":[{"id":"snapshot-a","name":"Snapshot Example","priority":0,
+            "groupId":"snapshot-group","group":"Imported Mods","installedVersion":"1.0",
+            "flags":[],"source":{"type":"unknown","verified":False,"url":""},
+            "audit":{"verdict":"unknown","note":""},"screenshotNote":"","author":""}]}
+    imported=offline.evaluate("(catalog)=>window.modhunterImportCatalog(catalog)",offline_catalog)
+    assert imported['ok'] and imported['count']==1
+    expect(offline.locator('#runtimeBadge')).to_contain_text('unknown')
+    expect(offline.locator('#advisoryToggle b')).to_have_text('IMPORTED PROFILE CHECKS')
+    expect(offline.locator('#advisoryBody')).to_contain_text('Target runtime: unknown')
+    expect(offline.locator('#advisoryBody')).not_to_contain_text('SKSE is 2.0.20')
+    expect(offline.locator('#referenceLinks')).not_to_contain_text('SE Address Library')
+    expect(offline.locator('.pagefooter')).to_contain_text('MO2 SNAPSHOT / fallout4 / Imported Runtime QA')
+    offline.locator('#row-snapshot-a button[data-act="inspect"]').click()
+    expect(offline.locator('.drawer-priority')).to_contain_text('IMPORTED PROFILE')
+    expect(offline.locator('.drawer-alert .drawer-label')).to_have_text('RUNTIME / FILE COMPATIBILITY CHECK')
+    expect(offline.locator('.drawer-alert')).not_to_contain_text('provided screenshots')
+    expect(offline.locator('#drawerCompat option[value="compatible"]')).to_have_text('✓ Verified working in this setup')
+    expect(offline.locator('#drawerCompat option[value="ae-only"]')).to_contain_text('Wrong runtime or edition')
+    assert '1.5.97' not in (offline.locator('#drawerVerifiedVersion').get_attribute('placeholder') or '')
+    expect(offline.locator('#drawerContent')).not_to_contain_text('1.5.97')
+    offline.screenshot(path=str(OUTPUT/'imported-profile-runtime.png'),full_page=False)
+    offline.locator('#drawerClose').click()
+    with offline.expect_download(timeout=10000) as csv_export:
+        offline.locator('#csvBtn').click()
+    assert csv_export.value.suggested_filename=='Modhunter - Imported Runtime QA - Visible Mods.csv'
+    csv_header=Path(csv_export.value.path()).read_text(encoding='utf-8-sig').splitlines()[0]
+    assert '"Compatibility Verdict"' in csv_header and '1.5.97 Verdict' not in csv_header
+    assert not offline_errors,offline_errors
+    offline.close()
     bulk.close();fast.close()
     print(json.dumps({"result":"passed","modCards":3,"fileChoices":3,
-        "recommended":1,"queuedCalls":1,"installCalls":1,"screenshots":str(OUTPUT),"jsErrors":errors},indent=2))
+        "recommended":1,"queuedCalls":1,"installCalls":1,"sourceAdapters":{
+            "provider":"gitlab","lazyDetailReads":1,"exactProofQueued":True,"compactCatalog":True,
+            "oldNexusIdIgnored":True,"remoteMarkupInert":True,"mobileOverflow":False},
+        "offlineProfile":{"runtimeUnverified":True,"sampleGuidanceRemoved":True,"profileCsv":True},
+        "screenshots":str(OUTPUT),"jsErrors":errors+source_errors+offline_errors},indent=2))
     browser.close()

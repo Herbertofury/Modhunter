@@ -5,17 +5,17 @@
 Open [Modhunter.html](https://github.com/Herbertofury/Modhunter/blob/main/web/Modhunter.html) in Chromium, Firefox or another modern browser. This mode does not need MO2, Node or a server. Offline game progression is practice progression and never fabricates official verified-update currency.
 
 ## Desktop application
-Download [desktop source](https://github.com/Herbertofury/Modhunter/blob/main/dist/Modhunter-Desktop-Source.zip) and extract it. Follow [Desktop App](Desktop-App.md) for running the app using Node.js and Electron. The app can **import a real portable MO2 profile without the plugin** via **⌁ Import MO2 → profiles/<name>/modlist.txt**, or optionally connect to an MO2 session for remote update checks and native installs.
+Download the compiled app from [Windows releases](https://github.com/Herbertofury/Modhunter/releases). Extract **Modhunter-Rust-Windows.zip** and run `Modhunter.exe`, or use the NSIS installer. No Node or Electron is required. The app can **import a real MO2 profile without the plugin** via **Import MO2 → profiles/<name>/modlist.txt**. **Instance INI** and **Mods path** support split data/configuration locations. See [Rust Desktop](Rust-Desktop.md).
 
 ## MO2 plugin
-Download [MO2 plugin package](https://github.com/Herbertofury/Modhunter/blob/main/dist/Modhunter-MO2-Plugin.zip), extract it, run `Install_to_MO2.bat` and restart Mod Organizer 2. Launch **Tools → Update Arsenal - Quest Board**. Use [MO2 Plugin](MO2-Plugin.md) for its live dashboard and update features.
+Use the plugin included in the current Rust portable package. Close MO2, run `Install_MO2_Plugin.bat`, select the directory containing `ModOrganizer.exe`, then restart Mod Organizer 2. Launch **Tools → Update Arsenal - Quest Board**. Use [MO2 Plugin](MO2-Plugin.md) for its live dashboard and update features. The installer preserves a previous plugin in `ModhunterBackups` outside MO2's plugin directory.
 
 ## Connect the surfaces
-Launch the MO2 plugin and use its displayed loopback address (`127.0.0.1`) in the desktop app's **Connect** field. The browser dashboard can use the same local API when explicitly connected. MO2 is the source of truth for installed-mod identity, download/install operations, and verified update rewards. Never expose the loopback service to the public internet.
+Launch the MO2 plugin, then click **Find MO2** in the Rust desktop. A single validated running session connects; multiple sessions are offered for selection. You can also paste the displayed loopback address (`127.0.0.1`) into **Connect**. MO2 is the source of truth for installed-mod identity, download/install operations, and verified update rewards.
 
 ## Choosing an edition
 * **Play anywhere:** portable HTML.
-* **Inspect your real local modlist without installing a plugin:** Electron → Import MO2.
-* **Persistent desktop workspace:** Electron source package.
+* **Inspect your real local modlist without installing a plugin:** Rust desktop → Import MO2.
+* **Persistent desktop workspace:** Rust Windows package.
 * **Maintain real MO2 profiles:** MO2 plugin.
 * **Combine:** optionally connect them without disabling standalone functionality.

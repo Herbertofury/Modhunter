@@ -1,0 +1,377 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-11-12T09:00:45.257871+00:00",
+  "fixture": "Identical generated local MO2 metadata directories, reversed modlist, 2/3 enabled, one DLL per 50 mods; no native MO2, Nexus, download, install, or game operations",
+  "method": {
+    "freshProcess": "Each sample launches a new Node or Rust worker and a fresh importer; engine timing encloses only readMo2Profile/import; process timing includes process startup, engine, JSON serialization and exit, excluding parent JSON parsing. Alternating execution order limits order bias.",
+    "persistentProcess": "One process and importer per engine; first import measured separately, followed by repeated imports. Rust metadata cache stays alive; the old Node importer rereads metadata. These are not fresh-process timings.",
+    "osCache": "OS filesystem caches are not forcibly evicted; fixture creation warms the page cache. 'First' or 'fresh' means empty application cache, not cold physical storage.",
+    "guiStartup": "Not measured. Fresh-process timings launch Node/Rust import workers, not the Electron application or Windows Rust/WebView2 desktop.",
+    "equivalence": "Compare every row by name, internal name, versions, enabled state, Nexus ID, author, notes, DLL flags and exact source URL/type/verified flag. IDs are platform/path-dependent and excluded. Legacy reversed priority order is excluded from equality; Rust priority order independently asserted.",
+    "workers": {
+      "rust": 8,
+      "legacyNode": 24
+    }
+  },
+  "environment": {
+    "os": "Linux-6.18.57-x86_64-with-glibc2.41",
+    "architecture": "x86_64",
+    "logicalCpuCount": 9,
+    "node": "v24.22.1",
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)"
+  },
+  "source": {
+    "gitHead": "990c27671bc450ad50c2e203220244c978a6f63c",
+    "legacyImporterSha256": "2c1c360ca7394afaaed085c252bf0b8677eb3c6954ca2543be679f8a16616b0a",
+    "rustImporterSha256": "ed8fdef63ed3f0e8ab94076505eb2ee010f97f208d02fa5f41e1fd37c8df47a6",
+    "cargoLockSha256": "4b0168b1f526300bd6641a03a69fddc37d851a307645630a8700ce4123fbc1ea"
+  },
+  "results": [
+    {
+      "mods": 2500,
+      "freshProcess": {
+        "rust": {
+          "engineMedianMs": 59.453514,
+          "processMedianMs": 93.41930499977025,
+          "samples": [
+            {
+              "engineMs": 59.453514,
+              "metadataCacheHits": 0,
+              "filesRead": 2502,
+              "processMs": 93.41930499977025,
+              "outputBytes": 2065754
+            },
+            {
+              "engineMs": 69.37225199999999,
+              "metadataCacheHits": 0,
+              "filesRead": 2502,
+              "processMs": 191.55654899986985,
+              "outputBytes": 2065752
+            },
+            {
+              "engineMs": 52.858332000000004,
+              "metadataCacheHits": 0,
+              "filesRead": 2502,
+              "processMs": 87.44453700001031,
+              "outputBytes": 2065753
+            },
+            {
+              "engineMs": 62.309124,
+              "metadataCacheHits": 0,
+              "filesRead": 2502,
+              "processMs": 102.96361500013518,
+              "outputBytes": 2065744
+            },
+            {
+              "engineMs": 49.579355,
+              "metadataCacheHits": 0,
+              "filesRead": 2502,
+              "processMs": 82.78283500021644,
+              "outputBytes": 2065744
+            }
+          ]
+        },
+        "electron": {
+          "engineMedianMs": 286.396198,
+          "processMedianMs": 360.9077379996961,
+          "samples": [
+            {
+              "engineMs": 292.876559,
+              "metadataCacheHits": null,
+              "filesRead": null,
+              "processMs": 365.36745200010046,
+              "outputBytes": 1399830
+            },
+            {
+              "engineMs": 286.396198,
+              "metadataCacheHits": null,
+              "filesRead": null,
+              "processMs": 360.9077379996961,
+              "outputBytes": 1399830
+            },
+            {
+              "engineMs": 284.432423,
+              "metadataCacheHits": null,
+              "filesRead": null,
+              "processMs": 348.7431620001189,
+              "outputBytes": 1399830
+            },
+            {
+              "engineMs": 299.839063,
+              "metadataCacheHits": null,
+              "filesRead": null,
+              "processMs": 370.4412130000492,
+              "outputBytes": 1399830
+            },
+            {
+              "engineMs": 284.527754,
+              "metadataCacheHits": null,
+              "filesRead": null,
+              "processMs": 353.7797189997036,
+              "outputBytes": 1399830
+            }
+          ]
+        }
+      },
+      "persistentProcess": {
+        "electron": {
+          "firstEngineMs": 256.040263,
+          "warmEngineMedianMs": 261.452605,
+          "runs": [
+            {
+              "engineMs": 256.040263,
+              "metadataCacheHits": null,
+              "filesRead": null
+            },
+            {
+              "engineMs": 495.369374,
+              "metadataCacheHits": null,
+              "filesRead": null
+            },
+            {
+              "engineMs": 261.452605,
+              "metadataCacheHits": null,
+              "filesRead": null
+            },
+            {
+              "engineMs": 245.776419,
+              "metadataCacheHits": null,
+              "filesRead": null
+            },
+            {
+              "engineMs": 219.849571,
+              "metadataCacheHits": null,
+              "filesRead": null
+            },
+            {
+              "engineMs": 271.405804,
+              "metadataCacheHits": null,
+              "filesRead": null
+            }
+          ],
+          "totalProcessMs": 1887.9061410002578,
+          "outputBytes": 1400160
+        },
+        "rust": {
+          "firstEngineMs": 59.672352999999994,
+          "warmEngineMedianMs": 42.104642999999996,
+          "runs": [
+            {
+              "engineMs": 59.672352999999994,
+              "metadataCacheHits": 0,
+              "filesRead": 2502
+            },
+            {
+              "engineMs": 45.817831000000005,
+              "metadataCacheHits": 2500,
+              "filesRead": 2
+            },
+            {
+              "engineMs": 40.539467,
+              "metadataCacheHits": 2500,
+              "filesRead": 2
+            },
+            {
+              "engineMs": 42.104642999999996,
+              "metadataCacheHits": 2500,
+              "filesRead": 2
+            },
+            {
+              "engineMs": 35.834653,
+              "metadataCacheHits": 2500,
+              "filesRead": 2
+            },
+            {
+              "engineMs": 43.780282,
+              "metadataCacheHits": 2500,
+              "filesRead": 2
+            }
+          ],
+          "totalProcessMs": 337.49373800037574,
+          "outputBytes": 2066091
+        }
+      },
+      "equivalentMetadata": true,
+      "rustPriorityOrderVerified": true,
+      "rustPersistentCacheVerified": true,
+      "ratiosLegacyOverRust": {
+        "freshEngine": 4.817145005087505,
+        "freshProcess": 3.863310029983457,
+        "persistentWarmEngine": 6.209590828260913
+      }
+    },
+    {
+      "mods": 10000,
+      "freshProcess": {
+        "rust": {
+          "engineMedianMs": 297.387751,
+          "processMedianMs": 481.95545399994444,
+          "samples": [
+            {
+              "engineMs": 437.741401,
+              "metadataCacheHits": 0,
+              "filesRead": 10002,
+              "processMs": 602.8929979997883,
+              "outputBytes": 8269552
+            },
+            {
+              "engineMs": 333.087099,
+              "metadataCacheHits": 0,
+              "filesRead": 10002,
+              "processMs": 481.95545399994444,
+              "outputBytes": 8269562
+            },
+            {
+              "engineMs": 294.780095,
+              "metadataCacheHits": 0,
+              "filesRead": 10002,
+              "processMs": 441.33813900043606,
+              "outputBytes": 8269553
+            },
+            {
+              "engineMs": 297.387751,
+              "metadataCacheHits": 0,
+              "filesRead": 10002,
+              "processMs": 454.8469549999936,
+              "outputBytes": 8269553
+            },
+            {
+              "engineMs": 283.37931199999997,
+              "metadataCacheHits": 0,
+              "filesRead": 10002,
+              "processMs": 540.9437550001712,
+              "outputBytes": 8269561
+            }
+          ]
+        },
+        "electron": {
+          "engineMedianMs": 1075.331442,
+          "processMedianMs": 1167.6785019999443,
+          "samples": [
+            {
+              "engineMs": 1075.331442,
+              "metadataCacheHits": null,
+              "filesRead": null,
+              "processMs": 1167.6785019999443,
+              "outputBytes": 5607136
+            },
+            {
+              "engineMs": 1256.232127,
+              "metadataCacheHits": null,
+              "filesRead": null,
+              "processMs": 1366.6263820000495,
+              "outputBytes": 5607136
+            },
+            {
+              "engineMs": 1052.128011,
+              "metadataCacheHits": null,
+              "filesRead": null,
+              "processMs": 1151.3273539999318,
+              "outputBytes": 5607136
+            },
+            {
+              "engineMs": 1366.750573,
+              "metadataCacheHits": null,
+              "filesRead": null,
+              "processMs": 1475.6719790002535,
+              "outputBytes": 5607136
+            },
+            {
+              "engineMs": 990.989406,
+              "metadataCacheHits": null,
+              "filesRead": null,
+              "processMs": 1088.1027320001522,
+              "outputBytes": 5607135
+            }
+          ]
+        }
+      },
+      "persistentProcess": {
+        "electron": {
+          "firstEngineMs": 1138.763169,
+          "warmEngineMedianMs": 979.682694,
+          "runs": [
+            {
+              "engineMs": 1138.763169,
+              "metadataCacheHits": null,
+              "filesRead": null
+            },
+            {
+              "engineMs": 1048.11752,
+              "metadataCacheHits": null,
+              "filesRead": null
+            },
+            {
+              "engineMs": 993.679293,
+              "metadataCacheHits": null,
+              "filesRead": null
+            },
+            {
+              "engineMs": 940.205827,
+              "metadataCacheHits": null,
+              "filesRead": null
+            },
+            {
+              "engineMs": 979.682694,
+              "metadataCacheHits": null,
+              "filesRead": null
+            },
+            {
+              "engineMs": 969.145373,
+              "metadataCacheHits": null,
+              "filesRead": null
+            }
+          ],
+          "totalProcessMs": 6388.859243999832,
+          "outputBytes": 5607466
+        },
+        "rust": {
+          "firstEngineMs": 319.120363,
+          "warmEngineMedianMs": 213.427366,
+          "runs": [
+            {
+              "engineMs": 319.120363,
+              "metadataCacheHits": 0,
+              "filesRead": 10002
+            },
+            {
+              "engineMs": 292.905894,
+              "metadataCacheHits": 10000,
+              "filesRead": 2
+            },
+            {
+              "engineMs": 202.74074000000002,
+              "metadataCacheHits": 10000,
+              "filesRead": 2
+            },
+            {
+              "engineMs": 213.427366,
+              "metadataCacheHits": 10000,
+              "filesRead": 2
+            },
+            {
+              "engineMs": 208.131253,
+              "metadataCacheHits": 10000,
+              "filesRead": 2
+            },
+            {
+              "engineMs": 220.410263,
+              "metadataCacheHits": 10000,
+              "filesRead": 2
+            }
+          ],
+          "totalProcessMs": 1775.368958999934,
+          "outputBytes": 8269881
+        }
+      },
+      "equivalentMetadata": true,
+      "rustPriorityOrderVerified": true,
+      "rustPersistentCacheVerified": true,
+      "ratiosLegacyOverRust": {
+        "freshEngine": 3.6159237842987015,
+        "freshProcess": 2.4227934185802966,
+        "persistentWarmEngine": 4.590239351030552
+      }
+    }
+  ]
+}

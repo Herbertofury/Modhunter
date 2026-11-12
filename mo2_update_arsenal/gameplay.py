@@ -72,6 +72,19 @@ class Chronicle:
         with self.lock:
             return deepcopy(self._profile(profile_id).get("progress") or {})
 
+    def update_count(self, profile_id: str) -> int:
+        with self.lock:
+            return len(self._profile(profile_id)["events"])
+
+    def source_links(self, profile_id: str, item_ids: list[str] | None = None) -> dict[str, str]:
+        """Read just explicit source links, without cloning notes/game progress."""
+        with self.lock:
+            rows = (self._profile(profile_id).get("progress") or {}).get("rows") or {}
+            keys = rows if item_ids is None else item_ids
+            return {key: rows[key]["url"] for key in keys
+                    if isinstance(rows.get(key), dict) and isinstance(rows[key].get("url"), str)
+                    and rows[key]["url"]}
+
     def set_progress(self, profile_id: str, rows: dict, prefs: dict, runtime: str, valid_ids: set[str]) -> dict:
         """User-editable progress cannot mutate scores, badges, or native event evidence."""
         if not isinstance(rows, dict) or not isinstance(prefs, dict):
@@ -375,7 +388,7 @@ class Chronicle:
                 p["profileName"] = str(name)[:100]
                 self._write()
 
-    def overview(self, profile_id: str) -> dict:
+    def overview(self, profile_id: str, *, include_progress: bool = True) -> dict:
         with self.lock:
             p = self._profile(profile_id)
             score = p.get("score", 0)
@@ -383,4 +396,7 @@ class Chronicle:
             for code, name, description, threshold, glyph in BADGES:
                 trophies.append({"id": code, "name": name, "description": description, "glyph": glyph, "unlocked": code in p["achievements"], "target": threshold})
             trophies.append({"id": "world-eater", "name": "World-Eater Defeated", "description": "Verify an entire live profile after updates with a fresh full Nexus audit", "glyph": "👑", "unlocked": "world-eater" in p["achievements"], "target": None})
-            return {"ok": True, "profileId": profile_id, "score": score, "level": 1 + int((score / 400) ** 0.65), "bestCombo": p["bestCombo"], "updates": len(p["events"]), "achievements": trophies, "feed": deepcopy(p["events"][-8:]), "victories": len(p["victories"]), "leaderboard": self.leaderboard(), "unseenVictory": deepcopy(next((v for v in reversed(p["victories"]) if not v["ack"]), None)), "progress": deepcopy(p.get("progress") or {}), "realmWallet": self.realm_wallet(profile_id), "bossBounties": self.boss_bounties(profile_id)}
+            result = {"ok": True, "profileId": profile_id, "score": score, "level": 1 + int((score / 400) ** 0.65), "bestCombo": p["bestCombo"], "updates": len(p["events"]), "achievements": trophies, "feed": deepcopy(p["events"][-8:]), "victories": len(p["victories"]), "leaderboard": self.leaderboard(), "unseenVictory": deepcopy(next((v for v in reversed(p["victories"]) if not v["ack"]), None)), "realmWallet": self.realm_wallet(profile_id), "bossBounties": self.boss_bounties(profile_id)}
+            if include_progress:
+                result["progress"] = deepcopy(p.get("progress") or {})
+            return result

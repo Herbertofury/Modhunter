@@ -1,4 +1,4 @@
-name: Verify and package Modhunter Update Workshop
+name: Verify Modhunter dashboard and standalone HTML
 on:
   push:
     branches: [main]
@@ -11,7 +11,7 @@ on:
       - '.github/workflows/build-workshop.yml'
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
 concurrency:
   group: modhunter-workshop-package
   cancel-in-progress: true
@@ -60,6 +60,8 @@ jobs:
           PY
       - name: Exercise real Chromium update and install-briefing workflow
         timeout-minutes: 12
+        env:
+          MODHUNTER_REQUIRE_BROWSER: '1'
         run: |
           python3 -m venv /tmp/modhunter-browser-qa
           /tmp/modhunter-browser-qa/bin/pip install -q --disable-pip-version-check playwright==1.57.0
@@ -73,64 +75,34 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
           path: /tmp/modhunter-browser-proof/
-      - name: Regenerate self-contained desktop, MO2 plugin and source packages
+      - name: Prepare the verified standalone HTML artifact
         run: |
-          python3 release_v08.py
-          mkdir -p web dist
-          cp mo2_update_arsenal/web/index.html web/Modhunter.html
-          cp "$MODHUNTER_ARTIFACT_DIR"/Modhunter-MO2-Plugin.zip dist/Modhunter-MO2-Plugin.zip
-          cp "$MODHUNTER_ARTIFACT_DIR"/Modhunter-Desktop-Source.zip dist/Modhunter-Desktop-Source.zip
-          cp "$MODHUNTER_ARTIFACT_DIR"/Modhunter.html dist/Modhunter.html
-          cp "$MODHUNTER_ARTIFACT_DIR"/Modhunter-Complete-Source.zip dist/Modhunter-Complete-Source.zip
-          cp "$MODHUNTER_ARTIFACT_DIR"/Modhunter-All-in-One.zip dist/Modhunter-All-in-One.zip
-          cp "$MODHUNTER_ARTIFACT_DIR"/Modhunter-0.8/dist/manifest.json dist/manifest.json
-          python3 - <<'PY'
-          from zipfile import ZipFile
+          python3 - <<'PYBUILD'
+          import hashlib,json,os,shutil
           from pathlib import Path
-          html=Path('web/Modhunter.html').read_bytes()
-          assert html==Path('mo2_update_arsenal/web/index.html').read_bytes()
-          for name in ('Modhunter-MO2-Plugin.zip','Modhunter-Desktop-Source.zip','Modhunter-Complete-Source.zip','Modhunter-All-in-One.zip'):
-              with ZipFile(Path('dist')/name) as z:
-                  assert z.testzip() is None
-                  assert 'mo2_update_arsenal/web/index.html' in z.namelist() if name in ('Modhunter-MO2-Plugin.zip','Modhunter-Desktop-Source.zip') else ('web/Modhunter.html' in z.namelist() if name=='Modhunter-Complete-Source.zip' else 'Modhunter.html' in z.namelist())
-
-          with ZipFile('dist/Modhunter-All-in-One.zip') as z:
-              for p in ('Modhunter.html','Desktop/Modhunter.html',
-                        'MO2/mo2_update_arsenal/web/index.html'):
-                  assert z.read(p)==html,p
-              import json,hashlib
-              info=json.loads(z.read('bundle-index.json'))
-              for name in ('Modhunter-MO2-Plugin.zip','Modhunter-Desktop-Source.zip','Modhunter-Complete-Source.zip'):
-                  prefix='Source/' if 'Complete' in name else 'Installers/'
-                  assert hashlib.sha256(z.read(prefix+name)).hexdigest()==info['parts'][name]['sha256']
-              for doc in ('Docs/Unified-Modhunter.md','Docs/Update-Workshop.md','Docs/Original-Releases-and-Output-Audit.md'):
-                  assert doc in z.namelist(),doc
-          page=html.decode('utf-8')
-          assert 'id="unifiedCommand"' in page
-          assert 'id="unifiedScan"' in page
-          assert 'id="unifiedReview"' in page
-          print('All independent and all-in-one packages verified')
-          PY
-      - name: Upload complete Modhunter release for independent download and Drive archival
+          output=Path(os.environ['MODHUNTER_ARTIFACT_DIR'])/'standalone'
+          output.mkdir(parents=True,exist_ok=True)
+          page=output/'Modhunter.html'
+          shutil.copyfile('mo2_update_arsenal/web/index.html',page)
+          info={
+              'schemaVersion':1,
+              'kind':'verified-standalone-html',
+              'commit':os.environ['GITHUB_SHA'],
+              'workflow':os.environ['GITHUB_SERVER_URL']+'/'+os.environ['GITHUB_REPOSITORY']+'/actions/runs/'+os.environ['GITHUB_RUN_ID'],
+              'sha256':hashlib.sha256(page.read_bytes()).hexdigest(),
+              'bytes':page.stat().st_size,
+              'nativeMo2PluginIncluded':False,
+              'rustHelperIncluded':False,
+          }
+          (output/'BUILD_INFO.json').write_text(json.dumps(info,indent=2)+'\n',encoding='utf-8')
+          (output/'SHA256SUMS.txt').write_text(info['sha256']+'  Modhunter.html\n',encoding='utf-8')
+          shutil.copyfile('wiki/Standalone-HTML.md',output/'Standalone-HTML.md')
+          print(json.dumps(info))
+          PYBUILD
+      - name: Upload the verified standalone dashboard
         uses: actions/upload-artifact@v4
         with:
-          name: Modhunter-Update-Workshop-Complete
+          name: Modhunter-Standalone-HTML
           retention-days: 90
           if-no-files-found: error
-          path: |
-            dist/Modhunter.html
-            dist/Modhunter-MO2-Plugin.zip
-            dist/Modhunter-Desktop-Source.zip
-            dist/Modhunter-Complete-Source.zip
-            dist/Modhunter-All-in-One.zip
-            dist/manifest.json
-            wiki/
-            README.md
-      - name: Commit verified distributables to main
-        run: |
-          git config user.name "Modhunter Build Bot"
-          git config user.email "actions@users.noreply.github.com"
-          git add mo2_update_arsenal/web/index.html web/Modhunter.html dist/
-          if git diff --cached --quiet; then echo "Artifacts already current"; exit 0; fi
-          git commit -m "build: publish verified Update Workshop HTML and standalone packages"
-          git push origin HEAD:main
+          path: /tmp/modhunter-artifacts/standalone/

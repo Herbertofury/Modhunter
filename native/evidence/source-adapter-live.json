@@ -1,0 +1,247 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-11-12T17:11:33.098423+00:00",
+  "scope": "Compiled Rust public API reads and cache reuse only; no credentials, downloads, installation, MO2, GUI or game execution.",
+  "platform": "Linux",
+  "architecture": "x86_64",
+  "baseCommit": "76040873cf17189aac9799e4ad68b09f8902d0cb",
+  "sourceMatchesBaseCommit": false,
+  "sourceSha256": {
+    "native/Cargo.lock": "d630a54d3fd40f6313159b9e9f08f4e7334d253c968f5728aceadc108a31d132",
+    "native/rust-toolchain.toml": "d13306be0ecda81ce779baa290ffb417380d525928477f16200884b5169cca33",
+    "native/crates/modhunter-core/Cargo.toml": "d8984abc1438085078d1f27f96690718a8d59946d33528a725a163f9ad1581ea",
+    "native/crates/modhunter-core/src/lib.rs": "9bfeaf6290f88f4453ed10cc8294d22d3d658a5860da8fc32da5a360547b5b44",
+    "native/crates/modhunter-core/src/bin/modhunter-cli.rs": "bfdad48c937375fcf07d7e0f14506c379acdcb60f2af630b070d1982fbdfa352",
+    "native/crates/modhunter-core/src/source_adapters/mod.rs": "c781399b6674db58d2b13ffa2754788b661368f95066f66465ae3b1f3e4427b7",
+    "native/crates/modhunter-core/src/source_adapters/identity.rs": "22354ed8638d916cddeab3145a4f479355a6d617e38be6640e9f9800fa1caa94",
+    "native/crates/modhunter-core/src/source_adapters/http.rs": "ea63072d2b4b960d4cfc9b5a1ce0a2da6be851d5142f6dbf767b6fca6bd80733",
+    "native/crates/modhunter-core/src/source_adapters/parsers.rs": "c688039fd3bfadd8451048570f9f7bfc844ab9158a450040bd008c7a44497bc3"
+  },
+  "binarySha256": "0fb1fc7654f07e5debbd72a8ff2d550117cd2182c685bbfa462625afdfd5764a",
+  "protocolCompleted": true,
+  "successfulProviderObservations": 3,
+  "providerObservations": [
+    {
+      "provider": "github",
+      "sourceUrl": "https://github.com/ModOrganizer2/modorganizer",
+      "outcome": "release",
+      "availability": "available",
+      "reason": "Published release identity verified; installed-version comparison is performed by the updater.",
+      "projectId": "modorganizer2/modorganizer",
+      "releaseId": "168595754",
+      "latestVersion": "v2.5.2",
+      "checkedAt": 1794503472,
+      "retryAt": null,
+      "compatibilityStatus": "not-declared",
+      "moderationStatus": null,
+      "metadataCounts": {
+        "files": 4,
+        "queueableArchives": 4,
+        "filesWithPublishedHashes": 0,
+        "dependencies": 0,
+        "media": 0,
+        "changelogCharacters": 5423
+      },
+      "publisherObserved": true,
+      "authorObserved": false,
+      "firstRequestStats": {
+        "budgetMs": 18000,
+        "cacheHits": 0,
+        "elapsedMs": 6257.941507,
+        "items": 2,
+        "manualSources": 0,
+        "queried": 3,
+        "rateLimited": 0,
+        "revalidated": 0,
+        "sourceProjects": 2,
+        "workers": 4
+      },
+      "processElapsedMs": 6265.417,
+      "cacheRepeat": {
+        "outcome": "release",
+        "freshness": "cached",
+        "stats": {
+          "budgetMs": 18000,
+          "cacheHits": 2,
+          "elapsedMs": 1.017712,
+          "items": 2,
+          "manualSources": 0,
+          "queried": 0,
+          "rateLimited": 0,
+          "revalidated": 0,
+          "sourceProjects": 2,
+          "workers": 4
+        },
+        "processElapsedMs": 10.638
+      }
+    },
+    {
+      "provider": "gitlab",
+      "sourceUrl": "https://gitlab.com/OpenMW/openmw",
+      "outcome": "release",
+      "availability": "available",
+      "reason": "Published release identity verified; installed-version comparison is performed by the updater.",
+      "projectId": "OpenMW/openmw",
+      "releaseId": "openmw-0.51.0",
+      "latestVersion": "openmw-0.51.0",
+      "checkedAt": 1794503472,
+      "retryAt": null,
+      "compatibilityStatus": "not-declared",
+      "moderationStatus": null,
+      "metadataCounts": {
+        "files": 0,
+        "queueableArchives": 0,
+        "filesWithPublishedHashes": 0,
+        "dependencies": 0,
+        "media": 0,
+        "changelogCharacters": 6000
+      },
+      "publisherObserved": true,
+      "authorObserved": false,
+      "firstRequestStats": {
+        "budgetMs": 18000,
+        "cacheHits": 0,
+        "elapsedMs": 6257.941507,
+        "items": 2,
+        "manualSources": 0,
+        "queried": 3,
+        "rateLimited": 0,
+        "revalidated": 0,
+        "sourceProjects": 2,
+        "workers": 4
+      },
+      "processElapsedMs": 6265.417,
+      "cacheRepeat": {
+        "outcome": "release",
+        "freshness": "cached",
+        "stats": {
+          "budgetMs": 18000,
+          "cacheHits": 2,
+          "elapsedMs": 1.017712,
+          "items": 2,
+          "manualSources": 0,
+          "queried": 0,
+          "rateLimited": 0,
+          "revalidated": 0,
+          "sourceProjects": 2,
+          "workers": 4
+        },
+        "processElapsedMs": 10.638
+      }
+    },
+    {
+      "provider": "modrinth",
+      "sourceUrl": "https://modrinth.com/mod/sodium",
+      "outcome": "unavailable",
+      "availability": "unavailable",
+      "reason": "Provider request timed out",
+      "projectId": "sodium",
+      "releaseId": null,
+      "latestVersion": null,
+      "checkedAt": 1794503478,
+      "retryAt": 1794503538,
+      "compatibilityStatus": null,
+      "moderationStatus": null,
+      "metadataCounts": {
+        "files": 0,
+        "queueableArchives": 0,
+        "filesWithPublishedHashes": 0,
+        "dependencies": 0,
+        "media": 0,
+        "changelogCharacters": 0
+      },
+      "publisherObserved": false,
+      "authorObserved": false,
+      "firstRequestStats": {
+        "budgetMs": 18000,
+        "cacheHits": 0,
+        "elapsedMs": 9395.501294000002,
+        "items": 1,
+        "manualSources": 0,
+        "queried": 1,
+        "rateLimited": 0,
+        "revalidated": 0,
+        "sourceProjects": 1,
+        "workers": 4
+      },
+      "processElapsedMs": 9461.43,
+      "cacheRepeat": {
+        "outcome": "unavailable",
+        "freshness": "unverified",
+        "stats": {
+          "budgetMs": 18000,
+          "cacheHits": 0,
+          "elapsedMs": 1.7063270000000001,
+          "items": 1,
+          "manualSources": 0,
+          "queried": 0,
+          "rateLimited": 0,
+          "revalidated": 0,
+          "sourceProjects": 1,
+          "workers": 4
+        },
+        "processElapsedMs": 571.827
+      }
+    },
+    {
+      "provider": "thunderstore",
+      "sourceUrl": "https://thunderstore.io/c/valheim/p/denikson/BepInExPack_Valheim/",
+      "outcome": "release",
+      "availability": "available",
+      "reason": "Published release identity verified; installed-version comparison is performed by the updater.",
+      "projectId": "denikson/BepInExPack_Valheim",
+      "releaseId": "5.4.2360",
+      "latestVersion": "5.4.2360",
+      "checkedAt": 1794503488,
+      "retryAt": null,
+      "compatibilityStatus": "community-matched",
+      "moderationStatus": "unreviewed",
+      "metadataCounts": {
+        "files": 1,
+        "queueableArchives": 1,
+        "filesWithPublishedHashes": 0,
+        "dependencies": 0,
+        "media": 0,
+        "changelogCharacters": 0
+      },
+      "publisherObserved": true,
+      "authorObserved": false,
+      "firstRequestStats": {
+        "budgetMs": 18000,
+        "cacheHits": 0,
+        "elapsedMs": 4071.116866,
+        "items": 1,
+        "manualSources": 0,
+        "queried": 1,
+        "rateLimited": 0,
+        "revalidated": 0,
+        "sourceProjects": 1,
+        "workers": 4
+      },
+      "processElapsedMs": 4134.351,
+      "cacheRepeat": {
+        "outcome": "release",
+        "freshness": "cached",
+        "stats": {
+          "budgetMs": 18000,
+          "cacheHits": 1,
+          "elapsedMs": 1.732295,
+          "items": 1,
+          "manualSources": 0,
+          "queried": 0,
+          "rateLimited": 0,
+          "revalidated": 0,
+          "sourceProjects": 1,
+          "workers": 4
+        },
+        "processElapsedMs": 23.96
+      }
+    }
+  ],
+  "limitations": [
+    "Single live samples are not benchmarks or permanent availability guarantees.",
+    "The chosen tool/game profiles are synthetic and do not certify game compatibility or MO2 installation support.",
+    "Unavailable, denied and rate-limited responses remain failures to establish current release facts.",
+    "Published file digests were observed in metadata; no archive was downloaded or locally hash-verified."
+  ]
+}

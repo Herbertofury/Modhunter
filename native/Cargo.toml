@@ -1,0 +1,16 @@
+[workspace]
+members = ["crates/modhunter-core", "crates/modhunter-desktop"]
+default-members = ["crates/modhunter-core"]
+resolver = "3"
+
+[workspace.package]
+version = "0.9.0"
+edition = "2024"
+rust-version = "1.90"
+publish = false
+license = "LicenseRef-Modhunter"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"

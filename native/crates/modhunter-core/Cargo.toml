@@ -1,0 +1,22 @@
+[package]
+name = "modhunter-core"
+version = "0.9.0"
+edition = "2024"
+description = "Read-only, bounded-parallel MO2 profile engine and loopback connection client"
+license = "LicenseRef-Proprietary"
+
+[dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+rayon = "1.10"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls-native-roots", "system-proxy"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+url = "2"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"

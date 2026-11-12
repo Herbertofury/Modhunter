@@ -15,6 +15,7 @@
 **Get Started**
 * [🚀 Installation](Getting-Started)
 * [🖥️ Desktop App](Desktop-App)
+* [Rust Desktop 0.9](Rust-Desktop)
 * [🛠️ MO2 Plugin](MO2-Plugin)
 * [🔎 Updater Sources](Updater-Source-Coverage)
 * [⚒ Update Workshop](Update-Workshop)

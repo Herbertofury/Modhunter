@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .update_plan import risk_reasons
+from .update_plan import risk_reasons, validate_release_asset, PlanError
 
 
 PROFILE_BACKUP_FILES = ["modlist.txt", "plugins.txt", "loadorder.txt", "archives.txt", "lockedorder.txt"]
@@ -63,6 +63,15 @@ def build_install_brief(snapshot: dict, ticket: dict | None, download_id: Any) -
         if set(current_risks) - previous_risks:
             failures.append("New compatibility warnings were discovered after file review")
         notices.extend(current_risks)
+        if ticket.get("assetProof"):
+            selection = {"kind": "source", "itemId": item_id, "installedVersion": ticket.get("installedVersion"),
+                         "targetVersion": ticket.get("targetVersion"), "assetProof": ticket["assetProof"],
+                         "reviewed": True, "riskAcknowledged": True,
+                         **({"assetKey": ticket["assetKey"]} if ticket.get("assetKey") else {"assetId": ticket.get("assetId")})}
+            try:
+                validate_release_asset(snapshot, selection, require_fresh=False)
+            except PlanError as exc:
+                failures.append("The downloaded source archive no longer matches its reviewed evidence: " + str(exc))
     else:
         notices.append("Archive is not tied to an exact reviewed MO2 row. Check the mod and file identity in MO2.")
     if not ticket.get("reviewed"):
@@ -78,6 +87,7 @@ def build_install_brief(snapshot: dict, ticket: dict | None, download_id: Any) -
         "modName": str(item.get("name") or item_id) if item else str(ticket.get("name") or "Unlinked download"),
         "itemId": item_id, "provider": str(ticket.get("provider") or "unknown"),
         "fileId": _positive_int(ticket.get("fileId") or ticket.get("assetId")),
+        "assetKey": str(ticket.get("assetKey") or ""), "assetProof": str(ticket.get("assetProof") or ""),
         "archiveName": str(ticket.get("fileName") or ticket.get("name") or "Exact archive in MO2 Downloads"),
         "fileVersion": str(ticket.get("fileVersion") or ""),
         "installedVersion": str(ticket.get("installedVersion") or "?"),

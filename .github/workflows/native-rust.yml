@@ -1,0 +1,237 @@
+name: Rust desktop and MO2 readiness
+on:
+  push:
+    branches: [main, 'upgrade/rust-desktop-mo2']
+    paths: ['native/**', 'mo2_update_arsenal/**', 'tests/**', 'build.py', '.github/workflows/native-rust.yml']
+  pull_request:
+    paths: ['native/**', 'mo2_update_arsenal/**', 'tests/**', 'build.py', '.github/workflows/native-rust.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: modhunter-rust-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+          cache-on-failure: 'true'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify Rust, MO2 lifecycle, and existing features
+        run: |
+          python3 native/scripts/prepare_assets.py
+          cargo fmt --manifest-path native/Cargo.toml --all -- --check
+          cargo test --manifest-path native/Cargo.toml --workspace --locked
+          python3 native/scripts/verify_plugin_bridge.py --cli native/target/debug/modhunter-cli --output native/target/plugin-bridge-protocol.json
+          python3 native/scripts/verify_source_bridge.py --cli native/target/debug/modhunter-cli --output native/target/source-bridge-protocol.json
+          cargo clippy --manifest-path native/Cargo.toml --workspace --all-targets --locked -- -D warnings
+          python3 -m unittest discover -s tests -p 'test_*.py' -q
+          node --check native/ui/shell.js
+          node --test native/crates/modhunter-desktop/tests/shell_runtime.test.cjs
+          node --test tests/mod_insights.test.cjs
+          node --test tests/source_insights.test.cjs
+          node --test tests/frontend_runtime.test.cjs
+          node --test desktop/offline_mo2.test.cjs
+          python3 native/scripts/prepare_release.py --self-test
+          python3 native/scripts/mo2_smoke_plugin/modhunter_native_smoke/audit_probe.py --self-test
+      - name: Exercise actual dashboard in Chromium
+        env:
+          MODHUNTER_REQUIRE_BROWSER: '1'
+        run: |
+          python3 -m venv /tmp/modhunter-qa
+          /tmp/modhunter-qa/bin/pip install -q playwright==1.57.0
+          /tmp/modhunter-qa/bin/python -m playwright install --with-deps chromium
+          PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/updater_sss_browser_qa.py
+          PYTHONPATH=. /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_frontend_responsiveness.py' -v
+      - name: Upload browser proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Modhunter-Rust-Browser-Proof
+          path: /tmp/modhunter-proof/
+          if-no-files-found: warn
+  windows:
+    runs-on: windows-2025
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.99.1'
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+          cache-on-failure: 'true'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare all existing dashboard and game assets
+        run: python native/scripts/prepare_assets.py
+      - name: Install the Qt SDK matching MO2 2.5.2
+        id: qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.7.1'
+          host: windows
+          target: desktop
+          arch: win64_msvc2019_64
+          archives: qtbase
+          cache: 'true'
+          set-env: 'false'
+      - name: Build and test the narrow native Qt bridge
+        shell: pwsh
+        run: |
+          $env:PATH = "${{ steps.qt.outputs.qt-root-dir }}/bin;$env:PATH"
+          cmake -S native/qt_bridge -B native/target/qt-bridge -A x64 "-DCMAKE_PREFIX_PATH=${{ steps.qt.outputs.qt-root-dir }}" -DBUILD_TESTING=ON
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build native/target/qt-bridge --config Release --parallel 2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --test-dir native/target/qt-bridge -C Release --output-on-failure
+      - name: Verify plugin installation and progress-preserving upgrades
+        shell: pwsh
+        run: ./native/scripts/test_plugin_installer.ps1
+      - name: Test native Windows code
+        run: |
+          cargo test --manifest-path native/Cargo.toml --workspace --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo clippy --manifest-path native/Cargo.toml --workspace --all-targets --locked -- -D warnings
+      - name: Build Rust executable and Windows installer
+        working-directory: native/crates/modhunter-desktop
+        run: npx --yes @tauri-apps/cli@2 build
+      - name: Build portable Rust diagnostic CLI
+        run: cargo build --manifest-path native/Cargo.toml --release --locked -p modhunter-core
+      - name: Launch actual Windows WebView2 and import a fixture profile
+        shell: pwsh
+        run: ./native/scripts/windows_smoke.ps1 -Executable "$PWD/native/target/release/Modhunter.exe" -Output "$PWD/native/target/native-smoke"
+      - name: Package tested Windows app, MO2 plugin, and diagnostics
+        shell: pwsh
+        run: |
+          if (Test-Path native/target/portable) { Remove-Item -Recurse -Force native/target/portable }
+          New-Item -ItemType Directory -Force native/target/portable/MO2 | Out-Null
+          Copy-Item native/target/release/Modhunter.exe native/target/portable/
+          Copy-Item -Recurse mo2_update_arsenal native/target/portable/MO2/
+          Get-ChildItem -Recurse native/target/portable -Directory -Filter __pycache__ | Remove-Item -Recurse -Force
+          Copy-Item native/README.md native/target/portable/README.md
+          Copy-Item native/Install_MO2_Plugin.ps1 native/target/portable/
+          Copy-Item native/Install_MO2_Plugin.bat native/target/portable/
+          Copy-Item native/target/release/modhunter-cli.exe native/target/portable/
+          New-Item -ItemType Directory -Force native/target/portable/MO2/mo2_update_arsenal/bin | Out-Null
+          Copy-Item native/target/release/modhunter-cli.exe native/target/portable/MO2/mo2_update_arsenal/bin/modhunter-cli.exe
+          Copy-Item native/target/qt-bridge/Release/modhunter-qt-bridge.dll native/target/portable/MO2/mo2_update_arsenal/bin/modhunter-qt-bridge.dll
+          New-Item -ItemType Directory -Force native/target/portable/Evidence | Out-Null
+          Copy-Item native/target/native-smoke/native-smoke.json native/target/portable/Evidence/
+          Copy-Item native/evidence/import-comparison.json native/target/portable/Evidence/
+          @{ version = '0.9.0'; commit = '${{ github.sha }}'; workflow = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}' } | ConvertTo-Json | Set-Content -Encoding utf8 native/target/portable/BUILD_INFO.json
+          $packageRoot = (Resolve-Path native/target/portable).Path
+          Get-ChildItem -File -Recurse $packageRoot | Where-Object { $_.Name -ne 'SHA256SUMS.txt' } | Sort-Object FullName | ForEach-Object { $relative = [IO.Path]::GetRelativePath($packageRoot, $_.FullName).Replace('\', '/'); "$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $relative" } | Set-Content -Encoding utf8 native/target/portable/SHA256SUMS.txt
+          Compress-Archive -Path native/target/portable/* -DestinationPath native/target/Modhunter-Rust-Windows.zip -Force
+      - name: Preserve native executable, installer and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Modhunter-Rust-Windows
+          if-no-files-found: warn
+          retention-days: 90
+          path: |
+            native/target/Modhunter-Rust-Windows.zip
+            native/target/release/bundle/nsis/*.exe
+            native/target/qt-bridge/Release/modhunter-qt-bridge.dll
+            native/target/native-smoke/*.json
+            native/target/native-smoke/*.jsonl
+            native/target/native-smoke/*.log
+            native/target/native-smoke/*.png
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [contracts, windows, mo2]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Modhunter-*
+          path: release-input
+      - name: Verify the built packages and prepare immutable release assets
+        env:
+          MODHUNTER_BUILD_COMMIT: ${{ github.sha }}
+          MODHUNTER_BUILD_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python3 native/scripts/prepare_release.py release-input release-assets --commit "$MODHUNTER_BUILD_COMMIT" --run-url "$MODHUNTER_BUILD_RUN"
+      - name: Publish the tested Rust Windows release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(python3 -c "import json; print(json.load(open('native/crates/modhunter-desktop/tauri.conf.json'))['version'])")
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Invalid release version'; exit 1; }
+          tag="v$version"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "$tag is already published; existing release assets remain immutable."
+            exit 0
+          fi
+          if existing=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq .object.sha 2>/dev/null); then
+            [[ "$existing" == "$GITHUB_SHA" ]] || { echo 'Existing tag does not identify this tested commit'; exit 1; }
+          fi
+          gh release create "$tag" release-assets/*.zip release-assets/*.exe release-assets/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Modhunter $version — Rust desktop" --notes-file release-assets/release-notes.md
+  mo2:
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.99.1'
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+          cache-on-failure: 'true'
+      - name: Install the Qt SDK matching MO2 2.5.2
+        id: qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.7.1'
+          host: windows
+          target: desktop
+          arch: win64_msvc2019_64
+          archives: qtbase
+          cache: 'true'
+          set-env: 'false'
+      - name: Build and test the narrow native Qt bridge
+        shell: pwsh
+        run: |
+          $env:PATH = "${{ steps.qt.outputs.qt-root-dir }}/bin;$env:PATH"
+          cmake -S native/qt_bridge -B native/target/qt-bridge -A x64 "-DCMAKE_PREFIX_PATH=${{ steps.qt.outputs.qt-root-dir }}" -DBUILD_TESTING=ON
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build native/target/qt-bridge --config Release --parallel 2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --test-dir native/target/qt-bridge -C Release --output-on-failure
+      - name: Prepare the production dashboard
+        run: python native/scripts/prepare_assets.py
+      - name: Build the real Rust connection client
+        run: cargo build --manifest-path native/Cargo.toml --release --locked -p modhunter-core
+      - name: Exercise the production plugin inside real MO2 2.5.2
+        shell: pwsh
+        run: ./native/scripts/mo2_native_smoke.ps1 -RustCliPath "$PWD/native/target/release/modhunter-cli.exe" -QtBridgePath "$PWD/native/target/qt-bridge/Release/modhunter-qt-bridge.dll"
+      - name: Preserve native MO2 receipts and screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Modhunter-MO2-Native-Proof
+          path: native/evidence/windows-mo2-smoke/
+          if-no-files-found: error
+          retention-days: 90

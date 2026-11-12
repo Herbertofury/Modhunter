@@ -8,6 +8,7 @@ import hmac
 import json
 import secrets
 import threading
+import time
 import urllib.parse
 from copy import deepcopy
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -22,8 +23,11 @@ from .source_registry import SourceScanner, canonical_source_url, source_record
 from .update_plan import PlanError, plan_updates, validate_batch_selection, validate_release_asset, risk_reasons
 from .file_advisor import advise_nexus_files
 from .install_brief import build_install_brief
-from .quick_update import choose_nexus_file, choose_github_asset
+from .quick_update import choose_nexus_file, choose_release_asset
 from .operation_journal import OperationJournal
+from .session_discovery import SessionDiscovery
+from .intelligence import ModIntelligence
+from .source_adapters import compact_source_update, PUBLIC_API_PROVIDERS
 
 MAX_REQUEST = 16_384
 MAX_PROGRESS_REQUEST = 8_000_000
@@ -31,18 +35,78 @@ MAX_REALM_REQUEST = 800_000
 
 
 class UIRequest:
-    def __init__(self, cmd: str, payload: dict):
+    """An atomic handoff to Qt, with cancellation *before* native execution.
+
+    A caller timing out must not leave a queued mutation that executes later.
+    Once Qt owns a mutation, its actual completion remains authoritative; it
+    cannot safely be treated as failed and retried just because HTTP timed out.
+    """
+
+    def __init__(self, cmd: str, payload: dict, timeout: float | None = None):
         self.cmd, self.payload = cmd, payload
         self.event = threading.Event()
         self.result: dict[str, Any] = {}
+        self.deadline = None if timeout is None else time.monotonic() + max(0.0, timeout)
+        self._lock = threading.Lock()
+        self._state = "queued"
+        self._done_callbacks: list[Callable[[], None]] = []
 
-    def finish(self, data: dict) -> None:
-        self.result = data
-        self.event.set()
+    @property
+    def state(self) -> str:
+        with self._lock:
+            return self._state
+
+    def begin(self) -> bool:
+        """Atomically claim a queued request on Qt's thread, at most once."""
+        with self._lock:
+            if self._state != "queued":
+                return False
+            if self.deadline is None or time.monotonic() < self.deadline:
+                self._state = "running"
+                return True
+        self.cancel_if_pending()
+        return False
+
+    def add_done_callback(self, callback: Callable[[], None]) -> None:
+        with self._lock:
+            if not self.event.is_set():
+                self._done_callbacks.append(callback)
+                return
+        callback()
+
+    def _complete(self, data: dict, *, cancel: bool = False,
+                  pending_only: bool = False) -> bool:
+        with self._lock:
+            if self._state in ("completed", "cancelled"):
+                return False
+            if pending_only and self._state != "queued":
+                return False
+            self._state = "cancelled" if cancel else "completed"
+            self.result = data
+            callbacks, self._done_callbacks = self._done_callbacks, []
+            self.event.set()
+        # Callbacks remove bookkeeping only, never call Qt from this thread.
+        for callback in callbacks:
+            callback()
+        return True
+
+    def cancel_if_pending(self) -> bool:
+        return self._complete({"ok": False, "cancelled": True, "started": False,
+            "error": "MO2 was busy. The queued request expired before it started; retry after returning to MO2."},
+            cancel=True, pending_only=True)
+
+    def cancel(self) -> bool:
+        """Abandon an asynchronous read; native mutations use pending-only."""
+        return self._complete({"ok": False, "cancelled": True,
+            "error": "MO2 Nexus request timed out. Check its connection and retry."}, cancel=True)
+
+    def finish(self, data: dict) -> bool:
+        return self._complete(data)
 
 
 class ArsenalService:
-    def __init__(self, app_html: str, cache_path: Path, ui_call: Callable[[UIRequest], None], snapshot: dict):
+    def __init__(self, app_html: str, cache_path: Path, ui_call: Callable[[UIRequest], None], snapshot: dict,
+                 *, discovery_directory: Path | None = None):
         self.html = app_html
         self.token = secrets.token_urlsafe(36)
         self.ui_call = ui_call
@@ -52,7 +116,12 @@ class ArsenalService:
         self.selected_mod_id = ""
         self.api_key = ""  # Volatile: never persisted, sent to the browser, or included in backup files.
         self.native_nexus_available = False
+        self.native_nexus_files_available: bool | None = None
+        self.native_nexus_files_error = ""
         self._snapshot = snapshot
+        self._items_by_id = {str(i.get("id")): i for i in snapshot.get("items", [])}
+        self._labels_to_ids = self._label_index(snapshot)
+        self._nexus_ids = {int(i.get("nexusId") or 0) for i in snapshot.get("items", [])}
         self._guard = threading.RLock()
         self._queue_lock = threading.Lock()  # Serialize reviewed batches; never enqueue the same mod twice.
         self._quick_job: dict[str, Any] = {"state": "idle", "profileId": snapshot.get("profileId"), "queued": [], "skipped": [], "failed": []}
@@ -60,7 +129,13 @@ class ArsenalService:
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._scan: dict[str, Any] = {"state": "idle"}
-        self._file_cache: dict[int, dict] = {}
+        self._scan_epoch = 0
+        self._scan_cancel = threading.Event()
+        self._source_scanner = None
+        self._source_cache_path = cache_path.with_name("source-adapter-cache.json")
+        self._file_cache: dict[tuple[str, int], dict] = {}
+        self._file_epoch = 0
+        self._file_inflight: dict[tuple, dict] = {}
         self._downloads: dict[int, dict] = {}
         # MO2 can emit a download-complete signal before startDownload returns
         # its ID. Keep only events seen during a native start dispatch.
@@ -69,17 +144,108 @@ class ArsenalService:
         self.journal = OperationJournal(cache_path.with_name("update-operations.jsonl"))
         self._stopped = False
         self._generation = 1
+        self._pending_ui: set[UIRequest] = set()
+        self._discovery = SessionDiscovery(discovery_directory)
+        self.intelligence = ModIntelligence(self, cache_path.with_name("mod-intelligence.json"))
 
-    def snapshot(self) -> dict:
+    def _publish_discovery(self) -> None:
+        # Serialize with stop/profile replacement so an older profile cannot
+        # republish a descriptor after the service has closed.
         with self._guard:
-            snapshot = deepcopy(self._snapshot)
+            if self._server is not None and not self._stopped:
+                self._discovery.publish(f"http://127.0.0.1:{self._server.server_port}/",
+                                        str(self._snapshot.get("profileId") or ""),
+                                        str(self._snapshot.get("profileName") or ""))
+
+    def profile_id(self) -> str:
+        """O(1) profile identity for polling; never clone the whole mod list."""
+        with self._guard:
+            return str(self._snapshot.get("profileId") or "")
+
+    def revision(self) -> dict:
+        with self._guard:
+            return {"ok": True, "generation": self._generation,
+                    "profileId": self._snapshot.get("profileId"),
+                    "selectedModId": self.selected_mod_id}
+
+    def health(self) -> dict:
+        with self._guard:
+            return {"ok": True, "app": "Modhunter", "protocol": 1, "live": True,
+                    "version": "0.9.0", "profileId": self._snapshot.get("profileId"),
+                    "generation": self._generation}
+
+    def snapshot_response(self) -> dict:
+        # The catalog and its revision must describe the same state even when
+        # MO2 switches profiles while an HTTP response is being built.
+        with self._guard:
+            return {"ok": True, "catalog": self.snapshot(), "generation": self._generation}
+
+    @staticmethod
+    def _label_index(snapshot: dict) -> dict:
+        labels = {}
+        for item in snapshot.get("items", []):
+            labels.setdefault(str(item.get("name") or ""), []).append(str(item.get("id") or ""))
+        return labels
+
+    def native_snapshot(self) -> dict:
+        """Owned Qt input without provider decoration or per-row health work."""
+        with self._guard:
+            return deepcopy(self._snapshot)
+
+    def native_selection_snapshot(self, item_ids: list[str]) -> dict:
+        with self._guard:
+            snapshot = {key: self._snapshot.get(key) for key in
+                        ("profileId", "profileName", "game", "gameRuntime", "loader")}
+            snapshot["items"] = [deepcopy(self._items_by_id[key]) for key in item_ids if key in self._items_by_id]
+            return snapshot
+
+    def has_nexus_mod(self, mod_id: int) -> bool:
+        with self._guard:
+            return mod_id in self._nexus_ids
+
+    def set_selected_by_label(self, label: str) -> None:
+        with self._guard:
+            ids = self._labels_to_ids.get(label, [])
+            self.set_selected(ids[0] if len(ids) == 1 else "")
+
+    def snapshot(self, *, source_details=False) -> dict:
+        with self._guard:
+            if source_details:
+                snapshot = deepcopy(self._snapshot)
+            else:
+                snapshot = {key: deepcopy(value) for key, value in self._snapshot.items() if key != "items"}
+                snapshot["items"] = [deepcopy({**item, "update": compact_source_update(item["update"])})
+                    if isinstance(item.get("update"), dict) else deepcopy(item) for item in self._snapshot.get("items", [])]
         # The existing MO2 Chronicle persists explicit user source links by
         # profile. Rehydrate them for scans without overwriting MO2 metadata.
-        progress = self.chronicle.progress(snapshot.get("profileId", ""))
-        rows = progress.get("rows") or {}
+        links = self.chronicle.source_links(snapshot.get("profileId", ""))
+        return self.intelligence.decorate(self._apply_source_links(snapshot, links))
+
+    def selection_snapshot(self, item_ids: list[str]) -> dict:
+        """A private exact-row view for queue preflights, independent of list size."""
+        with self._guard:
+            snapshot = {key: self._snapshot.get(key) for key in
+                        ("profileId", "profileName", "game", "gameRuntime", "loader")}
+            snapshot["items"] = [deepcopy(self._items_by_id[key]) for key in item_ids
+                                 if key in self._items_by_id]
+        links = self.chronicle.source_links(snapshot.get("profileId", ""), item_ids)
+        return self.intelligence.decorate(self._apply_source_links(snapshot, links), detailed=True)
+
+    def source_details(self, item_id: str, profile_id: str) -> dict:
+        with self._guard:
+            if profile_id != self._snapshot.get("profileId"):
+                return {"ok": False, "error": "MO2 profile changed; refresh source details"}
+            if item_id not in self._items_by_id:
+                return {"ok": False, "error": "Mod is not in the active MO2 profile"}
+            snapshot = self.selection_snapshot([item_id])
+            item = snapshot["items"][0]
+            return {"ok": True, "profileId": profile_id, "itemId": item_id,
+                    "update": deepcopy(item.get("update") or {}), "source": deepcopy(item.get("source") or {})}
+
+    @staticmethod
+    def _apply_source_links(snapshot: dict, links: dict) -> dict:
         for item in snapshot.get("items", []):
-            row = rows.get(str(item.get("id")), {})
-            candidate = canonical_source_url(row.get("url", "")) if isinstance(row, dict) else ""
+            candidate = canonical_source_url(links.get(str(item.get("id")), ""))
             if candidate and candidate != (item.get("source") or {}).get("url"):
                 item["source"] = source_record(candidate, "MO2 Chronicle source link")
                 item.pop("update", None)  # Old source verdict is not transferable.
@@ -89,24 +255,47 @@ class ArsenalService:
         with self._guard:
             old = self._snapshot
             same_profile = old.get("profileId") == snapshot.get("profileId")
+            same_game = old.get("game") == snapshot.get("game")
+            same_runtime = (old.get("gameRuntime") == snapshot.get("gameRuntime")
+                            and old.get("loader") == snapshot.get("loader"))
             old_items = {str(i["id"]): i for i in old.get("items", [])}
-            if same_profile:
+            new_items = {str(i["id"]): i for i in snapshot.get("items", [])}
+            def source_identity(item):
+                source = item.get("source") or {}
+                return source.get("url", ""), source.get("verified") is True, source.get("kind", "")
+            versions_changed = old_items.keys() != new_items.keys() or any(
+                old_items[key].get("installedVersion") != new_items[key].get("installedVersion")
+                or old_items[key].get("nexusId") != new_items[key].get("nexusId")
+                or source_identity(old_items[key]) != source_identity(new_items[key]) for key in old_items.keys() & new_items.keys())
+            if same_profile and same_game and same_runtime:
                 for i in snapshot.get("items", []):
                     before = old_items.get(str(i["id"]))
-                    if before and before.get("installedVersion") == i.get("installedVersion") and before.get("update"):
+                    if (before and before.get("installedVersion") == i.get("installedVersion")
+                            and before.get("nexusId") == i.get("nexusId")
+                            and source_identity(before) == source_identity(i) and before.get("update")):
                         i["update"] = before["update"]
             awards = self.chronicle.observe(old, snapshot) if same_profile else []
-            if not same_profile or old.get("game") != snapshot.get("game"):
+            scan_context_changed = not (same_profile and same_game and same_runtime) or versions_changed
+            if scan_context_changed:
                 self._file_cache.clear()  # File identity belongs to a specific game/profile.
-            if not same_profile:
+                self._file_epoch += 1
+                self._scan_epoch += 1
+                self._scan_cancel.set()
+            if not same_profile or not same_game:
                 self._scan = {"state": "idle", "reason": "MO2 profile changed"}
                 self.selected_mod_id = ""
-            elif awards or any(old_items.get(str(i["id"]), {}).get("installedVersion") != i.get("installedVersion") for i in snapshot.get("items", [])):
+            elif awards or versions_changed or not same_runtime:
                 # A successful install/version change invalidates the old scan verdict.
-                self._scan = {"state": "stale", "reason": "Installed versions changed: rescan to verify latest state"}
+                self._scan = {"state": "stale", "reason": "Installed mods or runtime changed: rescan to verify latest state"}
             self.chronicle.set_profile_name(snapshot.get("profileId", ""), snapshot.get("profileName", "Default"))
             self._snapshot = snapshot
+            self._items_by_id = new_items
+            self._labels_to_ids = self._label_index(snapshot)
+            self._nexus_ids = {int(i.get("nexusId") or 0) for i in snapshot.get("items", [])}
             self._generation += 1
+            self.intelligence.invalidate(reason="MO2 inventory refreshed; plugin copies and conversion hashes need a fresh check")
+        self._publish_discovery()
+        self.intelligence.auto_audit()
 
     def set_selected(self, mod_id: str) -> None:
         with self._guard:
@@ -119,7 +308,7 @@ class ArsenalService:
         with self._guard:
             if profile_id != self._snapshot.get("profileId"):
                 return {"ok": False, "error": "Profile changed; refresh before navigating"}
-            m = next((i for i in self._snapshot.get("items", []) if i.get("id") == mod_id), None)
+            m = self._items_by_id.get(mod_id)
             if m is None:
                 return {"ok": False, "error": "Mod is not in the current MO2 profile"}
             internal = m.get("mo2InternalName")
@@ -184,27 +373,72 @@ class ArsenalService:
             self.api_key = str(key).strip()
 
     def call_ui(self, cmd: str, payload: dict, timeout: float = 20) -> dict:
-        req = UIRequest(cmd, payload)
-        self.ui_call(req)
+        req = UIRequest(cmd, payload, timeout=timeout)
+        self._submit_ui(req)
         if not req.event.wait(timeout):
-            return {"ok": False, "error": "MO2 is busy or its native dialog is open. Retry after returning to MO2."}
+            if req.cancel_if_pending():
+                return req.result
+            if cmd in ("nexus-metadata", "nexus-files"):
+                req.cancel()  # Its late callback cannot resurrect an old read.
+            else:
+                # Native execution has already begun. Retain the operation's
+                # lease until its real result arrives, avoiding duplicate work
+                # and losing the download ID after a slow native handoff.
+                req.event.wait()
         return req.result
 
-    def begin_scan(self, mode: str) -> dict:
+    def _submit_ui(self, request: UIRequest) -> None:
+        def forget():
+            with self._guard:
+                self._pending_ui.discard(request)
+        with self._guard:
+            if self._stopped:
+                request.cancel_if_pending()
+                return
+            self._pending_ui.add(request)
+        request.add_done_callback(forget)
+        try:
+            self.ui_call(request)
+        except Exception:
+            request.cancel_if_pending()
+            forget()
+            raise
+
+    def begin_scan(self, mode: str, profile_id: str | None = None) -> dict:
         if mode not in ("quick", "deep", "local", "sources", "all"):
             return {"ok": False, "error": "Invalid scan mode"}
         with self._guard:
+            if self._stopped:
+                return {"ok": False, "error": "MO2 session is closed"}
+            if profile_id is not None and profile_id != self._snapshot.get("profileId"):
+                return {"ok": False, "error": "MO2 profile changed before scanning; refresh and try again"}
             if self._scan.get("state") == "running":
                 return {"ok": False, "error": "An update scan is already running"}
-            self._scan = {"state": "running", "mode": mode, "checked": 0, "total": 0, "errors": []}
+            self._scan_epoch += 1
+            job_epoch = self._scan_epoch
+            self._scan_cancel.set()
+            self._scan_cancel = threading.Event()
+            scan_cancel = self._scan_cancel
+            self._scan = {"state": "running", "mode": mode, "checked": 0, "total": 0, "errors": [], "jobId": job_epoch}
             self._file_cache.clear()  # Never review a cached Nexus file list after a fresh audit.
+            self._file_epoch += 1
             snapshot = self.snapshot()
             key = self.api_key
             native_nexus = self.native_nexus_available
-            base_sequence = self.chronicle.overview(snapshot["profileId"])["updates"]
-            version_signature = [(x.get("id"), x.get("installedVersion")) for x in snapshot.get("items", [])]
+            base_sequence = self.chronicle.update_count(snapshot["profileId"])
+            scan_identity = tuple(snapshot.get(key) for key in ("profileId", "game", "gameRuntime", "loader"))
+        def is_current():
+            return (not self._stopped and self._scan_epoch == job_epoch
+                    and tuple(self._snapshot.get(key) for key in ("profileId", "game", "gameRuntime", "loader")) == scan_identity)
+        def progress(data):
+            with self._guard:
+                if is_current() and self._scan.get("state") == "running":
+                    self._scan.update(data)
         def worker():
             try:
+                with self._guard:
+                    if not is_current():
+                        return
                 def scan_nexus(which):
                     if which == "local" or (which == "quick" and native_nexus and not key):
                         return local_mo2_candidates(snapshot), "local"
@@ -214,6 +448,9 @@ class ArsenalService:
                         import re
                         game = snapshot.get("game", "skyrimspecialedition")
                         def mo2_nexus_get(path):
+                            with self._guard:
+                                if not is_current():
+                                    raise NexusError("MO2 scan was superseded")
                             m = re.fullmatch(r"/v1/games/[a-z0-9_-]+/mods/([0-9]+)\.json", path)
                             if m is None:
                                 raise NexusError("Unsupported native Nexus request")
@@ -225,74 +462,118 @@ class ArsenalService:
                         client = NexusClient("mo2-native", request_json=mo2_nexus_get)
                     else:
                         raise MissingAuth("Connect to Nexus in MO2 Settings > Nexus or use a fallback API key.")
-                    return UpdateScanner(self.cache, client).scan(snapshot, which, self._progress), which
+                    return UpdateScanner(self.cache, client).scan(snapshot, which, progress), which
 
+                def scan_sources():
+                    with self._guard:
+                        if self._source_scanner is None:
+                            self._source_scanner = SourceScanner(cache_path=self._source_cache_path)
+                        scanner = self._source_scanner
+                    return scanner.scan(snapshot, progress, cancel_event=scan_cancel)
                 effective_mode = mode
                 if mode == "sources":
-                    result = SourceScanner().scan(snapshot, self._progress)
+                    result = scan_sources()
                 elif mode == "all":
                     nexus, coverage = scan_nexus("deep" if key or native_nexus else "local")
-                    other = SourceScanner().scan(snapshot, self._progress)
+                    with self._guard:
+                        if not is_current():
+                            return
+                    other = scan_sources()
                     result = {**nexus,
                         "itemRecords": {**nexus.get("itemRecords", {}), **other.get("itemRecords", {})},
                         "errors": list(nexus.get("errors", [])) + list(other.get("errors", [])),
                         "queried": int(nexus.get("queried", 0)) + int(other.get("queried", 0)),
                         "sourcesChecked": other.get("sourceProjects", 0),
                         "manualSources": other.get("manualSources", 0),
+                        "sourceEngine": other.get("sourceEngine"), "adapterStats": other.get("adapterStats", {}),
                         "nexusCoverage": coverage, "mode": "all"}
                 else:
                     result, effective_mode = scan_nexus(mode)
                 with self._guard:
-                    if self._snapshot.get("profileId") != snapshot.get("profileId") or [(x.get("id"), x.get("installedVersion")) for x in self._snapshot.get("items", [])] != version_signature:
-                        # Never leak a finished scan's status into another MO2 profile.
-                        self._scan = {"state": "stale", "reason": "Profile or installed versions changed during scan"}
-                    else:
-                        from_source = {str(i.get("id")): i for i in snapshot.get("items", [])}
-                        for item in self._snapshot.get("items", []):
-                            key = str(item.get("id", ""))
-                            scanned_item = from_source.get(key)
-                            if scanned_item and scanned_item.get("source"):
-                                item["source"] = scanned_item["source"]
-                            update = result.get("itemRecords", {}).get(key) or result["records"].get(str(item.get("nexusId") or 0))
-                            if update:
-                                item["update"] = update
-                        self._scan = {"state": "partial" if result.get("errors") else "completed", "mode": effective_mode, **result, "checked": result.get("queried", 0), "total": result.get("queried", 0)}
-                        # A full audit is required, following the latest verified install.
-                        # Local / cached and quick activity checks cannot crown a profile.
-                        self.chronicle.maybe_victory(snapshot["profileId"], self._snapshot, self._scan,
-                            scanned_after_update=(base_sequence == self.chronicle.overview(snapshot["profileId"])["updates"]))
+                    if not is_current():
+                        return  # A superseded worker may never alter another scan's state.
+                    from_source = {str(i.get("id")): i for i in snapshot.get("items", [])}
+                    for item in self._snapshot.get("items", []):
+                        item_key = str(item.get("id", ""))
+                        scanned_item = from_source.get(item_key)
+                        if scanned_item and scanned_item.get("source"):
+                            item["source"] = scanned_item["source"]
+                        update = result.get("itemRecords", {}).get(item_key) or result["records"].get(str(item.get("nexusId") or 0))
+                        if update:
+                            item["update"] = update
+                    self._scan = {"state": "partial" if result.get("errors") else "completed", "mode": effective_mode, **result, "checked": result.get("queried", 0), "total": result.get("queried", 0), "jobId": job_epoch}
+                    # A full audit is required, following the latest verified install.
+                    # Local / cached and quick activity checks cannot crown a profile.
+                    self.chronicle.maybe_victory(snapshot["profileId"], self._snapshot, self._scan,
+                        scanned_after_update=(base_sequence == self.chronicle.update_count(snapshot["profileId"])))
                     self._generation += 1
             except (MissingAuth, NexusError, ValueError, OSError) as ex:
                 with self._guard:
-                    self._scan = {"state": "error", "mode": mode, "error": str(ex), "checked": 0, "total": 0} if self._snapshot.get("profileId") == snapshot.get("profileId") else {"state": "idle", "reason": "Profile changed during scan"}
+                    if is_current():
+                        self._scan = {"state": "error", "mode": mode, "error": str(ex), "checked": 0, "total": 0, "jobId": job_epoch}
             except Exception as ex:
                 with self._guard:
-                    self._scan = {"state": "error", "mode": mode, "error": "Unexpected scan failure: " + type(ex).__name__} if self._snapshot.get("profileId") == snapshot.get("profileId") else {"state": "idle", "reason": "Profile changed during scan"}
+                    if is_current():
+                        self._scan = {"state": "error", "mode": mode, "error": "Unexpected scan failure: " + type(ex).__name__, "checked": 0, "total": 0, "jobId": job_epoch}
         threading.Thread(target=worker, name="ArsenalNexusScan", daemon=True).start()
         return {"ok": True, "state": "running"}
 
-    def _progress(self, data: dict) -> None:
-        with self._guard:
-            self._scan.update(data)
-
     def scan_state(self) -> dict:
         with self._guard:
-            return deepcopy(self._scan)
+            # Polling carries progress and aggregate evidence only. Full per-mod
+            # release metadata lives behind the exact-row source-details API.
+            return deepcopy({key: value for key, value in self._scan.items()
+                             if key not in {"records", "itemRecords"}})
 
     def fetch_files(self, mod_id: int) -> dict:
-        if mod_id <= 0 or mod_id not in {int(i.get("nexusId") or 0) for i in self.snapshot().get("items", [])}:
-            return {"ok": False, "error": "This Nexus ID is not associated with the active MO2 profile"}
         with self._guard:
-            game = self.snapshot().get("game", "skyrimspecialedition")
-            cached = self._file_cache.get((game, mod_id))
+            if mod_id <= 0 or mod_id not in self._nexus_ids:
+                return {"ok": False, "error": "This Nexus ID is not associated with the active MO2 profile"}
+            domain = self._snapshot.get("game", "skyrimspecialedition")
+            profile = self._snapshot.get("profileId")
+            epoch = self._file_epoch
+            cached = self._file_cache.get((domain, mod_id))
             if cached:
                 return deepcopy(cached)
             key = self.api_key
-            native_nexus = self.native_nexus_available
-        if not key and not native_nexus:
-            return {"ok": False, "error": "Connect to Nexus in MO2 Settings > Nexus or supply a fallback key.", "mo2Login": True}
+            native_nexus = self.native_nexus_available and self.native_nexus_files_available is not False
+            if not key and not native_nexus:
+                if self.native_nexus_available and self.native_nexus_files_error:
+                    return {"ok": False, "error": "MO2 Nexus file list unavailable: " + self.native_nexus_files_error
+                            + " Install the matching Modhunter MO2 package or supply an optional personal Nexus API key.", "mo2Login": True}
+                return {"ok": False, "error": "Connect to Nexus in MO2 Settings > Nexus or supply a fallback key.", "mo2Login": True}
+            identity = (profile, domain, mod_id, epoch)
+            flight = self._file_inflight.get(identity)
+            owner = flight is None
+            if owner:
+                flight = {"event": threading.Event(), "result": None}
+                self._file_inflight[identity] = flight
+        if owner:
+            try:
+                result = self._fetch_files_remote(mod_id, domain, key, native_nexus)
+            except Exception as exc:
+                result = {"ok": False, "error": "Nexus file lookup failed: " + type(exc).__name__}
+            with self._guard:
+                current = (self._snapshot.get("profileId"), self._snapshot.get("game", "skyrimspecialedition"),
+                           mod_id, self._file_epoch)
+                if current != identity or mod_id not in self._nexus_ids:
+                    result = {"ok": False, "error": "MO2 profile or scan changed while loading files; refresh and review again"}
+                elif result.get("ok"):
+                    self._file_cache[(domain, mod_id)] = result
+                flight["result"] = result
+                self._file_inflight.pop(identity, None)
+                flight["event"].set()
+        elif not flight["event"].wait(75):
+            return {"ok": False, "error": "Nexus file lookup is still pending; retry shortly"}
+        with self._guard:
+            if (self._snapshot.get("profileId") != profile or self._file_epoch != epoch
+                    or mod_id not in self._nexus_ids):
+                return {"ok": False, "error": "MO2 profile or scan changed while loading files; refresh and review again"}
+            return deepcopy(flight["result"])
+
+    def _fetch_files_remote(self, mod_id: int, domain: str, key: str, native_nexus: bool) -> dict:
+        """One provider request shared by concurrent reviews of the same project."""
         try:
-            domain = self.snapshot().get("game", "skyrimspecialedition")
             from .scanner import safe_game_slug
             if native_nexus and not key:
                 response = self.call_ui("nexus-files",
@@ -311,21 +592,18 @@ class ArsenalService:
                     continue
                 try:
                     fid = int(file.get("fileId") or file.get("file_id") or 0)
-                except (TypeError, ValueError):
+                    if fid > 0:
+                        items.append({"fileId": fid, "name": str(file.get("name") or file.get("fileName") or file.get("file_name") or f"File {fid}")[:190], "version": str(file.get("version") or ""), "category": int(file.get("category", file.get("category_id", 0)) or 0), "sizeInKB": max(0, int(file.get("sizeInKB", file.get("size_kb", 0)) or 0)), "uploaded": str(file.get("uploaded_time") or ""), "fileName": str(file.get("fileName") or file.get("file_name") or "")[:190], "description": unescape(re.sub(r"<[^>]*>", " ", str(file.get("description") or "")))[:500].strip()})
+                except (TypeError, ValueError, OverflowError):
                     continue
-                if fid > 0:
-                    items.append({"fileId": fid, "name": str(file.get("name") or file.get("fileName") or file.get("file_name") or f"File {fid}")[:190], "version": str(file.get("version") or ""), "category": int(file.get("category", file.get("category_id", 0)) or 0), "sizeInKB": int(file.get("sizeInKB", file.get("size_kb", 0)) or 0), "uploaded": str(file.get("uploaded_time") or ""), "fileName": str(file.get("fileName") or file.get("file_name") or "")[:190], "description": unescape(re.sub(r"<[^>]*>", " ", str(file.get("description") or "")))[:500].strip()})
             items.sort(key=lambda f: (f["category"] != 1, -f["fileId"]))
-            result = {"ok": True, "files": items, "modId": mod_id}
-            with self._guard:
-                self._file_cache[(domain, mod_id)] = result
-            return deepcopy(result)
+            return {"ok": True, "files": items, "modId": mod_id}
         except (NexusError, MissingAuth, ValueError) as ex:
             return {"ok": False, "error": str(ex)}
 
     def review_files(self, mod_id: int, item_id: str) -> dict:
         """Decorate native Nexus files for one exact MO2 row, not shared projects."""
-        snapshot = self.snapshot()
+        snapshot = self.selection_snapshot([item_id])
         item = next((row for row in snapshot.get("items", [])
                      if str(row.get("id") or "") == item_id
                      and int(row.get("nexusId") or 0) == mod_id), None)
@@ -334,12 +612,18 @@ class ArsenalService:
         response = self.fetch_files(mod_id)
         if not response.get("ok"):
             return response
+        if self.selection_snapshot([item_id]) != snapshot:
+            return {"ok": False, "error": "Selected mod changed while loading files; refresh and review again"}
         advisory = advise_nexus_files(item, response["files"])
         return {**response, **advisory, "itemId": item_id}
 
     def _start_native_download(self, command: str, native_payload: dict, ticket: dict) -> dict:
         """Register native IDs atomically with any completion signal received early."""
         with self._guard:
+            native_payload = {**native_payload, "profileId": ticket.get("profileId"),
+                              "itemId": ticket.get("itemId", ""),
+                              "gameRuntime": ticket.get("gameRuntime"),
+                              "installedVersion": ticket.get("installedVersion", "")}
             self._download_dispatches += 1
         result: dict = {"ok": False, "error": "MO2 did not return a download"}
         try:
@@ -364,10 +648,13 @@ class ArsenalService:
                          item_id: str = "", installed_version: str = "") -> dict:
         if confirmation != "DOWNLOAD":
             return {"ok": False, "error": "Confirmation required"}
+        profile = self.profile_id()
         files = self.fetch_files(mod_id)
         if not files.get("ok") or file_id not in {int(f["fileId"]) for f in files["files"]}:
             return {"ok": False, "error": "The selected file must be verified in the Nexus Files list first"}
         with self._guard:
+            if self._snapshot.get("profileId") != profile:
+                return {"ok": False, "error": "MO2 profile changed while checking the download"}
             ticket = {"provider": "nexus", "modId": mod_id, "fileId": file_id,
                 "operationId": secrets.token_hex(12), "itemId": item_id,
                 "installedVersion": installed_version, "status": "downloading",
@@ -431,7 +718,7 @@ class ArsenalService:
     def _quick_worker(self, profile: str, ids: list[str], job: dict) -> None:
         try:
             for item_id in ids:
-                if self._stopped or self.snapshot().get("profileId") != profile:
+                if self._stopped or self.profile_id() != profile:
                     with self._guard:
                         job["skipped"].append({"itemId": item_id, "reason": "MO2 profile changed or session closed"})
                     break
@@ -449,7 +736,7 @@ class ArsenalService:
                 job["state"] = "completed" if not self._stopped else "stopped"
 
     def _quick_one(self, profile: str, item_id: str, auto_install: bool) -> dict:
-        live = self.snapshot()
+        live = self.selection_snapshot([item_id])
         if live.get("profileId") != profile:
             return {"skipped": [{"itemId": item_id, "reason": "The active MO2 profile changed"}]}
         item = next((m for m in live.get("items", []) if str(m.get("id")) == item_id), None)
@@ -476,10 +763,11 @@ class ArsenalService:
                          "fileId": int(picked["fileId"]), "installedVersion": str(item.get("installedVersion") or ""),
                          "targetVersion": str(update.get("latestVersion") or ""),
                          "reviewed": True, "riskAcknowledged": True}
-        elif update.get("source") == "github-release-api":
-            picked, reason = choose_github_asset(item)
+        elif update.get("source") in {f"{provider}-release-api" for provider in PUBLIC_API_PROVIDERS}:
+            picked, reason = choose_release_asset(item)
             if picked:
-                entry = {"kind": "source", "itemId": item_id, "assetId": int(picked["assetId"]),
+                entry = {"kind": "source", "itemId": item_id, "assetProof": picked["assetProof"],
+                         **({"assetKey": picked["assetKey"]} if picked.get("assetKey") else {"assetId": int(picked["assetId"])}),
                          "installedVersion": str(item.get("installedVersion") or ""),
                          "targetVersion": str(update.get("latestVersion") or ""),
                          "reviewed": True, "riskAcknowledged": True}
@@ -534,14 +822,13 @@ class ArsenalService:
         Each native installer remains interactive. Nothing is installed while the
         user is away, and a changed profile/runtime/version fails a live preflight.
         """
-        current = self.snapshot()
-        profile = current.get("profileId")
+        profile = self.profile_id()
         armed, blocked = [], []
         with self._guard:
             for did, ticket in self._downloads.items():
                 if ticket.get("profileId") != profile or ticket.get("status") != "complete":
                     continue
-                brief = build_install_brief(current, deepcopy(ticket), did)
+                brief = build_install_brief(self.selection_snapshot([str(ticket.get("itemId") or "")]), deepcopy(ticket), did)
                 if brief.get("canInstall"):
                     ticket["autoInstallRequested"] = True
                     armed.append(did)
@@ -557,9 +844,9 @@ class ArsenalService:
         """Requeue the same previously reviewed archive with no approval screens."""
         if isinstance(download_id, bool) or not isinstance(download_id, int) or download_id <= 0:
             return {"ok": False, "error": "Invalid download ID"}
-        snapshot = self.snapshot()
         with self._guard:
             old = deepcopy(self._downloads.get(download_id))
+        snapshot = self.selection_snapshot([str((old or {}).get("itemId") or "")])
         if not old or old.get("profileId") != snapshot.get("profileId") or old.get("status") != "failed":
             return {"ok": False, "error": "Only failed downloads from the active MO2 profile can be retried"}
         item_id = str(old.get("itemId") or "")
@@ -577,10 +864,11 @@ class ArsenalService:
             if int(mod.get("nexusId") or 0) != int(old.get("modId") or 0) or not old.get("fileId"):
                 return {"ok": False, "error": "Source identity changed. Choose the file again."}
             entry = {**base, "modId": int(old["modId"]), "fileId": int(old["fileId"])}
-        elif old.get("provider") == "github":
-            if (mod.get("update") or {}).get("source") != "github-release-api" or not old.get("assetId"):
-                return {"ok": False, "error": "GitHub release changed. Choose the file again."}
-            entry = {**base, "kind": "source", "assetId": int(old["assetId"])}
+        elif old.get("provider") in PUBLIC_API_PROVIDERS:
+            if (mod.get("update") or {}).get("source") != f"{old['provider']}-release-api" or not (old.get("assetKey") or old.get("assetId")):
+                return {"ok": False, "error": "Source release changed. Choose the file again."}
+            entry = {**base, "kind": "source", "assetProof": old.get("assetProof"),
+                     **({"assetKey": old["assetKey"]} if old.get("assetKey") else {"assetId": int(old["assetId"])})}
         else:
             return {"ok": False, "error": "Source unavailable. Choose another file."}
         result = self.queue_reviewed_downloads({"profileId": snapshot["profileId"],
@@ -603,13 +891,16 @@ class ArsenalService:
         return result
 
     def _queue_reviewed_downloads_once(self, payload: dict) -> dict:
-        """Preflight a complete Nexus + GitHub release queue before ANY downloads.
+        """Preflight a complete Nexus + public-provider release queue before ANY downloads.
 
         One reviewed queue can contain both sources. It never overwrites mods,
         never auto-installs, and reports every attempted native download.
         """
-        snapshot = self.snapshot()
         raw = payload.get("entries")
+        # Validate a batch against exactly its selected rows; a one-click queue
+        # must not repeatedly copy tens of thousands of unrelated mods.
+        selected_ids = [str(x.get("itemId")) for x in raw if isinstance(x, dict)] if isinstance(raw, list) else []
+        snapshot = self.selection_snapshot(selected_ids)
         if (payload.get("profileId") != snapshot.get("profileId") or
                 payload.get("confirm") != "QUEUE_REVIEWED_DOWNLOADS" or
                 not isinstance(raw, list) or not raw):
@@ -628,6 +919,14 @@ class ArsenalService:
                 raise PlanError("Duplicate MO2 row selected in mixed-source batch")
         except PlanError as exc:
             return {"ok": False, "error": str(exc), "queued": [], "failed": []}
+        unique_sources, skipped = {}, []
+        for item in sources:
+            archive = (item["provider"], item["url"])
+            if archive in unique_sources:
+                skipped.append({"itemId": item["itemId"], "reason": "The same exact provider archive is already selected in this batch"})
+            else:
+                unique_sources[archive] = item
+        sources = list(unique_sources.values())
         # A queued, completed, or installed archive belongs to this profile
         # until it is removed or a different installed version is scanned.
         with self._guard:
@@ -635,11 +934,17 @@ class ArsenalService:
                               if ticket.get("profileId") == snapshot.get("profileId")
                               and ticket.get("itemId")
                               and ticket.get("status") not in ("failed", "removed")}
+            queued_archives = {(ticket.get("provider"), ticket.get("archiveUrl")) for ticket in self._downloads.values()
+                               if ticket.get("profileId") == snapshot.get("profileId") and ticket.get("archiveUrl")
+                               and ticket.get("status") not in ("failed", "removed")}
         for item in approved + sources:
             if item["itemId"] in already_queued:
                 return {"ok": False, "queued": [], "failed": [],
                         "error": "An update for this MO2 mod is already queued. Finish its download or installation first."}
-        # Preflight ALL Nexus file identities. GitHub assets were validated
+        if any((item["provider"], item["url"]) in queued_archives for item in sources):
+            return {"ok": False, "queued": [], "failed": [],
+                    "error": "This exact provider archive is already in MO2 Downloads for the active profile."}
+        # Preflight ALL Nexus file identities. Public assets were validated
         # against server-owned release results above, never client URLs.
         exact_files: dict[tuple[int, int], dict] = {}
         for item in approved:
@@ -655,7 +960,7 @@ class ArsenalService:
             exact_files[(item["modId"], item["fileId"])] = matched
         queued, failed = [], []
         for item in approved + sources:
-            live = self.snapshot()
+            live = self.selection_snapshot([item["itemId"]])
             current = next((x for x in live.get("items", []) if x.get("id") == item["itemId"]), None)
             same = bool(live.get("profileId") == snapshot.get("profileId") and current is not None
                         and str(current.get("installedVersion") or "") == item["installedVersion"]
@@ -667,18 +972,23 @@ class ArsenalService:
                 try:
                     renewed = validate_release_asset(live, {
                         "kind": "source", "itemId": item["itemId"],
-                        "assetId": item["assetId"], "installedVersion": item["installedVersion"],
-                        "reviewed": True, "riskAcknowledged": True})
+                        **({"assetKey": item["assetKey"]} if item.get("assetKey") else {"assetId": item["assetId"]}),
+                        "assetProof": item["assetProof"], "installedVersion": item["installedVersion"],
+                        "targetVersion": item["targetVersion"], "reviewed": True, "riskAcknowledged": True})
                 except PlanError as exc:
                     failed.append({"itemId": item["itemId"], "error": str(exc)})
                     break
                 ticket = {
-                    "provider": "github", "name": renewed["name"],
+                    "provider": renewed["provider"], "name": renewed["name"],
+                    "assetKey": renewed["assetKey"], "assetId": renewed["assetId"], "assetProof": renewed["assetProof"],
+                    "archiveUrl": renewed["url"], "sourceUrl": renewed["sourceUrl"],
+                    "projectId": renewed["projectId"], "releaseId": renewed["releaseId"],
                     "operationId": secrets.token_hex(12),
                     "itemId": item["itemId"], "installedVersion": item["installedVersion"],
-                    "status": "downloading", "profileId": live.get("profileId")}
-                result = self._start_native_download("download-url", {"url": renewed["url"],
-                    "name": renewed["name"], "itemId": renewed["itemId"]}, ticket)
+                    "status": "downloading", "profileId": live.get("profileId"),
+                    "gameRuntime": live.get("gameRuntime", "unknown")}
+                result = self._start_native_download("download-url", {**renewed, "reviewed": True,
+                    "riskAcknowledged": True}, ticket)
             else:
                 if int(current.get("nexusId") or 0) != item["modId"]:
                     failed.append({"itemId": item["itemId"], "error": "Nexus project changed"})
@@ -704,6 +1014,8 @@ class ArsenalService:
                         })
                         if item.get("kind") == "source":
                             live_ticket["assetId"] = item.get("assetId")
+                            live_ticket["assetKey"] = item.get("assetKey")
+                            live_ticket["assetProof"] = item.get("assetProof")
                             live_ticket["fileName"] = item.get("name") or live_ticket.get("name") or ""
                 with self._guard:
                     receipt = self._downloads.get(int(result["downloadId"]))
@@ -714,7 +1026,7 @@ class ArsenalService:
                                "downloadId": result.get("downloadId")})
             else:
                 failed.append({"itemId": item["itemId"], "error": str(result.get("error") or "Download rejected")})
-        return {"ok": True, "partial": bool(failed), "queued": queued, "failed": failed,
+        return {"ok": True, "partial": bool(failed), "queued": queued, "failed": failed, "skipped": skipped,
                 "message": f"Queued {len(queued)} reviewed archive(s). Install each separately in MO2."}
 
     def set_download_status(self, download_id: int, state: str) -> None:
@@ -746,7 +1058,7 @@ class ArsenalService:
         """The browser sees only an immutable, profile-scoped advisory briefing."""
         with self._guard:
             ticket = deepcopy(self._downloads.get(download_id))
-        return build_install_brief(self.snapshot(), ticket, download_id)
+        return build_install_brief(self.selection_snapshot([str((ticket or {}).get("itemId") or "")]), ticket, download_id)
 
     def install_reviewed_download(self, download_id: int) -> dict:
         """Start one interactive MO2 installer without blocking the browser.
@@ -765,7 +1077,7 @@ class ArsenalService:
                 ticket = self._downloads.get(download_id)
                 if not ticket or ticket.get("profileId") != self._snapshot.get("profileId"):
                     return {"ok": False, "error": "Download does not belong to this active MO2 profile"}
-                preflight = build_install_brief(self.snapshot(), ticket, download_id)
+                preflight = build_install_brief(self.selection_snapshot([str(ticket.get("itemId") or "")]), ticket, download_id)
                 if not preflight["canInstall"]:
                     return {"ok": False, "error": "; ".join(preflight["errors"])}
                 ticket["status"] = "installing"
@@ -789,8 +1101,12 @@ class ArsenalService:
     def _complete_native_install(self, download_id: int, ticket: dict) -> None:
         """Wait on a daemon worker, never the HTTP thread or MO2 GUI thread."""
         try:
-            request = UIRequest("install", {"downloadId": download_id})
-            self.ui_call(request)  # Qt signal delivers the request to MO2's GUI.
+            request = UIRequest("install", {"downloadId": download_id,
+                                "profileId": ticket.get("profileId"),
+                                "gameRuntime": ticket.get("gameRuntime"),
+                                "itemId": ticket.get("itemId", ""),
+                                "installedVersion": ticket.get("installedVersion", "")})
+            self._submit_ui(request)  # Qt signal delivers the request to MO2's GUI.
             request.event.wait()  # No deadline while the real FOMOD dialog is open.
             result = request.result
         except Exception as exc:
@@ -817,6 +1133,7 @@ class ArsenalService:
 
     def start(self) -> str:
         if self._server:
+            self._publish_discovery()
             return f"http://127.0.0.1:{self._server.server_port}/"
         self._stopped = False
         srv = ThreadingHTTPServer(("127.0.0.1", 0), self.handler())
@@ -824,19 +1141,34 @@ class ArsenalService:
         self._server = srv
         self._thread = threading.Thread(target=srv.serve_forever, daemon=True, name="ArsenalLoopbackHTTP")
         self._thread.start()
+        self._publish_discovery()
+        self.intelligence.auto_audit()
         return f"http://127.0.0.1:{srv.server_port}/"
 
     def stop(self) -> None:
+        with self._guard:
+            self._stopped = True
+            self._scan_epoch += 1
+            self._scan_cancel.set()
+            self.intelligence.invalidate(reason="MO2 session closed")
+            if self._scan.get("state") == "running":
+                self._scan = {"state": "idle", "reason": "MO2 session closed"}
+            pending = list(self._pending_ui)
+        for request in pending:
+            if request.cmd in ("nexus-metadata", "nexus-files"):
+                request.cancel()
+            else:
+                request.cancel_if_pending()
         if self._server:
             self._server.shutdown()
             self._server.server_close()
             self._server = None
-            self._stopped = True
+        self._discovery.close()
 
     def handler(self):
         service = self
         class Handler(BaseHTTPRequestHandler):
-            server_version = "MO2Arsenal/0.3"
+            server_version = "Modhunter/0.9"
             sys_version = ""
 
             def log_message(self, fmt, *args):
@@ -892,6 +1224,10 @@ class ArsenalService:
                 if not self._valid_host():
                     return self._reply({"ok": False, "error": "Bad host"}, 403)
                 uri = urllib.parse.urlsplit(self.path)
+                if uri.path == "/api/health":
+                    # Native Rust clients probe a tiny identity document, not
+                    # the multi-megabyte HTML. No auth tokens/paths are exposed.
+                    return self._reply(service.health())
                 if uri.path == "/":
                     boot = json.dumps({"active": True, "token": service.token}, ensure_ascii=False).replace("<", "\\u003c")
                     html = service.html.replace("<!--__MO2_BOOT__-->", f"<script>window.__MO2_BRIDGE_BOOT__={boot}</script>")
@@ -901,29 +1237,45 @@ class ArsenalService:
                 if not self._authorize():
                     return
                 if uri.path == "/api/snapshot":
-                    return self._reply({"ok": True, "catalog": service.snapshot(), "generation": service._generation})
+                    return self._reply(service.snapshot_response())
                 if uri.path == "/api/revision":
-                    return self._reply({"ok": True, "generation": service._generation, "profileId": service._snapshot.get("profileId"), "selectedModId": service.selected_mod_id})
+                    return self._reply(service.revision())
+                if uri.path == "/api/plugin-audit":
+                    return self._reply(service.intelligence.state())
+                if uri.path == "/api/mod-health":
+                    query = urllib.parse.parse_qs(uri.query)
+                    return self._reply(service.intelligence.health_state(
+                        query.get("itemId", [""])[0], query.get("profileId", [""])[0]))
                 if uri.path == "/api/siege/targets":
                     return self._reply(service.siege_targets())
                 if uri.path == "/api/siege/bounties":
-                    return self._reply(service.chronicle.boss_bounties(service.snapshot().get("profileId", "")))
+                    return self._reply(service.chronicle.boss_bounties(service.profile_id()))
                 if uri.path == "/api/siege/state":
-                    return self._reply(service.chronicle.siege_state(service.snapshot().get("profileId", "")))
+                    return self._reply(service.chronicle.siege_state(service.profile_id()))
                 if uri.path == "/api/realm":
-                    return self._reply(service.chronicle.realm_wallet(service.snapshot().get("profileId", "")))
+                    return self._reply(service.chronicle.realm_wallet(service.profile_id()))
                 if uri.path == "/api/realm/world":
-                    return self._reply(service.chronicle.realm_world(service.snapshot().get("profileId", "")))
+                    return self._reply(service.chronicle.realm_world(service.profile_id()))
                 if uri.path == "/api/game":
-                    return self._reply(service.chronicle.overview(service.snapshot().get("profileId", "")))
+                    compact = urllib.parse.parse_qs(uri.query).get("compact") == ["1"]
+                    return self._reply(service.chronicle.overview(service.profile_id(), include_progress=not compact))
                 if uri.path == "/api/progress":
-                    return self._reply({"ok": True, "profileId": service.snapshot().get("profileId"), "progress": service.chronicle.progress(service.snapshot().get("profileId", ""))})
+                    profile = service.profile_id()
+                    return self._reply({"ok": True, "profileId": profile, "progress": service.chronicle.progress(profile)})
                 if uri.path == "/api/scan":
-                    return self._reply({"ok": True, "scan": service.scan_state()})
+                    with service._guard:
+                        result = {"ok": True, "profileId": service.profile_id(), "scan": service.scan_state()}
+                    return self._reply(result)
+                if uri.path == "/api/source-details":
+                    query = urllib.parse.parse_qs(uri.query)
+                    return self._reply(service.source_details(query.get("itemId", [""])[0], query.get("profileId", [""])[0]))
                 if uri.path == "/api/update-plan":
-                    return self._reply(plan_updates(service.snapshot()))
+                    detailed = urllib.parse.parse_qs(uri.query).get("details") == ["full"]
+                    return self._reply(plan_updates(service.snapshot(source_details=detailed)))
                 if uri.path == "/api/downloads":
-                    return self._reply({"ok": True, "downloads": service.downloads()})
+                    with service._guard:
+                        result = {"ok": True, "profileId": service.profile_id(), "downloads": service.downloads()}
+                    return self._reply(result)
                 if uri.path == "/api/quick-state":
                     return self._reply(service.quick_state())
                 if uri.path == "/api/activity":
@@ -944,7 +1296,7 @@ class ArsenalService:
                     item_id = query.get("itemId", [""])[0]
                     return self._reply(service.review_files(mid, item_id) if item_id else service.fetch_files(mid))
                 if uri.path == "/api/capabilities":
-                    return self._reply({"ok": True, "app": "MO2 Update Arsenal", "live": True, "nexusKeySession": bool(service.api_key), "nativeNexusAvailable": bool(service.native_nexus_available), "keyStorage": "RAM only", "features": ["snapshot", "local-check", "nexus-quick", "nexus-deep", "nexus-files", "native-mo2-nexus-login", "github-release-checks", "gitlab-release-checks", "manual-source-review", "github-direct-downloads", "mixed-source-batch-updates", "reviewed-update-workshop", "one-click-matched-update", "background-bulk-queue", "mo2-download", "mo2-install", "install-preview", "operation-journal", "read-only-recovery-history", "backup", "focus-mod", "chronicle", "verified-achievements", "ranked-full-clear", "persistent-profile-progress", "realm-wallet", "realm-purchase", "realm-save", "siege-targets", "siege-state", "siege-bounties", "siege-mod-focus"]})
+                    return self._reply({"ok": True, "app": "MO2 Update Arsenal", "live": True, "nexusKeySession": bool(service.api_key), "nativeNexusAvailable": bool(service.native_nexus_available), "nativeNexusFilesAvailable": bool(service.native_nexus_available and service.native_nexus_files_available is not False), "nativeNexusFilesError": service.native_nexus_files_error, "keyStorage": "RAM only", "features": ["rust-plugin-audit", "eslifier-provenance", "per-mod-health", "nexus-public-bugs", "master-order-checks", "snapshot", "local-check", "nexus-quick", "nexus-deep", "nexus-files", "native-mo2-nexus-login", "github-release-checks", "gitlab-release-checks", "rust-site-adapters", "modrinth-release-checks", "thunderstore-release-checks", "source-details", "provider-capabilities", "manual-source-review", "github-direct-downloads", "reviewed-provider-downloads", "mixed-source-batch-updates", "reviewed-update-workshop", "one-click-matched-update", "background-bulk-queue", "mo2-download", "mo2-install", "install-preview", "operation-journal", "read-only-recovery-history", "backup", "focus-mod", "chronicle", "verified-achievements", "ranked-full-clear", "persistent-profile-progress", "realm-wallet", "realm-purchase", "realm-save", "siege-targets", "siege-state", "siege-bounties", "siege-mod-focus"]})
                 return self._reply({"ok": False, "error": "Unknown endpoint"}, 404)
 
             def do_POST(self):
@@ -960,6 +1312,16 @@ class ArsenalService:
                 except (ValueError, json.JSONDecodeError):
                     return self._reply({"ok": False, "error": "Invalid JSON"}, 400)
                 uri = urllib.parse.urlsplit(self.path)
+                if uri.path == "/api/plugin-audit":
+                    return self._reply(service.intelligence.start_audit(
+                        str(data.get("profileId") or ""), deep=data.get("deep", True) is True))
+                if uri.path == "/api/mod-health":
+                    return self._reply(service.intelligence.start_health(
+                        str(data.get("itemId") or ""), str(data.get("profileId") or ""),
+                        force=data.get("force") is True))
+                if uri.path == "/api/eslifier-data":
+                    return self._reply(service.call_ui("eslifier-data", {
+                        "profileId": str(data.get("profileId") or "")}, timeout=180))
                 if uri.path == "/api/siege/boss/defeated":
                     return self._reply(service.siege_boss_defeated(str(data.get("profileId") or ""),
                         str(data.get("modId") or ""), str(data.get("runId") or "")))
@@ -1003,7 +1365,7 @@ class ArsenalService:
                 if uri.path == "/api/runtime":
                     return self._reply(service.call_ui("runtime", {}, timeout=180))
                 if uri.path == "/api/scan":
-                    return self._reply(service.begin_scan(data.get("mode", "quick")))
+                    return self._reply(service.begin_scan(data.get("mode", "quick"), data.get("profileId")))
                 if uri.path == "/api/update-queue":
                     return self._reply(service.queue_reviewed_downloads(data))
                 if uri.path == "/api/install-ready":

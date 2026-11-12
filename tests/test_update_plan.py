@@ -2,7 +2,7 @@
 import copy
 import unittest
 
-from mo2_update_arsenal.update_plan import PlanError, plan_updates, validate_batch_selection
+from mo2_update_arsenal.update_plan import PlanError, plan_updates, validate_batch_selection, risk_reasons
 
 
 SNAP = {
@@ -30,6 +30,33 @@ def packet(*entries, profile="profile-alpha", confirm="QUEUE_REVIEWED_DOWNLOADS"
 
 
 class UpdateWorkshopTests(unittest.TestCase):
+    def test_conversion_changes_and_active_master_issues_reach_update_plan(self):
+        snapshot = copy.deepcopy(SNAP)
+        row = snapshot["items"][1]
+        row["localAnalysis"] = {"plugins": [{"name": "Example.esp", "winner": False,
+            "provenance": {"state": "source-changed"}}, {"name": "Patch.esp", "winner": True,
+            "active": True, "masterIssues": [{"name": "Missing.esm", "status": "missing"}]}]}
+        plan = plan_updates(snapshot)
+        item = plan["items"][1]
+        self.assertTrue(any("ESLifier" in risk for risk in item["risks"]))
+        self.assertTrue(any("masters" in risk for risk in item["risks"]))
+        self.assertEqual(item["localAnalysis"], row["localAnalysis"])
+        with self.assertRaises(PlanError):
+            validate_batch_selection(snapshot, packet(choice(item="live-b", version="1.1", risk=False)))
+
+    def test_bug_reports_and_light_headers_do_not_become_install_risks(self):
+        row = {"flags": [], "localAnalysis": {"plugins": [{"name": "Example.esp", "winner": True,
+            "active": True, "header": {"lightEffective": True}, "provenance": {"state": "current"},
+            "eligibility": {"status": "already-light"}}]},
+            "modHealth": {"bugs": {"state": "available", "displayedCount": 42}}}
+        self.assertEqual(risk_reasons(row), [])
+
+    def test_incomplete_record_scan_survives_compact_and_full_plans(self):
+        for record in ({"records": {"scanComplete": False}}, {"recordScanComplete": False}):
+            with self.subTest(record=record):
+                self.assertTrue(any("incomplete" in risk for risk in risk_reasons({
+                    "localAnalysis": {"plugins": [{"name": "Truncated.esp", **record}]}})))
+
     def test_plan_includes_all_rows_and_dedicated_lanes(self):
         original = copy.deepcopy(SNAP)
         plan = plan_updates(SNAP)

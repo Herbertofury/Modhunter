@@ -44,6 +44,7 @@ class ArsenalService:
         self.chronicle.set_profile_name(snapshot.get("profileId", ""), snapshot.get("profileName", "Default"))
         self.selected_mod_id = ""
         self.api_key = ""  # Volatile: never persisted, sent to the browser, or included in backup files.
+        self.native_nexus_available = False
         self._snapshot = snapshot
         self._guard = threading.RLock()
         self._server: ThreadingHTTPServer | None = None
@@ -170,16 +171,36 @@ class ArsenalService:
             self._scan = {"state": "running", "mode": mode, "checked": 0, "total": 0, "errors": []}
             snapshot = self.snapshot()
             key = self.api_key
+            native_nexus = self.native_nexus_available
             base_sequence = self.chronicle.overview(snapshot["profileId"])["updates"]
             version_signature = [(x.get("id"), x.get("installedVersion")) for x in snapshot.get("items", [])]
         def worker():
             try:
-                if mode == "local":
+                effective_mode = mode
+                if mode == "local" or (mode == "quick" and native_nexus and not key):
+                    # The native bridge has detailed lookup, not an activity-feed
+                    # API; a no-key quick check honestly uses MO2's cached hints.
                     result = local_mo2_candidates(snapshot)
+                    effective_mode = "local"
                 else:
-                    if not key:
-                        raise MissingAuth("Fast and full remote scans require a Nexus API key in MO2's native Connect dialog; use MO2 Cached for zero-key results.")
-                    result = UpdateScanner(self.cache, NexusClient(key)).scan(snapshot, mode, self._progress)
+                    if key:
+                        client = NexusClient(key)
+                    elif native_nexus:
+                        import re
+                        game = snapshot.get("game", "skyrimspecialedition")
+                        def mo2_nexus_get(path):
+                            match = re.fullmatch(r"/v1/games/[a-z0-9_-]+/mods/([0-9]+)\.json", path)
+                            if match is None:
+                                raise NexusError("Unsupported native Nexus request")
+                            native = self.call_ui("nexus-metadata",
+                                {"game": game, "modId": int(match.group(1))}, timeout=70)
+                            if not native.get("ok"):
+                                raise NexusError(str(native.get("error") or "MO2 Nexus lookup failed"))
+                            return native["meta"]
+                        client = NexusClient("mo2-native", request_json=mo2_nexus_get)
+                    else:
+                        raise MissingAuth("Connect to Nexus in MO2 Settings > Nexus, or use a fallback API key.")
+                    result = UpdateScanner(self.cache, client).scan(snapshot, mode, self._progress)
                 with self._guard:
                     if self._snapshot.get("profileId") != snapshot.get("profileId") or [(x.get("id"), x.get("installedVersion")) for x in self._snapshot.get("items", [])] != version_signature:
                         # Never leak a finished scan's status into another MO2 profile.
@@ -189,7 +210,7 @@ class ArsenalService:
                             update = result.get("itemRecords", {}).get(str(item.get("id", ""))) or result["records"].get(str(item.get("nexusId") or 0))
                             if update:
                                 item["update"] = update
-                        self._scan = {"state": "completed", "mode": mode, **result, "checked": result.get("queried", 0), "total": result.get("queried", 0)}
+                        self._scan = {"state": "partial" if result.get("errors") else "completed", "mode": effective_mode, **result, "checked": result.get("queried", 0), "total": result.get("queried", 0)}
                         # A full audit is required, following the latest verified install.
                         # Local / cached and quick activity checks cannot crown a profile.
                         self.chronicle.maybe_victory(snapshot["profileId"], self._snapshot, self._scan,
@@ -221,13 +242,21 @@ class ArsenalService:
             if cached:
                 return deepcopy(cached)
             key = self.api_key
-        if not key:
-            return {"ok": False, "error": "Enter a Nexus API key via MO2's native Connect dialog to list exact downloadable files. Alternatively use Files on Nexus and Mod Manager Download through MO2.", "mo2Login": True}
+            native_nexus = self.native_nexus_available
+        if not key and not native_nexus:
+            return {"ok": False, "error": "Connect to Nexus in MO2 Settings > Nexus or supply a fallback key.", "mo2Login": True}
         try:
             domain = self.snapshot().get("game", "skyrimspecialedition")
             from .scanner import safe_game_slug
-            payload = NexusClient(key).get(f"/v1/games/{safe_game_slug(domain)}/mods/{mod_id}/files.json")
-            files = payload.get("files") if isinstance(payload, dict) else None
+            if native_nexus and not key:
+                response = self.call_ui("nexus-files",
+                    {"game": safe_game_slug(domain), "modId": mod_id}, timeout=70)
+                if not response.get("ok"):
+                    return response
+                files = response.get("files")
+            else:
+                payload = NexusClient(key).get(f"/v1/games/{safe_game_slug(domain)}/mods/{mod_id}/files.json")
+                files = payload.get("files") if isinstance(payload, dict) else None
             if not isinstance(files, list):
                 return {"ok": False, "error": "Nexus did not return a files list"}
             items = []
@@ -235,11 +264,11 @@ class ArsenalService:
                 if not isinstance(file, dict):
                     continue
                 try:
-                    fid = int(file.get("file_id") or 0)
+                    fid = int(file.get("fileId") or file.get("file_id") or 0)
                 except (TypeError, ValueError):
                     continue
                 if fid > 0:
-                    items.append({"fileId": fid, "name": str(file.get("name") or file.get("file_name") or f"File {fid}")[:190], "version": str(file.get("version") or ""), "category": int(file.get("category_id") or 0), "sizeInKB": int(file.get("size_kb") or 0), "uploaded": str(file.get("uploaded_time") or ""), "fileName": str(file.get("file_name") or "")[:190]})
+                    items.append({"fileId": fid, "name": str(file.get("name") or file.get("fileName") or file.get("file_name") or f"File {fid}")[:190], "version": str(file.get("version") or ""), "category": int(file.get("category", file.get("category_id", 0)) or 0), "sizeInKB": int(file.get("sizeInKB", file.get("size_kb", 0)) or 0), "uploaded": str(file.get("uploaded_time") or ""), "fileName": str(file.get("fileName") or file.get("file_name") or "")[:190]})
             items.sort(key=lambda f: (f["category"] != 1, -f["fileId"]))
             result = {"ok": True, "files": items, "modId": mod_id}
             with self._guard:
@@ -430,7 +459,7 @@ class ArsenalService:
                         mid = 0
                     return self._reply(service.fetch_files(mid))
                 if uri.path == "/api/capabilities":
-                    return self._reply({"ok": True, "app": "MO2 Update Arsenal", "live": True, "nexusKeySession": bool(service.api_key), "keyStorage": "RAM only", "features": ["snapshot", "local-check", "nexus-quick", "nexus-deep", "nexus-files", "reviewed-update-workshop", "mo2-download", "mo2-install", "backup", "focus-mod", "chronicle", "verified-achievements", "ranked-full-clear", "persistent-profile-progress", "realm-wallet", "realm-purchase", "realm-save", "siege-targets", "siege-state", "siege-bounties", "siege-mod-focus"]})
+                    return self._reply({"ok": True, "app": "MO2 Update Arsenal", "live": True, "nexusKeySession": bool(service.api_key), "nativeNexusAvailable": bool(service.native_nexus_available), "keyStorage": "RAM only", "features": ["snapshot", "local-check", "nexus-quick", "nexus-deep", "nexus-files", "native-mo2-nexus-login", "reviewed-update-workshop", "mo2-download", "mo2-install", "backup", "focus-mod", "chronicle", "verified-achievements", "ranked-full-clear", "persistent-profile-progress", "realm-wallet", "realm-purchase", "realm-save", "siege-targets", "siege-state", "siege-bounties", "siege-mod-focus"]})
                 return self._reply({"ok": False, "error": "Unknown endpoint"}, 404)
 
             def do_POST(self):

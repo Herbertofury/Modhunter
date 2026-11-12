@@ -128,3 +128,41 @@ def validate_batch_selection(snapshot: dict, payload: dict) -> list[dict]:
         result.append({"itemId": item_id, "modId": nid, "fileId": fid,
                        "installedVersion": str(item.get("installedVersion") or "")})
     return result
+
+
+def validate_release_asset(snapshot: dict, raw: dict) -> dict:
+    """Resolve GitHub release assets only from MO2-owned server scan evidence."""
+    from urllib.parse import urlsplit
+    if not isinstance(raw, dict) or raw.get("kind") != "source":
+        raise PlanError("Invalid reviewed source selection")
+    item_id = str(raw.get("itemId") or "")
+    item = next((x for x in snapshot.get("items", []) if str(x.get("id")) == item_id), None)
+    if item is None or raw.get("reviewed") is not True:
+        raise PlanError("Source mod must exist and have a reviewed file selection")
+    if str(item.get("installedVersion") or "") != str(raw.get("installedVersion") or ""):
+        raise PlanError("Installed mod version changed; refresh source selections")
+    update = item.get("update") or {}
+    if update.get("verdict") != "candidate" or update.get("source") != "github-release-api":
+        raise PlanError("Only fresh GitHub release candidates support direct source downloads")
+    if risk_reasons(item) and raw.get("riskAcknowledged") is not True:
+        raise PlanError("Acknowledge source compatibility risks before download")
+    source = item.get("source") or {}
+    url = str(source.get("url") or "")
+    u = urlsplit(url)
+    parts = [p for p in u.path.strip("/").split("/") if p]
+    if u.scheme != "https" or u.hostname != "github.com" or len(parts) < 2:
+        raise PlanError("Source project is not a verified GitHub repository")
+    prefix = f"https://github.com/{parts[0]}/{parts[1]}/releases/download/"
+    asset_id = _positive_int(raw.get("assetId"))
+    candidate = next((x for x in update.get("releaseAssets", [])
+                      if _positive_int(x.get("assetId")) == asset_id), None)
+    if candidate is None or asset_id <= 0:
+        raise PlanError("The selected file is not in this verified release")
+    download_url = str(candidate.get("url") or "")
+    name = str(candidate.get("name") or "")
+    if (not download_url.startswith(prefix) or "?" in download_url or
+            not name.lower().endswith((".zip", ".7z", ".rar"))):
+        raise PlanError("Release asset URL failed provider/format validation")
+    return {"kind": "source", "itemId": item_id, "assetId": asset_id,
+            "url": download_url, "provider": "github", "name": name,
+            "installedVersion": str(item.get("installedVersion") or "")}

@@ -29,8 +29,7 @@ mods[0].update({"id": "live-a", "name": "Arcane Example", "mo2InternalName": "Ar
                 "update": {"verdict": "candidate", "latestVersion": "2.0", "source": "nexus-api"}})
 mods[1].update({"id": "live-b", "name": "Quest Example", "mo2InternalName": "Quest Example",
                 "installedVersion": "1.5", "nexusId": 45, "flags": ["DLL"],
-                "source": {"type": "nexus", "verified": True,
-                           "url": "https://www.nexusmods.com/skyrimspecialedition/mods/45"},
+                "source": {"type": "nexus", "verified": False, "url": ""},
                 "update": {"verdict": "candidate", "latestVersion": "2.3", "source": "nexus-api"}})
 mods[2].update({"id": "live-c", "name": "Manual Example", "mo2InternalName": "Manual Example",
                 "installedVersion": "1.0", "nexusId": 0, "flags": [],
@@ -64,17 +63,17 @@ mock={"catalog":catalog,"plan":plan_updates(catalog),"review":review,"history":h
 bootstrap = r"""
 <script>
 window.__MO2_BRIDGE_BOOT__={active:true,token:'browser-qa'};
-window.__SSS_MOCK__={data:__DATA__,tickets:{},calls:[]};
+window.__SSS_MOCK__={data:__DATA__,tickets:{},calls:[],focusCalls:[]};
 window.fetch=async(url,opts={})=>{
  const x=window.__SSS_MOCK__, endpoint=String(url).slice(5);
  let result={ok:true};
- if(endpoint==='snapshot')result={ok:true,catalog:x.data.catalog,generation:1};
+ if(endpoint==='snapshot')result={ok:true,catalog:x.data.catalog,generation:x.generation||1};
  else if(endpoint==='update-plan')result=x.data.plan;
  else if(endpoint.startsWith('files?'))result=x.data.review[String(new URLSearchParams(endpoint.split('?')[1]).get('modId'))]||{ok:false,error:'Missing mod'};
  else if(endpoint==='downloads')result={ok:true,downloads:x.tickets};
  else if(endpoint==='activity')result={ok:true,profileId:x.data.catalog.profileId,
       records:x.data.history,count:x.data.history.length,durable:true,warning:''};
- else if(endpoint==='revision')result={ok:true,generation:1,profileId:x.data.catalog.profileId};
+ else if(endpoint==='revision')result={ok:true,generation:x.generation||1,profileId:x.data.catalog.profileId};
  else if(endpoint==='scan')result={ok:true,scan:{state:'completed',mode:'deep',queried:2}};
  else if(endpoint==='progress')result={ok:true,profileId:x.data.catalog.profileId,progress:{rows:{},prefs:{}}};
  else if(endpoint.startsWith('install-preview?')){
@@ -105,6 +104,9 @@ window.fetch=async(url,opts={})=>{
   }else result={ok:true,state:'completed',queued:[],skipped:[{itemId:'live-b',reason:'Compatibility notes need a file choice'}],failed:[]};
  }
  else if(endpoint==='quick-state')result=x.quickState||{ok:true,state:'idle',queued:[],skipped:[],failed:[]};
+ else if(endpoint==='focus'){
+  x.focusCalls.push(JSON.parse(opts.body||'{}'));result={ok:true,message:'Mod selected in MO2'};
+ }
  else if(endpoint==='update-queue'){
   const body=JSON.parse(opts.body||'{}');x.calls.push({endpoint,body});
   const queued=body.entries.map((e,i)=>{const id=301+x.calls.length+i;x.tickets[id]={status:'downloading',provider:'nexus',modId:e.modId,itemId:e.itemId,installedVersion:e.installedVersion,profileId:body.profileId,gameRuntime:x.data.catalog.gameRuntime};return {itemId:e.itemId,downloadId:id,provider:'nexus'}});
@@ -129,8 +131,63 @@ with sync_playwright() as pw:
     page.set_content(html,wait_until='load',timeout=30000)
     page.locator('#workshopResults .workshop-item').first.wait_for(timeout=15000)
     assert page.locator('#workshopResults .workshop-item').count()==2
+    # A mod name now opens its actual source, while a separate icon reveals it in MO2.
+    page.context.route('https://www.nexusmods.com/**', lambda route: route.fulfill(status=200,
+               content_type='text/html', body='<html><title>Mod source</title></html>'))
+    name=page.locator('#row-live-a a.mod-title.source-title')
+    assert name.get_attribute('href')=='https://www.nexusmods.com/skyrimspecialedition/mods/44'
+    assert name.get_attribute('target')=='_blank'
+    assert 'noopener' in (name.get_attribute('rel') or '')
+    with page.expect_popup() as pop:
+        name.click()
+    opened=pop.value
+    opened.wait_for_load_state('domcontentloaded')
+    # This sandbox blocks outbound navigation; popup creation + exact href prove link wiring.
+    assert opened.url in ('https://www.nexusmods.com/skyrimspecialedition/mods/44','chrome-error://chromewebdata/'), opened.url
+    opened.close()
+    assert page.evaluate('window.__SSS_MOCK__.focusCalls.length')==0
+    # Native Nexus IDs are direct links even if the separate source field is absent.
+    assert page.locator('#row-live-b a.mod-title.source-title').get_attribute('href')=='https://www.nexusmods.com/skyrimspecialedition/mods/45'
+    # Unlinked mods are explicitly searches, never fabricated exact links.
+    assert page.locator('#row-live-c a.mod-title.source-title').get_attribute('href').startswith('https://www.google.com/search?q=')
+    assert page.locator('#row-live-c a.mod-title.source-title.unknown').count()==1
+    page.locator('#row-live-a button[data-act="inspect"]').click()
+    page.locator('#drawerUrl').fill('javascript:alert(1)')
+    assert page.locator('#drawerOpenLink').get_attribute('href') is None
+    assert page.locator('#drawerOpenLink').get_attribute('aria-disabled')=='true'
+    page.locator('#drawerUrl').fill('https://github.com/example/alternate')
+    assert page.locator('#drawerOpenLink').get_attribute('href')=='https://github.com/example/alternate'
+    assert page.locator('#drawerOpenLink').get_attribute('aria-disabled') is None
+    page.locator('#drawerClose').click()
+    page.locator('#row-live-a button.mod-inline-locate').click()
+    assert page.evaluate('window.__SSS_MOCK__.focusCalls.length')==1
+    workshop=page.locator('[data-workshop-id="live-a"] a.workshop-item-title')
+    assert workshop.get_attribute('href')=='https://www.nexusmods.com/skyrimspecialedition/mods/44'
+    with page.expect_popup() as pop:
+        workshop.click()
+    opened=pop.value
+    opened.wait_for_load_state('domcontentloaded')
+    assert opened.url.endswith('/mods/44') or opened.url=='chrome-error://chromewebdata/'
+    opened.close()
+    page.locator('[data-workshop-id="live-a"] button.workshop-inline-locate').click()
+    assert page.evaluate('window.__SSS_MOCK__.focusCalls.length')==2
+    page.locator('#workshopFilter').select_option('all')
+    assert page.locator('[data-workshop-id="live-c"] a.workshop-item-title.source-unresolved').count()==1
+    # A trusted GitHub project takes users directly to its repository as well.
+    page.evaluate("window.__SSS_MOCK__.data.catalog.items[2].source={type:'github',verified:true,url:'https://github.com/example/mod'};window.__SSS_MOCK__.generation=2")
+    page.locator('#workshopFilter').select_option('manual')
+    page.wait_for_function("document.querySelector('[data-workshop-id=\"live-c\"] a.workshop-item-title')?.getAttribute('href')==='https://github.com/example/mod'", timeout=15000)
+    assert page.locator('[data-workshop-id="live-c"] a.workshop-item-title').get_attribute('href')=='https://github.com/example/mod'
+    page.locator('#workshopFilter').select_option('candidate')
+    page.screenshot(path=str(OUTPUT/'direct-mod-websites.png'),full_page=False)
     page.locator('#activityResults .activity-entry').first.wait_for(timeout=10000)
     assert page.locator('#activityResults .activity-entry').count()==1
+    history_name=page.locator('#activityResults .activity-mod-link').first
+    assert history_name.get_attribute('href')=='https://www.nexusmods.com/skyrimspecialedition/mods/45'
+    with page.expect_popup() as pop:
+        history_name.click()
+    pop.value.close()
+    assert page.locator('#activityResults .activity-entry').first.get_attribute('open') is None
     assert 'Previous session' in page.locator('#activityResults').inner_text()
     assert page.locator('#activityCount').inner_text()=='1 / 1 visible'
     page.locator('#activitySearch').fill('not-present')

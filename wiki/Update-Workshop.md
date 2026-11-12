@@ -17,6 +17,17 @@ Modhunter now presents a unified **Update Workshop** in the standalone HTML, Ele
 
 Nothing silently replaces mod files. A click on **Update now** deliberately authorizes the associated native MO2 installer after that file downloads; **Queue matched updates** downloads only. The no-friction UX removes redundant *Modhunter* prompts, not MO2's actual installer controls. Free Nexus accounts may still need to initiate downloads from the website using **Mod Manager Download** when Nexus requires it.
 
+## Open any mod's original website directly
+
+**Click a mod's name** in the installed-mod list or the Update Workshop to open its original source page in a new browser tab. This works **while connected to MO2**, in the standalone HTML, and in the desktop app. Your browser's ordinary keyboard **Enter**, Ctrl-click and middle-click tab behavior is preserved. You do not need to open a modal, reveal the mod in MO2, or approve another action first.
+
+- When an actual Nexus, GitHub, GitLab, Creation or user-saved source URL is available, the title opens that website. An exact positive Nexus project ID supplied by the active MO2 profile also yields a direct game-specific Nexus project page, even if the separate source field is missing.
+- When no authoritative source exists, the title visibly indicates that its link performs a **source search**; Modhunter never invents an exact download URL.
+- The little **⌖** button beside each name is a separate **Reveal in MO2** action. Clicking the rest of an installed-mod row can still focus MO2 as before. Website links never trigger that focus action.
+- **History names are links too:** click a mod name in the Update Timeline to reopen the original project, without activating or resuming that old download.
+- In the Workshop, **Project website**, optional **Latest release**, **Update now**, and **Choose file** remain distinct controls. Every file option remains accessible. Verified source links refresh when MO2's metadata changes.
+- In the mod inspector, you can **paste a custom source link** and immediately open or copy the typed URL. Saving the inspection retains it for later. Invalid URLs do not accidentally open the previous source.
+
 ## Three independent editions
 
 | Edition | Installation | What it can do alone |

@@ -52,6 +52,8 @@ The latest polish pass adds **Review next update** for sequential, hands-on MO2 
 
 Automated evidence includes Python/HTTP guards, a simulated MO2 lifecycle, browser-interaction proof in Chromium and a large-list ticket-lookup performance benchmark. The Windows MO2 2.5.3 native integration gate is still unverified. See the [SSS review workflow](wiki/Update-Workshop.md) and [development tests](wiki/Development-and-Testing.md).
 
+**Open mods without detours:** Click a mod name in either the installed-mod list or Update Workshop to open its exact original Nexus/GitHub/other source. A small adjacent **⌖** button still reveals the mod inside MO2. Unknown source identities are labeled as searches instead of pretending to be verified project pages. Custom URLs in the inspector can be previewed and copied before saving. These links work in all three editions and never interfere with **Update now**.
+
 ## Update Workshop: maintain an entire MO2 profile
 
 **SSS updater cockpit:** the live Workshop now presents a complete reviewed-file manifest before queueing any downloads and a polished per-archive installation briefing before opening MO2. Every install is rechecked against the exact profile, game/runtime, mod version, target release, and newly introduced warnings. Downloads remain in MO2; FOMOD, overwrite choices and installed mods remain under your control. One-click dashboard lanes surface candidates, manual sources, compatibility issues and ready-to-install archives, with `Alt+U` to focus the Workshop and `Alt+R` to review the next update. A profile backup covers load-order text files, **not** prior mod directories.

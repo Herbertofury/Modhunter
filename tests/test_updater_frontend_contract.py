@@ -66,6 +66,29 @@ class UpdaterFrontendContractTests(unittest.TestCase):
                 self.assertIn(feature, APP)
         self.assertIn("'files?modId='+m.nexusId+'&itemId='+encodeURIComponent(m.id)", APP)
 
+    def test_mod_names_open_original_site_in_every_mode_and_preserve_mo2_reveal(self):
+        for fragment in (
+            'class="mod-title source-title',
+            'class="mod-name-actions"',
+            'class="workshop-item-title',
+            'class="activity-mod-link',
+            'class="mod-inline-locate"',
+            'class="workshop-inline-locate"',
+            'data-act="source"',
+            'data-act="locate"',
+            'data-workshop-act="source"',
+            'data-workshop-act="locate"',
+            'target="_blank" rel="noopener noreferrer"',
+            'Number.isSafeInteger(nexusId)',
+            "nexusId>0&&/^[a-z0-9_-]+$/.test(game)",
+            "return; // Native anchor behavior",
+        ):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, APP)
+        self.assertNotIn('class="mod-title locate-title"', APP)
+        self.assertIn('class="workshop-item-title', APP)
+        self.assertIn('title="Reveal this mod in Mod Organizer 2"', APP)
+
     def test_one_click_updates_need_no_extra_confirmation_while_offering_optional_details(self):
         for element in ("workshopQuickAll", "workshopInspectQueue"):
             with self.subTest(element=element):

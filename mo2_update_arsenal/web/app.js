@@ -25,7 +25,19 @@ const validUrl=(s)=>{try{const u=new URL(s);return ['https:','http:'].includes(u
 const getRow=(id)=>STORE.rows[id]||{};
 const getStatus=(m)=>getRow(m.id).status||'pending';
 const getAudit=(m)=>{const a=m.audit||{};return{verdict:getRow(m.id).compat||a.verdict||'unknown',note:a.note||'',evidence:a.evidence||''}};
-const getSrc=(m)=>{const custom=validUrl(getRow(m.id).url),src=m.source||{};if(custom)return{url:custom,verified:true,custom:true,type:'custom',label:'Your link'};if(src.verified&&validUrl(src.url))return{url:src.url,verified:true,custom:false,type:src.type,label:src.label};const game=LIVE_CATALOG?.game||DATA?.game||'skyrimspecialedition';return{url:'https://www.google.com/search?q='+encodeURIComponent((m.group==='Verified Creations'?'site:creations.bethesda.net/en/skyrim/details ':'site:nexusmods.com/'+game+'/mods/ ')+'"'+m.name+'"'),verified:false,custom:false,type:'lookup',label:'Unresolved search'}};
+const getSrc=(m)=>{
+ const custom=validUrl(getRow(m.id).url),src=m.source||{};
+ if(custom)return{url:custom,verified:true,custom:true,type:'custom',label:'Your saved link'};
+ const official=validUrl(src.url);
+ if(src.verified&&official)return{url:official,verified:true,custom:false,type:src.type||'official',label:src.label||'Linked mod source'};
+ // MO2's native Nexus project ID identifies an exact project even when the
+ // separate source record was not populated. Never invent a GitHub identity.
+ const game=String(LIVE_CATALOG?.game||DATA?.game||'skyrimspecialedition').toLowerCase();
+ const nexusId=Number(m.nexusId);
+ if(Number.isSafeInteger(nexusId)&&nexusId>0&&/^[a-z0-9_-]+$/.test(game))
+  return{url:'https://www.nexusmods.com/'+game+'/mods/'+nexusId,verified:true,custom:false,type:'nexus',label:'MO2 Nexus project ID'};
+ return{url:'https://www.google.com/search?q='+encodeURIComponent((m.group==='Verified Creations'?'site:creations.bethesda.net/en/skyrim/details ':'site:nexusmods.com/'+game+'/mods/ ')+'"'+m.name+'"'),verified:false,custom:false,type:'lookup',label:'Search for original source'};
+};
 const isRisk=(m)=>{const {verdict}=getAudit(m);return ['hold','check','avoid','ae-only'].includes(verdict)||(m.flags||[]).some(f=>['HARD_ESP','HARD_ESM','DLL','NEMESIS'].includes(f))};
 const isUpdate=(m)=>m.update&&m.update.verdict==='candidate';
 const isDone=(m)=>getStatus(m)==='done';
@@ -87,7 +99,7 @@ function modHTML(m){const s=getSrc(m),sourceText=s.type==='creations'?'↗ Creat
  return `<article class="mod-row ${classFor(m)}" id="row-${escapeHTML(m.id)}" data-id="${escapeHTML(m.id)}">
  <div class="mod-status"><button class="complete-btn" data-act="complete" data-id="${m.id}" aria-label="${escapeHTML(statusLabel+' for '+m.name)}" title="${escapeHTML(statusLabel)}">${stat==='done'?'✓':stat==='review'?'!':''}</button></div>
  <div class="mod-priority">${m.priority}</div>
- <div class="mod-primary" data-priority="${m.priority}">${BRIDGE.active?`<button class="mod-title locate-title" type="button" title="Select and scroll to this exact mod in MO2" data-act="locate" data-id="${escapeHTML(m.id)}"><span class="locate-crosshair">⌖</span> ${escapeHTML(m.name)}</button>`:`<a class="mod-title ${s.verified?'':'unknown'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" title="${escapeHTML(s.verified?'Open exact mod source':'Find mod source')}" data-act="source" data-id="${m.id}">${escapeHTML(m.name)}</a>`}${note?`<div class="mod-note ${/do not|ctd|crash|hard esp|incompati|needs update|bugs/i.test(note)?'warning-note':''}" title="${escapeHTML(note)}">${escapeHTML(note)}</div>`:''}</div>
+ <div class="mod-primary" data-priority="${m.priority}"><div class="mod-name-actions"><a class="mod-title source-title ${s.verified?'':'unknown'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHTML((s.verified?'Open source page for ':'Search for original source of ')+m.name)}" title="${escapeHTML(s.verified?'Open the original mod website in a new tab':'Source unknown: search for this mod in a new tab')}" data-act="source" data-id="${escapeHTML(m.id)}">${escapeHTML(m.name)}<span class="source-open-glyph" aria-hidden="true">↗</span></a>${BRIDGE.active?`<button class="mod-inline-locate" type="button" title="Reveal this mod in Mod Organizer 2" aria-label="Reveal ${escapeHTML(m.name)} in MO2" data-act="locate" data-id="${escapeHTML(m.id)}">⌖</button>`:''}</div>${note?`<div class="mod-note ${/do not|ctd|crash|hard esp|incompati|needs update|bugs/i.test(note)?'warning-note':''}" title="${escapeHTML(note)}">${escapeHTML(note)}</div>`:''}</div>
  <div class="mod-version" title="Installed version recorded by source">${escapeHTML(getRow(m.id).installed||m.installedVersion)}${m.update?.latestVersion?`<small class="newer-version" title="Latest metadata, not necessarily compatible">→ ${escapeHTML(m.update.latestVersion)}</small>`:''}</div>
  <div class="mod-assessment">${assessmentHTML(m)}</div>
  <div class="mod-source"><a class="source-btn ${s.verified?'':'lookup'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" data-act="source" data-id="${m.id}" title="${escapeHTML(s.type==='creations'?'Exact Bethesda Creation listing. Install from in-game Creations menu.':s.verified?'Exact mod files page':'Search for the correct mod project; source not yet verified')}">${sourceText}</a></div>
@@ -128,7 +140,18 @@ function drawInspector(m){openedId=m.id;STORE.lastSelected=m.id;save();const row
  <div class="drawer-action-bar"><button id="saveInspector">✦ Save inspection</button><button id="markInspectorDone">✓ Mark cleared</button></div>
  <p class="drawer-micro" style="margin-top:15px">${BRIDGE.active?'Your notes and verdicts are persisted in the MO2 Chronicle for this profile. Manual clearing does not award ranked XP.':'Your notes and verdicts are local to this browser. Back up JSON before moving machines.'} This dashboard does not directly modify installed mod files.</p>`;
  $('drawerVeil').hidden=false;$('detailDrawer').classList.add('open');$('detailDrawer').setAttribute('aria-hidden','false');setTimeout(()=>$('drawerStatus').focus(),130);
- $('copySource').onclick=()=>copyToClipboard(getSrc(m).url);if(BRIDGE.active&&$('drawerLocate'))$('drawerLocate').onclick=()=>locateInMO2(m,$('drawerLocate'));
+ // A pasted URL is immediately previewable/copyable, even before saving notes.
+ // Never leave the old link clickable while an invalid replacement is typed.
+ const sourceInput=$('drawerUrl'),sourceLink=$('drawerOpenLink');
+ function syncDrawerSource(){
+  const typed=sourceInput.value.trim(),url=typed?validUrl(typed):getSrc(m).url;
+  if(url){sourceLink.href=url;sourceLink.removeAttribute('aria-disabled');sourceLink.textContent=typed?'↗ OPEN THIS SOURCE PAGE':'↗ '+(source.verified?'OPEN ORIGINAL MOD PAGE':'FIND ORIGINAL SOURCE');}
+  else{sourceLink.removeAttribute('href');sourceLink.setAttribute('aria-disabled','true');sourceLink.textContent='Enter a valid http(s) source URL';}
+ }
+ sourceInput.addEventListener('input',syncDrawerSource);
+ syncDrawerSource();
+ $('copySource').onclick=()=>{const typed=sourceInput.value.trim(),url=typed?validUrl(typed):getSrc(m).url;if(url)copyToClipboard(url);else toast('Enter a valid http(s) source URL first.');};
+ if(BRIDGE.active&&$('drawerLocate'))$('drawerLocate').onclick=()=>locateInMO2(m,$('drawerLocate'));
  $('saveInspector').onclick=()=>saveInspection(false);
  $('markInspectorDone').onclick=()=>saveInspection(true);
 }
@@ -400,13 +423,16 @@ function renderWorkshop(){
  SET('workshopVisibleCount',visible.length+' of '+plan.items.length+' mods shown');
  area.innerHTML=visible.map(m=>{
   const choice=WORKSHOP_CHOICES.get(m.id);
-  const src=m.sourceUrl||getSrc(ITEM_MAP.get(m.id)||{id:m.id,name:m.name,group:m.group,source:{}}).url;
+  const match=ITEM_MAP.get(m.id)||{id:m.id,name:m.name,group:m.group,nexusId:m.nexusId,source:{}};
+  const source=getSrc(match),official=validUrl(m.sourceUrl),src=official||source.url;
+  const exactSource=Boolean(official||source.verified);
+  const release=validUrl(m.releaseUrl),hasAlternateRelease=Boolean(release&&release!==src);
   const compatible=m.lane==='candidate',warning=m.risks?.length;
   const ticket=ticketsByMod.get(m.id);
   const quickReason=QUICK_SKIPPED.get(m.id);
   const quickHint=quickReason&&!ticket?'<span class="workshop-choice-hint" title="'+escapeHTML(quickReason)+'">Choose edition · '+escapeHTML(quickReason)+'</span>':'';
   const ticketTag=ticket?'<span class="workshop-ticket-note">MO2 · '+escapeHTML(String(ticket.status||'').toUpperCase())+'</span>':'';
-  return '<article class="workshop-item" data-workshop-id="'+escapeHTML(m.id)+'"><div class="workshop-item-main"><div class="workshop-line"><span class="workshop-lane lane-'+escapeHTML(m.lane)+'">'+escapeHTML(m.lane.toUpperCase())+'</span><strong>'+escapeHTML(m.name)+'</strong></div><small>'+escapeHTML(m.group||'MO2 profile')+' · '+escapeHTML(m.installedVersion||'?')+' → '+escapeHTML(m.latestVersion||'?')+'</small><div class="workshop-tags">'+(warning?'<span class="workshop-warning">⚠ '+escapeHTML(m.risks.join(' · '))+'</span>':'')+(choice?'<span class="workshop-selected">✓ Reviewed file #'+escapeHTML(choice.fileId||choice.assetId)+'</span><button type="button" class="workshop-remove" data-workshop-act="remove" data-id="'+escapeHTML(m.id)+'" aria-label="Remove reviewed file for '+escapeHTML(m.name)+'">× Remove file</button>':'')+ticketTag+quickHint+'</div></div><div class="workshop-item-actions"><a target="_blank" rel="noopener noreferrer" href="'+escapeHTML(src)+'">↗ Source</a>'+(BRIDGE.active&&compatible&&(m.nexusId||m.releaseAssets?.length)?ticket?'<button type="button" class="quiet-button" data-workshop-act="downloads" data-id="'+escapeHTML(m.id)+'">View download</button>':'<button type="button" class="button-bright quick-update" data-workshop-act="quick" data-id="'+escapeHTML(m.id)+'">ϟ Update now</button><button type="button" class="quiet-button" data-workshop-act="review" data-id="'+escapeHTML(m.id)+'">Choose file</button>':'')+'</div></article>';
+  return '<article class="workshop-item" data-workshop-id="'+escapeHTML(m.id)+'"><div class="workshop-item-main"><div class="workshop-line"><span class="workshop-lane lane-'+escapeHTML(m.lane)+'">'+escapeHTML(m.lane.toUpperCase())+'</span><a class="workshop-item-title'+(exactSource?'':' source-unresolved')+'" href="'+escapeHTML(src)+'" target="_blank" rel="noopener noreferrer" data-workshop-act="source" data-id="'+escapeHTML(m.id)+'" title="'+escapeHTML(exactSource?'Open original project website':'Find the original project; source not verified')+'" aria-label="'+escapeHTML((exactSource?'Open source website for ':'Search for source of ')+m.name)+'">'+escapeHTML(m.name)+'<span class="source-open-glyph" aria-hidden="true">↗</span></a>'+(BRIDGE.active?'<button type="button" class="workshop-inline-locate" data-workshop-act="locate" data-id="'+escapeHTML(m.id)+'" aria-label="Reveal '+escapeHTML(m.name)+' in MO2" title="Reveal this mod in Mod Organizer 2">⌖</button>':'')+'</div><small>'+escapeHTML(m.group||'MO2 profile')+' · '+escapeHTML(m.installedVersion||'?')+' → '+escapeHTML(m.latestVersion||'?')+'</small><div class="workshop-tags">'+(warning?'<span class="workshop-warning">⚠ '+escapeHTML(m.risks.join(' · '))+'</span>':'')+(choice?'<span class="workshop-selected">✓ Reviewed file #'+escapeHTML(choice.fileId||choice.assetId)+'</span><button type="button" class="workshop-remove" data-workshop-act="remove" data-id="'+escapeHTML(m.id)+'" aria-label="Remove reviewed file for '+escapeHTML(m.name)+'">× Remove file</button>':'')+ticketTag+quickHint+'</div></div><div class="workshop-item-actions"><a target="_blank" rel="noopener noreferrer" href="'+escapeHTML(src)+'" title="'+escapeHTML(exactSource?'Open the source website':'Find the original source')+'">'+(exactSource?'↗ Project website':'⌕ Find project')+'</a>'+(hasAlternateRelease?'<a target="_blank" rel="noopener noreferrer" href="'+escapeHTML(release)+'" title="Open the published release page">↗ Latest release</a>':'')+(BRIDGE.active&&compatible&&(m.nexusId||m.releaseAssets?.length)?ticket?'<button type="button" class="quiet-button" data-workshop-act="downloads" data-id="'+escapeHTML(m.id)+'">View download</button>':'<button type="button" class="button-bright quick-update" data-workshop-act="quick" data-id="'+escapeHTML(m.id)+'">ϟ Update now</button><button type="button" class="quiet-button" data-workshop-act="review" data-id="'+escapeHTML(m.id)+'">Choose file</button>':'')+'</div></article>';
  }).join('')||'<div class="workshop-empty">No mods in this lane. Change the filter or run a deeper audit.</div>';
  $('workshopQueue').disabled=!BRIDGE.active||!selected.length||WORKSHOP_BUSY;
  $('workshopQuickAll').disabled=!BRIDGE.active||!summary.candidates||QUICK_RUNNING;
@@ -587,6 +613,15 @@ $('workshopSummary').addEventListener('click',e=>{const choice=e.target.closest(
 $('workshopSearch').oninput=renderWorkshop;
 $('workshopResults').addEventListener('click',e=>{
  const b=e.target.closest('[data-workshop-act]');if(!b)return;
+ if(b.dataset.workshopAct==='source'){
+  const m=ITEM_MAP.get(b.dataset.id);
+  if(m){STORE.rows[m.id]={...getRow(m.id),lastOpened:new Date().toISOString()};save();}
+  return; // Native anchor behavior: ctrl-click, middle-click and keyboard Enter keep working.
+ }
+ if(b.dataset.workshopAct==='locate'){
+  const m=ITEM_MAP.get(b.dataset.id);if(m)locateInMO2(m,b);
+  return;
+ }
  if(b.dataset.workshopAct==='downloads'){
   const ticket=[...$('liveDownloadList').querySelectorAll('[data-ticket-item-id]')].find(x=>x.dataset.ticketItemId===b.dataset.id);
   (ticket||$('liveDownloadList')).scrollIntoView({behavior:'smooth',block:'center'});return;
@@ -649,11 +684,14 @@ function renderActivity(){
   const state=activityStatus(rec),date=new Date(rec.lastAt),dateText=Number.isNaN(date.valueOf())?'Time unknown':date.toLocaleString();
   const meta=[rec.installedVersion||'?',rec.targetVersion||'?'].join(' → ');
   const headline=rec.modName||rec.itemId||rec.fileName||'Unlinked MO2 download';
+  const original=ITEM_MAP.get(rec.itemId)||{id:rec.itemId||rec.key||'',name:headline,nexusId:rec.modId||0,group:'',source:{}};
+  const source=getSrc(original);
+  const sourceTitle=source.verified?'Open original mod project in a new tab':'Find the original mod project';
   const timeline=(rec.timeline||[]).map(entry=>{
    const at=new Date(entry.at),time=Number.isNaN(at.valueOf())?'Unknown time':at.toLocaleString();
    return '<li><span>'+escapeHTML(entry.status||'')+'</span><small>'+escapeHTML(time)+'</small>'+(entry.note?'<small>'+escapeHTML(entry.note)+'</small>':'')+'</li>';
   }).join('');
-  return '<details class="activity-entry activity-'+escapeHTML(state[1])+'"><summary><span class="activity-dot" aria-hidden="true"></span><span class="activity-head"><strong>'+escapeHTML(headline)+'</strong><small>'+escapeHTML(meta)+' · '+escapeHTML(rec.provider||'MO2')+' · '+escapeHTML(rec.fileName||'Archive unknown')+'</small></span><span class="activity-state"><b>'+escapeHTML(state[0])+'</b><small>'+escapeHTML(dateText)+'</small></span></summary><div class="activity-detail"><div><strong>Source:</strong> '+escapeHTML(rec.provider||'Unknown')+' · <strong>Download:</strong> #'+escapeHTML(rec.downloadId)+'</div><div><strong>Runtime:</strong> '+escapeHTML(rec.gameRuntime||'Unknown')+' · <strong>Profile backup:</strong> '+(rec.hasProfileBackup?'Profile text files recorded':'Not recorded')+'</div>'+(rec.needsReview?'<p class="activity-safety">Previous session only. Open MO2 Downloads, verify the archive exists and rescan before taking further action. No automatic resume is available.</p>':'')+'<ol class="activity-timeline">'+timeline+'</ol></div></details>';
+  return '<details class="activity-entry activity-'+escapeHTML(state[1])+'"><summary><span class="activity-dot" aria-hidden="true"></span><span class="activity-head"><a class="activity-mod-link'+(source.verified?'':' source-unresolved')+'" href="'+escapeHTML(source.url)+'" target="_blank" rel="noopener noreferrer" title="'+escapeHTML(sourceTitle)+'" aria-label="'+escapeHTML(sourceTitle+' for '+headline)+'">'+escapeHTML(headline)+'<span class="source-open-glyph" aria-hidden="true">↗</span></a><small>'+escapeHTML(meta)+' · '+escapeHTML(rec.provider||'MO2')+' · '+escapeHTML(rec.fileName||'Archive unknown')+'</small></span><span class="activity-state"><b>'+escapeHTML(state[0])+'</b><small>'+escapeHTML(dateText)+'</small></span></summary><div class="activity-detail"><div><strong>Source:</strong> '+escapeHTML(rec.provider||'Unknown')+' · <strong>Download:</strong> #'+escapeHTML(rec.downloadId)+'</div><div><strong>Runtime:</strong> '+escapeHTML(rec.gameRuntime||'Unknown')+' · <strong>Profile backup:</strong> '+(rec.hasProfileBackup?'Profile text files recorded':'Not recorded')+'</div>'+(rec.needsReview?'<p class="activity-safety">Previous session only. Open MO2 Downloads, verify the archive exists and rescan before taking further action. No automatic resume is available.</p>':'')+'<ol class="activity-timeline">'+timeline+'</ol></div></details>';
  }).join('')||'<div class="workshop-empty">No operations match this view. Queue an update from the MO2 plugin to begin recording real update activity.</div>';
  $('activityExport').disabled=!BRIDGE.active||!LIVE_CATALOG||!ACTIVITY_RECORDS.length;
  $('activityRefresh').disabled=!BRIDGE.active;
@@ -684,6 +722,7 @@ function exportActivity(){
  saveFile('Modhunter-Operations-'+title+'.json','application/json',JSON.stringify(data,null,2));
  workshopSetStatus('Exported '+ACTIVITY_RECORDS.length+' profile-scoped MO2 operation receipts.');
 }
+$('activityResults').addEventListener('click',e=>{if(e.target.closest('a.activity-mod-link'))e.stopPropagation();});
 $('activityRefresh').onclick=()=>refreshActivity();
 $('activityExport').onclick=exportActivity;
 $('activitySearch').oninput=renderActivity;

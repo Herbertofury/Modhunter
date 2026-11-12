@@ -320,3 +320,28 @@ body[data-theme="snow"] .workshop-tools .quick-bulk{background:#216458;color:whi
 .workshop-choice-hint{display:inline-flex;gap:4px;align-items:center;color:#e9d3a7;border:1px solid rgba(232,180,106,.25);border-radius:5px;padding:3px 8px;max-width:100%;overflow-wrap:anywhere}
 @media(min-width:1800px){.workshop-summary{grid-template-columns:repeat(6,minmax(0,1fr))}}
 @media(max-width:640px){.workshop-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Click a mod's name to open its real project site. MO2 reveal remains a separate, accessible action. */
+.mod-name-actions{display:flex;align-items:center;gap:6px;min-width:0;flex-wrap:wrap}
+.mod-name-actions>.mod-title.source-title{max-width:100%;display:inline-flex;align-items:baseline;gap:7px;flex-wrap:wrap;min-width:0;overflow-wrap:anywhere;text-align:left;text-decoration:none;cursor:pointer}
+.mod-title.source-title:hover,.workshop-item-title:hover{color:#e3c78e;text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:1px}
+.mod-title.source-title:focus-visible,.workshop-item-title:focus-visible{outline:2px solid #a6e5cf;outline-offset:3px;border-radius:3px}
+.mod-title.source-title.unknown,.workshop-item-title.source-unresolved{color:#b7c9c9;text-decoration-style:dotted}
+.source-open-glyph{font-size:.9em;color:#86d9c4;display:inline-block;line-height:1;opacity:.84;transition:transform .15s ease,opacity .15s ease}
+.source-title:hover .source-open-glyph,.workshop-item-title:hover .source-open-glyph{transform:translate(2px,-2px);opacity:1}
+.mod-inline-locate,.workshop-inline-locate{appearance:none;background:#1a383e;border:1px solid #416c6c;border-radius:6px;display:inline-grid;place-items:center;width:28px;height:27px;flex:none;font:700 19px/1 system-ui;color:#97d9c7;cursor:pointer}
+.mod-inline-locate:hover,.workshop-inline-locate:hover{background:#2b5960;border-color:#9de7d0;color:#fff}
+.mod-inline-locate:focus-visible,.workshop-inline-locate:focus-visible{outline:2px solid #b8e8cf;outline-offset:2px}
+.workshop-item-title{font-size:14px;font-weight:750;color:#f3f1e9;text-decoration:none;overflow-wrap:anywhere;min-width:0;display:inline-flex;align-items:baseline;gap:7px}
+.workshop-item-actions a:focus-visible{outline:2px solid #a6e5cf;outline-offset:3px;border-radius:3px}
+body[data-theme="snow"] .mod-title.source-title,body[data-theme="snow"] .workshop-item-title{color:#1a4247}
+body[data-theme="snow"] :is(.mod-inline-locate,.workshop-inline-locate){background:#eaf4f0;border-color:#9cbdb5;color:#23574c}
+@media(prefers-reduced-motion:reduce){.source-open-glyph{transition:none}}
+
+.drawer-link[aria-disabled="true"]{opacity:.55;cursor:not-allowed;pointer-events:none;text-decoration:none}
+
+.activity-mod-link{display:inline-flex;align-items:baseline;gap:7px;color:#f5f2e6;font-size:13px;font-weight:750;text-decoration:none;overflow-wrap:anywhere}
+.activity-mod-link:hover{color:#e3c78e;text-decoration:underline;text-underline-offset:3px}
+.activity-mod-link.source-unresolved{color:#b7c9c9;text-decoration-style:dotted}
+.activity-mod-link:focus-visible{outline:2px solid #a6e5cf;outline-offset:3px;border-radius:3px}
+body[data-theme="snow"] .activity-mod-link{color:#234449}

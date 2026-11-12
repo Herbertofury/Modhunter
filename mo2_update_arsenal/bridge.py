@@ -272,6 +272,14 @@ class ArsenalService:
             approved = validate_batch_selection(snapshot, payload)
         except PlanError as exc:
             return {"ok": False, "error": str(exc), "queued": [], "failed": []}
+        # Confirm *every* exact file exists before any native download starts.
+        # Otherwise a bad second choice could leave the first file queued.
+        for item in approved:
+            available = self.fetch_files(item["modId"])
+            if not available.get("ok"):
+                return {"ok": False, "queued": [], "failed": [{"itemId": item["itemId"], "error": available.get("error", "Nexus file list unavailable")}]}
+            if item["fileId"] not in {int(f["fileId"]) for f in available.get("files", [])}:
+                return {"ok": False, "queued": [], "failed": [{"itemId": item["itemId"], "error": "Exact Nexus file is no longer available; review again"}]}
         queued, failed = [], []
         for item in approved:
             with self._guard:

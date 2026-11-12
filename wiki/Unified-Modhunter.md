@@ -1,5 +1,10 @@
 # ⚔ MODHUNTER · ONE UNIFIED COMMAND CENTER
 
+**[Download EVERYTHING together (current runnable app + all 36 untouched historical outputs)](https://drive.google.com/file/d/1UZzjHQQX3hceSWcJWFX2yygH6htzXqHE/view)** · [Current development release only](https://github.com/Herbertofury/Modhunter/blob/main/dist/Modhunter-All-in-One.zip)
+
+The Everything archive puts the runnable current product at the root (Modhunter.html, Desktop/, MO2/, Source/, Docs/) and all authentic historical versions under History/. It contains 111 files verified against the archive manifest. Historical versions are preserved for reference and are not installed over the current build.
+
+
 > **Primary purpose:** Keep your real Mod Organizer 2 mods up to date, with an elegant, traceable, profile-specific workflow. Questbound, AetherFX, Shiverfell, Mythforge, Modhunter Siege and the Atlas are all part of the **same product**, not separate replacement apps.
 
 ![Modhunter dashboard](https://raw.githubusercontent.com/Herbertofury/Modhunter/main/screenshots/modhunter-menu.png)

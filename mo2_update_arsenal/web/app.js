@@ -8,7 +8,7 @@ const PALETTE={gold:'#e2b975',stone:'#92959d',purple:'#b78cde',violet:'#a26cfa',
 let STORAGE='dragonborn-mod-update-arsenal-v1';
 const BRIDGE=window.__MO2_BRIDGE_BOOT__||{active:false};
 let LIVE_SCAN=null,LIVE_CATALOG=null,SCAN_TIMER=null,FILE_PICKER_MOD=null,LIVE_GENERATION=0,LIVE_REFRESH_BUSY=false;
-let WORKSHOP_PLAN=null,WORKSHOP_CHOICES=new Map(),WORKSHOP_BUSY=false;
+let WORKSHOP_PLAN=null,WORKSHOP_CHOICES=new Map(),WORKSHOP_BUSY=false,WORKSHOP_REVIEW_ID=null;
 let GAME=null,GAME_SEEN=-1,PROGRESS_READY=false,PROGRESS_TIMER=null,NATIVE_SELECTED='',VICTORY_ACTIVE=null,VICTORY_TIMERS=[],PRACTICE_CROWNED=false;
 const BADGE_META=[['first-blood','First Blood','⚔',1],['apprentice','Apprentice Smith','🔨',5],['veteran','Veteran of the Forge','🛡',10],['archmage','Master Enchanter','✦',25],['dragonborn','Dragonborn','🐉',50],['legend','Legendary Smith','♛',100],['world-eater','World-Eater Defeated','👑',null]];
 
@@ -370,19 +370,11 @@ async function reviewWorkshopFile(id){
  const m=ITEM_MAP.get(id);if(!m||!BRIDGE.active||!m.nexusId)return;
  const plan=currentWorkshopPlan(),record=plan.items.find(x=>x.id===id);
  if(!record||record.lane!=='candidate'){toast('This mod needs a fresh Nexus scan or manual review.');return}
- const files=await bridgeRequest('GET','files?modId='+Number(m.nexusId));
- if(!Array.isArray(files.files)||!files.files.length){toast('No Nexus files returned for this mod.');return}
- const summary=files.files.map((f,i)=>[i+1,f.name,'v'+(f.version||'?'),f.category===1?'MAIN':'OTHER'].join(' · ')).join('\n');
- const answer=prompt('Select the number of the exact file for '+record.name+'. Check its Nexus description, requirements and runtime first.\n\n'+summary+'\n\nEnter a file number, or Cancel:', '');
- if(answer===null)return;
- if(!/^[0-9]+$/.test(answer.trim())){toast('Enter a file number from the list.');return}
- const f=files.files[Number(answer)-1];if(!f){toast('File number is outside the list.');return}
- const detail=[record.name,'Installed '+record.installedVersion,'Nexus file: '+f.name,'File version: '+(f.version||'unknown'),'File ID: '+f.fileId,'Runtime: '+(plan.gameRuntime||'unknown')].join('\n');
- if(!confirm('Confirm you inspected the exact Files page and requirements, and this is the right build:\n\n'+detail))return;
- const riskAcknowledged=!record.risks?.length||confirm('Compatibility watch:\n'+record.risks.join('\n')+'\n\nI have verified this file against my target runtime, requirements and installation instructions.');
- if(!riskAcknowledged)return;
- WORKSHOP_CHOICES.set(id,{itemId:id,modId:Number(m.nexusId),fileId:Number(f.fileId),installedVersion:record.installedVersion,profileId:plan.profileId,reviewed:true,riskAcknowledged});
- renderWorkshop();workshopSetStatus('Reviewed: '+record.name+' / file #'+f.fileId+'. Queue only when ready.');
+ WORKSHOP_REVIEW_ID=id;
+ await openFilePicker(m);
+ const panel=$('filePickerFiles');
+ panel.querySelectorAll('button[data-file-id]').forEach(b=>b.textContent='✓ Select for batch');
+ $('filePickerSummary').textContent='Review the exact file, its requirements and '+(plan.gameRuntime||'unknown')+' runtime compatibility. Selecting only prepares a reviewed download; nothing installs automatically.';
 }
 async function queueWorkshop(){
  if(WORKSHOP_BUSY||!BRIDGE.active)return;
@@ -439,10 +431,21 @@ async function openFilePicker(m){if(!BRIDGE.active||!m.nexusId){toast('This entr
  FILE_PICKER_MOD=m;$('filePickerTitle').textContent=m.name;$('filePickerSummary').textContent='Installed: '+m.installedVersion+' · Target runtime: '+(DATA.gameRuntime||'unknown')+'. Select the correct Nexus file, read its requirements and verify its edition.';
  $('filePickerVeil').hidden=false;$('filePickerFiles').innerHTML='<div class="picker-loading">Loading exact Nexus Files…</div>';
  try{const j=await bridgeRequest('GET','files?modId='+m.nexusId);if(!j.files.length)throw Error('No files available for this project');$('filePickerFiles').innerHTML=j.files.map(f=>`<div class="picker-file"><div class="picker-file-main"><strong>${escapeHTML(f.name)}</strong><span>v${escapeHTML(f.version||'?')} · ${escapeHTML(f.fileName||'')} · ${escapeHTML(f.sizeInKB||'?')} KB ${f.category===1?' · MAIN FILE':''}</span></div><button class="button-bright" data-file-id="${f.fileId}" data-mod-id="${m.nexusId}">⇩ Queue in MO2</button></div>`).join('');}catch(ex){$('filePickerFiles').innerHTML=`<div class="picker-error">${escapeHTML(ex.message)}<p>Use the original Files page and Mod Manager Download through MO2 if required by your Nexus account.</p></div>`;}}
-function closeFilePicker(){$('filePickerVeil').hidden=true;FILE_PICKER_MOD=null}
+function closeFilePicker(){$('filePickerVeil').hidden=true;FILE_PICKER_MOD=null;WORKSHOP_REVIEW_ID=null}
 $('filePickerClose').onclick=closeFilePicker;$('filePickerCancel').onclick=closeFilePicker;$('filePickerVeil').addEventListener('click',e=>{if(e.target===$('filePickerVeil'))closeFilePicker()});
 $('filePickerNexus').onclick=()=>{if(FILE_PICKER_MOD)window.open(getSrc(FILE_PICKER_MOD).url,'_blank','noopener,noreferrer')};
-$('filePickerFiles').addEventListener('click',async e=>{const b=e.target.closest('button[data-file-id]');if(!b)return;const m=FILE_PICKER_MOD;if(!m)return;if(!confirm('Queue this exact Nexus file in MO2? You must review its compatibility and install it separately.'))return;b.disabled=true;try{const r=await bridgeRequest('POST','download',{modId:Number(b.dataset.modId),fileId:Number(b.dataset.fileId),confirm:'DOWNLOAD'});toast('⇩ '+r.message);closeFilePicker();await refreshDownloads()}catch(ex){toast('Download: '+ex.message);b.disabled=false}});
+$('filePickerFiles').addEventListener('click',async e=>{const b=e.target.closest('button[data-file-id]');if(!b)return;const m=FILE_PICKER_MOD;if(!m)return;
+ if(WORKSHOP_REVIEW_ID){
+  const plan=currentWorkshopPlan(),record=plan.items.find(x=>x.id===WORKSHOP_REVIEW_ID);
+  if(!record||record.lane!=='candidate'){closeFilePicker();toast('Candidate is no longer current.');return}
+  const picked=b.closest('.picker-file'),label=picked?.querySelector('strong')?.textContent||'Selected file';
+  if(!confirm('Have you reviewed the description, requirements, runtime and exact file version?\\n\\n'+record.name+'\\n'+label+'\\nFile #'+b.dataset.fileId))return;
+  const riskAcknowledged=!record.risks?.length||confirm('Compatibility watch:\\n'+record.risks.join('\\n')+'\\n\\nI checked this file against my target runtime and prerequisites.');
+  if(!riskAcknowledged)return;
+  WORKSHOP_CHOICES.set(WORKSHOP_REVIEW_ID,{itemId:WORKSHOP_REVIEW_ID,modId:Number(m.nexusId),fileId:Number(b.dataset.fileId),installedVersion:record.installedVersion,profileId:plan.profileId,reviewed:true,riskAcknowledged});
+  closeFilePicker();renderWorkshop();workshopSetStatus('Reviewed '+record.name+'. Use Queue reviewed files when ready.');return;
+ }
+ if(!confirm('Queue this exact Nexus file in MO2? You must review its compatibility and install it separately.'))return;b.disabled=true;try{const r=await bridgeRequest('POST','download',{modId:Number(b.dataset.modId),fileId:Number(b.dataset.fileId),confirm:'DOWNLOAD'});toast('⇩ '+r.message);closeFilePicker();await refreshDownloads()}catch(ex){toast('Download: '+ex.message);b.disabled=false}});
 $('liveDownloadList').addEventListener('click',async e=>{const b=e.target.closest('button[data-download-id]');if(!b)return;if(!confirm('Back up your MO2 profile, then open the normal MO2 installer? Review FOMOD and overwrite choices.'))return;b.disabled=true;try{const r=await bridgeRequest('POST','install',{downloadId:Number(b.dataset.downloadId),confirm:'INSTALL'});toast(r.message||'MO2 install complete');await refreshDownloads();const s=await bridgeRequest('GET','snapshot');activateLiveCatalog(s.catalog);await refreshGame()}catch(ex){toast('Install: '+ex.message)}finally{b.disabled=false}});
 $('liveQuick').onclick=()=>scanLive('quick');$('liveDeep').onclick=()=>scanLive('deep');$('liveLocal').onclick=()=>scanLive('local');
 $('liveRefresh').onclick=async()=>{try{const r=await bridgeRequest('POST','refresh');activateLiveCatalog(r.catalog);await refreshWorkshop();await refreshGame();toast('⟳ Live profile refreshed')}catch(ex){toast(ex.message)}};

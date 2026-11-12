@@ -38,4 +38,4 @@
 
 The HTML is an entirely portable play surface. The desktop app is a dedicated multi-tab Chromium shell. The MO2 plugin alone owns live profile inspection and verified update rewards. Optional loopback communication allows them to share the same active game/profile identity without requiring any of the other installations.
 
-**Development build:** Browser tests and 68 Python tests were completed in the recovered v0.8 checkpoint. Native Windows MO2 and Electron acceptance testing remain to be performed.
+**Development build:** The inherited v0.8 checkpoint passed 68 Python tests; the Update Workshop adds 13 additional Python/HTTP tests (81 total). Native Windows MO2 and Electron acceptance testing remain to be performed.

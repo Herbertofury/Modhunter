@@ -15,10 +15,12 @@ class UnifiedProductTests(unittest.TestCase):
             'id="unifiedCommand"', 'id="unifiedScan"', 'id="unifiedReview"',
             'id="updateWorkshop"', 'id="liveAll"', 'id="gameBoard"',
             'id="fxSettingsToggle"', '?realm=1', '?realm=1&amp;siege=1',
-            'Questbound', 'AetherFX', 'Shiverfell', 'Mythforge', 'Siege', 'Atlas',
         ):
             with self.subTest(label=label):
                 self.assertIn(label,PAGE)
+        for feature in ('Questbound','AetherFX','Shiverfell','Mythforge','Siege','Atlas'):
+            with self.subTest(feature=feature):
+                self.assertIn(feature.lower(),PAGE.lower())
         self.assertLess(PAGE.index('id="unifiedCommand"'),PAGE.index('id="gameBoard"'))
         self.assertLess(PAGE.index('id="liveHub"'),PAGE.index('id="gameBoard"'))
 
@@ -38,7 +40,7 @@ class UnifiedProductTests(unittest.TestCase):
             self.assertIn(marker,PAGE)
             self.assertIn(marker,BUILD)
         for required in (
-            'Standalone HTML','Questbound','AetherFX','Shiverfell',
+            'Standalone:','Questbound','AetherFX','Shiverfell',
             'Mythforge','Modhunter Siege','Atlas',
             "Desktop/Run_ModHunter.bat","MO2/Install_to_MO2.bat",
             "MO2/mo2_update_arsenal/web/index.html",

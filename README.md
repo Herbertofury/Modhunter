@@ -121,3 +121,8 @@ The canonical [`wiki/`](wiki/) pages are synchronized to the separate **[live Gi
 
 With the MO2 plugin connected, click **ϟ Update now** on a newer mod. A uniquely version-matched main Nexus file (or one eligible public release archive) goes directly to MO2 Downloads, then opens **MO2's interactive installer** when it finishes. The standard FOMOD prompts remain available; Modhunter skips its extra confirmations. For multiple editions or meaningful compatibility risks, **Choose file** opens immediately, with the release choices preserved. **Queue matched updates** downloads unambiguous matches in the background without flooding you with installers. Existing reviewed selections dispatch immediately, while the manifest and install briefing are optional. See [Update Workshop](wiki/Update-Workshop.md).
 
+
+
+## Competing apps and differentiation
+
+[Source-linked comparison and evaluation backlog](wiki/Competing-Apps.md) records comparable tools, opportunities to test, evidence requirements and dated review status. Planned differentiation is not a claim of measured superiority.

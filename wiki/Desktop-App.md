@@ -1,11 +1,11 @@
 # 🖥️ Desktop App
 [Home](Home.md) / Desktop
 
-![Desktop tabs](../screenshots/desktop-tabbar.png)
+![Desktop tabs](https://raw.githubusercontent.com/Herbertofury/Modhunter/main/screenshots/desktop-tabbar.png)
 
 The Electron desktop provides dedicated Chromium tabs for the **Mod Vault**, **Modhunter Siege**, and **Shiverfell**. The source package runs standalone, with no MO2 installation necessary for offline play.
 
-1. Download [desktop source](../dist/Modhunter-Desktop-Source.zip).
+1. Download [desktop source](https://github.com/Herbertofury/Modhunter/blob/main/dist/Modhunter-Desktop-Source.zip).
 2. Extract and read `desktop/README.md`.
 3. Install compatible Node.js and project dependencies.
 4. Run `desktop/Run_ModHunter.bat` on Windows.

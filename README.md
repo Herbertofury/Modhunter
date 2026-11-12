@@ -32,6 +32,10 @@
 
 > **Current stage:** v0.8 development build. Browser gameplay and Python tests are exercised. A prebuilt Windows executable and native Windows MO2 integration have **not** been verified in this environment. The content catalogue describes 480 campaign clear conditions, not 80 hours of independently playtested authored content.
 
+## Update Workshop: maintain an entire MO2 profile
+
+The new **[Update Workshop](wiki/Update-Workshop.md)** keeps all mods in full-width review lanes, including missing-source mods. In live MO2, start a cached/fast/full scan, inspect exact Nexus files, acknowledge compatibility risks, and queue a reviewed batch. Each download still goes through the native MO2 download manager; each installation stays interactive with profile load-order backups. The standalone HTML and desktop editions provide the same beautiful planning UI without requiring MO2 and never pretend offline checklist clicks are verified updates.
+
 ## What makes it different?
 
 **Modhunter Siege:** a survivor roguelite with five hero classes, automatic squad attacks, 22 upgrade paths, six weapon evolutions, timed boss battles and an Unfinished Bestiary made from real outdated MO2 mods. Follower mods can become named rivals, weapons become cursed wielders, armor becomes colossi, and spell mods become casters.
@@ -55,4 +59,4 @@
 
 📖 **[Read the Modhunter Wiki](wiki/Home.md)** · [Install & Connect](wiki/Getting-Started.md) · [Atlas Campaign](wiki/Atlas-Campaign.md) · [The Unfinished Bestiary](wiki/Unfinished-Bestiary.md) · [Verification and Safety](wiki/Rewards-and-Integrity.md)
 
-The pages in `wiki/` are also ready to sync to the separate [GitHub Wiki](https://github.com/Herbertofury/Modhunter/wiki) using the included `Sync GitHub Wiki` workflow after that Wiki has an initial Home page. A repository `wiki/` directory alone does not create the live GitHub Wiki.
+The canonical [`wiki/`](wiki/) pages are synchronized to the separate **[live GitHub Wiki](https://github.com/Herbertofury/Modhunter/wiki)** by the repository's Wiki workflow. Its status is visible in GitHub Actions.

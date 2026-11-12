@@ -1,7 +1,7 @@
 """Reproducible local-only HTML bundler. Run: python build.py"""
 from __future__ import annotations
 from pathlib import Path
-import hashlib, json
+import hashlib, json, os
 ROOT=Path(__file__).resolve().parent
 WEB=ROOT/'mo2_update_arsenal'/'web'
 script=(WEB/'app.js').read_text(encoding='utf8').replace('/*__POWERSHELL__*/',json.dumps((WEB/'MO2_Source_Exporter.ps1').read_text(encoding='utf8'),ensure_ascii=False))
@@ -11,7 +11,7 @@ page=(WEB/'app.template.html').read_text(encoding='utf8').replace('/*__STYLE__*/
 assert '/*__' not in page
 assert '<!--__MO2_BOOT__-->' in page
 (WEB/'index.html').write_text(page,encoding='utf8')
-out=Path('/mnt/data/MO2_Update_Arsenal.html')
+out=Path(os.environ.get('MODHUNTER_ARTIFACT_DIR','/mnt/data'))/'MO2_Update_Arsenal.html'
 out.parent.mkdir(parents=True,exist_ok=True)
 out.write_text(page,encoding='utf8')
 print(json.dumps({'file':str(out),'modCount':len(model['items']),'groups':len(model['groups']),'bytes':out.stat().st_size,'sha256':hashlib.sha256(out.read_bytes()).hexdigest()},indent=2))

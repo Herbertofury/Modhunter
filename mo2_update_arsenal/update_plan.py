@@ -48,12 +48,12 @@ def plan_updates(snapshot: dict) -> dict:
         update = item.get("update") or {}
         verdict = str(update.get("verdict") or "unverified")
         risks = risk_reasons(item)
-        if nid == 0:
-            lane = "manual"
-        elif verdict == "candidate":
+        if verdict == "candidate":
             lane = "candidate"
         elif verdict in ("current", "newer-installed"):
             lane = "current"
+        elif nid == 0 and verdict in ("unverified", "unknown"):
+            lane = "manual"
         else:
             lane = "review"
         summary[{"candidate": "candidates", "review": "review", "manual": "manual", "current": "current"}[lane]] += 1
@@ -68,6 +68,9 @@ def plan_updates(snapshot: dict) -> dict:
             "verdict": verdict, "lane": lane, "priority": item.get("priority"),
             "group": str(item.get("group") or ""), "risks": risks,
             "sourceUrl": source_url, "sourceVerified": bool(source_url),
+            "provider": str(update.get("provider") or src.get("type") or "unknown"),
+            "releaseAssets": update.get("releaseAssets") or [],
+            "releaseUrl": str(update.get("releaseUrl") or source_url),
             "checkedAt": update.get("checkedAt"),
         })
     return {"ok": True, "profileId": str(snapshot.get("profileId") or ""),

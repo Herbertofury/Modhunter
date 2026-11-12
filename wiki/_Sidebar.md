@@ -10,6 +10,7 @@
 * [🚀 Installation](Getting-Started)
 * [🖥️ Desktop App](Desktop-App)
 * [🛠️ MO2 Plugin](MO2-Plugin)
+* [⚒ Update Workshop](Update-Workshop)
 
 **Under the hood**
 * [✨ Rewards & Integrity](Rewards-and-Integrity)

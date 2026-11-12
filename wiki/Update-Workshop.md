@@ -10,9 +10,9 @@ Modhunter now presents a unified **Update Workshop** in the standalone HTML, Ele
 2. Use **✧ Check all mod sources**, **MO2 cached**, **Fast Nexus / cached**, or **Full Nexus audit**. When available, Modhunter reuses MO2's own existing Nexus sign-in through its native bridge, with no separate API-key entry; an optional personal key is held in RAM only as a fallback. An all-source audit also checks public GitHub/GitLab releases, and marks account-gated websites unverified rather than current.
 3. Open **The Update Workshop** and **Build update plan**. Every row remains visible in one of these review lanes: **Update candidates**, **Needs verification**, **Manual / unlinked**, or **Current**. The plan is specific to the active MO2 profile and chosen game runtime.
 4. On a verified candidate, choose **Review files**. Select an **exact Nexus file or GitHub release asset** and read its description, requirements, version, compatible game executable, SKSE/Address Library and FOMOD instructions. The planner does not equate a newer project version with a compatible install.
-5. Acknowledge compatibility-watch warnings for DLLs, hard plugins, behavior generation and known hold/avoid advice. **Queue reviewed files** sends approved Nexus IDs and public GitHub release archives to MO2's native download manager. The whole queue is validated before dispatch; duplicate identical Nexus file IDs are skipped.
-6. Once each download completes, use **Install with MO2**. Modhunter first saves a timestamped copy of the profile's load-order text files, then opens MO2's **standard interactive installer** so that FOMOD choices, overwrite conflicts and prompts remain under your control.
-7. Check the updated mod's enabled state, load order, dependencies and test in-game. **Refresh profile**, then run a **Full audit** to validate what is current. Rank and verified Forge Sigils are awarded only from real MO2 evidence, never manual checklist clicks.
+5. Acknowledge compatibility-watch warnings for DLLs, hard plugins, behavior generation and known hold/avoid advice. **Queue reviewed files** sends approved Nexus IDs and public GitHub release archives to MO2's native download manager. The whole queue is validated before dispatch; duplicate identical Nexus file IDs are skipped, and already-queued mods cannot be queued again until their ticket is resolved.
+6. Once each download completes, use **Install with MO2**. Modhunter first saves a timestamped copy of the profile's load-order text files, then opens MO2's **standard interactive installer** so that FOMOD choices, overwrite conflicts and prompts remain under your control. A profile-scoped ticket locks the archive while installation is underway, rejects stale installed versions, and blocks a second install of the same completed ticket.
+7. Check the updated mod's enabled state, load order, dependencies and test in-game. **Refresh profile**, then run a **Full audit** to validate what is current. Rank and verified Forge Sigils are awarded only from real MO2 evidence, never manual checklist clicks. Installer completion alone does not prove the update: when MO2 cannot confirm a changed installed version, the ticket is marked unverified.
 
 ## Three independent editions
 
@@ -27,6 +27,9 @@ The three editions have **no installation dependencies on one another**. Their o
 ## Important controls and limitations
 
 - **No mass overwrites or blind automatic installations.** Queue downloads are separate from native installation. The existing single-file picker remains available.
+- **No double install on a finished ticket.** Completed, installing and installed tickets are tracked per profile and mod identity; an attempted second install is rejected. Cancelled native installers return their ticket to a retryable state.
+- **Stale plan protection.** A switched profile or mod-version change invalidates installation of a previously queued reviewed archive. Fresh scans invalidate cached Nexus file choices.
+- **Live updater refresh.** The foreground dashboard refreshes download-ticket status, but it never silently installs a completed archive.
 - A newer Nexus project version is **a candidate**, not a guarantee of compatibility or the right file.
 - Patreon, Discord, LoversLab, Mod DB, Bethesda Creations and other login-dependent sources remain visible with their real links but are not automatically declared current. Public **GitHub/GitLab release versions are checked**, and vetted GitHub archive assets may be downloaded via MO2. See [Source Coverage](Updater-Source-Coverage.md).
 - MO2 profile backups contain profile **text files**, not the entire mod installation or a disk image.
@@ -37,7 +40,7 @@ The three editions have **no installation dependencies on one another**. Their o
 
 ## Quality assurance
 
-The repository contains unit and simulated MO2-signal tests for exact Nexus ID matching, duplicate project handling, profile boundaries, compatibility acknowledgment and authoritative per-mod version checks. The workflow [Verify and package Modhunter Update Workshop](https://github.com/Herbertofury/Modhunter/actions/workflows/build-workshop.yml) builds HTML, validates embedded scripts and repackages all three distribution paths on source changes. Native **Windows** MO2 and Electron acceptance still require a Windows test machine with an actual MO2 profile.
+The repository contains unit and simulated MO2-signal tests for exact Nexus ID matching, duplicate project handling, duplicate queue rejection, profile boundaries, installer state transitions, stale-version blocking, compatibility acknowledgment and authoritative per-mod version checks. The workflow [Verify and package Modhunter Update Workshop](https://github.com/Herbertofury/Modhunter/actions/workflows/build-workshop.yml) builds HTML, validates embedded scripts and repackages all three distribution paths on source changes. Native **Windows** MO2 and Electron acceptance still require a Windows test machine with an actual MO2 profile.
 
 For architecture, see [Architecture](Architecture.md). For onboarding, see [Getting Started](Getting-Started.md). For launch troubleshooting, see [Troubleshooting](Troubleshooting.md).
 

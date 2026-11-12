@@ -20,7 +20,7 @@
     "legacyPerks": 6
   },
   "testing": {
-    "pythonTests": 153,
+    "pythonTests": 162,
     "pythonSubtests": 3,
     "atlasChromium": "pass",
     "electronChromeChromium": "pass",
@@ -31,24 +31,24 @@
   },
   "files": {
     "Modhunter.html": {
-      "bytes": 662068,
-      "sha256": "1028ec63d9d55bb9b3b37c95db3f5940d5997cfe5f681db960cedb4fea490b20"
+      "bytes": 668001,
+      "sha256": "b2e19bc8389a12eb012e5a6d20fbe4d7a1cc76207f181eaf323dafaf2b6d1079"
     },
     "Modhunter-MO2-Plugin.zip": {
-      "bytes": 245290,
-      "sha256": "71c67bdfabe5a9e87d8dd0707541acbc2650f1c453d0e3fabb19f306eb32f673"
+      "bytes": 248095,
+      "sha256": "26bab7f4f67d75b41d83b3817b4eabdebe3dfbc7d3abaa15210902d8e183b6c3"
     },
     "Modhunter-Desktop-Source.zip": {
-      "bytes": 205746,
-      "sha256": "860d78d41330d5be9282886cdea8948ec9aba19edae4665e194f4fd6fcc9c311"
+      "bytes": 207364,
+      "sha256": "5d999578566ecc8c4cf30bee4930e413f9702734fcecddc13cadd69dbd814ba2"
     },
     "Modhunter-Complete-Source.zip": {
-      "bytes": 7042695,
-      "sha256": "17fbd26f0b3ede1ad66f0c2602bae2a022f63e40c5b9faf284876071f8b64fca"
+      "bytes": 7052474,
+      "sha256": "7105c4e5b528d430ecd550e8b7e304b596e417ee1d349bdff9e1cdb7f567f786"
     },
     "Modhunter-All-in-One.zip": {
-      "bytes": 9639087,
-      "sha256": "494299e26d080e0ba43f032cbc1562a49a55826246c35484d7a60d261b1f3d9d"
+      "bytes": 9659840,
+      "sha256": "e9ac7baf03278cf1a247a5a12ae2dac46359c643de69584d56f3c3f85f1ef975"
     }
   }
 }

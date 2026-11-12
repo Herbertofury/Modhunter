@@ -24,6 +24,10 @@
 
 **Together:** the app connects to MO2's `127.0.0.1` session so the same Game/Mod Vault tabs become live, with correct profile identities and MO2-authorized rewards. No cloud account or OpenAI API key needed.
 
+## Every original deliverable, recovered
+
+All **36 authentic files across v0.1–v0.8** are preserved unchanged in the **[original-release vault](wiki/Original-Releases-and-Output-Audit.md)**, including 16 historical plugin/source/desktop ZIPs, four original animated GIFs, Questbound's victory PNG, the Atlas map, and all versioned HTML builds. The originals are verified against all **16 available SHA-256 manifest entries**. The three later complete updater checkpoints are also preserved. **[Download the complete historical + current archive](https://drive.google.com/file/d/1tQBnUZ_vDF7tUTtiXf8WJC41OEXNVG_5/view)** and see its accompanying [machine-readable manifest](https://drive.google.com/file/d/1KxVD8EZ92eIP0TpPNC1at3B8WnEOF7tR/view).
+
 ## Start here
 
 1. **Just play:** download [`web/Modhunter.html`](web/Modhunter.html), open it, and click **Modhunter Siege** or **Survival Realm**. This always works in offline practice.

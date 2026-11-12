@@ -310,7 +310,7 @@ function activateLiveCatalog(c){
  $('riskSubtitle').textContent='DLLs + runtime + risky masters';document.querySelector('.pagefooter').children[1].textContent='LOCAL-FIRST ARSENAL · LIVE MO2 + NEXUS INTELLIGENCE · PROFILE SAVE';document.querySelector('.pagefooter').firstElementChild.textContent=`ᛟ MO2 LIVE / ${c.game} / ${c.profileName}`;
  SET('liveProfile',c.profileName+' / '+c.game);SET('liveCount',c.items.length+' mods · '+c.groups.length+' chapters');SET('liveState','Live session. Your active MO2 profile is authoritative; the checklist is saved per profile.');$('livePill').textContent='● MO2 CONNECTED';$('livePill').classList.add('connected');
  $('liveSync').textContent='Snapshot: '+new Date().toLocaleTimeString();
- for(const id of ['liveQuick','liveDeep','liveLocal','liveRefresh','liveRuntime','liveConnect','liveBackup'])$(id).disabled=false;
+ for(const id of ['liveAll','liveQuick','liveDeep','liveLocal','liveRefresh','liveRuntime','liveConnect','liveBackup'])$(id).disabled=false;
  const chosen=STORE.prefs.filter;if(chosen==='updates'&&!c.items.some(isUpdate))STORE.prefs.filter='all';
  if(newProfile||changedRuntime||changedMods){WORKSHOP_PLAN=null;WORKSHOP_CHOICES.clear()}
  applyAppearance();updateStorageIndicator();render();renderLiveStats();if(newProfile){hydrateProgress(c.profileId);refreshGame()}refreshWorkshop().catch(ex=>workshopSetStatus('Plan unavailable: '+ex.message));if(changedRuntime||changedMods)toast('⚠ Previous cleared checks need review: runtime or installed version changed.');

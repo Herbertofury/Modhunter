@@ -30,20 +30,20 @@
   },
   "files": {
     "Modhunter.html": {
-      "bytes": 574994,
-      "sha256": "68953318459f2b0a125eeb1b4441dc6f6a36e6d0ee44a174f5a52a952e32fb31"
+      "bytes": 576653,
+      "sha256": "f69ecf8d16799e91f22bd0880ecfd911c8bb49dbb15088de65cec6dada1b0944"
     },
     "Modhunter-MO2-Plugin.zip": {
-      "bytes": 207926,
-      "sha256": "a1cadff5479f8e2a016f6fd2fbb737684b8093633fdde14415235513f9fd2f65"
+      "bytes": 208298,
+      "sha256": "6ecf07e22487af2eefe016b2578a425a36b77a4aaa9a100eae9a5b74eaaff046"
     },
     "Modhunter-Desktop-Source.zip": {
-      "bytes": 173581,
-      "sha256": "5d68e96166732ec5e806c861152305db39d1a21f050217c8c143de4f91176f44"
+      "bytes": 173953,
+      "sha256": "ffbdff21769f8de78db4e81bef52a388baa6e075ae4d2c310260afdb3db6d647"
     },
     "Modhunter-Complete-Source.zip": {
-      "bytes": 6900142,
-      "sha256": "37c33d3368765e7d856d5394f686b7a828e79a68859301aab51af160af48abd9"
+      "bytes": 6901242,
+      "sha256": "0a050a0bced9fad2697af2943e2bbed3569c8594ccb64d5f9bb6f53b33633bf6"
     }
   }
 }

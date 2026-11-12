@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><script>window.__ARSENAL_REALM_ROUTE__=new URLSearchParams(location.search).get("realm")==="1"</script><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080e17">
+<title>MO2 Update Arsenal | Your Modding Command Center</title>
+<style>/*__STYLE__*/</style>
+</head>
+<body data-theme="night" data-density="compact">
+<div class="shell">
+ <aside class="sidebar" id="sidebar" aria-label="Navigation and collections">
+  <div class="brand">
+   <div class="brandmark" aria-hidden="true"><span>ᛟ</span><i></i></div>
+   <div><span class="brand-overline">MOD ORGANIZER 2</span><strong>MOD ARSENAL</strong><small>LIVE PROFILE / SAMPLE ARCHIVE</small></div>
+  </div>
+  <div class="sideruntime" id="runtimeBadge"><span class="status-light"></span><div><strong>SE LEGACY RUNTIME</strong><span>Skyrim 1.5.97 <b>/</b> SKSE 2.0.20</span></div><span class="runtime-lock">PINNED</span></div>
+  <div class="sideprogress">
+   <div class="sideprogress-head"><span>EXPEDITION PROGRESS</span><strong id="sidePercent">0%</strong></div>
+   <div class="bigprogress"><div id="sideProgressFill"></div></div>
+   <div class="mini-stats"><div><strong id="sideDone">0</strong><span>Cleared</span></div><div><strong id="sideRemaining">0</strong><span>Remaining</span></div><div><strong id="sideDanger">0</strong><span>Warnings</span></div></div>
+  </div>
+  <nav class="mainnav" aria-label="Update status">
+   <button class="nav-item active" data-filter="all"><span class="nav-symbol">◈</span> Entire load order <em id="navAllCount">0</em></button>
+   <button class="nav-item" data-filter="pending"><span class="nav-symbol">◷</span> Still to inspect <em id="navPendingCount">0</em></button>
+   <button class="nav-item" data-filter="done"><span class="nav-symbol">✓</span> Cleared / updated <em id="navDoneCount">0</em></button>
+   <button class="nav-item" data-filter="updates"><span class="nav-symbol">ϟ</span> Update candidates <em id="navUpdatesCount">0</em></button>
+   <button class="nav-item" data-filter="review"><span class="nav-symbol">◇</span> Needs attention <em id="navReviewCount">0</em></button>
+   <button class="nav-item" data-filter="risky"><span class="nav-symbol">⚠</span> Compatibility watch <em id="navRiskCount">0</em></button>
+   <button class="nav-item" data-filter="unlinked"><span class="nav-symbol">↗</span> Source unresolved <em id="navUnlinkedCount">0</em></button>
+   <button class="nav-item" data-filter="favorites"><span class="nav-symbol">✧</span> Bookmarked <em id="navFavoriteCount">0</em></button>
+  </nav>
+  <div class="side-section-heading"><span>LOAD ORDER CHAPTERS</span><button id="collapseAll" title="Collapse all chapters">Collapse</button></div>
+  <input class="side-section-search" id="chapterSearch" placeholder="Jump to a chapter..." aria-label="Search section titles" autocomplete="off">
+  <div class="chapters" id="chapters"></div>
+  <a href="?realm=1" target="_blank" rel="noopener" class="realm-side-link" id="realmLaunchSide">ᛟ <span>ENTER SHIVERFELL <small>FREE OPEN WORLD & ROGUELITE</small></span> ↗</a>
+  <div class="sidebar-bottom"><div class="save-indicator" id="storageStatus">◉ Checking local save…</div><button id="sidebarBackup" class="small-link">↓ Backup progress</button></div>
+ </aside>
+ <div class="maincol">
+  <header class="topbar">
+   <div class="mobile-brand"><button id="menuToggle" aria-label="Toggle sections menu">☰</button><span>MOD ARSENAL</span></div>
+   <div class="breadcrumb">SOVNGARDE <span>›</span> THE MOD VAULT <span>›</span> <strong>UPDATE PROTOCOL</strong></div>
+   <div class="top-actions"><a href="?realm=1&siege=1" target="_blank" rel="noopener" class="realm-launch" title="Open the Modhunter Siege game in its own tab">♛ MODHUNTER SIEGE ↗</a>
+   <a href="?realm=1" target="_blank" rel="noopener" class="realm-launch" id="realmLaunchTop" title="Open the survival RPG in its own browser tab">⚔ SURVIVAL REALM <strong id="realmBalanceBadge">✧ 0</strong> ↗</a>
+    <div class="tiny-live"><i></i> LOCAL FIRST</div>
+    <label class="top-select-label" for="effectSelect">FINISHER</label>
+    <select id="effectSelect" class="top-select" aria-label="Completion animation"><option value="random">✦ Chaos</option><option value="shatter">◆ Glass</option><option value="fireworks">✹ Fireworks</option><option value="shot">✸ Critical hit</option><option value="slash">⚔ Sword slash</option><option value="burn">🔥 Dragonfire</option><option value="arrow">➶ Arrow shot</option><option value="frost">❄ Frost shatter</option><option value="thunder">ϟ Lightning strike</option><option value="off">None</option></select>
+    <button class="icon-button fx-studio-toggle" id="fxSettingsToggle" title="Forge FX Studio: animation presets and intensity" aria-label="Open Forge FX Studio" aria-expanded="false">✧</button>
+    <button class="icon-button" id="soundToggle" title="Toggle effect sounds" aria-label="Effect sounds off">♪̸</button>
+    <button class="icon-button" id="focusTop" title="Toggle compact checklist Focus Mode (F)" aria-label="Toggle Focus Mode" aria-pressed="false">▦</button>
+    <button class="icon-button" id="themeToggle" title="Switch theme" aria-label="Switch theme">◐</button>
+    <button class="icon-button" id="helpToggle" title="Help and shortcuts" aria-label="Show help">?</button>
+    <button class="primary-small" id="exportTop">↓ Backup JSON</button>
+   </div>
+  </header>
+  <div class="bodypad">
+   <section class="hero" aria-label="Dashboard overview">
+    <div class="hero-bg-letter" aria-hidden="true">ᛟ</div>
+    <div class="hero-main">
+     <div class="kicker"><span class="kicker-dash"></span> THE DRAGONBORN'S WORKBENCH <span class="kicker-dot">✦</span> VOL. I</div>
+     <h1>The <i>Update</i> Gauntlet<span class="period">.</span></h1>
+     <p><span id="heroSummary">The original Skyrim 1.5.97 archive stays intact. Launch through the MO2 plugin to swap in your <strong>actual active mod profile</strong>, check Nexus updates, and make every victory spectacular.</span></p>
+     <div class="hero-buttons"><button id="nextPending" class="button-bright"><span>✦</span> Jump to next mod <b>→</b></button><button id="showCritical" class="button-ghost">⚠ Review danger zone <b>↗</b></button></div>
+     <div class="reference-links" id="referenceLinks"><a target="_blank" rel="noopener noreferrer" href="https://skse.silverlock.org/">SKSE 2.0.20 ↗</a><span>•</span><a target="_blank" rel="noopener noreferrer" href="https://www.nexusmods.com/skyrimspecialedition/mods/32444?tab=files">SE Address Library ↗</a><span>•</span><a target="_blank" rel="noopener noreferrer" href="https://www.nexusmods.com/skyrimspecialedition/mods/266?tab=files">USSEP files ↗</a></div>
+    </div>
+    <div class="hero-side">
+     <div class="orb-holder"><div class="orb-outer"><div class="orb-inner"><span class="orb-label">QUEST COMPLETE</span><strong id="heroPercent">0%</strong><span id="heroProgressLabel">0 / 227 mods</span></div></div></div>
+     <div class="hero-side-bottom"><span class="tiny-roman">I ━ II ━ III</span><span id="heroMotivation">THE JOURNEY BEGINS</span></div>
+    </div>
+   </section>
+   <section class="metrics" aria-label="Quick status">
+    <div class="metric"><div class="metric-icon c-teal">◈</div><div><span>MODS IN THE ARSENAL</span><strong id="metricTotal">227</strong><small id="metricSections">115 hand-sorted sections</small></div></div>
+    <div class="metric"><div class="metric-icon c-gold">✦</div><div><span>GLORIOUSLY CLEARED</span><strong id="metricDone">0</strong><small id="metricRemaining">227 left in the quest</small></div></div>
+    <div class="metric"><div class="metric-icon c-red">⚠</div><div><span>COMPATIBILITY WATCH</span><strong id="metricWatch">0</strong><small><span id="riskSubtitle">1.5.97 + DLL + hard plugins</span></small></div></div>
+    <div class="metric"><div class="metric-icon c-blue">↗</div><div><span>EXACT SOURCE LINKS</span><strong id="metricLinks">0</strong><small id="metricLinksSub">verified mod/Creation pages</small></div></div>
+   </section>
+   <section class="advisory" id="advisorySection" aria-label="Update safety information">
+    <button class="advisory-trigger" id="advisoryToggle" aria-expanded="true"><span class="advisory-icon">⚑</span><span><b>THE 1.5.97 SURVIVAL RULES</b><small>Four checks before you click that shiny Update button.</small></span><span class="advisory-collapse">⌄</span></button>
+    <div class="advisory-body" id="advisoryBody"><div><span>01 / RUNTIME</span><strong>SKSE is 2.0.20.</strong><p>Pick the exact SE build. AE/1.6+ or 1.7+ DLLs may fail before the main menu.</p></div><div><span>02 / ADDRESS LIBRARY</span><strong>Use the SE database.</strong><p>Install the 1.5.97 Address Library option. “NG” in a mod title does not always mean AE-only.</p></div><div><span>03 / PLUGINS & SAVES</span><strong>Respect hard ESP/ESM.</strong><p>Check masters, ESL header/BEES requirements, xEdit errors and save-safe upgrade instructions.</p></div><div><span>04 / WINNING CONFLICTS</span><strong>Keep the right overwrite.</strong><p>Compare FOMOD picks, patches, output files, left-pane asset conflicts and MO2 profile backups.</p></div></div>
+   </section>
+   <section class="live-hub" id="liveHub" aria-labelledby="liveHubTitle">
+    <div class="live-hub-heading"><div><span class="label-overline">THE FORGE NETWORK <span>✦</span> OFFLINE OR LIVE</span><h2 id="liveHubTitle">Mod Organizer 2 <i>connected arsenal</i></h2><p id="liveState" role="status">Sample expedition loaded. Launch this dashboard through the MO2 plugin for your own profile.</p></div><span class="live-pill" id="livePill">◎ SAMPLE MODE</span></div>
+    <div class="live-panels"><div class="live-panel"><span>ACTIVE PROFILE</span><strong id="liveProfile">Sample / Skyrim 1.5.97</strong><small id="liveCount">227 hand-captured mods</small></div><div class="live-panel"><span>NEXUS INTELLIGENCE</span><strong id="liveUpdateCount">Not scanned</strong><small id="liveCached">MO2 cached / fast 30-day / full audit</small></div><div class="live-panel"><span>SCAN STATUS</span><strong id="liveScanProgress">Standby</strong><small id="liveSync">No live connection</small></div></div>
+    <div class="live-toolbar"><button class="button-bright" id="liveQuick" disabled>ϟ Fast Nexus sweep</button><button class="quiet-button" id="liveDeep" disabled>◎ Full audit</button><button class="quiet-button" id="liveLocal" disabled>↻ MO2 cached</button><button class="quiet-button" id="liveRefresh" disabled>⟳ Refresh profile</button><button class="quiet-button" id="liveRuntime" disabled>⚙ Game runtime</button><button class="quiet-button" id="liveConnect" disabled>♜ Nexus connection</button><button class="quiet-button" id="liveBackup" disabled>⛨ Backup MO2 profile</button></div>
+    <div id="liveDownloadList" class="live-downloads" aria-live="polite"></div>
+    <p class="live-disclaimer">The plugin never auto-installs or replaces your files. Nexus file selection and MO2 installation require your choice; check requirements and FOMOD overwrites before proceeding. The sample archive is preserved separately.</p>
+   </section>
+   <section class="game-board" id="gameBoard" aria-label="Modding adventure and achievements">
+    <div class="game-header"><div><span class="game-kicker">✦ THE CHRONICLE OF THE FORGE</span><h2>Every mod is a <em>quest.</em></h2><p>Your profile is the dungeon. Updates are victories. Build a legendary load order and earn your place in the Hall of Fame.</p></div><button class="game-preview" id="previewVictory" title="Preview the final battle animation without awarding rank or experience">✧ Preview the final boss</button></div>
+    <div class="game-score-grid">
+      <div class="level-banner"><div class="level-ring"><span>LEVEL</span><strong id="questLevel">1</strong><i>ᛟ</i></div><div><span>ADVENTURER RANK</span><strong id="questRank">NOVICE</strong><small id="questRankHint">Practice mode · verified rewards require MO2</small></div></div>
+      <div class="game-number"><span>HALL OF FAME SCORE</span><strong id="questScore" class="score-glint">0 <small>XP</small></strong><small id="questUpdates">0 verified updates</small></div>
+      <div class="game-number"><span>BEST COMBO</span><strong id="questCombo">0 <small>×</small></strong><small>Successive verified updates</small></div>
+      <div class="game-number"><span>CROWNS CLAIMED</span><strong id="questCrowns">0 <small>♛</small></strong><small>Profile-wide victories</small></div>
+    </div>
+    <div class="game-lower">
+      <div class="raid-card"><div class="raid-top"><div><span class="game-kicker">⚔ THE WORLD-EATER</span><h3>Clear the <em>update raid</em></h3></div><div class="raid-boss">🐉</div></div><div class="raid-track"><i id="raidBossFill"></i></div><p id="raidStatus">Enter MO2 and run a full audit to discover the raid's remaining foes.</p><div class="raid-foot"><span id="raidNumbers">UNKNOWN / UNCHECKED</span><button id="raidAction" class="raid-action" title="Run a full verification audit when connected">⚔ Begin full audit</button></div></div>
+      <div class="achievements-card"><div class="achievement-heading"><div><span class="game-kicker">✧ COLLECT YOUR GLORY</span><h3>Achievement vault</h3></div><span id="achievementCount">0 / 7</span></div><div id="achievementGrid" class="achievement-grid" aria-live="polite"></div></div>
+    </div>
+    <div class="realm-teaser"><div class="realm-teaser-orb">ᛟ</div><div><small>NEW · THE WORLD BEYOND MODDING</small><strong>SHIVERFELL CHRONICLES</strong><p>Every verified update earns 10 Forge Sigils. Spend them on your hero, your survival homestead, and roguelite expeditions.</p></div><a href="?realm=1" target="_blank" rel="noopener" class="realm-teaser-launch" id="realmLaunchQuest">⚔ ENTER THE REALM ↗</a></div>
+    <div class="game-bottom"><div><b>RECENT VICTORIES</b><div id="questFeed" class="quest-feed"><span>Verified update events appear here.</span></div></div><div><b>HALL OF FAME</b><div id="questLeaderboard" class="quest-leaderboard"><span>No ranked expeditions yet.</span></div></div></div>
+   </section>
+   <section class="workbench" id="workbench" aria-label="Mod update checklist">
+    <div class="workbench-head"><div><div class="label-overline">THE MASTER CHECKLIST <span>✦</span> YOUR CHRONICLE</div><h2>Load order <i>reconnaissance</i></h2></div><div class="toolbar-meta" id="resultsMeta">227 mods across 115 chapters</div></div>
+    <div class="controls" id="controls">
+     <label class="searchbox" for="search"><span>⌕</span><input id="search" placeholder='Search mods, notes, authors…   try author:Ersh' autocomplete="off" aria-label="Search mods"><kbd>Ctrl K</kbd><button id="clearSearch" title="Clear search" aria-label="Clear search">×</button></label>
+     <div class="select-pair"><select id="sortSelect" title="Sort within chapters" aria-label="Sort mods"><option value="priority">Priority ↑</option><option value="name">Name A–Z</option><option value="version">Installed version</option></select><button id="densityToggle" class="icon-button" title="Toggle row density" aria-label="Toggle density">≡</button></div>
+     <button class="quiet-button focus-btn" id="focusToggle" title="Switch to the compact checklist-only battle view (F)" aria-pressed="false">◎ Focus</button><button class="quiet-button mo2-link-btn" id="mo2Btn" title="Import actual Nexus IDs from your MO2 installed mod metadata">⌁ Link MO2</button><button class="quiet-button" id="backupBtn">↓ Export</button><button class="quiet-button" id="importBtn">↑ Restore</button><button class="quiet-button" id="csvBtn">⇩ CSV</button>
+    </div>
+    <div class="filterstrip"><div class="filterchips" id="filterChips"><button data-filter="all" class="active">All records</button><button data-filter="pending">To do</button><button data-filter="done">Cleared</button><button data-filter="review">Review</button><button data-filter="updates">ϟ Updates</button><button data-filter="risky">⚠ Watchlist</button><button data-filter="unlinked">No direct link</button><button data-filter="favorites">✧ Saved</button></div><button id="clearFilters" class="reset-filters">Reset filters</button></div>
+    <div class="list-header"><span>STATE</span><span>PRIORITY</span><span>MOD / INSTALL NOTES</span><span>INSTALLED</span><span>FILE / RUNTIME SAFETY</span><span>FILE SOURCE</span><span>INSPECT</span></div>
+    <div id="modList" class="modlist" aria-live="polite"></div>
+    <div class="list-footer"><span id="listFooter">END OF YOUR CHRONICLE.</span><button id="backToTop">↑ Back to top</button></div>
+   </section>
+   <footer class="pagefooter"><span>ᛟ &nbsp; BUILT FOR SKYRIM SE 1.5.97 / SKSE 2.0.20</span><span>100% OFFLINE CHECKLIST · MANUAL SOURCE VERIFICATION · SAVE LOCALLY</span><a href="https://www.nexusmods.com/skyrimspecialedition" target="_blank" rel="noopener noreferrer">NEXUS MODS ↗</a></footer>
+  </div>
+ </div>
+</div>
+<section class="fx-studio" id="fxStudio" hidden aria-label="Forge FX animation settings">
+ <header><div><small>SKYFORGE • POWER MODE</small><strong>✧ Forge FX Studio</strong></div><button class="close-button" id="fxClose" aria-label="Close Forge FX Studio">×</button></header>
+ <p>Every mod you select, inspect, or check off can spark runes and cinematic combat effects. Rewards still require actual MO2 proof.</p>
+ <label for="fxIntensity">Visual intensity<select id="fxIntensity"><option value="legendary">♛ Legendary · Cinematic</option><option value="vivid">✦ Arcane · Vivid</option><option value="subtle">◇ Apprentice · Subtle</option><option value="off">◌ Effects off</option></select></label>
+ <label for="fxShake">Weapon-impact shake <input type="checkbox" id="fxShake" checked></label>
+ <label for="fxTrails">Selection sparks & hover trails <input type="checkbox" id="fxTrails" checked></label>
+ <footer><button class="button-bright" id="fxTest">⚔ Preview on a mod</button><button class="quiet-button" id="fxStudioDone">Done ✓</button></footer>
+ <p>Animations pause automatically when idle, and respect Reduced Motion in Windows/browser accessibility settings. No additional internet downloads.</p>
+ </section>
+<div class="drawer-veil" id="drawerVeil" hidden></div>
+<aside class="detail-drawer" id="detailDrawer" aria-label="Mod inspector" aria-hidden="true"><div class="drawer-top"><div><span class="drawer-eyebrow">MOD INTELLIGENCE // PROFILE</span><h2 id="drawerTitle">Mod</h2></div><button class="close-button" id="drawerClose" aria-label="Close inspector">×</button></div><div id="drawerContent" class="drawer-content"></div></aside>
+<div class="modal-veil" id="mo2Veil" hidden><div class="help-dialog mo2-dialog" role="dialog" aria-modal="true" aria-labelledby="mo2Title">
+<button id="mo2Close" class="close-button" aria-label="Close MO2 source linker">×</button>
+<div class="kicker">EXACT SOURCES / DIRECT FROM MOD ORGANIZER 2</div><h2 id="mo2Title">Link your MO2 vault.</h2>
+<p>MO2 already knows many of your real Nexus download IDs. Recover them in one local export, then import the JSON. <b>No account or API key. No network calls. Your installation is never modified.</b></p>
+<div class="mo2-steps"><div><i>01</i><strong>Get the exporter</strong><p>Save the PowerShell script and inspect it if you like. It only reads each installed mod's <code>meta.ini</code>.</p></div><div><i>02</i><strong>Run on Windows</strong><p>Run the .ps1 file in PowerShell. Paste your MO2 <b>Mods folder</b> path when prompted (MO2 toolbar's folder icon).</p></div><div><i>03</i><strong>Import your exact IDs</strong><p>Select <code>Skyrim_MO2_Source_Links.json</code> from your Desktop below. Only exact-name matches are linked; existing custom URLs stay untouched.</p></div></div>
+<div class="mo2-buttons"><button class="button-bright" id="mo2Download">↓ Get MO2 exporter (.ps1)</button><button class="quiet-button" id="mo2Import">↑ Import MO2 sources (.json)</button></div>
+<p class="muted-help">MO2 metadata may be absent for manually installed files, renamed folders or mods from non-Nexus sites. Unmatched items remain searchable, never silently redirected.</p><div id="mo2Results" class="mo2-results" aria-live="polite"></div>
+<section id="mo2Resolver" class="mo2-resolver" hidden aria-label="Resolve renamed MO2 folders"><div class="mo2-resolver-head"><strong>✧ Reconcile renamed folders</strong><span id="mo2PendingCount"></span></div><p>When your MO2 folder was renamed, match its real Nexus ID to the correct checklist entry. No fuzzy auto-linking, no wrong-page surprises.</p>
+<label for="mo2Lookup">Find imported MO2 folder</label><input id="mo2Lookup" class="mo2-search" placeholder="Type a folder name to find a match..." spellcheck="false" autocomplete="off">
+<div class="mo2-match-grid"><label for="mo2From">Imported folder<select id="mo2From" aria-label="Imported renamed MO2 folder"></select></label><label for="mo2To">Link to checklist mod<select id="mo2To" aria-label="Mod to associate with imported folder"></select></label></div>
+<div id="mo2MatchPreview" class="mo2-preview" aria-live="polite"></div><button id="mo2Bind" class="button-bright" disabled>↗ Bind confirmed Nexus ID</button><small class="muted-help">Only choose a match if the imported folder really belongs to that checklist mod. Links are stored locally and included in your progress JSON backup.</small></section>
+</div></div>
+<div class="modal-veil" id="helpVeil" hidden><div class="help-dialog" role="dialog" aria-modal="true" aria-labelledby="helpTitle"><button id="helpClose" class="close-button" aria-label="Close help">×</button><div class="kicker">FIELD MANUAL / OPERATIONS</div><h2 id="helpTitle">How to survive the gauntlet</h2><p>Click a mod row to focus it with a runic selection pulse, or click its circular seal to mark it cleared with shattered glass, magic, and combat effects. Open ✧ Forge FX Studio for intensity, shake, hover trails, and previews. It explodes with your chosen finisher, and the result saves locally. Click the inspect icon to change its verdict, notes, version and exact download URL.</p><div class="shortcut-grid"><span><kbd>Ctrl / ⌘ K</kbd> Search the vault</span><span><kbd>J</kbd> Next visible mod</span><span><kbd>K</kbd> Previous visible mod</span><span><kbd>Space</kbd> Toggle focused row</span><span><kbd>N</kbd> Jump to next pending</span><span><kbd>F</kbd> Toggle compact Focus Mode</span><span><kbd>Esc</kbd> Close panel</span></div><p class="muted-help"><b>Live MO2:</b> Click a mod name or use Reveal in the inspector to select and center that exact mod in MO2. Manual clears are practice only; ranked XP and crowns require native version-upgrade evidence plus a fresh full Nexus audit.</p><p class="muted-help">Use <b>⌁ Link MO2</b> to import exact Nexus IDs from your installed MO2 metadata. Source honesty: verified links open exact project Files or Bethesda Creation pages. Unresolved entries have targeted lookup buttons rather than invented links. Add a confirmed file URL in the inspector to upgrade them.</p><button id="helpOK" class="button-bright">Return to the quest →</button></div></div>
+<div class="modal-veil" id="filePickerVeil" hidden><div class="help-dialog file-picker" role="dialog" aria-modal="true" aria-labelledby="filePickerTitle"><button id="filePickerClose" class="close-button" aria-label="Close Nexus file picker">×</button><div class="kicker">LIVE NEXUS FILE RECONNAISSANCE</div><h2 id="filePickerTitle">Choose your armament</h2><p id="filePickerSummary" class="muted-help">Verify the selected build for your game and requirements before download.</p><div id="filePickerFiles" class="file-picker-files" aria-live="polite"></div><div class="picker-tail"><button id="filePickerNexus" class="quiet-button">↗ Open original files</button><button id="filePickerCancel" class="quiet-button">Cancel</button></div></div></div>
+<div class="victory-overlay" id="victoryOverlay" hidden role="dialog" aria-modal="true" aria-labelledby="victoryTitle">
+ <div class="victory-sky" id="victorySky" aria-hidden="true"></div>
+ <div class="victory-runes" id="victoryRunes" aria-hidden="true"></div>
+ <div class="victory-frame">
+  <div class="victory-seal" aria-hidden="true"><div class="seal-halo"></div><svg viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg" class="victory-dragon"><path d="M150 255 L118 196 L98 171 L41 162 L16 99 L97 129 L119 69 L149 112 L185 48 L191 118 L283 87 L262 165 L203 172 L178 203Z" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/><path d="M106 145 L150 164 L194 139 M150 164 L150 244 M129 164 L118 188 M168 163 L180 195" stroke="currentColor" stroke-width="5" fill="none"/><path d="M130 137 L141 143 M168 140 L157 144" stroke-width="6" stroke="currentColor"/></svg><div class="seal-crown">♛</div></div>
+  <span class="victory-overline" id="victoryTier">THE FINAL FOE HAS FALLEN</span>
+  <h2 id="victoryTitle">SOVNGARDE <em>AWAITS.</em></h2>
+  <p id="victorySubtitle">The World-Eater has been defeated. Your modded world is ready.</p>
+  <div class="victory-results"><div><span>VERIFIED MODS</span><strong id="victoryMods">0</strong></div><div><span>GOLDEN REWARD</span><strong id="victoryXP">+0 XP</strong></div><div><span>TOTAL SCORE</span><strong id="victoryScore">0</strong></div></div>
+  <div class="victory-actions"><button class="button-bright" id="victoryClaim">♛ Claim your triumph</button><button class="quiet-button" id="victoryReplay">✹ Replay effects</button></div><small id="victoryEvidence">Full-audit verification required for a ranked victory.</small>
+ </div>
+</div>
+<!--__REALM_LAYOUT__-->
+
+<div class="toastwrap" id="toastWrap" role="status" aria-live="polite"></div>
+<canvas id="fxCanvas" aria-hidden="true"></canvas><div id="impactLayer" aria-hidden="true"></div>
+<input type="file" id="importFile" accept=".json,application/json" hidden><input type="file" id="mo2File" accept=".json,application/json" hidden>
+<script type="application/json" id="embeddedCatalog">/*__CATALOG__*/</script>
+<!--__MO2_BOOT__--><script>/*__AETHER_SCRIPT__*/</script><script>/*__SCRIPT__*/</script><script>/*__REALM_SCRIPT__*/</script><script>/*__SIEGE_SCRIPT__*/</script>
+</body></html>

@@ -53,3 +53,10 @@ The `mo2_update_arsenal/install_brief.py` module creates an advisory, non-mutati
 The 2026 SSS interface adds a complete batch review manifest, explicit install briefing with source/file/version details, clickable filter metrics, readiness lane, count of displayed mods, keyboard shortcuts (`Alt+U` and `Alt+R`), and stable responsive ticket cards. `tests/updater_sss_browser_qa.py` exercises approved, canceled and blocked interactions and checks a 390px mobile viewport. It uses deterministic fake MO2 replies and does **not** prove the native Windows API. CI installs a pinned Playwright Chromium to prevent silently shipping broken UI interactions.
 
 Upstream API reference: [Mod Organizer 2 Python plugin documentation](https://www.modorganizer.org/python-plugins-doc/autoapi/mobase/index.html), including `IDownloadManager.startDownloadNexusFile`, `startDownloadURLs`, `downloadPath`, and native download callbacks. MO2 does not expose a documented synchronous `downloadState` through that interface, so ticket states remain native-event-driven and session-scoped.
+
+
+## No-prompt MO2 quick-update acceptance (2026-11-11)
+
+`tests/test_quick_update.py` exercises exact numeric-version main selection, ambiguous/optional files, GitHub single-archive selection, general advisory notes, DLL/hold review fallback, one-click download→native installer handoff, duplicate-click protection, immediate user-selected risky download, profile/runtime invalidation and a background full-profile queue. The server never treats a browser-provided Nexus file ID as a verified auto match; recommendation and exact provider file verification occur inside the authenticated MO2 bridge.
+
+`tests/updater_sss_browser_qa.py` exercises the actual built HTML in Chromium: one-click per-mod update, automatic native-install intent, direct Install now action, optional Details and full-manifest screens, ambiguous/risky file-picker fallback with no confirmation dialogs, and asynchronous bulk queue progress. This is browser/MO2-contract testing with deterministic native responses, not actual Windows MO2 2.5.x or Nexus authentication validation.

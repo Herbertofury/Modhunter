@@ -22,6 +22,7 @@ from .source_registry import SourceScanner, canonical_source_url, source_record
 from .update_plan import PlanError, plan_updates, validate_batch_selection, validate_release_asset, risk_reasons
 from .file_advisor import advise_nexus_files
 from .install_brief import build_install_brief
+from .quick_update import choose_nexus_file, choose_github_asset
 from .operation_journal import OperationJournal
 
 MAX_REQUEST = 16_384
@@ -54,6 +55,7 @@ class ArsenalService:
         self._snapshot = snapshot
         self._guard = threading.RLock()
         self._queue_lock = threading.Lock()  # Serialize reviewed batches; never enqueue the same mod twice.
+        self._quick_job: dict[str, Any] = {"state": "idle", "profileId": snapshot.get("profileId"), "queued": [], "skipped": [], "failed": []}
         self._install_lock = threading.Lock()  # MO2 supports one interactive installer at a time.
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
@@ -353,10 +355,164 @@ class ArsenalService:
                     self.journal.record(ticket, int(result["downloadId"]))
         return result
 
+    def quick_update(self, payload: dict) -> dict:
+        """One click: select a verified unique archive; no extra form or approval.
+
+        A singular click can request MO2's native interactive installer when its
+        download finishes. Bulk uses a background worker and downloads only;
+        it never launches a storm of FOMOD windows or blocks the browser.
+        """
+        snapshot = self.snapshot()
+        profile = str(snapshot.get("profileId") or "")
+        if not profile or payload.get("profileId") != profile:
+            return {"ok": False, "error": "MO2 profile changed; refresh and try again"}
+        if payload.get("all") is True:
+            ids = [str(item["id"]) for item in snapshot.get("items", [])
+                   if (item.get("update") or {}).get("verdict") == "candidate"]
+            if not ids:
+                return {"ok": True, "state": "completed", "queued": [], "skipped": [], "failed": [],
+                        "message": "No verified update candidates yet. Run Check Sources first."}
+            with self._guard:
+                if self._quick_job.get("state") == "running":
+                    return {"ok": True, **deepcopy(self._quick_job)}
+                self._quick_job = {"state": "running", "profileId": profile, "total": len(ids),
+                                   "completed": 0, "queued": [], "skipped": [], "failed": []}
+                job = self._quick_job
+            threading.Thread(target=self._quick_worker, args=(profile, ids, job), daemon=True,
+                             name="ModhunterQuickQueue").start()
+            return {"ok": True, "state": "running", "profileId": profile, "total": len(ids),
+                    "message": "Finding verified file matches and queueing downloads in MO2"}
+        ids = payload.get("itemIds")
+        if not isinstance(ids, list) or len(ids) != 1 or not isinstance(ids[0], str) or not ids[0]:
+            return {"ok": False, "error": "Choose one installed mod or use all=true"}
+        if not self._queue_lock.acquire(blocking=False):
+            return {"ok": False, "error": "A download queue is already being prepared; retry shortly"}
+        try:
+            result = self._quick_one(profile, ids[0], auto_install=payload.get("autoInstall") is True)
+        finally:
+            self._queue_lock.release()
+        if result.get("queued") and payload.get("autoInstall") is True:
+            # Handle an exceptionally fast native download completion signal.
+            self._maybe_autoinstall()
+        return {"ok": True, "state": "completed", "profileId": profile,
+                "queued": result.get("queued", []), "skipped": result.get("skipped", []),
+                "failed": result.get("failed", []), "message": result.get("message", "")}
+
+    def quick_state(self) -> dict:
+        with self._guard:
+            job = deepcopy(self._quick_job)
+            profile = self._snapshot.get("profileId")
+        if job.get("profileId") != profile:
+            return {"ok": True, "state": "idle", "profileId": profile, "queued": [], "skipped": [], "failed": []}
+        return {"ok": True, **job}
+
+    def _quick_worker(self, profile: str, ids: list[str], job: dict) -> None:
+        try:
+            for item_id in ids:
+                if self._stopped or self.snapshot().get("profileId") != profile:
+                    with self._guard:
+                        job["skipped"].append({"itemId": item_id, "reason": "MO2 profile changed or session closed"})
+                    break
+                with self._queue_lock:
+                    result = self._quick_one(profile, item_id, auto_install=False)
+                with self._guard:
+                    for key in ("queued", "skipped", "failed"):
+                        job[key].extend(result.get(key, []))
+                    job["completed"] += 1
+        except Exception as exc:
+            with self._guard:
+                job["failed"].append({"error": "Update queue failed: " + type(exc).__name__})
+        finally:
+            with self._guard:
+                job["state"] = "completed" if not self._stopped else "stopped"
+
+    def _quick_one(self, profile: str, item_id: str, auto_install: bool) -> dict:
+        live = self.snapshot()
+        if live.get("profileId") != profile:
+            return {"skipped": [{"itemId": item_id, "reason": "The active MO2 profile changed"}]}
+        item = next((m for m in live.get("items", []) if str(m.get("id")) == item_id), None)
+        if not item or (item.get("update") or {}).get("verdict") != "candidate":
+            return {"skipped": [{"itemId": item_id, "reason": "No verified newer release; choose a file manually"}]}
+        with self._guard:
+            if any(str(t.get("itemId")) == item_id and t.get("profileId") == profile
+                   and t.get("status") not in ("failed", "removed") for t in self._downloads.values()):
+                return {"skipped": [{"itemId": item_id, "reason": "Already in MO2 Downloads"}]}
+        update = item.get("update") or {}
+        entry: dict | None = None
+        reason = "Select the exact file to continue"
+        try:
+            nexus_id = int(item.get("nexusId") or 0)
+        except (TypeError, ValueError, OverflowError):
+            nexus_id = 0
+        if update.get("source") == "nexus-api" and nexus_id > 0:
+            found = self.review_files(nexus_id, item_id)
+            if not found.get("ok"):
+                return {"skipped": [{"itemId": item_id, "reason": str(found.get("error") or "Nexus file list unavailable")}]}
+            picked, reason = choose_nexus_file(item, found.get("files", []))
+            if picked:
+                entry = {"itemId": item_id, "modId": nexus_id,
+                         "fileId": int(picked["fileId"]), "installedVersion": str(item.get("installedVersion") or ""),
+                         "targetVersion": str(update.get("latestVersion") or ""),
+                         "reviewed": True, "riskAcknowledged": True}
+        elif update.get("source") == "github-release-api":
+            picked, reason = choose_github_asset(item)
+            if picked:
+                entry = {"kind": "source", "itemId": item_id, "assetId": int(picked["assetId"]),
+                         "installedVersion": str(item.get("installedVersion") or ""),
+                         "targetVersion": str(update.get("latestVersion") or ""),
+                         "reviewed": True, "riskAcknowledged": True}
+        if entry is None:
+            return {"skipped": [{"itemId": item_id, "reason": reason}]}
+        result = self._queue_reviewed_downloads_once({
+            "profileId": profile, "confirm": "QUEUE_REVIEWED_DOWNLOADS", "entries": [entry]})
+        if result.get("queued"):
+            with self._guard:
+                for queued in result["queued"]:
+                    ticket = self._downloads.get(int(queued["downloadId"]))
+                    if ticket:
+                        ticket["selectionMode"] = "verified-match"
+                        ticket["autoInstallRequested"] = auto_install
+                        self.journal.record(ticket, int(queued["downloadId"]))
+        if not result.get("ok"):
+            failed = result.get("failed") or [{"itemId": item_id, "error": result.get("error", "Queue rejected")}]
+            return {"failed": failed, "message": "Select an exact file if this recommendation is unavailable"}
+        return result
+
+    def _maybe_autoinstall(self) -> None:
+        """Only user-requested quick updates can open an interactive MO2 installer."""
+        if self._stopped or self._install_lock.locked():
+            return
+        with self._guard:
+            profile = self._snapshot.get("profileId")
+            candidates = [(did, t) for did, t in self._downloads.items()
+                          if t.get("profileId") == profile and t.get("status") == "complete"
+                          and t.get("autoInstallRequested") is True]
+            if not candidates:
+                return
+            download_id, ticket = candidates[0]
+            # Mark attempted before dispatch: a stale preflight cannot spin.
+            ticket["autoInstallRequested"] = False
+        result = self.install_reviewed_download(download_id)
+        if not result.get("ok"):
+            if "already open" in str(result.get("error") or ""):
+                with self._guard:
+                    if self._downloads.get(download_id) is ticket:
+                        ticket["autoInstallRequested"] = True
+                return  # The active native installer will drain ready items.
+            with self._guard:
+                if self._downloads.get(download_id) is ticket:
+                    ticket["lastError"] = str(result.get("error") or "Choose a file in MO2")[:240]
+                    self.journal.record(ticket, download_id)
+            self._maybe_autoinstall()  # Another completed ticket may be ready.
+
     def queue_reviewed_downloads(self, payload: dict) -> dict:
         """Serialize reviewed batches so concurrent clicks cannot enqueue duplicates."""
         with self._queue_lock:
-            return self._queue_reviewed_downloads_once(payload)
+            result = self._queue_reviewed_downloads_once(payload)
+        # An instantly completed archive can already be ready by the time the
+        # native queue API returns. Do not discard the user's install intent.
+        self._maybe_autoinstall()
+        return result
 
     def _queue_reviewed_downloads_once(self, payload: dict) -> dict:
         """Preflight a complete Nexus + GitHub release queue before ANY downloads.
@@ -372,6 +528,8 @@ class ArsenalService:
             return {"ok": False, "error": "Active profile, reviewed entries and confirmation required", "queued": [], "failed": []}
         nexus_entries = [x for x in raw if isinstance(x, dict) and x.get("kind") != "source"]
         source_entries = [x for x in raw if isinstance(x, dict) and x.get("kind") == "source"]
+        user_requested_native_install = {str(x.get("itemId")) for x in raw
+                                         if isinstance(x, dict) and x.get("autoInstall") is True}
         if len(nexus_entries) + len(source_entries) != len(raw):
             return {"ok": False, "error": "Invalid source entry", "queued": [], "failed": []}
         try:
@@ -454,6 +612,7 @@ class ArsenalService:
                             "game": str(live.get("game") or ""),
                             "gameRuntime": str(live.get("gameRuntime") or "unknown"),
                             "riskReasons": risk_reasons(selected_row), "reviewed": True,
+                            "autoInstallRequested": item["itemId"] in user_requested_native_install,
                             "fileName": metadata.get("fileName") or metadata.get("name") or item.get("name") or "",
                             "fileVersion": str(metadata.get("version") or ""),
                         })
@@ -480,6 +639,8 @@ class ArsenalService:
                 if self._downloads[download_id]["status"] not in ("installing", "installed"):
                     self._downloads[download_id]["status"] = state
                     self.journal.record(self._downloads[download_id], download_id)
+        if state == "complete":
+            self._maybe_autoinstall()
 
     def downloads(self) -> dict:
         with self._guard:
@@ -562,6 +723,7 @@ class ArsenalService:
                     self.journal.record(ticket, download_id)
         finally:
             self._install_lock.release()
+            self._maybe_autoinstall()
 
     def start(self) -> str:
         if self._server:
@@ -672,6 +834,8 @@ class ArsenalService:
                     return self._reply(plan_updates(service.snapshot()))
                 if uri.path == "/api/downloads":
                     return self._reply({"ok": True, "downloads": service.downloads()})
+                if uri.path == "/api/quick-state":
+                    return self._reply(service.quick_state())
                 if uri.path == "/api/activity":
                     return self._reply(service.activity())
                 if uri.path == "/api/install-preview":
@@ -690,7 +854,7 @@ class ArsenalService:
                     item_id = query.get("itemId", [""])[0]
                     return self._reply(service.review_files(mid, item_id) if item_id else service.fetch_files(mid))
                 if uri.path == "/api/capabilities":
-                    return self._reply({"ok": True, "app": "MO2 Update Arsenal", "live": True, "nexusKeySession": bool(service.api_key), "nativeNexusAvailable": bool(service.native_nexus_available), "keyStorage": "RAM only", "features": ["snapshot", "local-check", "nexus-quick", "nexus-deep", "nexus-files", "native-mo2-nexus-login", "github-release-checks", "gitlab-release-checks", "manual-source-review", "github-direct-downloads", "mixed-source-batch-updates", "reviewed-update-workshop", "mo2-download", "mo2-install", "install-preview", "operation-journal", "read-only-recovery-history", "backup", "focus-mod", "chronicle", "verified-achievements", "ranked-full-clear", "persistent-profile-progress", "realm-wallet", "realm-purchase", "realm-save", "siege-targets", "siege-state", "siege-bounties", "siege-mod-focus"]})
+                    return self._reply({"ok": True, "app": "MO2 Update Arsenal", "live": True, "nexusKeySession": bool(service.api_key), "nativeNexusAvailable": bool(service.native_nexus_available), "keyStorage": "RAM only", "features": ["snapshot", "local-check", "nexus-quick", "nexus-deep", "nexus-files", "native-mo2-nexus-login", "github-release-checks", "gitlab-release-checks", "manual-source-review", "github-direct-downloads", "mixed-source-batch-updates", "reviewed-update-workshop", "one-click-matched-update", "background-bulk-queue", "mo2-download", "mo2-install", "install-preview", "operation-journal", "read-only-recovery-history", "backup", "focus-mod", "chronicle", "verified-achievements", "ranked-full-clear", "persistent-profile-progress", "realm-wallet", "realm-purchase", "realm-save", "siege-targets", "siege-state", "siege-bounties", "siege-mod-focus"]})
                 return self._reply({"ok": False, "error": "Unknown endpoint"}, 404)
 
             def do_POST(self):
@@ -752,6 +916,8 @@ class ArsenalService:
                     return self._reply(service.begin_scan(data.get("mode", "quick")))
                 if uri.path == "/api/update-queue":
                     return self._reply(service.queue_reviewed_downloads(data))
+                if uri.path == "/api/quick-update":
+                    return self._reply(service.quick_update(data))
                 if uri.path == "/api/download":
                     try:
                         result = service.request_download(int(data.get("modId") or 0), int(data.get("fileId") or 0), data.get("confirm"))

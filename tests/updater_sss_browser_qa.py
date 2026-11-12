@@ -92,6 +92,19 @@ window.fetch=async(url,opts={})=>{
   if(x.tickets[String(body.downloadId)])x.tickets[String(body.downloadId)].status='installing';
   result={ok:true,state:'installing',message:'MO2 native installer started'};
  }
+ else if(endpoint==='quick-update'){
+  const body=JSON.parse(opts.body||'{}');x.calls.push({endpoint,body});
+  if(body.all){
+   const q={itemId:'live-a',downloadId:701,provider:'nexus'};
+   x.tickets[701]={status:'downloading',provider:'nexus',modId:44,itemId:'live-a',installedVersion:'1.0',profileId:body.profileId,gameRuntime:x.data.catalog.gameRuntime};
+   x.quickState={ok:true,state:'completed',profileId:body.profileId,total:2,completed:2,queued:[q],skipped:[{itemId:'live-b',reason:'Compatibility notes need a file choice'}],failed:[]};
+   result={ok:true,state:'running',profileId:body.profileId,total:2};
+  }else if(body.itemIds?.[0]==='live-a'){
+   x.tickets[701]={status:'downloading',provider:'nexus',modId:44,itemId:'live-a',installedVersion:'1.0',profileId:body.profileId,gameRuntime:x.data.catalog.gameRuntime};
+   result={ok:true,state:'completed',queued:[{itemId:'live-a',downloadId:701,provider:'nexus'}],skipped:[],failed:[]};
+  }else result={ok:true,state:'completed',queued:[],skipped:[{itemId:'live-b',reason:'Compatibility notes need a file choice'}],failed:[]};
+ }
+ else if(endpoint==='quick-state')result=x.quickState||{ok:true,state:'idle',queued:[],skipped:[],failed:[]};
  else if(endpoint==='update-queue'){
   const body=JSON.parse(opts.body||'{}');x.calls.push({endpoint,body});
   const queued=body.entries.map((e,i)=>{const id=301+x.calls.length+i;x.tickets[id]={status:'downloading',provider:'nexus',modId:e.modId,itemId:e.itemId,installedVersion:e.installedVersion,profileId:body.profileId,gameRuntime:x.data.catalog.gameRuntime};return {itemId:e.itemId,downloadId:id,provider:'nexus'}});
@@ -153,7 +166,7 @@ with sync_playwright() as pw:
     page.locator('#filePickerVeil').wait_for(state='visible')
     assert page.locator('#filePickerTitle').inner_text()=='Quest Example'
     page.locator('#filePickerClose').click()
-    page.locator('#workshopQueue').click()
+    page.locator('#workshopInspectQueue').click()
     page.locator('#queueReviewVeil').wait_for(state='visible')
     assert page.locator('#queueReviewRows .queue-review-row').count()==1
     assert 'latest-se.zip' in page.locator('#queueReviewRows').inner_text() or 'Exact latest main' in page.locator('#queueReviewRows').inner_text()
@@ -161,7 +174,7 @@ with sync_playwright() as pw:
     page.locator('#queueReviewCancel').click()
     assert page.locator('#queueReviewVeil').is_hidden()
     page.locator('#workshopQueue').click()
-    page.locator('#queueReviewConfirm').click()
+    assert page.locator('#queueReviewVeil').is_hidden()
     page.locator('#liveDownloadList .download-ticket').wait_for(timeout=10000)
     calls=page.evaluate('window.__SSS_MOCK__.calls')
     assert len(calls)==1 and calls[0]['endpoint']=='update-queue',calls
@@ -172,7 +185,7 @@ with sync_playwright() as pw:
     page.locator('button[data-download-id]').wait_for(timeout=10000)
     page.locator('#workshopSummary button[data-lane="ready"]').click()
     assert '1 of 3 mods shown' in page.locator('#workshopVisibleCount').inner_text()
-    page.locator('button[data-download-id]').click()
+    page.locator('button[data-download-details]').click()
     page.locator('#installPreviewVeil').wait_for(state='visible')
     page.locator('#installPreviewConfirm').wait_for(state='attached')
     assert page.locator('#installBriefTitle').inner_text()=='Arcane Example'
@@ -182,7 +195,7 @@ with sync_playwright() as pw:
     page.keyboard.press('Escape')
     assert page.locator('#installPreviewVeil').is_hidden()
     page.locator('button[data-download-id]').click()
-    page.locator('#installPreviewConfirm').click()
+    assert page.locator('#installPreviewVeil').is_hidden()
     page.wait_for_function('window.__SSS_MOCK__.tickets[302].status === "installing"')
     calls=page.evaluate('window.__SSS_MOCK__.calls')
     assert len(calls)==2 and calls[-1]['endpoint']=='install',calls
@@ -190,7 +203,7 @@ with sync_playwright() as pw:
     # Switch runtime between ready and install to show a blocked preflight.
     page.evaluate("window.__SSS_MOCK__.tickets[302].status='complete';window.__SSS_MOCK__.data.catalog.gameRuntime='1.6.1170'")
     page.locator('#workshopRefreshDownloads').click()
-    page.locator('button[data-download-id]').click()
+    page.locator('button[data-download-details]').click()
     page.locator('#installPreviewVeil').wait_for(state='visible')
     page.wait_for_function("document.getElementById('installBriefWarnings').textContent.includes('runtime changed')")
     assert page.locator('#installPreviewConfirm').is_disabled()
@@ -201,6 +214,48 @@ with sync_playwright() as pw:
     assert rect and rect['x']>=-1 and rect['x']+rect['width']<=392,rect
     assert page.locator('#installPreviewConfirm').is_disabled()
     assert not errors,errors
+    # Independent fast-update session: one click downloads an exact main match.
+    fast=browser.new_page(viewport={"width":1440,"height":950})
+    fast_errors=[];unexpected_dialogs=[]
+    fast.on('pageerror',lambda e: fast_errors.append(str(e)))
+    fast.on('dialog',lambda d: (unexpected_dialogs.append(d.message),d.dismiss()))
+    fast.set_content(html,wait_until='load',timeout=30000)
+    fast.locator('[data-workshop-id="live-a"] [data-workshop-act="quick"]').click()
+    fast.locator('#liveDownloadList .download-ticket').wait_for(timeout=10000)
+    assert fast.locator('#queueReviewVeil').is_hidden()
+    assert fast.locator('#installPreviewVeil').is_hidden()
+    assert fast.locator('#filePickerVeil').is_hidden()
+    assert fast.evaluate('window.__SSS_MOCK__.calls[0].endpoint')=='quick-update'
+    assert fast.evaluate('window.__SSS_MOCK__.calls[0].body.autoInstall') is True
+    fast.screenshot(path=str(OUTPUT/'one-click-update.png'),full_page=False)
+    fast.evaluate("window.__SSS_MOCK__.tickets[701].status='complete'")
+    fast.locator('#workshopRefreshDownloads').click()
+    fast.locator('button[data-download-id]').wait_for(timeout=10000)
+    fast.locator('button[data-download-id]').click()
+    fast.wait_for_function("window.__SSS_MOCK__.tickets[701].status === 'installing'")
+    assert fast.locator('#installPreviewVeil').is_hidden()
+    assert fast.evaluate('window.__SSS_MOCK__.calls.at(-1).endpoint')=='install'
+    # A DLL risk does not produce an extra modal or block the user from choosing.
+    fast.locator('[data-workshop-id="live-b"] [data-workshop-act="quick"]').click()
+    fast.locator('#filePickerVeil').wait_for(state='visible',timeout=10000)
+    assert 'Compatibility notes' in fast.locator('#filePickerSummary').inner_text()
+    fast.locator('.picker-file button[data-file-id]').first.click()
+    fast.wait_for_function("window.__SSS_MOCK__.calls.at(-1).endpoint === 'update-queue'")
+    assert fast.evaluate('window.__SSS_MOCK__.calls.at(-1).body.entries[0].autoInstall') is True
+    assert fast.locator('#queueReviewVeil').is_hidden()
+    assert not unexpected_dialogs,unexpected_dialogs
+    assert not fast_errors,fast_errors
+    # One-click bulk queue is asynchronous and preserves per-mod choices.
+    bulk=browser.new_page(viewport={"width":1250,"height":900})
+    bulk.set_content(html,wait_until='load',timeout=30000)
+    bulk.locator('#workshopQuickAll').click()
+    bulk.wait_for_function("window.__SSS_MOCK__.quickState?.state === 'completed'")
+    bulk.locator('#liveDownloadList .download-ticket').wait_for(timeout=10000)
+    assert bulk.locator('#queueReviewVeil').is_hidden()
+    assert bulk.locator('#installPreviewVeil').is_hidden()
+    assert bulk.evaluate('window.__SSS_MOCK__.calls[0].body.all') is True
+    bulk.screenshot(path=str(OUTPUT/'one-click-bulk.png'),full_page=False)
+    bulk.close();fast.close()
     print(json.dumps({"result":"passed","modCards":3,"fileChoices":3,
         "recommended":1,"queuedCalls":1,"installCalls":1,"screenshots":str(OUTPUT),"jsErrors":errors},indent=2))
     browser.close()

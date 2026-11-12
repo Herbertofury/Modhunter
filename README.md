@@ -82,3 +82,8 @@ The new **[Update Workshop](wiki/Update-Workshop.md)** ([source coverage](wiki/U
 📖 **[Read the Modhunter Wiki](wiki/Home.md)** · [Install & Connect](wiki/Getting-Started.md) · [Atlas Campaign](wiki/Atlas-Campaign.md) · [The Unfinished Bestiary](wiki/Unfinished-Bestiary.md) · [Verification and Safety](wiki/Rewards-and-Integrity.md)
 
 The canonical [`wiki/`](wiki/) pages are synchronized to the separate **[live GitHub Wiki](https://github.com/Herbertofury/Modhunter/wiki)** by the repository's Wiki workflow. Its status is visible in GitHub Actions.
+
+### Fast MO2 updates: one click, no confirmation maze
+
+With the MO2 plugin connected, click **ϟ Update now** on a newer mod. A uniquely version-matched main Nexus file (or a single verified GitHub release archive) goes directly to MO2 Downloads, then opens **MO2's interactive installer** when it finishes. The standard FOMOD prompts remain available; Modhunter skips its extra confirmations. For multiple editions or meaningful compatibility risks, **Choose file** opens immediately, with every release option preserved. **Queue matched updates** downloads all unambiguous matches in the background without flooding you with installers. Existing reviewed selections dispatch immediately, while the manifest and install briefing are optional. See [Update Workshop](wiki/Update-Workshop.md).
+

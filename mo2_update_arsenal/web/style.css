@@ -306,3 +306,17 @@ body[data-theme="snow"] .operation-dialog{color:#21404a;background:linear-gradie
 body[data-theme="snow"] .activity-panel{background:linear-gradient(120deg,#f3faf7,#eaf1f3);border-color:#9fbbb7}body[data-theme="snow"] .activity-heading h3,body[data-theme="snow"] .activity-head strong{color:#234449}body[data-theme="snow"] .activity-entry{background:#f3faf7;border-color:#adc3c3}body[data-theme="snow"] .activity-heading p,body[data-theme="snow"] .activity-detail,body[data-theme="snow"] .activity-head small{color:#43616c}body[data-theme="snow"] .activity-toolbar :is(input,select){background:#fff;color:#223b46}
 @media(max-width:680px){.activity-panel{padding:13px}.activity-entry summary{flex-wrap:wrap}.activity-state{text-align:left;flex:1 1 100%;padding-left:22px}.activity-toolbar label{width:auto}.activity-toolbar button{flex:1}.activity-stats{width:100%;text-align:center}}
 @media(prefers-reduced-motion:reduce){.activity-entry summary:after{transition:none}}
+
+/* Fast-path first: foreground updates without repetitive dialogs. */
+.workshop-tools .quick-bulk{min-height:42px;background:linear-gradient(130deg,#b1e2c3,#8fc8bb);color:#102b31;font-weight:850;letter-spacing:.02em;box-shadow:0 4px 20px rgba(101,208,164,.12)}
+.workshop-item-actions .quick-update{min-height:34px;padding:7px 13px;white-space:nowrap}
+.workshop-item-actions .quick-update:focus-visible,.workshop-tools .quick-bulk:focus-visible{outline:2px solid #f4d48d;outline-offset:3px}
+.workshop-item-actions .quick-update:disabled,.workshop-tools .quick-bulk:disabled{opacity:.55;cursor:default;box-shadow:none}
+body[data-theme="snow"] .workshop-tools .quick-bulk{background:#216458;color:white}
+@media(max-width:650px){.workshop-tools .quick-bulk{flex:1 1 100%}.workshop-item-actions .quick-update{flex:1}}
+
+/* Balanced status grid in the MO2 dashboard width, without orphaned metrics. */
+.workshop-summary{grid-template-columns:repeat(3,minmax(0,1fr))}
+.workshop-choice-hint{display:inline-flex;gap:4px;align-items:center;color:#e9d3a7;border:1px solid rgba(232,180,106,.25);border-radius:5px;padding:3px 8px;max-width:100%;overflow-wrap:anywhere}
+@media(min-width:1800px){.workshop-summary{grid-template-columns:repeat(6,minmax(0,1fr))}}
+@media(max-width:640px){.workshop-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}

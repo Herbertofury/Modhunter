@@ -52,7 +52,7 @@ class UpdaterFrontendContractTests(unittest.TestCase):
         self.assertIn("data-retry-item-id", APP)
         self.assertIn("data-workshop-act=\"remove\"", APP)
         self.assertIn("WORKSHOP_CHOICES.delete(b.dataset.id)", APP)
-        self.assertIn("Preserve exact-version/ambiguity guidance", APP)
+        self.assertIn("Choose the file you want; no extra confirmation screens.", APP)
 
     def test_sss_reviewer_keeps_full_file_list_searchable_and_guided(self):
         for element in ('workshopReviewNext', 'filePickerSearch', 'filePickerMatchCount'):
@@ -65,6 +65,20 @@ class UpdaterFrontendContractTests(unittest.TestCase):
             with self.subTest(feature=feature):
                 self.assertIn(feature, APP)
         self.assertIn("'files?modId='+m.nexusId+'&itemId='+encodeURIComponent(m.id)", APP)
+
+    def test_one_click_updates_need_no_extra_confirmation_while_offering_optional_details(self):
+        for element in ("workshopQuickAll", "workshopInspectQueue"):
+            with self.subTest(element=element):
+                self.assertIn(f'id="{element}"', PAGE)
+        for marker in ("function fastUpdateOne(id)", "async function fastUpdateAll()",
+                       "bridgeRequest('POST','quick-update'", "if(action==='quick')return fastUpdateAll()",
+                       'data-workshop-act="quick"', "if(fast)return performQueuedWorkshop",
+                       "function inspectQueue()", "return performQueuedWorkshop(entries,plan.profileId)",
+                       "data-download-details", "showInstallPreview(Number(details.dataset.downloadDetails))"):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, APP)
+        self.assertNotIn("Have you reviewed the description, requirements, runtime", APP)
+        self.assertNotIn("Compatibility watch:\\n", APP)
 
     def test_aaa_operations_require_reviewed_queue_and_live_install_preflight(self):
         for marker in ('queueReviewVeil', 'queueReviewRows', 'queueReviewConfirm',

@@ -16,6 +16,8 @@ from typing import Any, Callable
 
 from .scanner import Cache, MissingAuth, NexusClient, NexusError, UpdateScanner, local_mo2_candidates
 from .gameplay import Chronicle
+from html import unescape
+import re
 from .source_registry import SourceScanner, canonical_source_url, source_record
 from .update_plan import PlanError, plan_updates, validate_batch_selection, validate_release_asset
 
@@ -297,7 +299,7 @@ class ArsenalService:
                 except (TypeError, ValueError):
                     continue
                 if fid > 0:
-                    items.append({"fileId": fid, "name": str(file.get("name") or file.get("fileName") or file.get("file_name") or f"File {fid}")[:190], "version": str(file.get("version") or ""), "category": int(file.get("category", file.get("category_id", 0)) or 0), "sizeInKB": int(file.get("sizeInKB", file.get("size_kb", 0)) or 0), "uploaded": str(file.get("uploaded_time") or ""), "fileName": str(file.get("fileName") or file.get("file_name") or "")[:190]})
+                    items.append({"fileId": fid, "name": str(file.get("name") or file.get("fileName") or file.get("file_name") or f"File {fid}")[:190], "version": str(file.get("version") or ""), "category": int(file.get("category", file.get("category_id", 0)) or 0), "sizeInKB": int(file.get("sizeInKB", file.get("size_kb", 0)) or 0), "uploaded": str(file.get("uploaded_time") or ""), "fileName": str(file.get("fileName") or file.get("file_name") or "")[:190], "description": unescape(re.sub(r"<[^>]*>", " ", str(file.get("description") or "")))[:500].strip()})
             items.sort(key=lambda f: (f["category"] != 1, -f["fileId"]))
             result = {"ok": True, "files": items, "modId": mod_id}
             with self._guard:

@@ -25,3 +25,21 @@ Modhunter's maintenance game and verified-update rewards sit alongside a real mo
 Review official release notes, documentation and issue trackers daily when the scheduled review runs. Record the source URL, check date, version/commit, relevant change, user impact and next experiment; retain last-good information and mark inaccessible sources. No change is a valid result. A scheduled review is not continuous monitoring.
 
 This is a source-backed research shortlist, **not a head-to-head benchmark or a claim of feature/performance superiority**. Before recommending adoption, compare the current application and candidate on the same real workloads, machine, versions and correctness requirements. Retain raw timings, p50/p95 latency, CPU/memory, failures and rollback evidence. Check licensing and privacy before reuse; an open repository does not grant unrestricted reuse. New features remain proposals until approved, implemented and accepted.
+
+
+## Foundations, reuse and project interoperation
+Added **2026-11-12**. These are scoped research directions, not completed integrations.
+
+| Foundation / reuse mode | Concrete reuse target | What to improve and verify |
+| --- | --- | --- |
+| [MO2 uibase](https://github.com/ModOrganizer2/modorganizer-uibase) and [Python bridge](https://github.com/ModOrganizer2/modorganizer-plugin_python), supported adapter contracts | Existing download/install/profile APIs; preserve MO2's installer and FOMOD interaction | Fewer uncertain handoffs, exact target/profile identity, real completion events and safe retry |
+| Existing Modhunter Rust profile/cache engine and Update Workshop | Extract stable internal contracts before adding replacement engines | Separate offline observations from authenticated native actions; stale evidence must never become success |
+| [Wabbajack](https://github.com/wabbajack-tools/wabbajack), workflow/reference oracle | Reproducible list manifests and actionable installation failures | Test resumable maintenance without confusing whole-list provisioning with individual updates |
+
+Before copying or linking upstream code, pin the component revision, inspect its actual license and dependencies, retain required notices, and prove compatibility with the targeted MO2/Python/Qt/runtime versions. Referencing an API does not grant access to a user's account.
+
+**Shared-component candidates:** a versioned mod/source identity, observed bug status, update transaction and evidence schema could let related mod-manager clients consume consistent results. Do not introduce a second authoritative installer or silently synchronize profiles. [Hover](https://github.com/Herbertofury/Hover-App) could consume read-only archive/asset metadata; [Ferrum](https://github.com/Herbertofury/Ferrum-Browser) could replay suitable desktop/web verification lanes. These are proposals, not existing cross-app guarantees.
+
+- [ ] Inventory current implementations and owners; propose a narrow schema with migration fixtures.
+- [ ] Test old/new clients, conflicting profile state, offline data, cancellation and idempotent retry.
+- [ ] Benchmark current workflow versus proposed reuse on the same real profile without reducing review fidelity.

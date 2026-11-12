@@ -17,7 +17,7 @@ from typing import Any, Callable
 from .scanner import Cache, MissingAuth, NexusClient, NexusError, UpdateScanner, local_mo2_candidates
 from .gameplay import Chronicle
 from .source_registry import SourceScanner, canonical_source_url, source_record
-from .update_plan import PlanError, plan_updates, validate_batch_selection
+from .update_plan import PlanError, plan_updates, validate_batch_selection, validate_release_asset
 
 MAX_REQUEST = 16_384
 MAX_PROGRESS_REQUEST = 8_000_000
@@ -319,48 +319,78 @@ class ArsenalService:
         return result
 
     def queue_reviewed_downloads(self, payload: dict) -> dict:
-        """Preflight entire batch then call existing exact-file MO2 download workflow.
+        """Preflight a complete Nexus + GitHub release queue before ANY downloads.
 
-        This never installs, overwrites, or awards XP. On failure the caller
-        gets per-item results and can retry only the unfinished selections.
+        One reviewed queue can contain both sources. It never overwrites mods,
+        never auto-installs, and reports every attempted native download.
         """
-        with self._guard:
-            snapshot = deepcopy(self._snapshot)
+        snapshot = self.snapshot()
+        raw = payload.get("entries")
+        if (payload.get("profileId") != snapshot.get("profileId") or
+                payload.get("confirm") != "QUEUE_REVIEWED_DOWNLOADS" or
+                not isinstance(raw, list) or not raw):
+            return {"ok": False, "error": "Active profile, reviewed entries and confirmation required", "queued": [], "failed": []}
+        nexus_entries = [x for x in raw if isinstance(x, dict) and x.get("kind") != "source"]
+        source_entries = [x for x in raw if isinstance(x, dict) and x.get("kind") == "source"]
+        if len(nexus_entries) + len(source_entries) != len(raw):
+            return {"ok": False, "error": "Invalid source entry", "queued": [], "failed": []}
         try:
-            approved = validate_batch_selection(snapshot, payload)
+            approved = validate_batch_selection(snapshot, {**payload, "entries": nexus_entries}) if nexus_entries else []
+            sources = [validate_release_asset(snapshot, x) for x in source_entries]
+            seen_rows = [x["itemId"] for x in approved + sources]
+            if len(set(seen_rows)) != len(seen_rows):
+                raise PlanError("Duplicate MO2 row selected in mixed-source batch")
         except PlanError as exc:
             return {"ok": False, "error": str(exc), "queued": [], "failed": []}
-        # Confirm *every* exact file exists before any native download starts.
-        # Otherwise a bad second choice could leave the first file queued.
+        # Preflight ALL Nexus file identities. GitHub assets were validated
+        # against server-owned release results above, never client URLs.
         for item in approved:
             available = self.fetch_files(item["modId"])
             if not available.get("ok"):
-                return {"ok": False, "queued": [], "failed": [{"itemId": item["itemId"], "error": available.get("error", "Nexus file list unavailable")}]}
+                return {"ok": False, "queued": [], "failed": [{"itemId": item["itemId"],
+                        "error": available.get("error", "Nexus file list unavailable")}]}
             if item["fileId"] not in {int(f["fileId"]) for f in available.get("files", [])}:
-                return {"ok": False, "queued": [], "failed": [{"itemId": item["itemId"], "error": "Exact Nexus file is no longer available; review again"}]}
+                return {"ok": False, "queued": [], "failed": [{"itemId": item["itemId"],
+                        "error": "Exact Nexus file is no longer in the live Files list"}]}
         queued, failed = [], []
-        for item in approved:
-            with self._guard:
-                live = self._snapshot
-                current = next((m for m in live.get("items", [])
-                                if m.get("id") == item["itemId"]), None)
-                unchanged = (live.get("profileId") == snapshot.get("profileId")
-                             and current is not None
-                             and str(current.get("installedVersion") or "") == item["installedVersion"]
-                             and int(current.get("nexusId") or 0) == item["modId"]
-                             and (current.get("update") or {}).get("verdict") == "candidate")
-            if not unchanged:
-                failed.append({"itemId": item["itemId"], "error": "Profile, scan or installed version changed"})
+        for item in approved + sources:
+            live = self.snapshot()
+            current = next((x for x in live.get("items", []) if x.get("id") == item["itemId"]), None)
+            same = bool(live.get("profileId") == snapshot.get("profileId") and current is not None
+                        and str(current.get("installedVersion") or "") == item["installedVersion"]
+                        and (current.get("update") or {}).get("verdict") == "candidate")
+            if not same:
+                failed.append({"itemId": item["itemId"], "error": "Profile or update verdict changed"})
                 break
-            result = self.request_download(item["modId"], item["fileId"], "DOWNLOAD")
-            if result.get("ok"):
-                queued.append({"itemId": item["itemId"], "modId": item["modId"],
-                               "fileId": item["fileId"], "downloadId": result.get("downloadId")})
+            if item.get("kind") == "source":
+                try:
+                    renewed = validate_release_asset(live, {
+                        "kind": "source", "itemId": item["itemId"],
+                        "assetId": item["assetId"], "installedVersion": item["installedVersion"],
+                        "reviewed": True, "riskAcknowledged": True})
+                except PlanError as exc:
+                    failed.append({"itemId": item["itemId"], "error": str(exc)})
+                    break
+                result = self.call_ui("download-url", {"url": renewed["url"],
+                    "name": renewed["name"], "itemId": renewed["itemId"]})
+                if result.get("ok"):
+                    with self._guard:
+                        self._downloads[int(result["downloadId"])] = {
+                            "provider": "github", "name": renewed["name"],
+                            "itemId": item["itemId"], "status": "downloading",
+                            "profileId": live.get("profileId")}
             else:
-                failed.append({"itemId": item["itemId"],
-                               "error": str(result.get("error") or "Download rejected")})
+                if int(current.get("nexusId") or 0) != item["modId"]:
+                    failed.append({"itemId": item["itemId"], "error": "Nexus project changed"})
+                    break
+                result = self.request_download(item["modId"], item["fileId"], "DOWNLOAD")
+            if result.get("ok"):
+                queued.append({"itemId": item["itemId"], "provider": item.get("provider", "nexus"),
+                               "downloadId": result.get("downloadId")})
+            else:
+                failed.append({"itemId": item["itemId"], "error": str(result.get("error") or "Download rejected")})
         return {"ok": True, "partial": bool(failed), "queued": queued, "failed": failed,
-                "message": f"Queued {len(queued)} reviewed file(s) in MO2. Install separately."}
+                "message": f"Queued {len(queued)} reviewed archive(s). Install each separately in MO2."}
 
     def set_download_status(self, download_id: int, state: str) -> None:
         with self._guard:
@@ -488,7 +518,7 @@ class ArsenalService:
                         mid = 0
                     return self._reply(service.fetch_files(mid))
                 if uri.path == "/api/capabilities":
-                    return self._reply({"ok": True, "app": "MO2 Update Arsenal", "live": True, "nexusKeySession": bool(service.api_key), "nativeNexusAvailable": bool(service.native_nexus_available), "keyStorage": "RAM only", "features": ["snapshot", "local-check", "nexus-quick", "nexus-deep", "nexus-files", "native-mo2-nexus-login", "github-release-checks", "gitlab-release-checks", "manual-source-review", "reviewed-update-workshop", "mo2-download", "mo2-install", "backup", "focus-mod", "chronicle", "verified-achievements", "ranked-full-clear", "persistent-profile-progress", "realm-wallet", "realm-purchase", "realm-save", "siege-targets", "siege-state", "siege-bounties", "siege-mod-focus"]})
+                    return self._reply({"ok": True, "app": "MO2 Update Arsenal", "live": True, "nexusKeySession": bool(service.api_key), "nativeNexusAvailable": bool(service.native_nexus_available), "keyStorage": "RAM only", "features": ["snapshot", "local-check", "nexus-quick", "nexus-deep", "nexus-files", "native-mo2-nexus-login", "github-release-checks", "gitlab-release-checks", "manual-source-review", "github-direct-downloads", "mixed-source-batch-updates", "reviewed-update-workshop", "mo2-download", "mo2-install", "backup", "focus-mod", "chronicle", "verified-achievements", "ranked-full-clear", "persistent-profile-progress", "realm-wallet", "realm-purchase", "realm-save", "siege-targets", "siege-state", "siege-bounties", "siege-mod-focus"]})
                 return self._reply({"ok": False, "error": "Unknown endpoint"}, 404)
 
             def do_POST(self):

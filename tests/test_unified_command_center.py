@@ -51,6 +51,13 @@ class UnifiedProductTests(unittest.TestCase):
                 self.assertIn(required,RELEASE)
         self.assertIn("z.read(name)==html.read_bytes()",RELEASE)
 
+    def test_all_in_one_desktop_uses_embedded_html_without_mo2_plugin(self):
+        desktop=(ROOT/'desktop/main.cjs').read_text('utf-8')
+        self.assertIn("path.join(__dirname,'Modhunter.html')",desktop)
+        self.assertIn("fs.existsSync(nearbyHTML)?nearbyHTML:sourceHTML",desktop)
+        self.assertIn("Desktop/Modhunter.html",RELEASE)
+        self.assertIn("MO2/mo2_update_arsenal/web/index.html",RELEASE)
+
     def test_no_false_native_windows_compatibility_claims(self):
         self.assertIn("'nativeWindowsElectron':'unverified'",RELEASE)
         self.assertIn("'nativeWindowsMO2':'unverified'",RELEASE)

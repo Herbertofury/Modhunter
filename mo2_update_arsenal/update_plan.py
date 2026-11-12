@@ -115,6 +115,8 @@ def validate_batch_selection(snapshot: dict, payload: dict) -> list[dict]:
             raise PlanError(f"Installed version changed for {item.get('name', item_id)}; rescan")
         if (item.get("update") or {}).get("verdict") != "candidate":
             raise PlanError(f"{item.get('name', item_id)} is not a verified update candidate")
+        if raw.get("targetVersion") is not None and str(raw["targetVersion"]) != str((item.get("update") or {}).get("latestVersion") or ""):
+            raise PlanError(f"Published target version changed for {item.get('name', item_id)}; review its files again")
         if raw.get("reviewed") is not True:
             raise PlanError(f"Review the exact Nexus file before queueing {item.get('name', item_id)}")
         if risk_reasons(item) and raw.get("riskAcknowledged") is not True:
@@ -144,6 +146,8 @@ def validate_release_asset(snapshot: dict, raw: dict) -> dict:
     update = item.get("update") or {}
     if update.get("verdict") != "candidate" or update.get("source") != "github-release-api":
         raise PlanError("Only fresh GitHub release candidates support direct source downloads")
+    if raw.get("targetVersion") is not None and str(raw["targetVersion"]) != str(update.get("latestVersion") or ""):
+        raise PlanError("Published source release changed; review its archives again")
     if risk_reasons(item) and raw.get("riskAcknowledged") is not True:
         raise PlanError("Acknowledge source compatibility risks before download")
     source = item.get("source") or {}

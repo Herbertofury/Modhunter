@@ -36,6 +36,8 @@ jobs:
           node --check desktop/chrome.js
           node --check desktop/offline_mo2.cjs
           node --test desktop/offline_mo2.test.cjs
+      - name: Verify full-list ticket lookup equivalence and benchmark
+        run: node scripts/benchmark_workshop_tickets.cjs
       - name: Compile single-file standalone dashboard and check its JavaScript
         run: |
           python3 build.py

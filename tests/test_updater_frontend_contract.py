@@ -42,13 +42,28 @@ class UpdaterFrontendContractTests(unittest.TestCase):
 
     def test_github_and_nexus_files_can_both_appear_in_the_same_picker(self):
         self.assertIn("const github=assets.length?", APP)
-        self.assertIn("if(!m.nexusId){$('filePickerFiles').innerHTML=github;return}", APP)
+        self.assertIn("if(!m.nexusId){$('filePickerFiles').innerHTML=github;filterFilePicker();return}", APP)
         self.assertIn("'<div class=\"picker-source-title\">NEXUS MODS", APP)
         self.assertIn("'<div class=\"picker-source-title\">GITHUB RELEASE", APP)
         self.assertIn("EXACT FILES</div>'+nexus:'')+github", APP)
         self.assertIn("targetVersion:record.latestVersion", APP)
         self.assertIn("String(m.latestVersion||'')===String(choice.targetVersion||'')", APP)
         self.assertIn("data-retry-item-id", APP)
+        self.assertIn("data-workshop-act=\"remove\"", APP)
+        self.assertIn("WORKSHOP_CHOICES.delete(b.dataset.id)", APP)
+        self.assertIn("Preserve exact-version/ambiguity guidance", APP)
+
+    def test_sss_reviewer_keeps_full_file_list_searchable_and_guided(self):
+        for element in ('workshopReviewNext', 'filePickerSearch', 'filePickerMatchCount'):
+            with self.subTest(element=element):
+                self.assertIn(f'id="{element}"', PAGE)
+        for feature in ('function filterFilePicker()', 'function nextWorkshopCandidate()',
+                        'function reviewNextWorkshopCandidate()', 'releaseVersionMatch',
+                        'reviewAdvice?.hasUniqueMainMatch', 'targetVersion:record.latestVersion',
+                        'const ticketsByMod=new Map()'):
+            with self.subTest(feature=feature):
+                self.assertIn(feature, APP)
+        self.assertIn("'files?modId='+m.nexusId+'&itemId='+encodeURIComponent(m.id)", APP)
 
     def test_desktop_can_import_a_user_selected_mo2_profile_without_plugin(self):
         root = ROOT / "desktop"

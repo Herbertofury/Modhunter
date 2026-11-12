@@ -20,6 +20,7 @@ from html import unescape
 import re
 from .source_registry import SourceScanner, canonical_source_url, source_record
 from .update_plan import PlanError, plan_updates, validate_batch_selection, validate_release_asset
+from .file_advisor import advise_nexus_files
 
 MAX_REQUEST = 16_384
 MAX_PROGRESS_REQUEST = 8_000_000
@@ -312,6 +313,20 @@ class ArsenalService:
             return deepcopy(result)
         except (NexusError, MissingAuth, ValueError) as ex:
             return {"ok": False, "error": str(ex)}
+
+    def review_files(self, mod_id: int, item_id: str) -> dict:
+        """Decorate native Nexus files for one exact MO2 row, not shared projects."""
+        snapshot = self.snapshot()
+        item = next((row for row in snapshot.get("items", [])
+                     if str(row.get("id") or "") == item_id
+                     and int(row.get("nexusId") or 0) == mod_id), None)
+        if item is None:
+            return {"ok": False, "error": "Selected file review does not belong to this MO2 profile"}
+        response = self.fetch_files(mod_id)
+        if not response.get("ok"):
+            return response
+        advisory = advise_nexus_files(item, response["files"])
+        return {**response, **advisory, "itemId": item_id}
 
     def request_download(self, mod_id: int, file_id: int, confirmation: str,
                          item_id: str = "", installed_version: str = "") -> dict:
@@ -613,7 +628,8 @@ class ArsenalService:
                         mid = int(query.get("modId", ["0"])[0])
                     except (ValueError, TypeError):
                         mid = 0
-                    return self._reply(service.fetch_files(mid))
+                    item_id = query.get("itemId", [""])[0]
+                    return self._reply(service.review_files(mid, item_id) if item_id else service.fetch_files(mid))
                 if uri.path == "/api/capabilities":
                     return self._reply({"ok": True, "app": "MO2 Update Arsenal", "live": True, "nexusKeySession": bool(service.api_key), "nativeNexusAvailable": bool(service.native_nexus_available), "keyStorage": "RAM only", "features": ["snapshot", "local-check", "nexus-quick", "nexus-deep", "nexus-files", "native-mo2-nexus-login", "github-release-checks", "gitlab-release-checks", "manual-source-review", "github-direct-downloads", "mixed-source-batch-updates", "reviewed-update-workshop", "mo2-download", "mo2-install", "backup", "focus-mod", "chronicle", "verified-achievements", "ranked-full-clear", "persistent-profile-progress", "realm-wallet", "realm-purchase", "realm-save", "siege-targets", "siege-state", "siege-bounties", "siege-mod-focus"]})
                 return self._reply({"ok": False, "error": "Unknown endpoint"}, 404)

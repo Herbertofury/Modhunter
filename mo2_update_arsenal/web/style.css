@@ -249,3 +249,19 @@ body[data-theme="snow"] .unified-meta{color:#247058}
 .workshop-ticket-note{color:#b8dcea;border:1px solid rgba(109,175,185,.35);padding:2px 7px;border-radius:5px}
 .picker-source-title{font-size:11px;color:#d9c194;letter-spacing:.13em;font-weight:750;padding:13px 10px 7px;border-bottom:1px solid rgba(204,186,140,.25)}
 @media(max-width:620px){.download-ticket{align-items:flex-start}.download-ticket .button-bright,.download-ticket .quiet-button{width:100%}}
+
+/* SSS review: evidence first, all files retained, no hidden source cutoff. */
+.picker-searchbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:12px 0 8px}
+.picker-searchbar label{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#bcd5cb}
+.picker-searchbar input{flex:1 1 230px;min-width:0;padding:10px 12px;background:#142a32;border:1px solid #50716f;border-radius:9px;color:#f2f4ec}
+.picker-searchbar input:focus-visible{outline:2px solid #b1d9cb;outline-offset:2px}
+.picker-searchbar span{font-size:11px;color:#b6cbca;font-variant-numeric:tabular-nums}
+.picker-file[hidden]{display:none!important}
+.picker-suggested{border:1px solid #8bcba7!important;background:linear-gradient(110deg,rgba(47,104,85,.19),rgba(26,53,61,.15));border-radius:9px}
+.picker-match-tag{display:inline-flex;color:#d5c9a4;font-size:10px;letter-spacing:.05em;font-weight:750;margin-bottom:5px}
+.picker-suggested .picker-match-tag{color:#96e6b7}
+.picker-hint{font-size:11px;line-height:1.5;color:#a6dbc6;margin:6px 0}
+
+.workshop-remove{border:0;background:transparent;cursor:pointer;color:#e2b6ab;font-size:11px;padding:3px 5px;border-radius:4px}
+.workshop-remove:hover{background:rgba(190,90,75,.2);color:#fff}
+.workshop-remove:focus-visible{outline:2px solid #e6b3a4;outline-offset:2px}

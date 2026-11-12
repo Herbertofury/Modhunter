@@ -34,3 +34,14 @@ The browser tests use Chromium/Playwright. See `tests/` for actual game flows an
 The GitHub repository holds source code as normal text files and the complete release under `dist/`. The separate GitHub Wiki is sourced from `wiki/` and can be synchronized after its first Home page is initialized. The intended GitHub Wiki URL is [`Herbertofury/Modhunter/wiki`](https://github.com/Herbertofury/Modhunter/wiki).
 
 [[Architecture]] · [[Frequently Asked Questions]]
+
+
+## SSS Update Workshop acceptance coverage (November 2026)
+
+- `python3 -m unittest discover -s tests -p 'test_*.py' -q` validates source resolution, per-row Nexus file advisory, risk and target-version confirmation, duplicate guards and native install lifecycle via deterministic fakes.
+- `python3 build.py` compiles the exact shared dashboard used in the plugin, Electron and standalone editions.
+- `PYTHONPATH=. python3 tests/updater_sss_browser_qa.py` uses headless Chromium with in-memory MO2 API fixtures to exercise full UI flows and capture screenshots. This is a developer-only test tool; the shipped app has no Playwright dependency.
+- `node scripts/benchmark_workshop_tickets.cjs` checks semantic equivalence and measures performance of full-list ticket lookup over 2,500 mods and 800 tickets. It is not a hard time threshold.
+- **Not yet proven:** native Windows MO2 2.5.3/Qt signal integration, premium/free Nexus behavior, actual FOMOD reinstall on a populated profile, post-install game runtime or dependency correctness. CI checks are not substitutes for these gates.
+
+Official upstream reference: [MO2 Python plugin development](https://www.modorganizer.org/python-plugins-doc/).

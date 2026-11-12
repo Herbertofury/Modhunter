@@ -55,7 +55,7 @@ class BridgeTests(unittest.TestCase):
   self.assertEqual(res['scan']['state'],'completed')
   snap=json.loads(self.call('GET','/api/snapshot')[1])['catalog']['items']
   self.assertEqual(snap[0]['update']['verdict'],'candidate')
-  self.assertEqual(snap[1]['update']['verdict'],'current')
+  self.assertEqual(snap[1]['update']['verdict'],'unverified')
  def test_deduplicated_nexus_projects_keep_per_item_verdict(self):
   def fetch(path):return {'version':'2.0','status':'published'}
   result=UpdateScanner(Cache(Path(self.tmp.name)/'dupes.json'),NexusClient('fake',request_json=fetch)).scan(PROFILE,'deep')

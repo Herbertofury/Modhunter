@@ -19,7 +19,7 @@ Modhunter now presents a unified **Update Workshop** in the standalone HTML, Ele
 | Edition | Installation | What it can do alone |
 | --- | --- | --- |
 | **Portable HTML** | Download [Modhunter.html](https://github.com/Herbertofury/Modhunter/blob/main/web/Modhunter.html), open in Chromium/Firefox | Complete sample checklist, offline Siege and Shiverfell, visual Workshop, JSON export, personal progress |
-| **Desktop app** | Download [desktop source ZIP](https://github.com/Herbertofury/Modhunter/blob/main/dist/Modhunter-Desktop-Source.zip); install Node.js and launch the included desktop command | Native Electron Chromium tab system, standalone games and Workshop; optionally connects to MO2 |
+| **Desktop app** | Download [desktop source ZIP](https://github.com/Herbertofury/Modhunter/blob/main/dist/Modhunter-Desktop-Source.zip); install Node.js and launch the desktop command | Native Electron Chromium tabs, **Import MO2** for a real read-only `modlist.txt` snapshot without the plugin, standalone games; optionally connects for native updating |
 | **MO2 plugin** | Download [MO2 plugin ZIP](https://github.com/Herbertofury/Modhunter/blob/main/dist/Modhunter-MO2-Plugin.zip) and run `Install_to_MO2.bat` | Live profile scan, exact-file review, native Nexus downloads, interactive install, backups, profile-scope Chronicle |
 
 The three editions have **no installation dependencies on one another**. Their optional shared transport is a **127.0.0.1 loopback session**, with a per-launch secret and origin checks. The browser does not receive the Nexus API key. The Electron browser shell connects to the same already-running plugin session if explicitly asked.
@@ -33,7 +33,7 @@ The three editions have **no installation dependencies on one another**. Their o
 - Verify FOMOD selections, overwrite priority, masters and patches after installation.
 - A pending or completed download is session scoped. Reopen MO2's actual Downloads tab to cross-check if restarting MO2.
 - No default automatic monitoring or unattended installation is used.
-- Standalone HTML and desktop without MO2 **cannot** change installed MO2 files and cannot claim official verified achievements.
+- Standalone HTML and desktop without the MO2 plugin **cannot** perform native authenticated update scans, install mods or claim official verified achievements. The desktop app **can read a user-selected portable MO2 profile independently** without changing its files.
 
 ## Quality assurance
 

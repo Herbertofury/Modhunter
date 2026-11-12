@@ -1,0 +1,49 @@
+{
+  "product": "Modhunter: The Unfinished World",
+  "version": "0.8.0-dev",
+  "components": {
+    "desktop": "Electron 45 source, independent offline + optional MO2 loopback",
+    "html": "self-contained offline browser dashboard + games",
+    "mo2": "Mod Organizer 2 Python Tool with self-hosted browser dashboard"
+  },
+  "content": {
+    "sampleMods": 227,
+    "separatorSections": 115,
+    "regions": 12,
+    "namedStoryContracts": 96,
+    "masteryTiers": 5,
+    "firstClearMilestones": 480,
+    "baseTimerHoursAtAllTiers": 80,
+    "heroClasses": 5,
+    "upgradePaths": 22,
+    "evolutions": 6,
+    "legacyPerks": 6
+  },
+  "testing": {
+    "pythonTests": 81,
+    "pythonSubtests": 3,
+    "atlasChromium": "pass",
+    "electronChromeChromium": "pass",
+    "desktopSyntax": "pass",
+    "nativeWindowsElectron": "unverified",
+    "nativeWindowsMO2": "unverified"
+  },
+  "files": {
+    "Modhunter.html": {
+      "bytes": 574994,
+      "sha256": "68953318459f2b0a125eeb1b4441dc6f6a36e6d0ee44a174f5a52a952e32fb31"
+    },
+    "Modhunter-MO2-Plugin.zip": {
+      "bytes": 199568,
+      "sha256": "7263cbdff5f16ee9209e7a20a6834c622f3ba3459fcbd88a426d02b9a51399d8"
+    },
+    "Modhunter-Desktop-Source.zip": {
+      "bytes": 173581,
+      "sha256": "d7bcc0891590afcd0a9f12029fc337557acc9149282ee577ce1f45f9488dd33a"
+    },
+    "Modhunter-Complete-Source.zip": {
+      "bytes": 6891784,
+      "sha256": "5653ff46a49fe726bf785c138bd3f861baadb431a1d56f1ef036252fce3a8cb4"
+    }
+  }
+}

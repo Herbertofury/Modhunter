@@ -395,17 +395,9 @@ async function queueWorkshop(){
  try{
   const latest=await bridgeRequest('GET','update-plan');
   if(latest.profileId!==profile||LIVE_CATALOG?.profileId!==profile)throw Error('Active profile changed. Reopen the Workshop.');
-  const indexed=new Map(latest.items.map(m=>[m.id,m]));
-  for(const entry of entries){
-   const m=indexed.get(entry.itemId);
-   if(!m||m.lane!=='candidate'||m.installedVersion!==entry.installedVersion||Number(m.nexusId)!==entry.modId){problems.push(entry.itemId+': profile/scan changed');continue}
-   if(seen.has(entry.modId+':'+entry.fileId))continue;
-   seen.add(entry.modId+':'+entry.fileId);
-   try{workshopSetStatus('Queueing '+(sent+1)+' / '+entries.length+': '+m.name);
-    const r=await bridgeRequest('POST','download',{modId:entry.modId,fileId:entry.fileId,confirm:'DOWNLOAD'});
-    sent++;WORKSHOP_CHOICES.delete(entry.itemId);
-   }catch(e){problems.push(m.name+': '+e.message)}
-  }
+  const response=await bridgeRequest('POST','update-queue',{profileId:profile,confirm:'QUEUE_REVIEWED_DOWNLOADS',entries});
+  for(const item of response.queued||[]){sent++;WORKSHOP_CHOICES.delete(item.itemId)}
+  for(const item of response.failed||[])problems.push(item.itemId+': '+item.error);
   await refreshDownloads();
   workshopSetStatus('Queued '+sent+' reviewed file(s). '+(problems.length?'Needs attention: '+problems.join(' | '):'Install each completed file using the MO2 installer.'));
  }catch(e){workshopSetStatus('Queue halted: '+e.message)}

@@ -198,6 +198,9 @@ body.victory-open{overflow:hidden}
 @media(max-width:900px){.workshop-summary{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:640px){.update-workshop{padding:14px}.workshop-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.workshop-item{align-items:flex-start;flex-direction:column}.workshop-item-actions{width:100%;justify-content:flex-end}}
 
+/* Update file metadata readable without opening a second browser window */
+.picker-file-desc{font-size:12px;color:var(--text-muted,#b6c8c8);line-height:1.5;margin:7px 0 1px;max-width:65ch;white-space:normal;overflow-wrap:anywhere}
+
 /* Questbound v0.4 AetherFX: cinematic DOM+Canvas feedback, independent of checklist and MO2 state. */
 #aetherCanvas{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:85;contain:strict}
 #aetherStage{position:fixed;inset:0;pointer-events:none;z-index:86;overflow:hidden;contain:layout style}
@@ -1058,7 +1061,7 @@ function activateLiveCatalog(c){
  $('riskSubtitle').textContent='DLLs + runtime + risky masters';document.querySelector('.pagefooter').children[1].textContent='LOCAL-FIRST ARSENAL · LIVE MO2 + NEXUS INTELLIGENCE · PROFILE SAVE';document.querySelector('.pagefooter').firstElementChild.textContent=`ᛟ MO2 LIVE / ${c.game} / ${c.profileName}`;
  SET('liveProfile',c.profileName+' / '+c.game);SET('liveCount',c.items.length+' mods · '+c.groups.length+' chapters');SET('liveState','Live session. Your active MO2 profile is authoritative; the checklist is saved per profile.');$('livePill').textContent='● MO2 CONNECTED';$('livePill').classList.add('connected');
  $('liveSync').textContent='Snapshot: '+new Date().toLocaleTimeString();
- for(const id of ['liveQuick','liveDeep','liveLocal','liveRefresh','liveRuntime','liveConnect','liveBackup'])$(id).disabled=false;
+ for(const id of ['liveAll','liveQuick','liveDeep','liveLocal','liveRefresh','liveRuntime','liveConnect','liveBackup'])$(id).disabled=false;
  const chosen=STORE.prefs.filter;if(chosen==='updates'&&!c.items.some(isUpdate))STORE.prefs.filter='all';
  if(newProfile||changedRuntime||changedMods){WORKSHOP_PLAN=null;WORKSHOP_CHOICES.clear()}
  applyAppearance();updateStorageIndicator();render();renderLiveStats();if(newProfile){hydrateProgress(c.profileId);refreshGame()}refreshWorkshop().catch(ex=>workshopSetStatus('Plan unavailable: '+ex.message));if(changedRuntime||changedMods)toast('⚠ Previous cleared checks need review: runtime or installed version changed.');
@@ -1184,7 +1187,7 @@ async function openFilePicker(m){if(!BRIDGE.active||(!m.nexusId&&!m.update?.rele
   $('filePickerSummary').textContent='Public GitHub release assets: verify your game version, requirements, file and installation steps.';
   return;
  }
- try{const j=await bridgeRequest('GET','files?modId='+m.nexusId);if(!j.files.length)throw Error('No files available for this project');$('filePickerFiles').innerHTML=j.files.map(f=>`<div class="picker-file"><div class="picker-file-main"><strong>${escapeHTML(f.name)}</strong><span>v${escapeHTML(f.version||'?')} · ${escapeHTML(f.fileName||'')} · ${escapeHTML(f.sizeInKB||'?')} KB ${f.category===1?' · MAIN FILE':''}</span></div><button class="button-bright" data-file-id="${f.fileId}" data-mod-id="${m.nexusId}">⇩ Queue in MO2</button></div>`).join('');}catch(ex){$('filePickerFiles').innerHTML=`<div class="picker-error">${escapeHTML(ex.message)}<p>Use the original Files page and Mod Manager Download through MO2 if required by your Nexus account.</p></div>`;}}
+ try{const j=await bridgeRequest('GET','files?modId='+m.nexusId);if(!j.files.length)throw Error('No files available for this project');$('filePickerFiles').innerHTML=j.files.map(f=>`<div class="picker-file"><div class="picker-file-main"><strong>${escapeHTML(f.name)}</strong><span>v${escapeHTML(f.version||'?')} · ${escapeHTML(f.fileName||'')} · ${escapeHTML(f.sizeInKB||'?')} KB ${f.category===1?' · MAIN FILE':''}</span>${f.description?`<p class="picker-file-desc">${escapeHTML(f.description)}</p>`:''}</div><button class="button-bright" data-file-id="${f.fileId}" data-mod-id="${m.nexusId}">⇩ Queue in MO2</button></div>`).join('');}catch(ex){$('filePickerFiles').innerHTML=`<div class="picker-error">${escapeHTML(ex.message)}<p>Use the original Files page and Mod Manager Download through MO2 if required by your Nexus account.</p></div>`;}}
 function closeFilePicker(){$('filePickerVeil').hidden=true;FILE_PICKER_MOD=null;WORKSHOP_REVIEW_ID=null}
 $('filePickerClose').onclick=closeFilePicker;$('filePickerCancel').onclick=closeFilePicker;$('filePickerVeil').addEventListener('click',e=>{if(e.target===$('filePickerVeil'))closeFilePicker()});
 $('filePickerNexus').onclick=()=>{if(FILE_PICKER_MOD)window.open(getSrc(FILE_PICKER_MOD).url,'_blank','noopener,noreferrer')};

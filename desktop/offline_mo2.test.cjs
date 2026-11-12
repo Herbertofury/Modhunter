@@ -17,11 +17,11 @@ test('import a complete MO2 profile, exact URLs, enabled state, sections, no rec
  await fs.writeFile(path.join(mods,'First','SKSE','Plugins','example.dll'),'dll');
  await fs.writeFile(path.join(root,'ModOrganizer.ini'),'[General]\ngameName=Skyrim Special Edition\ngameVersion=1.5.97\n');
  await fs.writeFile(path.join(profile,'modlist.txt'),
-  '# MO2 generated\\n+First\\n-Second\\n+Side Missions_separator\\n+Third\\n+../evil\\n');
+  '# MO2 generated\n+First\n-Second\n+Side Missions_separator\n+Third\n+../evil\n');
  await fs.writeFile(path.join(mods,'First','meta.ini'),
-   '[General]\\nmodid=44\\nversion=1.0\\nnewestVersion=2.0\\nurl=https://github.com/example/mod/releases?utm_source=secret\\n');
+   '[General]\nmodid=44\nversion=1.0\nnewestVersion=2.0\nurl=https://github.com/example/mod/releases?utm_source=secret\n');
  await fs.writeFile(path.join(mods,'Second','meta.ini'),
-   '[General]\\nmodid=55\\nversion=3.0\\n');
+   '[General]\nmodid=55\nversion=3.0\n');
  const before=(await fs.readFile(path.join(profile,'modlist.txt'))).toString();
  const c=await readMo2Profile(path.join(profile,'modlist.txt'));
  assert.equal(c.items.length,4);

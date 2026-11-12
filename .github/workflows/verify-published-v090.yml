@@ -1,0 +1,30 @@
+name: Verify published Modhunter 0.9.0
+on:
+  push:
+    branches: ['release/verify-v0.9.0-11515c27']
+permissions:
+  contents: write
+concurrency:
+  group: modhunter-published-v0.9.0
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: github.repository == 'Herbertofury/Modhunter'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify published bytes and append reviewed release features
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 .github/scripts/verify-published-v090.py
+      - name: Preserve published-release verification
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Modhunter-0.9.0-Published-Verification
+          path: published-verification.json
+          if-no-files-found: warn
+          retention-days: 90

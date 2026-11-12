@@ -208,10 +208,10 @@ fn activate(app: &tauri::AppHandle, id: u64) -> Result<()> {
 }
 
 fn handle_external(app: &tauri::AppHandle, url: &Url) {
-    if policy::external_url(url) {
-        if let Err(e) = app.opener().open_url(url.as_str(), None::<&str>) {
-            alert(app, format!("Could not open source: {e}"));
-        }
+    if policy::external_url(url)
+        && let Err(e) = app.opener().open_url(url.as_str(), None::<&str>)
+    {
+        alert(app, format!("Could not open source: {e}"));
     }
 }
 
@@ -500,10 +500,10 @@ fn open_tab(app: &tauri::AppHandle, mode: Mode) -> Result<u64> {
             let done = payload.event() == PageLoadEvent::Finished;
             {
                 let state = load_app.state::<Runtime>();
-                if let Ok(mut m) = state.model.lock() {
-                    if let Some(tab) = m.tabs.iter_mut().find(|t| t.label == view.label()) {
-                        tab.loading = !done;
-                    }
+                if let Ok(mut m) = state.model.lock()
+                    && let Some(tab) = m.tabs.iter_mut().find(|t| t.label == view.label())
+                {
+                    tab.loading = !done;
                 }
             }
             if done {
@@ -767,15 +767,15 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
                 m.shell_ready = true;
                 (m.prefs.endpoint.clone(), m.prefs.profile.is_some())
             };
-            if restore.1 {
-                if let Err(e) = import_profile(app, true, false) {
-                    alert(app, e);
-                }
+            if restore.1
+                && let Err(e) = import_profile(app, true, false)
+            {
+                alert(app, e);
             }
-            if let Some(endpoint) = restore.0 {
-                if let Err(e) = connect(app, &endpoint) {
-                    alert(app, format!("Saved MO2 session is unavailable: {e}"));
-                }
+            if let Some(endpoint) = restore.0
+                && let Err(e) = connect(app, &endpoint)
+            {
+                alert(app, format!("Saved MO2 session is unavailable: {e}"));
             }
         }
         "new" => {

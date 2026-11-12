@@ -6,7 +6,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from .source_registry import discover_local_source
+from .source_registry import discover_local_source, source_record
 
 COLORS = ("mint", "violet", "sky", "pink", "ochre", "green", "slate", "rose", "gold", "cyan", "blue")
 
@@ -115,7 +115,8 @@ def take_snapshot(organizer: Any, target_runtime: str = "unknown") -> dict[str, 
         flags = inspect_local_flags(Path(mod_path)) if mod_path else []
         notes = call_str(mod, "notes")
         detected_source = discover_local_source(Path(mod_path), notes) if mod_path else {}
-        actual_source = detected_source if detected_source.get("verified") else source_url(game, nexus_id)
+        native_url = source_record(call_str(mod, "url"), "MO2 official mod URL")
+        actual_source = native_url if native_url.get("verified") else detected_source if detected_source.get("verified") else source_url(game, nexus_id)
         hint = "Contains native DLL files. Select a build for the exact game runtime." if flags else ""
         mod_id = "live-" + identity(profile_id + "|" + name)
         if mod_id in present:

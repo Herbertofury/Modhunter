@@ -474,10 +474,50 @@ with sync_playwright() as pw:
     assert source_page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1')
     assert not source_errors,source_errors
     source_page.close()
+    # Importing a real profile must replace the sample Skyrim runtime guidance.
+    offline=browser.new_page(viewport={"width":1440,"height":1000})
+    offline_errors=[]
+    offline.on('pageerror',lambda e:offline_errors.append(str(e)))
+    offline.set_content(raw_html,wait_until='load',timeout=30000)
+    offline.wait_for_function("typeof window.modhunterImportCatalog === 'function'")
+    offline_catalog={"schemaVersion":2,"catalogId":"offline-runtime-proof",
+        "profileId":"offline-runtime-proof","profileName":"Imported Runtime QA",
+        "game":"fallout4","gameRuntime":"unknown","offline":True,
+        "groups":[{"id":"snapshot-group","name":"Imported Mods","startPriority":0,"count":1,"color":"mint"}],
+        "items":[{"id":"snapshot-a","name":"Snapshot Example","priority":0,
+            "groupId":"snapshot-group","group":"Imported Mods","installedVersion":"1.0",
+            "flags":[],"source":{"type":"unknown","verified":False,"url":""},
+            "audit":{"verdict":"unknown","note":""},"screenshotNote":"","author":""}]}
+    imported=offline.evaluate("(catalog)=>window.modhunterImportCatalog(catalog)",offline_catalog)
+    assert imported['ok'] and imported['count']==1
+    expect(offline.locator('#runtimeBadge')).to_contain_text('unknown')
+    expect(offline.locator('#advisoryToggle b')).to_have_text('IMPORTED PROFILE CHECKS')
+    expect(offline.locator('#advisoryBody')).to_contain_text('Target runtime: unknown')
+    expect(offline.locator('#advisoryBody')).not_to_contain_text('SKSE is 2.0.20')
+    expect(offline.locator('#referenceLinks')).not_to_contain_text('SE Address Library')
+    expect(offline.locator('.pagefooter')).to_contain_text('MO2 SNAPSHOT / fallout4 / Imported Runtime QA')
+    offline.locator('#row-snapshot-a button[data-act="inspect"]').click()
+    expect(offline.locator('.drawer-priority')).to_contain_text('IMPORTED PROFILE')
+    expect(offline.locator('.drawer-alert .drawer-label')).to_have_text('RUNTIME / FILE COMPATIBILITY CHECK')
+    expect(offline.locator('.drawer-alert')).not_to_contain_text('provided screenshots')
+    expect(offline.locator('#drawerCompat option[value="compatible"]')).to_have_text('✓ Verified working in this setup')
+    expect(offline.locator('#drawerCompat option[value="ae-only"]')).to_contain_text('Wrong runtime or edition')
+    assert '1.5.97' not in (offline.locator('#drawerVerifiedVersion').get_attribute('placeholder') or '')
+    expect(offline.locator('#drawerContent')).not_to_contain_text('1.5.97')
+    offline.screenshot(path=str(OUTPUT/'imported-profile-runtime.png'),full_page=False)
+    offline.locator('#drawerClose').click()
+    with offline.expect_download(timeout=10000) as csv_export:
+        offline.locator('#csvBtn').click()
+    assert csv_export.value.suggested_filename=='Modhunter - Imported Runtime QA - Visible Mods.csv'
+    csv_header=Path(csv_export.value.path()).read_text(encoding='utf-8-sig').splitlines()[0]
+    assert '"Compatibility Verdict"' in csv_header and '1.5.97 Verdict' not in csv_header
+    assert not offline_errors,offline_errors
+    offline.close()
     bulk.close();fast.close()
     print(json.dumps({"result":"passed","modCards":3,"fileChoices":3,
         "recommended":1,"queuedCalls":1,"installCalls":1,"sourceAdapters":{
             "provider":"gitlab","lazyDetailReads":1,"exactProofQueued":True,"compactCatalog":True,
             "oldNexusIdIgnored":True,"remoteMarkupInert":True,"mobileOverflow":False},
-        "screenshots":str(OUTPUT),"jsErrors":errors+source_errors},indent=2))
+        "offlineProfile":{"runtimeUnverified":True,"sampleGuidanceRemoved":True,"profileCsv":True},
+        "screenshots":str(OUTPUT),"jsErrors":errors+source_errors+offline_errors},indent=2))
     browser.close()

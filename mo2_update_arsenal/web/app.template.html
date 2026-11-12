@@ -1,16 +1,17 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><script>window.__ARSENAL_REALM_ROUTE__=new URLSearchParams(location.search).get("realm")==="1"</script><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080e17">
+<meta charset="utf-8"><script>window.__ARSENAL_REALM_ROUTE__=new URLSearchParams(location.search).get("realm")==="1"</script><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0d1419">
 <title>MO2 Update Arsenal | Your Modding Command Center</title>
 <style>/*__STYLE__*/</style>
 </head>
 <body data-theme="night" data-density="compact">
+<a class="skip-link" href="#updateWorkshop">Skip to Update Workshop</a>
 <div class="shell">
  <aside class="sidebar" id="sidebar" aria-label="Navigation and collections">
   <div class="brand">
    <div class="brandmark" aria-hidden="true"><span>ᛟ</span><i></i></div>
-   <div><span class="brand-overline">MOD ORGANIZER 2</span><strong>MOD ARSENAL</strong><small>LIVE PROFILE / SAMPLE ARCHIVE</small></div>
+   <div><span class="brand-overline">THE UNFINISHED WORLD</span><strong>MODHUNTER</strong><small>MOD VAULT / UPDATE ARSENAL</small></div>
   </div>
   <div class="sideruntime" id="runtimeBadge"><span class="status-light"></span><div><strong>SE LEGACY RUNTIME</strong><span>Skyrim 1.5.97 <b>/</b> SKSE 2.0.20</span></div><span class="runtime-lock">PINNED</span></div>
   <div class="sideprogress">
@@ -37,7 +38,7 @@
  <div class="maincol">
   <header class="topbar">
    <div class="mobile-brand"><button id="menuToggle" aria-label="Toggle sections menu">☰</button><span>MOD ARSENAL</span></div>
-   <div class="breadcrumb">SOVNGARDE <span>›</span> THE MOD VAULT <span>›</span> <strong>UPDATE PROTOCOL</strong></div>
+   <div class="breadcrumb">MODHUNTER <span>›</span> THE MOD VAULT <span>›</span> <strong>UPDATE ARSENAL</strong></div>
    <div class="top-actions"><a href="?realm=1&siege=1" target="_blank" rel="noopener" class="realm-launch" title="Open the Modhunter Siege game in its own tab">♛ MODHUNTER SIEGE ↗</a>
    <a href="?realm=1" target="_blank" rel="noopener" class="realm-launch" id="realmLaunchTop" title="Open the survival RPG in its own browser tab">⚔ SURVIVAL REALM <strong id="realmBalanceBadge">✧ 0</strong> ↗</a>
     <div class="tiny-live"><i></i> LOCAL FIRST</div>
@@ -55,9 +56,9 @@
    <section class="hero" aria-label="Dashboard overview">
     <div class="hero-bg-letter" aria-hidden="true">ᛟ</div>
     <div class="hero-main">
-     <div class="kicker"><span class="kicker-dash"></span> THE DRAGONBORN'S WORKBENCH <span class="kicker-dot">✦</span> VOL. I</div>
+     <div class="kicker"><span class="kicker-dash"></span> YOUR LOAD ORDER · UNDER CONTROL <span class="kicker-dot">✦</span> THE MOD VAULT</div>
      <h1>The <i>Update</i> Gauntlet<span class="period">.</span></h1>
-     <p><span id="heroSummary">The original Skyrim 1.5.97 archive stays intact. Launch through the MO2 plugin to swap in your <strong>actual active mod profile</strong>, check Nexus updates, and make every victory spectacular.</span></p>
+     <p><span id="heroSummary">A clear view of your installed mods, trusted sources and compatibility risks. <strong>Connect MO2 to check your live profile and review exact update files.</strong> Nothing changes without your approval.</span></p>
      <div class="hero-buttons"><button id="nextPending" class="button-bright"><span>✦</span> Jump to next mod <b>→</b></button><button id="showCritical" class="button-ghost">⚠ Review danger zone <b>↗</b></button></div>
      <div class="reference-links" id="referenceLinks"><a target="_blank" rel="noopener noreferrer" href="https://skse.silverlock.org/">SKSE 2.0.20 ↗</a><span>•</span><a target="_blank" rel="noopener noreferrer" href="https://www.nexusmods.com/skyrimspecialedition/mods/32444?tab=files">SE Address Library ↗</a><span>•</span><a target="_blank" rel="noopener noreferrer" href="https://www.nexusmods.com/skyrimspecialedition/mods/266?tab=files">USSEP files ↗</a></div>
     </div>
@@ -68,29 +69,29 @@
    </section>
    <section class="unified-command" id="unifiedCommand" aria-labelledby="unifiedTitle">
     <header class="unified-intro">
-     <div><span class="label-overline">ONE MODHUNTER · ALL SYSTEMS UNITED</span><h2 id="unifiedTitle">Your entire modding world, <em>one command center.</em></h2>
-      <p><strong>Keeping your MO2 mods current comes first.</strong> Every quest, finisher, survival realm and Siege run belongs to the same product, with optional live MO2 proof.</p></div>
+     <div><span class="label-overline">ONE MODHUNTER · ALL SYSTEMS UNITED</span><h2 id="unifiedTitle">Everything you need. <em>Nothing in the way.</em></h2>
+      <p><strong>Update work comes first.</strong> Inspect, compare, download and install with confidence. Your adventures and rewards are always one step away.</p></div>
      <span class="unified-edition" id="unifiedEdition" role="status">OFFLINE · READ ONLY</span>
     </header>
     <div class="unified-grid">
      <article class="unified-tile primary">
-      <span class="unified-no">01 / PRIMARY MISSION</span><h3>◈ Update every MO2 mod</h3>
-      <p>Scan installed mods, identify sources and exact newer files, review compatibility, and queue downloads through MO2.</p>
+      <span class="unified-no">01 / UPDATE DESK</span><h3>Your load order, up to date.</h3>
+      <p>Review the whole profile without blind replacements. See trusted version evidence, inspect individual release files, and queue only the downloads you approve.</p>
       <strong class="unified-meta" id="unifiedUpdateState">Sample checklist · no remote verification</strong>
       <div class="unified-actions"><button type="button" class="button-bright" id="unifiedScan">⌁ Check mod sources</button><button type="button" class="quiet-button" id="unifiedReview">◈ Update Workshop</button></div>
      </article>
      <article class="unified-tile">
-      <span class="unified-no">02 / QUESTBOUND + AETHERFX</span><h3>✧ Chronicle of the Forge</h3>
+      <span class="unified-no">02 / QUESTBOUND + AETHERFX</span><h3>Chronicle of the Forge</h3>
       <p>Real-update achievements, the raid and victory effects. Customizable cinematic finishers remain in the same dashboard.</p>
       <div class="unified-actions"><button type="button" class="quiet-button" id="unifiedQuest">✦ Achievements</button><button type="button" class="quiet-button" id="unifiedFX">✧ FX Studio</button></div>
      </article>
      <article class="unified-tile">
-      <span class="unified-no">03 / SHIVERFELL + MYTHFORGE</span><h3>ᛟ Your survival world</h3>
+      <span class="unified-no">03 / SHIVERFELL + MYTHFORGE</span><h3>Shiverfell · Your world</h3>
       <p>Persistent exploration, crafting, companions, Dawnshard and Ashen Warden. Runs from this exact HTML app.</p>
       <div class="unified-actions"><a class="quiet-button unified-link" href="?realm=1" target="_blank" rel="noopener noreferrer">⚔ Enter Shiverfell ↗</a></div>
      </article>
      <article class="unified-tile">
-      <span class="unified-no">04 / SIEGE + ATLAS</span><h3>♛ Hunt the unfinished</h3>
+      <span class="unified-no">04 / SIEGE + ATLAS</span><h3>Siege · The unfinished</h3>
       <p>Survivor squads, real-mod bosses, the bestiary, 12 campaign regions and 480 first-clear conditions.</p>
       <div class="unified-actions"><a class="quiet-button unified-link" href="?realm=1&amp;siege=1" target="_blank" rel="noopener noreferrer">♜ Open Siege + Atlas ↗</a></div>
      </article>
@@ -99,7 +100,7 @@
    </section>
    <section class="metrics" aria-label="Quick status">
     <div class="metric"><div class="metric-icon c-teal">◈</div><div><span>MODS IN THE ARSENAL</span><strong id="metricTotal">227</strong><small id="metricSections">115 hand-sorted sections</small></div></div>
-    <div class="metric"><div class="metric-icon c-gold">✦</div><div><span>GLORIOUSLY CLEARED</span><strong id="metricDone">0</strong><small id="metricRemaining">227 left in the quest</small></div></div>
+    <div class="metric"><div class="metric-icon c-gold">✦</div><div><span>CHECKLIST CLEARED</span><strong id="metricDone">0</strong><small id="metricRemaining">227 left in the quest</small></div></div>
     <div class="metric"><div class="metric-icon c-red">⚠</div><div><span>COMPATIBILITY WATCH</span><strong id="metricWatch">0</strong><small><span id="riskSubtitle">1.5.97 + DLL + hard plugins</span></small></div></div>
     <div class="metric"><div class="metric-icon c-blue">↗</div><div><span>EXACT SOURCE LINKS</span><strong id="metricLinks">0</strong><small id="metricLinksSub">verified mod/Creation pages</small></div></div>
    </section>
@@ -112,16 +113,16 @@
     <div class="live-panels"><div class="live-panel"><span>ACTIVE PROFILE</span><strong id="liveProfile">Sample / Skyrim 1.5.97</strong><small id="liveCount">227 hand-captured mods</small></div><div class="live-panel"><span>NEXUS INTELLIGENCE</span><strong id="liveUpdateCount">Not scanned</strong><small id="liveCached">MO2 cached / fast 30-day / full audit</small></div><div class="live-panel"><span>SCAN STATUS</span><strong id="liveScanProgress">Standby</strong><small id="liveSync">No live connection</small></div></div>
     <div class="live-toolbar"><button class="button-bright" id="liveAll" disabled>✧ Check all mod sources</button><button class="quiet-button" id="liveQuick" disabled>ϟ Fast Nexus / MO2 cached</button><button class="quiet-button" id="liveDeep" disabled>◎ Full audit</button><button class="quiet-button" id="liveLocal" disabled>↻ MO2 cached</button><button class="quiet-button" id="liveRefresh" disabled>⟳ Refresh profile</button><button class="quiet-button" id="liveRuntime" disabled>⚙ Game runtime</button><button class="quiet-button" id="liveConnect" disabled>♜ Nexus connection</button><button class="quiet-button" id="liveBackup" disabled>⛨ Backup MO2 profile</button></div>
     <section class="update-workshop" id="updateWorkshop" aria-labelledby="workshopTitle">
-      <div class="workshop-heading"><div><span class="label-overline">✦ FIELD OPERATIONS / MOD MANAGEMENT</span><h3 id="workshopTitle">The Update <em>Workshop</em></h3><p>Audit the entire profile. Review exact files. Queue downloads in MO2, install with its regular prompts.</p></div><span class="workshop-count" id="workshopCount">OFFLINE INTELLIGENCE</span></div>
+      <div class="workshop-heading"><div><span class="label-overline">MOD MANAGEMENT / REVIEWED UPDATES</span><h3 id="workshopTitle">The Update <em>Workshop</em></h3><p>All installed mods, one reviewable plan. Check exact builds, approve the queue, then install through MO2.</p></div><span class="workshop-count" id="workshopCount">OFFLINE INTELLIGENCE</span></div>
       <div class="workshop-tools"><button class="button-bright" id="workshopRefresh" type="button">◈ Build update plan</button><button class="quiet-button" id="workshopExport" type="button">↓ Export plan</button><button class="quiet-button" id="workshopQueue" type="button">⇩ Queue reviewed files</button></div>
       <div class="workshop-status" id="workshopStatus" role="status">Standalone mode: inspect and export your checklist. Connect through MO2 to review exact Nexus files and queue downloads.</div>
       <div class="workshop-summary" id="workshopSummary" aria-live="polite"></div>
       <div class="workshop-filter"><label for="workshopFilter">Queue lane</label><select id="workshopFilter" aria-label="Filter workshop by update status"><option value="candidate">Update candidates</option><option value="review">Needs verification</option><option value="manual">Manual / unlinked</option><option value="current">Current</option><option value="all">Every installed mod</option></select><label for="workshopSearch">Find</label><input id="workshopSearch" placeholder="Search mods, versions, source…" autocomplete="off" aria-label="Search update workshop"></div>
       <div class="workshop-results" id="workshopResults" aria-live="polite"></div>
-      <p class="workshop-foot">No blind updates: a candidate is not proof that a specific file works. Each file must be reviewed. Native DLLs, masters, patches and game runtime need extra attention. Never alters mods in standalone HTML.</p>
+      <p class="workshop-foot">Version checks identify candidates, not guaranteed compatible installs. Review files, DLLs, masters, patches and your runtime before queueing. Offline HTML remains read-only.</p>
     </section>
     <div id="liveDownloadList" class="live-downloads" aria-live="polite"></div>
-    <p class="live-disclaimer">The plugin never auto-installs or replaces your files. Nexus file selection and MO2 installation require your choice; check requirements and FOMOD overwrites before proceeding. The sample archive is preserved separately.</p>
+    <p class="live-disclaimer">A newer project version is not necessarily a compatible file. Review requirements, back up your profile and use MO2’s standard installer for every change. Offline mode never modifies your installation.</p>
    </section>
    <section class="game-board" id="gameBoard" aria-label="Modding adventure and achievements">
     <div class="game-header"><div><span class="game-kicker">✦ THE CHRONICLE OF THE FORGE</span><h2>Every mod is a <em>quest.</em></h2><p>Your profile is the dungeon. Updates are victories. Build a legendary load order and earn your place in the Hall of Fame.</p></div><button class="game-preview" id="previewVictory" title="Preview the final battle animation without awarding rank or experience">✧ Preview the final boss</button></div>

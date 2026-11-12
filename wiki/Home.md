@@ -36,6 +36,10 @@ Keep the real MO2 load order updated first. The combined interface includes the 
 | **Shiverfell Chronicles** | Persistent top-down exploration, crafting, weather, companions and quests |
 | **Update Workshop** | Full MO2 profile audit, native Nexus login, public GitHub/GitLab release checks, reviewed Nexus/GitHub downloads, and interactive MO2 installs |
 
+## ✧ Craft standard
+
+**[Modhunter Design & Quality Standard](Design-System-and-Quality-Bar)** defines the updater-first information hierarchy, warm mineral visual language, restrained motion, accessible navigation, deliberate microcopy, and a strict no-clutter/no-feature-loss acceptance checklist. Shared UI changes must meet the same standard in portable HTML, desktop and MO2.
+
 ## 📖 Field guide
 
 **[Complete Original Release Vault](Original-Releases-and-Output-Audit.md)** · **[Update Workshop](Update-Workshop.md)** · **[Updater Source Coverage](Updater-Source-Coverage.md)** · **[Getting Started](Getting-Started.md)** · **[Game Modes](Game-Modes.md)** · **[Atlas Campaign](Atlas-Campaign.md)** · **[Unfinished Bestiary](Unfinished-Bestiary.md)** · **[Rewards & Integrity](Rewards-and-Integrity.md)** · **[Architecture](Architecture.md)** · **[Troubleshooting](Troubleshooting.md)**

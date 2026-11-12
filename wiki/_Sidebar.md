@@ -19,6 +19,9 @@
 * [🔎 Updater Sources](Updater-Source-Coverage)
 * [⚒ Update Workshop](Update-Workshop)
 
+**Design & quality**
+* [✦ AAA Visual Quality Standard](Design-System-and-Quality-Bar)
+
 **Under the hood**
 * [✨ Rewards & Integrity](Rewards-and-Integrity)
 * [⛓️ Architecture](Architecture)

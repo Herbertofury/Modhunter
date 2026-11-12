@@ -1,4 +1,41 @@
-:root{color-scheme:dark;font-family:Inter,Segoe UI,system-ui,sans-serif;background:#071017;color:#dbe7e2}*{box-sizing:border-box}body{margin:0;overflow:hidden;height:88px;background:linear-gradient(135deg,#091a20,#102229)}.top{height:47px;display:flex;align-items:stretch;border-bottom:1px solid #8a715336;gap:10px;padding:0 10px}.brand{display:flex;align-items:center;gap:7px;flex:none;min-width:170px}.glyph{font:30px Georgia;color:#eac37f;text-shadow:0 0 16px #f1aa61a3}.brand b{font-size:12px;letter-spacing:.13em;color:#f6ddb2}.brand small{display:block;font:8px system-ui;letter-spacing:.13em;color:#9bb1b4;margin-top:2px}.tabstrip{display:flex;align-items:end;gap:3px;flex:1;min-width:100px;overflow-x:auto;scrollbar-width:thin}.tab{white-space:nowrap;flex:none;max-width:210px;display:flex;align-items:center;gap:6px;background:#17252b;color:#a9bbbc;border:1px solid #354a4d;border-bottom:0;border-radius:7px 7px 0 0;height:35px;padding:0 9px;font-size:11px;cursor:pointer}.tab.active{background:#25383c;border-color:#bd9c6e;color:#ffe1ac}.tab span{overflow:hidden;text-overflow:ellipsis}.tab .x{margin-left:4px;border:0;background:transparent;color:#a5bdb8;font-size:17px;line-height:17px;padding:0 2px;cursor:pointer}.tab .x:hover{color:#ffb7a6}.actions{display:flex;align-items:center;gap:4px;flex:none}button{font:700 10px system-ui;letter-spacing:.03em;color:#d6e4df;border:1px solid #36545a;border-radius:4px;background:#19343a;cursor:pointer;padding:7px}button:hover{background:#2c5158;color:white}button:focus-visible,input:focus-visible{outline:2px solid #eabf87;outline-offset:-1px}.bar{height:40px;display:flex;align-items:center;gap:7px;padding:4px 10px}.left{display:flex;gap:4px}.left button{font-size:19px;padding:0;width:25px;height:26px}.source{display:flex;align-items:center;gap:7px;min-width:95px;flex:1}.status{height:8px;width:8px;border-radius:100%;background:#b4a275;box-shadow:0 0 9px #c9a86a6b}.status.live{background:#6ed9a6;box-shadow:0 0 12px #6ed9a6}.source-text{font-size:10px;color:#a7bdbb;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.connect{display:flex;gap:5px;align-items:center;width:min(42vw,450px)}input{background:#102830;color:#e6eee6;border:1px solid #36585c;border-radius:4px;padding:6px 8px;min-width:95px;flex:1;font:10px Consolas,monospace}.connect button{font-size:9px;padding:6px}.toast{position:absolute;right:11px;bottom:1px;color:#f4b98a;font:10px system-ui;max-width:400px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none}@media(max-width:950px){.brand small,.actions #newRealm,.source-text{display:none}.brand{min-width:100px}.actions button{padding:5px}.connect{width:min(43vw,350px)}}
-
-/* User-selected independent MO2 modlist import (no plugin required). */
-#importMo2{white-space:nowrap;background:#3b3225;border-color:#ab8757;color:#f7dfa5;font-size:10px}#importMo2:hover{background:#644d2f}.bar{overflow-x:auto;scrollbar-width:thin}#importMo2{flex:none}
+/* MODHUNTER DESKTOP / quiet operating chrome */
+:root{color-scheme:dark;font-family:"Segoe UI Variable","Segoe UI",Inter,system-ui,sans-serif;background:#111a20;color:#eaece5;--edge:#34464a;--gold:#e8c991;--mint:#89c8b4;--quiet:#aab9b8}
+*{box-sizing:border-box}
+body{margin:0;height:88px;overflow:hidden;background:#111a20}
+button,input{font:inherit}
+button{cursor:pointer}
+button:disabled{opacity:.5;cursor:not-allowed}
+button:focus-visible,input:focus-visible{outline:2px solid var(--gold);outline-offset:-2px}
+.top{height:48px;display:flex;align-items:stretch;gap:12px;padding:0 12px;border-bottom:1px solid var(--edge);background:#162229}
+.brand{display:flex;align-items:center;gap:8px;flex:none;min-width:153px}
+.glyph{font:28px Georgia,serif;color:var(--gold);text-shadow:none}
+.brand b{font:650 13px/1.1 Georgia,serif;letter-spacing:.08em;color:#f1e2c5}
+.brand small{display:block;font:700 8px/1.45 "Segoe UI",system-ui,sans-serif;letter-spacing:.11em;color:#8da8a6;margin-top:3px}
+.tabstrip{display:flex;align-items:flex-end;gap:3px;flex:1;min-width:90px;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;scrollbar-color:#566662 transparent}
+.tab{display:flex;flex:none;align-items:center;max-width:none;min-width:110px;height:36px;border:1px solid #304347;border-bottom:0;border-radius:7px 7px 0 0;background:#1b2c31;color:#afc0bf;transition:background .14s,border-color .14s}
+.tab:hover{background:#2a3d41}
+.tab.active{background:#33423d;border-color:#a18e6a;color:#f5e6cb;box-shadow:inset 0 2px #cfb582}
+.tab-open{display:flex;align-items:center;flex:1;min-width:0;padding:0 10px;height:100%;border:0;background:none;color:inherit;text-align:left;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap}
+.tab-open span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tab .x{align-self:center;border:0;background:none;color:#b7c3c2;font-size:17px;line-height:1;margin:0 4px 0 0;padding:4px 5px;border-radius:4px}
+.tab .x:hover{background:#573831;color:#ffcebc}
+.actions{display:flex;align-items:center;gap:5px;flex:none}
+button{border:1px solid #43595a;border-radius:5px;background:#24353a;color:#d9e6e2;font-size:10px;font-weight:700;padding:7px 9px;transition:border-color .15s,background .15s}
+button:hover{background:#35504e;border-color:#718f87;color:#fff}
+.bar{height:40px;display:flex;align-items:center;gap:7px;padding:4px 12px;background:#121e24;overflow-x:auto;scrollbar-width:thin}
+.left{display:flex;gap:4px;flex:none}
+.left button{min-width:27px;height:28px;padding:0 3px;font-size:18px}
+.source{display:flex;align-items:center;gap:7px;min-width:75px;flex:1}
+.status{display:block;flex:none;width:7px;height:7px;border-radius:50%;background:#b6a782}
+.status.live{background:var(--mint);box-shadow:0 0 0 3px #69bca624}
+.source-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--quiet);font-size:10px}
+.connect{display:flex;align-items:center;gap:5px;width:min(43vw,470px);flex:none}
+input{min-width:80px;flex:1;background:#1b2b32;border:1px solid #465f61;border-radius:5px;padding:6px 8px;color:#ebf4f0;font:11px/1.3 "Consolas","Cascadia Code",monospace}
+.connect button{font-size:9px;padding:6px 8px}
+#importMo2{flex:none;white-space:nowrap;background:#383528;border-color:#8c795a;color:#f1d7a2}
+#importMo2:hover{background:#4f4831}
+#open,#copy{flex:none}
+.toast{position:absolute;z-index:3;right:12px;bottom:1px;max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#f6cf9c;font-size:10px;pointer-events:none}
+@media(max-width:1050px){.brand{min-width:118px}.brand small{display:none}.actions #newRealm{display:none}.source-text{display:none}.connect{width:min(46vw,375px)}}
+@media(max-width:780px){.top{gap:6px;padding:0 7px}.brand{min-width:45px}.brand b{font-size:10px}.actions button{padding:6px}.connect{width:min(52vw,280px)}.bar{padding:4px 7px}}
+@media(prefers-reduced-motion:reduce){.tab,button{transition:none}}

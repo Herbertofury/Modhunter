@@ -20,6 +20,10 @@
 
 The **[Unified Command Center guide](wiki/Unified-Modhunter.md)** documents all three independent entry points and the updater-first workflow for **MO2 2.5.x, including 2.5.3 as a target**. Native Windows 2.5.3 integration testing is still required; a successful source build is not an installation guarantee.
 
+## Visual direction and quality contract
+
+**[Atelier design system & AAA-quality acceptance criteria](wiki/Design-System-and-Quality-Bar.md)** govern every surface: updater-first hierarchy, purposeful typography, restrained colors, refined interactions, responsive light/dark themes, accessible navigation and zero lost functionality. This is a testable target, not a claim that unperformed native Windows tests passed. The same compiled dashboard ships across HTML, desktop and MO2.
+
 ## Three ways to enter. No mandatory dependencies between them.
 
 | Component | What it does | Needs another component? |

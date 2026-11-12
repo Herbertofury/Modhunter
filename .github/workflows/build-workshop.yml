@@ -63,17 +63,33 @@ jobs:
           cp "$MODHUNTER_ARTIFACT_DIR"/Modhunter-Desktop-Source.zip dist/Modhunter-Desktop-Source.zip
           cp "$MODHUNTER_ARTIFACT_DIR"/Modhunter.html dist/Modhunter.html
           cp "$MODHUNTER_ARTIFACT_DIR"/Modhunter-Complete-Source.zip dist/Modhunter-Complete-Source.zip
+          cp "$MODHUNTER_ARTIFACT_DIR"/Modhunter-All-in-One.zip dist/Modhunter-All-in-One.zip
           cp "$MODHUNTER_ARTIFACT_DIR"/Modhunter-0.8/dist/manifest.json dist/manifest.json
           python3 - <<'PY'
           from zipfile import ZipFile
           from pathlib import Path
           html=Path('web/Modhunter.html').read_bytes()
           assert html==Path('mo2_update_arsenal/web/index.html').read_bytes()
-          for name in ('Modhunter-MO2-Plugin.zip','Modhunter-Desktop-Source.zip','Modhunter-Complete-Source.zip'):
+          for name in ('Modhunter-MO2-Plugin.zip','Modhunter-Desktop-Source.zip','Modhunter-Complete-Source.zip','Modhunter-All-in-One.zip'):
               with ZipFile(Path('dist')/name) as z:
                   assert z.testzip() is None
-                  assert 'mo2_update_arsenal/web/index.html' in z.namelist() if name!='Modhunter-Complete-Source.zip' else 'web/Modhunter.html' in z.namelist()
-          print('All independent release packages verified')
+                  assert 'mo2_update_arsenal/web/index.html' in z.namelist() if name in ('Modhunter-MO2-Plugin.zip','Modhunter-Desktop-Source.zip') else ('web/Modhunter.html' in z.namelist() if name=='Modhunter-Complete-Source.zip' else 'Modhunter.html' in z.namelist())
+
+          with ZipFile('dist/Modhunter-All-in-One.zip') as z:
+              for p in ('Modhunter.html','Desktop/Modhunter.html',
+                        'MO2/mo2_update_arsenal/web/index.html'):
+                  assert z.read(p)==html,p
+              import json,hashlib
+              info=json.loads(z.read('bundle-index.json'))
+              for name in ('Modhunter-MO2-Plugin.zip','Modhunter-Desktop-Source.zip','Modhunter-Complete-Source.zip'):
+                  prefix='Source/' if 'Complete' in name else 'Installers/'
+                  assert hashlib.sha256(z.read(prefix+name)).hexdigest()==info['parts'][name]['sha256']
+              for doc in ('Docs/Unified-Modhunter.md','Docs/Update-Workshop.md','Docs/Original-Releases-and-Output-Audit.md'):
+                  assert doc in z.namelist(),doc
+          assert 'id="unifiedCommand"' in page
+          assert 'id="unifiedScan"' in page
+          assert 'id="unifiedReview"' in page
+          print('All independent and all-in-one packages verified')
           PY
       - name: Upload complete Modhunter release for independent download and Drive archival
         uses: actions/upload-artifact@v4
@@ -86,6 +102,7 @@ jobs:
             dist/Modhunter-MO2-Plugin.zip
             dist/Modhunter-Desktop-Source.zip
             dist/Modhunter-Complete-Source.zip
+            dist/Modhunter-All-in-One.zip
             dist/manifest.json
             wiki/
             README.md

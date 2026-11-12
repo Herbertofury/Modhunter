@@ -32,10 +32,14 @@
 
 ## 📖 Field guide
 
-**[Update Workshop](Update-Workshop.md)** · **[Updater Source Coverage](Updater-Source-Coverage.md)** · **[Getting Started](Getting-Started.md)** · **[Game Modes](Game-Modes.md)** · **[Atlas Campaign](Atlas-Campaign.md)** · **[Unfinished Bestiary](Unfinished-Bestiary.md)** · **[Rewards & Integrity](Rewards-and-Integrity.md)** · **[Architecture](Architecture.md)** · **[Troubleshooting](Troubleshooting.md)**
+**[Complete Original Release Vault](Original-Releases-and-Output-Audit.md)** · **[Update Workshop](Update-Workshop.md)** · **[Updater Source Coverage](Updater-Source-Coverage.md)** · **[Getting Started](Getting-Started.md)** · **[Game Modes](Game-Modes.md)** · **[Atlas Campaign](Atlas-Campaign.md)** · **[Unfinished Bestiary](Unfinished-Bestiary.md)** · **[Rewards & Integrity](Rewards-and-Integrity.md)** · **[Architecture](Architecture.md)** · **[Troubleshooting](Troubleshooting.md)**
+
+## 📦 Eight original releases. No missing historical ZIPs or GIFs.
+
+**[Browse the authentic original-release vault](Original-Releases-and-Output-Audit.md)**, with every v0.1–v0.8 HTML, plugin/source archive, four original gameplay GIFs, the original victory PNG, original Atlas map, release manifests and latest checked update packages. [Download the complete 58 MB bundle from Google Drive](https://drive.google.com/file/d/1tQBnUZ_vDF7tUTtiXf8WJC41OEXNVG_5/view).
 
 ## A single world, three independent gateways
 
 The HTML is an entirely portable play surface. The desktop app is a dedicated multi-tab Chromium shell. The MO2 plugin alone owns live profile inspection and verified update rewards. Optional loopback communication allows them to share the same active game/profile identity without requiring any of the other installations.
 
-**Development build:** The inherited v0.8 checkpoint passed 68 Python tests; the Update Workshop adds 13 additional Python/HTTP tests (81 total). Native Windows MO2 and Electron acceptance testing remain to be performed.
+**Release preservation:** all 36 original v0.1–v0.8 deliverables, including the authentic GIFs and historical source/plugin ZIPs, are recovered and SHA-256 audited. The later updater expansion passed 99 Python plus four Node desktop-import tests in CI. Native Windows MO2 and Electron acceptance testing remain to be performed.

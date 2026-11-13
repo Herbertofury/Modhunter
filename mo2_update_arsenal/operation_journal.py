@@ -78,10 +78,12 @@ class OperationJournal:
     def _read_existing(self) -> None:
         seen_events: set[str] = set()
         try:
-            with self.path.open("r", encoding="utf-8") as reader:
+            # Decode each receipt independently: a torn multibyte character must
+            # not prevent valid earlier or later receipts from being recovered.
+            with self.path.open("rb") as reader:
                 for line in reader:
                     try:
-                        event = json.loads(line)
+                        event = json.loads(line.decode("utf-8"))
                         if not isinstance(event, dict):
                             continue
                         key = event.get("key")
@@ -102,7 +104,7 @@ class OperationJournal:
                         self._apply(key, event["sessionId"], event["at"], validated)
                         if isinstance(event_id, str):
                             seen_events.add(event_id)
-                    except (ValueError, TypeError, KeyError, json.JSONDecodeError):
+                    except (ValueError, TypeError, KeyError, UnicodeError):
                         # A torn final line must not erase previously valid receipts.
                         continue
         except FileNotFoundError:

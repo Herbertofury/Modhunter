@@ -53,6 +53,10 @@ def build_install_brief(snapshot: dict, ticket: dict | None, download_id: Any) -
     if item_id and not item:
         failures.append("The originally selected mod is no longer installed in this MO2 profile")
     if item:
+        queued_project = _positive_int(ticket.get("modId"))
+        if (ticket.get("provider") == "nexus" and queued_project
+                and _positive_int(item.get("nexusId")) != queued_project):
+            failures.append("The Nexus project linked to this mod changed; review the exact archive again")
         if str(item.get("installedVersion") or "") != str(ticket.get("installedVersion") or ""):
             failures.append("The installed version changed after you queued this download")
         latest = str((item.get("update") or {}).get("latestVersion") or "")

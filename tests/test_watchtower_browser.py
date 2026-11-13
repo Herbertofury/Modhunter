@@ -50,7 +50,7 @@ def watch(index=0, *, changed=False):
 
 
 def snapshot(count=2):
-    return {"revision": 1, "version": "0.10.0", "watches": [watch(i, changed=i == 0) for i in range(count)],
+    return {"revision": 1, "version": "0.10.1", "watches": [watch(i, changed=i == 0) for i in range(count)],
             "sessions": [], "history": [], "readOnly": False, "recoveryWarning": "",
             "work": {"active": [], "queued": []}, "settings": {
                 "checkOnLaunch": False, "backgroundChecking": False, "notifications": False,

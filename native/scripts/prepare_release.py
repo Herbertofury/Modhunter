@@ -32,7 +32,7 @@ PORTABLE_NAME = "Modhunter-Rust-Windows.zip"
 JSON_LIMIT = 4 * 1024 * 1024
 PNG_LIMIT = 32 * 1024 * 1024
 PORTABLE_EXPANDED_LIMIT = 512 * 1024 * 1024
-PRODUCTION_FILES = ("plugin.py", "version.py", "bridge.py", "gameplay.py", "model.py", "focus.py", "scanner.py", "native_nexus.py", "qt_bridge.py", "intelligence.py",
+PRODUCTION_FILES = ("plugin.py", "version.py", "bridge.py", "gameplay.py", "model.py", "focus.py", "scanner.py", "version_evidence.py", "native_nexus.py", "qt_bridge.py", "intelligence.py",
                     "plugin_intelligence.py", "mod_health.py", "source_adapters.py",
                     "source_registry.py", "update_plan.py", "quick_update.py",
                     "install_brief.py", "web/index.html")
@@ -75,6 +75,20 @@ WATCHTOWER_BROWSER_SOURCES = (
     "native/ui/watchtower.html", "native/ui/watchtower.css", "native/ui/watchtower.js",
     "tests/fixtures/watchtower_native_fixture.js", "tests/test_watchtower_browser.py",
 )
+QT_FORWARD_SOURCES = (
+    "mo2_update_arsenal/qt_bridge.py", "tests/test_native_qt_bridge.py",
+    "native/scripts/verify_qt_forward.py", "native/qt_bridge/qt_bridge.cpp",
+    "native/qt_bridge/qt_bridge_fixture.cpp",
+    "native/scripts/mo2_smoke_plugin/modhunter_native_smoke/runner.py",
+)
+QT_FORWARD_CHECKS = {
+    "test_cpp_receiver_protected_sender_gap_is_closed_by_typed_helper",
+    "test_cpp_receiver_first_file_bootstrap_and_raw_qvariant_payload",
+    "test_compiled_helper_rejects_worker_thread_before_qobject_use",
+    "test_actual_native_probe_completes_and_checks_lifetimes_under_optimized_python",
+    "test_optimized_native_probe_still_rejects_wrong_helper_hash",
+    "test_optimized_native_probe_still_rejects_wrong_qt_runtime",
+}
 WATCHTOWER_SCREENSHOTS = {
     "watchtower-pages.png", "watchtower-sessions.png", "watchtower-details.png", "watchtower-mobile.png",
 }
@@ -342,6 +356,29 @@ def validate_mo2(result: dict, receipt: dict) -> None:
             "Loaded MO2 Qt helper differs from the supplied compiled helper")
 
 
+def validate_qt_forward(report: dict, commit: str, helper_hash: str) -> None:
+    require(report.get("ok") is True and report.get("realQt") is True
+            and report.get("ownedSignalSelfTest") is True and report.get("sourceDirty") is False,
+            "Qt forward-runtime receipt did not pass the real owned-signal check")
+    require(report.get("candidateCommit") == commit and report.get("helperSha256") == helper_hash,
+            "Qt forward-runtime receipt does not identify this commit and packaged helper")
+    require(report.get("schemaVersion") == 1 and type(report.get("abi")) is int and report["abi"] == 1
+            and report.get("buildQt") == "6.7.1" and report.get("runtimeQt") == "6.11.1"
+            and report.get("pyQtVersion") == "6.11.0" and report.get("mechanism") == "typed-qt-sender",
+            "Qt forward-runtime receipt used an unexpected ABI, build or runtime")
+    sources = report.get("sourceFiles")
+    require(isinstance(sources, dict) and set(sources) == set(QT_FORWARD_SOURCES)
+            and all(sources[name] == file_hash(ROOT / name) for name in QT_FORWARD_SOURCES),
+            "Qt forward-runtime proof does not match the shipped binding and tests")
+    checks = report.get("checks")
+    require(type(report.get("testsRun")) is int and report["testsRun"] == len(QT_FORWARD_CHECKS)
+            and type(report.get("skipped")) is int and report["skipped"] == 0
+            and isinstance(checks, list) and len(checks) == len(QT_FORWARD_CHECKS)
+            and all(isinstance(c, dict) and c.get("passed") is True for c in checks)
+            and {c.get("name") for c in checks} == QT_FORWARD_CHECKS,
+            "Qt forward-runtime receipt omitted, skipped, repeated or failed a required test")
+
+
 def portable_checksums(archive: ZipFile, index: dict) -> dict[str, str]:
     """Verify the exact manifest shipped to the installer and the user."""
     entry = index.get("SHA256SUMS.txt")
@@ -369,7 +406,7 @@ def portable_checksums(archive: ZipFile, index: dict) -> dict[str, str]:
     return expected
 
 
-def portable_contents(path: Path, commit: str, run_url: str, native_report: dict, watchtower_report: dict, mo2_result: dict, qt_helper_hash: str) -> dict[str, bytes]:
+def portable_contents(path: Path, commit: str, run_url: str, native_report: dict, watchtower_report: dict, mo2_result: dict, qt_helper_hash: str, qt_forward_report: dict) -> dict[str, bytes]:
     public: dict[str, bytes] = {}
     try:
         with ZipFile(path) as archive:
@@ -385,7 +422,7 @@ def portable_contents(path: Path, commit: str, run_url: str, native_report: dict
                 require(not stat.S_ISLNK(entry.external_attr >> 16), "Linked member in portable archive")
                 index[name] = entry
                 windows_names.add(name.casefold())
-            for name in ("BUILD_INFO.json", "Modhunter.exe", "modhunter-cli.exe", BUNDLED_HELPER, BUNDLED_QT_HELPER, "Install_MO2_Plugin.ps1", "Install_MO2_Plugin.bat", "Evidence/native-smoke.json", "Evidence/watchtower-smoke.json"):
+            for name in ("BUILD_INFO.json", "Modhunter.exe", "modhunter-cli.exe", BUNDLED_HELPER, BUNDLED_QT_HELPER, "Install_MO2_Plugin.ps1", "Install_MO2_Plugin.bat", "Evidence/native-smoke.json", "Evidence/watchtower-smoke.json", "Evidence/qt-forward.json", "Check_MO2_Readiness.ps1", "Check_MO2_Readiness.bat", "START-HERE-MO2-253.md", "GameSync-Update-Techniques.md"):
                 require(name in index and not index[name].is_dir() and index[name].file_size > 0, f"Portable package is missing {name}")
             require(archive.testzip() is None, "Portable ZIP failed its CRC check")
             digests = portable_checksums(archive, index)
@@ -397,6 +434,8 @@ def portable_contents(path: Path, commit: str, run_url: str, native_report: dict
             require(embedded_native == native_report, "Portable native smoke differs from the Windows job receipt")
             embedded_watchtower = json_object(archive.read(index["Evidence/watchtower-smoke.json"]), "portable watchtower-smoke.json")
             require(embedded_watchtower == watchtower_report, "Portable Watchtower smoke differs from the Windows job receipt")
+            embedded_forward = json_object(archive.read(index["Evidence/qt-forward.json"]), "portable qt-forward.json")
+            require(embedded_forward == qt_forward_report, "Portable Qt forward-runtime proof differs from the Windows job receipt")
             # Both files come from this portable job's build. The separate MO2
             # job binds its installed helper to its own compiled CLI in its
             # receipt; independent Windows builds need not be byte-identical.
@@ -433,6 +472,14 @@ def release_notes(commit: str, run_url: str, repository_url: str, installer_name
 The Windows desktop, MO2 profile import/cache engine, connection checks, tab lifecycle and native dialogs now run in Rust. Microsoft Edge WebView2 renders the existing dashboard and all game modes. The shipped desktop does not require Node or Electron.
 
 MO2's Python/Qt plugin remains the in-process adapter for MO2's authenticated Nexus connection, native downloads, interactive FOMOD installer, focus and verified rewards. Dashboard/game presentation remains HTML/CSS/JavaScript.
+
+## MO2 2.5.3b12 testing and GameSync-inspired checking
+
+This build adds a live, GUI-thread-only sender self-test and a qualified forward-runtime path for the baseline Qt 6.7.1 helper on Qt 6.11.1/PyQt 6.11.0. The release requires real C++ receiver/callback tests on that newer runtime using the exact DLL in this ZIP, as well as the existing actual MO2 2.5.2 suite. It does **not** claim that the unavailable beta-12 binary or your personal Skyrim/Nexus setup was executed in CI. No Qt or Python runtime DLLs are replaced in MO2.
+
+Run **Check_MO2_Readiness.bat** from the extracted portable folder and read **START-HERE-MO2-253.md** before the first live connection. The check inspects versions, 64-bit PE headers and key package checksums; its saved JSON excludes account information and personal paths. Static readiness is not an authenticated-download result.
+
+GameSync-inspired additions include bounded full-field calendar/build/prerelease comparisons, channel-change review, and persisted provider-wide HTTP 503 Retry-After cooldowns in the Rust public adapters. Existing ETag/Last-Modified caching, exact project/file identities, deduplication, cancellation, site sessions, selected-page comparisons and reviewed MO2 installation remain authoritative. See the [technique/coverage map]({repository_url}/blob/{commit}/wiki/GameSync-Update-Techniques.md); not every site has an automatic authenticated API adapter.
 
 ## Watchtower: site sign-ins and page tracking
 
@@ -517,7 +564,10 @@ def prepare(artifacts_dir: Path, output_dir: Path, commit: str, run_url: str) ->
     validate_mo2(mo2_result, mo2_receipt)
     qt_helper = regular_file(windows / "qt-bridge/Release/modhunter-qt-bridge.dll")
     require(qt_helper.stat().st_size > 0, "The same Windows job's compiled Qt helper is empty")
-    public = portable_contents(portable, commit, run_url, native_report, watchtower_report, mo2_result, file_hash(qt_helper))
+    qt_forward_report = read_json(windows / "qt-forward/qt-forward.json")
+    validate_qt_forward(qt_forward_report, commit, file_hash(qt_helper))
+    public = portable_contents(portable, commit, run_url, native_report, watchtower_report, mo2_result, file_hash(qt_helper), qt_forward_report)
+    public["windows/qt-forward.json"] = public_json(qt_forward_report)
     public.update({"windows/native-smoke.json": public_json(native_report), "windows/watchtower-smoke.json": public_json(watchtower_report), "mo2/result.json": public_json(mo2_result), "mo2/native-receipt.json": public_json(mo2_receipt), "mo2/mo2-fixture.png": png_bytes(mo2 / "mo2-fixture.png")})
     watchtower_browser = read_json(browser / "watchtower-browser.json")
     validate_watchtower_browser(watchtower_browser, commit)
@@ -578,7 +628,7 @@ def self_test() -> None:
             self.windows = self.artifacts / "Modhunter-Rust-Windows"
             self.mo2 = self.artifacts / "Modhunter-MO2-Native-Proof"
             self.browser = self.artifacts / "Modhunter-Rust-Browser-Proof"
-            for path in (self.windows / "release/bundle/nsis", self.windows / "native-smoke", self.windows / "watchtower-smoke", self.windows / "qt-bridge/Release", self.mo2, self.browser):
+            for path in (self.windows / "release/bundle/nsis", self.windows / "native-smoke", self.windows / "watchtower-smoke", self.windows / "qt-bridge/Release", self.windows / "qt-forward", self.mo2, self.browser):
                 path.mkdir(parents=True)
             self.native = {"ok": True, "nativeWebView2": True, "shellIpc": True, "exportDownloadVerified": True, "gameViewNativeIpcDenied": "1"}
             self.watchtower = {"ok": True, "nativeWebView2": True, "watchtowerSchema": 1,
@@ -595,6 +645,15 @@ def self_test() -> None:
             self.qt_bytes = b"non-loadable synthetic Qt bridge fixture"
             self.qt_hash = hashlib.sha256(self.qt_bytes).hexdigest()
             (self.windows / "qt-bridge/Release/modhunter-qt-bridge.dll").write_bytes(self.qt_bytes)
+            self.qt_forward = {"ok": True, "realQt": True, "ownedSignalSelfTest": True,
+                "schemaVersion": 1, "abi": 1, "sourceDirty": False, "candidateCommit": self.commit,
+                "helperSha256": self.qt_hash, "buildQt": "6.7.1", "runtimeQt": "6.11.1",
+                "pyQtVersion": "6.11.0", "mechanism": "typed-qt-sender",
+                "testsRun": len(QT_FORWARD_CHECKS), "skipped": 0,
+                "scope": "Synthetic release-validator fixture; no actual Qt execution",
+                "sourceFiles": {name: file_hash(ROOT / name) for name in QT_FORWARD_SOURCES},
+                "checks": [{"name": name, "passed": True} for name in sorted(QT_FORWARD_CHECKS)]}
+            self.write_json(self.windows / "qt-forward/qt-forward.json", self.qt_forward)
             self.receipt = {"ok": True, "nativeMO2": True, "profileId": "fixture-profile",
                             "checks": [{"name": name, "passed": True} for name in sorted(REQUIRED_MO2_CHECKS)]}
             self.audit = next(check for check in self.receipt["checks"] if check["name"] == "rust_plugin_audit")
@@ -643,7 +702,7 @@ def self_test() -> None:
         def write_portable(self, commit=None, *, build_version=None, include_helper=True, helper_bytes=None, include_qt_helper=True, qt_bytes=None):
             with ZipFile(self.zip_path, "w") as archive:
                 archive.writestr("BUILD_INFO.json", b"\xef\xbb\xbf" + public_json({"version": build_version or VERSION, "commit": commit or self.commit, "workflow": self.run}))
-                for name in ("Modhunter.exe", "modhunter-cli.exe", "Install_MO2_Plugin.ps1", "Install_MO2_Plugin.bat"):
+                for name in ("Modhunter.exe", "modhunter-cli.exe", "Install_MO2_Plugin.ps1", "Install_MO2_Plugin.bat", "Check_MO2_Readiness.ps1", "Check_MO2_Readiness.bat", "START-HERE-MO2-253.md", "GameSync-Update-Techniques.md"):
                     archive.writestr(name, self.cli_bytes)
                 if include_helper:
                     archive.writestr(BUNDLED_HELPER, self.cli_bytes if helper_bytes is None else helper_bytes)
@@ -651,6 +710,7 @@ def self_test() -> None:
                     archive.writestr(BUNDLED_QT_HELPER, self.qt_bytes if qt_bytes is None else qt_bytes)
                 archive.writestr("Evidence/native-smoke.json", public_json(self.native))
                 archive.writestr("Evidence/watchtower-smoke.json", public_json(self.watchtower))
+                archive.writestr("Evidence/qt-forward.json", public_json(self.qt_forward))
                 for name, body in self.sources.items():
                     archive.writestr("MO2/mo2_update_arsenal/" + name, body)
             self.refresh_portable_manifest()
@@ -663,6 +723,23 @@ def self_test() -> None:
                 for name, body in bodies.items():
                     archive.writestr(name, body)
                 archive.writestr("SHA256SUMS.txt", b"\xef\xbb\xbf" + manifest.encode("utf-8"))
+
+        def test_forward_runtime_receipt_is_required_and_bound_to_exact_sources(self):
+            import copy
+            original = copy.deepcopy(self.qt_forward)
+            cases = [
+                {"ok": False}, {"realQt": False}, {"ownedSignalSelfTest": False},
+                {"candidateCommit": "b" * 40}, {"helperSha256": "0" * 64},
+                {"sourceDirty": True}, {"runtimeQt": "6.7.1"}, {"skipped": 1},
+                {"checks": original["checks"][:-1]}, {"sourceFiles": {}},
+            ]
+            for changes in cases:
+                with self.subTest(changes=changes):
+                    self.write_json(self.windows / "qt-forward/qt-forward.json", {**original, **changes})
+                    with self.assertRaises(ReleaseError):
+                        prepare(self.artifacts, self.output, self.commit, self.run)
+                    self.assertFalse(self.output.exists())
+            self.write_json(self.windows / "qt-forward/qt-forward.json", original)
 
         def test_portable_manifest_rejects_missing_damaged_mixed_and_duplicate_files(self):
             with ZipFile(self.zip_path) as archive:
@@ -774,7 +851,7 @@ def self_test() -> None:
             self.assertNotIn("release-notes.md", (self.output / "SHA256SUMS.txt").read_text())
             with ZipFile(self.output / VERIFICATION_NAME) as archive:
                 names = archive.namelist()
-                expected = {"BUILD_INFO.json", "windows/native-smoke.json", "windows/watchtower-smoke.json", "mo2/result.json", "mo2/native-receipt.json", "mo2/mo2-fixture.png", "browser/review.png", "browser/watchtower-browser.json"}
+                expected = {"BUILD_INFO.json", "windows/qt-forward.json", "windows/native-smoke.json", "windows/watchtower-smoke.json", "mo2/result.json", "mo2/native-receipt.json", "mo2/mo2-fixture.png", "browser/review.png", "browser/watchtower-browser.json"}
                 expected.update("browser/" + name for name in WATCHTOWER_SCREENSHOTS)
                 self.assertEqual(set(names), expected)
                 self.assertTrue(all(PurePosixPath(name).suffix in (".json", ".png") for name in names))
@@ -914,7 +991,7 @@ def self_test() -> None:
                 prepare(self.artifacts, self.output, self.commit, self.run)
 
         def test_intelligence_and_adapter_sources_are_bound_to_native_proof(self):
-            for name in ("version.py", "gameplay.py", "scanner.py", "native_nexus.py", "qt_bridge.py", "intelligence.py", "plugin_intelligence.py", "mod_health.py",
+            for name in ("version.py", "gameplay.py", "scanner.py", "version_evidence.py", "native_nexus.py", "qt_bridge.py", "intelligence.py", "plugin_intelligence.py", "mod_health.py",
                          "source_adapters.py", "source_registry.py", "update_plan.py",
                          "quick_update.py", "install_brief.py"):
                 with self.subTest(name=name):

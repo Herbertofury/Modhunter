@@ -17,6 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from .version_evidence import compare_versions
+
 API = "https://api.nexusmods.com/v1"
 DAY = 24 * 3600
 MAX_RESPONSE_BYTES = 8_000_000
@@ -38,18 +40,13 @@ class QuotaDepleted(NexusError):
 def normalized_version(value: str) -> tuple[int, ...] | None:
     """Only compare unambiguous numeric versions, never sort alpha builds blindly."""
     v = str(value or "").strip().lower().removeprefix("v")
-    if not re.fullmatch(r"\d+(?:\.\d+){0,5}", v):
+    if len(v) > 96 or not re.fullmatch(r"[0-9]{1,10}(?:\.[0-9]{1,10}){0,5}", v):
         return None
     return tuple(map(int, v.split(".")))
 
 
 def version_verdict(installed: str, latest: str) -> str:
-    a, b = normalized_version(installed), normalized_version(latest)
-    if a is None or b is None:
-        return "review" if latest else "unknown"
-    length = max(len(a), len(b))
-    a, b = a + (0,) * (length - len(a)), b + (0,) * (length - len(b))
-    return "candidate" if b > a else "current" if a == b else "newer-installed"
+    return compare_versions(installed, latest)["verdict"]
 
 
 def summary_from_metadata(item: dict, meta: dict, checked_at: float) -> dict[str, Any]:
@@ -58,8 +55,9 @@ def summary_from_metadata(item: dict, meta: dict, checked_at: float) -> dict[str
     if meta.get("status") not in (None, "published", "Published"):
         return {"verdict": "review", "checkedAt": checked_at, "reason": "Nexus listing status: " + str(meta.get("status"))[:80], "latestVersion": str(meta.get("version") or "")}
     latest = str(meta.get("version") or "")
-    result = version_verdict(item.get("installedVersion", ""), latest)
-    return {"verdict": result, "checkedAt": checked_at, "latestVersion": latest, "latestFileUpdate": meta.get("updated_timestamp"), "reason": "Review exact FILE selection and installed option; project versions alone are not an install guarantee." if result == "candidate" else "Compared Nexus project version with installed metadata.", "source": "nexus-api"}
+    comparison = compare_versions(item.get("installedVersion", ""), latest)
+    result = comparison["verdict"]
+    return {"versionComparison": comparison, "verdict": result, "checkedAt": checked_at, "latestVersion": latest, "latestFileUpdate": meta.get("updated_timestamp"), "reason": "Review exact FILE selection and installed option; project versions alone are not an install guarantee." if result == "candidate" else comparison["reason"], "source": "nexus-api"}
 
 
 class NexusClient:

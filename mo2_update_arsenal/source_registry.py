@@ -21,7 +21,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
-from .scanner import version_verdict
+from .version_evidence import compare_versions
 from .source_adapters import (RustSourceRunner, adapter_capabilities, normalize_adapter_record,
                               CACHE_LIMIT, PUBLIC_API_PROVIDERS, asset_proof)
 
@@ -219,16 +219,17 @@ def release_verdict(item: dict, data: Any, provider: str, project: str) -> dict:
     # Enforce the same check for both providers; missing tag is not a version.
     if not version:
         return {"verdict": "unknown", "reason": "Provider did not publish a release tag"}
-    verdict = version_verdict(str(item.get("installedVersion") or ""), version)
+    comparison = compare_versions(str(item.get("installedVersion") or ""), version)
+    verdict = comparison["verdict"]
     if verdict == "unknown":
         verdict = "review"
     release_url = str(data.get("_links", {}).get("self") or "") if provider == "gitlab" and isinstance(data.get("_links"), dict) else str(data.get("html_url") or "")
     if not release_url.startswith("https://"):
         release_url = str(item.get("source", {}).get("url") or "")
     now = time.time()
-    result = {"verdict": verdict, "latestVersion": version, "source": f"{provider}-release-api",
+    result = {"versionComparison": comparison, "verdict": verdict, "latestVersion": version, "source": f"{provider}-release-api",
               "provider": provider, "releaseUrl": canonical_source_url(release_url),
-              "reason": "Published release tag compared with installed MO2 version; verify exact assets and game runtime.",
+              "reason": comparison["reason"],
               "releaseAssets": _github_assets(project, data) if provider == "github" else [],
               "checkedAt": now, "expiresAt": now + 900, "sourceUrl": canonical_source_url((item.get("source") or {}).get("url") or ""),
               "projectId": project, "releaseId": str(data.get("id") or version), "outcome": "release", "freshness": "fresh",

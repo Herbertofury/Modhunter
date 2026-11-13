@@ -250,7 +250,7 @@ impl CacheStore {
 pub(crate) struct HttpContext<'a> {
     transport: &'a dyn SourceTransport,
     cache: Mutex<CacheStore>,
-    host_cooldowns: Mutex<BTreeMap<String, u64>>,
+    host_cooldowns: Mutex<BTreeMap<String, (u64, u16)>>,
     now: u64,
     deadline: Instant,
     force: bool,
@@ -296,15 +296,19 @@ impl<'a> HttpContext<'a> {
             }
             let mut item = item.clone();
             item.expires_at = item.expires_at.min(item.checked_at.saturating_add(TTL));
-            if item.last_status == 429 && item.retry_at > now {
+            if matches!(item.last_status, 429 | 503) && item.retry_at > now {
                 let host = reqwest::Url::parse(&item.url)
                     .ok()
                     .and_then(|u| u.host_str().map(str::to_owned))
                     .unwrap_or_default();
                 host_cooldowns
                     .entry(host)
-                    .and_modify(|n: &mut u64| *n = (*n).max(item.retry_at))
-                    .or_insert(item.retry_at);
+                    .and_modify(|n: &mut (u64, u16)| {
+                        if item.retry_at > n.0 {
+                            *n = (item.retry_at, item.last_status);
+                        }
+                    })
+                    .or_insert((item.retry_at, item.last_status));
             }
             total += size;
             entries.insert(item.url.clone(), item);
@@ -332,7 +336,7 @@ impl<'a> HttpContext<'a> {
             .host_str()
             .unwrap_or_default()
             .to_owned();
-        if let Some(retry) = self
+        if let Some((retry, status)) = self
             .host_cooldowns
             .lock()
             .expect("cooldown mutex")
@@ -340,9 +344,11 @@ impl<'a> HttpContext<'a> {
             .copied()
             && retry > self.now
         {
-            self.stats.rate_limited.fetch_add(1, Ordering::Relaxed);
+            if status == 429 {
+                self.stats.rate_limited.fetch_add(1, Ordering::Relaxed);
+            }
             return Err(FetchFailure {
-                availability: "rate-limited".into(),
+                availability: status_name(status).into(),
                 reason: "Provider cooldown is active; forced checks also respect it".into(),
                 retry_at: retry,
                 checked_at: self.now,
@@ -482,13 +488,17 @@ impl<'a> HttpContext<'a> {
                         .is_some_and(|n| n == "0"))
             {
                 retry = retry_after(&reply.headers, self.now);
-                self.host_cooldowns
-                    .lock()
-                    .expect("cooldown mutex")
-                    .insert(host, retry);
+                self.hold_host(host, retry, 429);
                 self.stats.rate_limited.fetch_add(1, Ordering::Relaxed);
                 self.remember_failure(url, previous, 429, retry);
                 return Err(FetchFailure { availability: "rate-limited".into(), reason: "Provider rate limit reached; cached observations are not a fresh update verdict".into(), retry_at: retry, checked_at: self.now });
+            }
+            if reply.status == 503 {
+                // GameSync-style service backoff, persisted across scans. A
+                // provider outage is not a rate-limit or a current-version
+                // result, and force-refresh must not create a retry storm.
+                retry = retry_after(&reply.headers, self.now);
+                self.hold_host(host, retry, 503);
             }
             self.remember_failure(url, previous, reply.status, retry);
             return Err(FetchFailure {
@@ -565,6 +575,19 @@ impl<'a> HttpContext<'a> {
             freshness: "fresh",
         })
     }
+    fn hold_host(&self, host: String, until: u64, status: u16) {
+        self.host_cooldowns
+            .lock()
+            .expect("cooldown mutex")
+            .entry(host)
+            .and_modify(|current| {
+                if until > current.0 {
+                    *current = (until, status);
+                }
+            })
+            .or_insert((until, status));
+    }
+
     fn remember_failure(
         &self,
         url: &str,

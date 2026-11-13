@@ -100,7 +100,7 @@ def exercise_native_nexus_binding(gateway, *, expected_qt_version="6.7.1"):
     require(helper is not None, "The native Qt sender helper is unavailable")
     helper_hash = hashlib.sha256(helper.path.read_bytes()).hexdigest()
     require(helper_hash == os.environ["MODHUNTER_NATIVE_SMOKE_QT_BRIDGE_SHA256"], "The loaded Qt helper differs from the compiled fixture helper")
-    require(helper.info == {"abi": 1, "buildQt": expected_qt_version, "runtimeQt": expected_qt_version, "mechanism": "typed-qt-sender"}, helper.info)
+    require(helper.info == {"abi": 1, "buildQt": "6.7.1", "runtimeQt": expected_qt_version, "mechanism": "typed-qt-sender"}, helper.info)
     require(helper.sender(native) is None, "Qt sender leaked outside a callback")
 
     class NexusInterface(QtCore.QObject):

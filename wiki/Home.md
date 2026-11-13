@@ -21,6 +21,8 @@
 | **[Rust Desktop](Rust-Desktop.md)** | Windows and WebView2; compiled EXE/installer | MO2 localhost + Find MO2 |
 | **[MO2 Plugin](MO2-Plugin.md)** | Mod Organizer 2 | Desktop or browser |
 
+**[MO2 2.5.3b12 / Skyrim SE testing](MO2-253-Testing.md)** | **[GameSync update-checking technique map](GameSync-Update-Techniques.md)**
+
 ## ✦ One product · One Command Center
 
 **[Download the Rust Windows app](https://github.com/Herbertofury/Modhunter/releases)** · **[Rust 0.9 installation and test evidence](Rust-Desktop.md)**

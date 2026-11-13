@@ -800,3 +800,47 @@ fn malformed_revalidation_expires_previous_fresh_cache_until_retry() {
     assert_eq!(retry.item_records["row"]["outcome"], "unavailable");
     assert_eq!(mock.count(), 2);
 }
+
+#[test]
+fn service_backoff_is_host_scoped_persistent_and_not_a_rate_limit() {
+    let mock = Mock::new();
+    mock.reply(GH, 200, gh(), &[]);
+    let mut req = request("https://github.com/owner/mod");
+    req.cache = scan_sources_with(&req, &mock, NOW).unwrap().cache;
+    req.force = true;
+    mock.reply(GH, 503, Value::Null, &[("retry-after", "180")]);
+    let failed = scan_sources_with(&req, &mock, NOW + 1).unwrap();
+    assert_eq!(failed.item_records["row"]["availability"], "unavailable");
+    assert!(failed.item_records["row"].get("latestVersion").is_none());
+    req.cache = failed.cache;
+    let mut other = req.items[0].clone();
+    other.id = "another".into();
+    other.source.url = "https://github.com/owner/another".into();
+    req.items.push(other);
+    let held = scan_sources_with(&req, &mock, NOW + 2).unwrap();
+    assert_eq!(mock.count(), 2);
+    assert_eq!(held.item_records["another"]["availability"], "unavailable");
+    assert_eq!(held.item_records["another"]["retryAt"], NOW + 181);
+    assert_eq!(held.stats["rateLimited"], 0);
+    req.items.pop();
+    req.cache = held.cache;
+    mock.reply(GH, 200, gh(), &[]);
+    let recovered = scan_sources_with(&req, &mock, NOW + 182).unwrap();
+    assert_eq!(mock.count(), 3);
+    assert_eq!(recovered.item_records["row"]["freshness"], "fresh");
+}
+
+#[test]
+fn service_retry_after_accepts_http_dates_and_bounds_excessive_delays() {
+    for (header, expected) in [
+        ("Fri, 15 Jan 2027 08:02:00 +0000", NOW + 120),
+        ("999999999", NOW + 3600),
+        ("invalid", NOW + 60),
+    ] {
+        let mock = Mock::new();
+        mock.reply(GH, 503, Value::Null, &[("retry-after", header)]);
+        let result =
+            scan_sources_with(&request("https://github.com/owner/mod"), &mock, NOW).unwrap();
+        assert_eq!(result.item_records["row"]["retryAt"], expected, "{header}");
+    }
+}

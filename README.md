@@ -6,7 +6,7 @@
 
 **Repair your load order. Hunt your unfinished mods. Build a legend.**
 
-[![Edition](https://img.shields.io/badge/Edition-Rust%200.10.0-cfa76d?style=for-the-badge&labelColor=182b30)](wiki/Rust-Desktop.md)
+[![Edition](https://img.shields.io/badge/Edition-Rust%200.10.1-cfa76d?style=for-the-badge&labelColor=182b30)](wiki/Rust-Desktop.md)
 [![MO2](https://img.shields.io/badge/MO2-Optional%20Live%20Link-78cfab?style=for-the-badge&labelColor=182b30)](wiki/MO2-Plugin.md)
 [![Modes](https://img.shields.io/badge/Modes-Siege%20%7C%20Survival%20%7C%20Atlas-9bb8f0?style=for-the-badge&labelColor=182b30)](wiki/Game-Modes.md)
 
@@ -14,7 +14,7 @@
 
 ---
 
-## Rust desktop 0.10.0
+## Rust desktop 0.10.1
 
 The new Windows app runs its desktop shell, profile import/cache engine, connection discovery and native file operations in **Rust**, with WebView2 displaying the complete existing dashboard and games. Running the compiled app requires no Node or Electron. The Python plugin remains MO2's in-process adapter for authenticated Nexus requests and its native download/installer API.
 
@@ -24,6 +24,12 @@ The new Windows app runs its desktop shell, profile import/cache engine, connect
 - Parallel, cached imports support portable and split-path MO2 configurations. In reproducible Linux fixtures, importing 2,500 mods took a median **70.78 ms** in Rust versus **477.03 ms** in the previous Node importer; 10,000 mods took **330.42 ms** versus **1,629.28 ms**. These include fresh metadata-content verification and root plugin inventory on generated fixtures without ESP payloads; they are not deep-audit, Windows GUI startup or Nexus download timings. [Raw measurements and method](native/evidence/import-comparison.json).
 - Profile changes invalidate stale scans and delayed UI replies. Expired queued commands cannot execute later. Requests share exact file lookups, metadata caches and connection resources, while search and background polling avoid redundant work.
 - Windows CI builds the executable and installer and launches the actual WebView2 app; separate browser and MO2 fixture checks enforce their own contracts. Real account downloads, FOMOD decisions and a user's game setup remain environment-specific acceptance checks.
+
+### 0.10.1 MO2 development-runtime readiness and GameSync techniques
+
+The complete portable package now includes **Check_MO2_Readiness.bat** and a [MO2 2.5.3b12 / Skyrim SE testing guide](wiki/MO2-253-Testing.md). A qualified Qt forward-runtime path requires a live owned-signal self-test and separate real Windows Qt 6.11.1/PyQt 6.11.0 compiled-receiver proof using the same packaged DLL. The existing actual MO2 2.5.2 suite remains required; exact beta-12 execution is not claimed without that binary.
+
+New update-checking logic compares validated calendar dates, explicit build numbers and recognized prerelease labels without guessing from page prose. Stable-to-beta transitions require review. Rust adapters now persist provider-wide HTTP 503 Retry-After holds as well as rate limits. The [GameSync transfer map](wiki/GameSync-Update-Techniques.md) distinguishes implemented equivalents from manual/provider-specific coverage and unrelated extension features.
 
 ### 0.10.0 Watchtower: site sign-ins and page tracking
 

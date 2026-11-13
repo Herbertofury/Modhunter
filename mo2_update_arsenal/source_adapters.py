@@ -116,7 +116,7 @@ def _person(raw) -> dict | None:
 
 def normalize_adapter_record(item: dict, raw: dict, *, now=None) -> dict:
     """Whitelist the Rust observation; compare only fresh actual release evidence."""
-    from .scanner import version_verdict
+    from .version_evidence import compare_versions
     from .source_registry import provider_of
     now = time.time() if now is None else now
     source = item.get("source") or {}
@@ -194,8 +194,12 @@ def normalize_adapter_record(item: dict, raw: dict, *, now=None) -> dict:
         result["releaseAssets"].append(safe)
     incompatible = (result.get("compatibility") or {}).get("status") in REVIEW_COMPATIBILITY_STATES
     if outcome == "release" and same_source and valid_time and not expired and freshness in {"fresh", "cached", "revalidated"} and not incompatible:
-        verdict = version_verdict(str(item.get("installedVersion") or ""), str(result.get("latestVersion") or ""))
+        comparison = compare_versions(str(item.get("installedVersion") or ""), str(result.get("latestVersion") or ""))
+        verdict = comparison["verdict"]
+        result["versionComparison"] = comparison
         result["verdict"] = "review" if verdict == "unknown" else verdict
+        if verdict in {"review", "unknown"}:
+            result["reason"] = comparison["reason"]
     elif outcome == "release":
         result.update(verdict="review" if incompatible else "unknown", outcome="review" if incompatible else "unavailable")
         result["reason"] = "Release evidence is stale, incomplete or incompatible; recheck this exact source before selecting an update."

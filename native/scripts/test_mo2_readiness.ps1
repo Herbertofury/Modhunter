@@ -27,3 +27,7 @@ try {
 } finally {
     if (Test-Path -LiteralPath $Root) { Remove-Item -LiteralPath $Root -Recurse -Force }
 }
+# The final child deliberately failed. Declare harness success only after all
+# assertions and cleanup complete, instead of leaking that expected exit code
+# into GitHub Actions' generated pwsh wrapper. A thrown assertion skips this.
+exit 0

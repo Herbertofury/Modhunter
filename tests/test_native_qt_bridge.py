@@ -2,7 +2,8 @@
 
 The compiled cases require MODHUNTER_QT_BRIDGE_TEST_DIR and PyQt6. They never
 make account or HTTP requests; a C++-created fixture QObject exercises the exact
-protected-sender limitation seen on the native MO2 bridge.
+protected-sender limitation seen on the native MO2 bridge, without requiring
+newer PyQt bindings to retain that limitation.
 """
 from __future__ import annotations
 import ast
@@ -295,12 +296,23 @@ class CompiledQtTests(unittest.TestCase):
         self.fixture.modhunter_qt_fixture_destroy(self.pointer)
 
     def test_cpp_receiver_protected_sender_gap_is_closed_by_typed_helper(self):
-        with self.assertRaisesRegex(RuntimeError, "protected"):
-            self.qobject.sender()
+        # Older SIP/PyQt refuses this protected call on C++-owned objects;
+        # PyQt 6.11 can expose it. Neither binding behavior proves the bridge.
+        # Outside signal delivery the only acceptable value is no sender.
+        try:
+            direct_sender = self.qobject.sender()
+        except RuntimeError as error:
+            self.assertIn("protected", str(error))
+        else:
+            self.assertIsNone(direct_sender)
         self.assertIsNone(self.resolver.sender(self.qobject))
         request = UIRequest("nexus-metadata", {"game": "skyrimspecialedition", "modId": 7})
-        self.gateway.request(request)
-        self.source.description.emit("skyrimspecialedition", 7, self.native.calls[-1][-1], {"version": "2"})
+        with patch.object(self.resolver, "sender", wraps=self.resolver.sender) as resolve:
+            self.gateway.request(request)
+            self.source.description.emit("skyrimspecialedition", 7, self.native.calls[-1][-1], {"version": "2"})
+            # The packaged helper must resolve the actual sender inside the
+            # owned C++ callback even when Python exposes QObject.sender().
+            resolve.assert_called_once_with(self.qobject)
         self.assertTrue(request.result["ok"], request.result)
         self.assertEqual(self.gateway.file_transport, "qt-raw-variant")
         self.assertEqual(self.gateway._raw_source, self.source)

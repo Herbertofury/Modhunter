@@ -151,6 +151,28 @@ class FrontendResponsivenessTests(unittest.TestCase):
         self.page.wait_for_function("document.getElementById('livePill').classList.contains('connected')")
         self.page.wait_for_function("window.__ARSENAL_QA__.game()?.profileId==='profile-a'")
 
+    def test_backup_restore_rejects_malformed_preferences_without_partial_commit(self):
+        boot = BOOT.replace("__CATALOG__", json.dumps(catalog())).replace("__FAIL__", "0")
+        html = self.html.replace("<!--__MO2_BOOT__-->", boot)
+        self.page.route("http://backup.fixture.test/", lambda route: route.fulfill(status=200, content_type="text/html", body=html))
+        self.page.goto("http://backup.fixture.test/")
+        self.connected()
+        self.page.wait_for_function("__RESP__.counts['GET progress']>=1")
+        self.page.on("dialog", lambda dialog: dialog.accept())
+        def restore(value):
+            self.page.locator("#importFile").set_input_files({"name":"progress.json", "mimeType":"application/json", "buffer":json.dumps(value).encode()})
+        restore({"catalogId":"profile-a", "rows":{"item-0":{"note":"Preserve my note", "status":"review"}}, "prefs":{"collapsed":[], "query":""}})
+        self.page.wait_for_function("__ARSENAL_QA__.verifyRow('item-0').state.note==='Preserve my note'")
+        before = self.page.evaluate("JSON.stringify(__ARSENAL_QA__.verifyRow('item-0').state)")
+        saved = self.page.evaluate("localStorage.getItem('mo2-update-arsenal:v2:profile-a')")
+        self.assertIsNotNone(saved)
+        restore({"catalogId":"profile-a", "rows":{"item-0":{"note":"Invalid replacement", "status":"done"}}, "prefs":{"collapsed":7}})
+        self.page.wait_for_function("document.getElementById('toastWrap').textContent.includes('Invalid backup preference: collapsed')")
+        self.assertEqual(self.page.evaluate("JSON.stringify(__ARSENAL_QA__.verifyRow('item-0').state)"), before)
+        self.assertEqual(self.page.evaluate("localStorage.getItem('mo2-update-arsenal:v2:profile-a')"), saved)
+        self.page.locator("#search").fill("Unique Fixture 1")
+        self.page.wait_for_function("__ARSENAL_QA__.getSnapshot().search==='Unique Fixture 1'")
+
     def test_initial_connection_failure_recovers_without_reload(self):
         self.open_live(fail=1)
         self.page.wait_for_function("document.getElementById('livePill').textContent.includes('DISCONNECTED')")

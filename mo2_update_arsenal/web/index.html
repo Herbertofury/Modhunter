@@ -1968,7 +1968,32 @@ function exportJSON(){const obj={format:'Mod Update Arsenal Backup',version:1,cr
 function saveFile(name,type,body){const blob=new Blob([body],{type:type+';charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3500)}
 function csvCell(v){return'"'+txt(v).replace(/"/g,'""')+'"'}
 function exportCSV(){const cols=['Priority','Mod','Section','Installed version','Status',(BRIDGE.active||DATA.offline)?'Compatibility Verdict':'1.5.97 Verdict','Type Flags','Exact Source URL','Source Verified','Source Provider','Screenshot Note','User Note','Tested Version','Author'];const csv=[cols.map(csvCell).join(',')];cols.push('Winning light plugins','Winning full plugins','Light overrides','Flag-only candidates','Compaction review','ESLifier changes','Master issues','Plugin checked at','Bugs tab state','Nexus displayed bug count','Bugs checked at');cols.push(...(SOURCES?.csvHeaders||[]));csv[0]=cols.map(csvCell).join(',');for(const m of filtered()){const r=getRow(m.id),s=getSrc(m);const c=[m.priority,m.name,m.group,r.installed||m.installedVersion,getStatus(m),getAudit(m).verdict,m.flags.join(';'),s.verified?s.url:'',s.verified?'yes':'NO',s.label,m.screenshotNote,r.note||'',r.testedVersion||'',m.author];c.push(...(INSIGHTS?.csv(m)||Array(11).fill('')),...(SOURCES?.csv(m)||[]));csv.push(c.map(csvCell).join(','))}saveFile(exportFilename('Visible Mods','csv'),'text/csv','\ufeff'+csv.join('\r\n'));toast('⇩ CSV download requested for '+filtered().length+' visible mods.');}
-async function importJSON(file){if(!file)return;try{const obj=JSON.parse(await file.text());if(obj.catalogId!==DATA.catalogId||!obj.rows||typeof obj.rows!=='object')throw Error('This is not an Update Arsenal progress backup for the current catalog.');const imported=Object.entries(obj.rows).filter(([id])=>ITEM_MAP.has(id));if(!confirm('Restore '+imported.length+' saved mod records? This merges records from the backup into this browser.'))return;for(const[id,v]of imported)if(v&&typeof v==='object'){const row={...STORE.rows[id],...v};markSourceEdit(getRow(id).url,row.url);STORE.rows[id]=row;}if(obj.prefs&&typeof obj.prefs==='object'){const allowed=Object.keys(BASE.prefs);for(const k of allowed)if(k in obj.prefs)STORE.prefs[k]=obj.prefs[k]}save();$('search').value=STORE.prefs.query;applyAppearance();render();toast('✓ Restored '+imported.length+' saved mod records.')}catch(e){toast('⚠ Restore failed: '+e.message)}finally{$('importFile').value=''}}
+async function importJSON(file){
+ if(!file)return;
+ const catalogId=DATA.catalogId,epoch=PROFILE_EPOCH;
+ try{
+  const obj=JSON.parse(await file.text());
+  if(DATA.catalogId!==catalogId||PROFILE_EPOCH!==epoch)throw Error('The active profile changed while reading the backup. Choose the file again for the current profile.');
+  const record=v=>v&&typeof v==='object'&&!Array.isArray(v);
+  if(!record(obj)||obj.catalogId!==catalogId||!record(obj.rows))throw Error('This is not an Update Arsenal progress backup for the current catalog.');
+  const imported=Object.entries(obj.rows).filter(([id])=>ITEM_MAP.has(id));
+  if(imported.some(([,row])=>!record(row)))throw Error('A saved mod record is malformed. Current progress was not changed.');
+  const prefs={};
+  if(obj.prefs!==undefined){
+   if(!record(obj.prefs))throw Error('Backup preferences are malformed. Current progress was not changed.');
+   for(const k of Object.keys(BASE.prefs))if(Object.hasOwn(obj.prefs,k)){
+    const value=obj.prefs[k],base=BASE.prefs[k];
+    const valid=Array.isArray(base)?Array.isArray(value)&&value.every(id=>typeof id==='string'):typeof value===typeof base;
+    if(!valid)throw Error('Invalid backup preference: '+k+'. Current progress was not changed.');
+    prefs[k]=value;
+   }
+  }
+  // Validate the entire merge before touching rows, source revisions or storage.
+  if(!confirm('Restore '+imported.length+' saved mod records? This merges records from the backup into this browser.'))return;
+  for(const[id,value]of imported){const row={...STORE.rows[id],...value};markSourceEdit(getRow(id).url,row.url);STORE.rows[id]=row;}
+  Object.assign(STORE.prefs,prefs);save();$('search').value=STORE.prefs.query;applyAppearance();render();toast('✓ Restored '+imported.length+' saved mod records.');
+ }catch(e){toast('⚠ Restore failed: '+e.message)}finally{$('importFile').value=''}
+}
 // The optional PowerShell bridge is embedded as text, downloaded on demand and never executed by the browser.
 function mo2Open(){ $('mo2Veil').hidden=false; if(MO2_PENDING.length)drawMO2Matcher();else $('mo2Results').textContent=''; }
 function mo2Close(){ $('mo2Veil').hidden=true; }

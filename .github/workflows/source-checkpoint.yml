@@ -1,0 +1,39 @@
+name: Source checkpoint
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, 'upgrade/**']
+    paths:
+      - 'native/**'
+      - 'tests/**'
+      - '.github/workflows/**'
+
+permissions:
+  contents: read
+
+jobs:
+  checkpoint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Preserve tracked source and exact commit history
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/modhunter-source"
+          git bundle create "$RUNNER_TEMP/modhunter-source/Modhunter-source.bundle" HEAD
+          git bundle verify "$RUNNER_TEMP/modhunter-source/Modhunter-source.bundle"
+          git rev-parse HEAD > "$RUNNER_TEMP/modhunter-source/COMMIT.txt"
+          cd "$RUNNER_TEMP/modhunter-source"
+          sha256sum Modhunter-source.bundle COMMIT.txt > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Modhunter-Source-Checkpoint
+          path: ${{ runner.temp }}/modhunter-source/
+          if-no-files-found: error
+          retention-days: 30

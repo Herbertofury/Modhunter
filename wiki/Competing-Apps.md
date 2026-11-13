@@ -43,3 +43,25 @@ Before copying or linking upstream code, pin the component revision, inspect its
 - [ ] Inventory current implementations and owners; propose a narrow schema with migration fixtures.
 - [ ] Test old/new clients, conflicting profile state, offline data, cancellation and idempotent retry.
 - [ ] Benchmark current workflow versus proposed reuse on the same real profile without reducing review fidelity.
+
+
+## WhimWatch: user-requested page-tracking reference
+
+Added **2026-11-13** at the owner's request. [WhimWatch source/README](https://github.com/forthewhimsy/whimwatch/blob/1ec5386f41a485108a67c62732aef17f982298fb/README.md), [package 0.4.2](https://github.com/forthewhimsy/whimwatch/blob/1ec5386f41a485108a67c62732aef17f982298fb/package.json), [MIT license](https://github.com/forthewhimsy/whimwatch/blob/1ec5386f41a485108a67c62732aef17f982298fb/LICENSE). This is a source-reviewed UX/architecture reference, not a proven replacement, runtime test or comparative-performance recommendation.
+
+Useful patterns to evaluate:
+- Creator-owned source links with add/remove/restore and per-site/per-creator opt-outs.
+- Supported links are specific wicked.cc pages, LoversLab file pages and Patreon creator pages, **not arbitrary website monitoring**.
+- Keep installed-pack identity, source evidence and seen state distinct. Timestamp/title heuristics can miss releases or report page changes; do not treat them as authoritative file-version identity.
+- Reuse an explicitly authorized site session within an isolated app browser, with persistent versus memory-only choice, sign-out and visible reauthentication. Cookies can expire; cookie presence is not proof of a valid login or entitlement. Browser login is not an API grant.
+- Preserve last-good observations and distinguish unavailable, login-required, inaccessible, unchanged and verified-new-release states.
+
+Do not copy upstream's account-password workaround, assume access to gated content, export browser credentials, or weaken this project's existing install/profile safeguards. MIT code reuse requires notices and dependency-license review; behavioral reference alone does not authorize a service's automation route.
+
+### Acceptance before adoption
+- [ ] Inventory existing adapters, session owners and user-added-link handling before replacing anything.
+- [ ] Compare existing behavior against the reference using identical public and separately authorized account cases.
+- [ ] Test link removal/opt-out, expired sessions, restart, source changes, cancellation, unchanged downloads and ambiguous releases.
+- [ ] Retain exact release/file identity, failed evidence and last-good data; record latency/memory and correctness together.
+
+Modhunter application: compare against the existing Rust source adapters and Update Workshop; retain MO2's authoritative profile/download/interactive installer path. This reference does not add an adapter or change updater behavior.

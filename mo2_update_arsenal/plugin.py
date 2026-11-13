@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 from datetime import datetime, timezone
@@ -195,10 +196,18 @@ class ModUpdateArsenal(mobase.IPluginTool):
         for name in ("modlist.txt", "plugins.txt", "loadorder.txt", "archives.txt", "lockedorder.txt"):
             src = profile_path / name
             if src.is_file():
-                shutil.copy2(src, path / name)
+                destination = path / name
+                with src.open("rb") as original, destination.open("wb") as output:
+                    shutil.copyfileobj(original, output)
+                    output.flush()
+                    os.fsync(output.fileno())
+                shutil.copystat(src, destination)
                 copied.append(name)
         manifest = {"createdAt": datetime.now(timezone.utc).isoformat(), "profileId": profile_id, "profileName": self.org.profileName(), "files": copied, "purpose": "Pre-update text load order safety snapshot"}
-        (path / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        with (path / "manifest.json").open("w", encoding="utf-8") as output:
+            json.dump(manifest, output, indent=2)
+            output.flush()
+            os.fsync(output.fileno())
         return {"ok": True, "backupPath": str(path), "files": copied}
 
     def _install(self, download_id: int):

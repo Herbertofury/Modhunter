@@ -1,0 +1,22 @@
+# Release receipts hash source bytes across Linux and Windows. Keep those
+# bytes independent of core.autocrlf; do not relax the evidence validators.
+*.py text eol=lf
+*.rs text eol=lf
+*.cpp text eol=lf
+*.h text eol=lf
+*.hpp text eol=lf
+*.js text eol=lf
+*.cjs text eol=lf
+*.mjs text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.ps1 text eol=lf
+*.sh text eol=lf
+Cargo.lock text eol=lf
+# Keep cmd.exe launchers explicit and identical on all checkout platforms too.
+*.bat text eol=crlf

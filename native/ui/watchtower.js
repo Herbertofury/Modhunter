@@ -21,7 +21,7 @@
  function interval(value){return value<60?value+' min':value%1440===0?(value/1440)+' day'+(value===1440?'':'s'):value%60===0?(value/60)+' hr':value+' min'}
  function working(id){return workIds.has(id)}
  function stopped(w){return w.state==='checking'&&!working(w.id)}
- function attention(w){return ATTENTION.has(w.state)||stopped(w)}
+ function needsAttention(w){return ATTENTION.has(w.state)||stopped(w)}
  function needsSession(w){return !!w.requiresSession&&(!w.sessionId||!sessionById.has(w.sessionId))}
  function detailKey(w){return w?JSON.stringify([w.generation,w.operationId,w.latest?.id,w.state,w.seenObservationId,working(w.id),state.settings.hideTitles,state.settings.historyLimit]):'missing'}
  function status(w){
@@ -30,7 +30,7 @@
   if(stopped(w))return ['Check stopped','attention'];
   if(needsSession(w))return ['Choose a session','attention'];
   if(!w.enabled||w.muted)return [w.muted?'Muted':'Paused',''];
-  if(attention(w))return [{signInRequired:'Sign-in needed',challenge:'Verify in browser',unavailable:'Unavailable',selectorMissing:'Region not found',tooLarge:'Choose a smaller region',error:'Check failed',interrupted:'Interrupted'}[w.state],'attention'];
+  if(needsAttention(w))return [{signInRequired:'Sign-in needed',challenge:'Verify in browser',unavailable:'Unavailable',selectorMissing:'Region not found',tooLarge:'Choose a smaller region',error:'Check failed',interrupted:'Interrupted'}[w.state],'attention'];
   if(w.needsCheck||!w.latest)return ['Awaiting first check','new'];
   if(w.hasChanges)return ['Changed','changed'];
   if(w.state==='cancelled')return ['Check cancelled',''];
@@ -74,13 +74,13 @@
   if((filter==='removed')!==!!w.removedAt)return false;
   if(filter==='changed'&&!w.hasChanges)return false;
   if(filter==='new'&&!w.needsCheck&&w.latest)return false;
-  if(filter==='attention'&&!attention(w)&&!needsSession(w))return false;
+  if(filter==='attention'&&!needsAttention(w)&&!needsSession(w))return false;
   if(filter==='paused'&&w.enabled&&!w.muted&&!needsSession(w))return false;
   if($('siteFilter').value&&origin(w.url)!==$('siteFilter').value)return false;
   if($('folderFilter').value&&w.folder!==$('folderFilter').value)return false;
   return !query||index(w).includes(query);
  }
- function rank(w){return w.hasChanges?0:attention(w)||needsSession(w)?1:w.needsCheck?2:working(w.id)?3:!w.enabled||w.muted?5:4}
+ function rank(w){return w.hasChanges?0:needsAttention(w)||needsSession(w)?1:w.needsCheck?2:working(w.id)?3:!w.enabled||w.muted?5:4}
  function watchMarkup(w){
   const label=status(w),isBusy=working(w.id),checked=selected.has(w.id),session=sessionById.get(w.sessionId),canChange=enabled(),isRemoved=!!w.removedAt;
   const key=JSON.stringify([w.generation,w.operationId,w.title,w.folder,w.tags,w.notes,w.enabled,w.muted,w.requiresSession,w.state,w.lastError,w.latest?.id,w.lastSuccessAt,w.seenObservationId,w.hasChanges,w.needsCheck,w.removedAt,w.nextCheckAt,w.retryAt,w.intervalMinutes,session?.label,checked,isBusy,label,state.settings.hideTitles,canChange,Math.floor(Date.now()/60000)]);
@@ -91,7 +91,7 @@
   return {key,html:'<article class="watch-row'+(checked?' selected':'')+(isRemoved?' removed':'')+'" data-watch-id="'+esc(w.id)+'"><input class="watch-check" type="checkbox" data-select="'+esc(w.id)+'" aria-label="Select '+esc(displayTitle(w))+'"'+(checked?' checked':'')+'><div class="row-main"><div class="row-title"><button class="page-name" data-action="detail" data-id="'+esc(w.id)+'">'+esc(displayTitle(w))+'</button><span class="badge '+label[1]+'">'+esc(label[0])+'</span></div><div class="row-meta"><span class="site-label">'+esc(host(w.url))+'</span>'+(w.folder?'<span class="meta-separator">/</span><span>'+esc(w.folder)+'</span>':'')+(w.tags||[]).map(tag=>'<span class="tag">'+esc(tag)+'</span>').join('')+'</div><div class="row-detail">'+esc((w.latest?'Last success '+relative(w.lastSuccessAt):'First successful check establishes a baseline')+' · '+schedule)+(session?' · '+esc(session.label):'')+'</div>'+(w.lastError?'<div class="row-detail error">'+esc(w.lastError)+'</div>':'')+(secondary?'<div class="row-detail">'+esc(secondary)+'</div>':'')+'</div><div class="row-actions">'+actions+'</div></article>'};
  }
  function renderPages(){
-  const active=state.watches.filter(w=>!w.removedAt),removed=state.watches.filter(w=>w.removedAt),changed=active.filter(w=>w.hasChanges),fresh=active.filter(w=>w.needsCheck||!w.latest),attention=active.filter(w=>attention(w)||needsSession(w)),paused=active.filter(w=>!w.enabled||w.muted||needsSession(w));
+  const active=state.watches.filter(w=>!w.removedAt),removed=state.watches.filter(w=>w.removedAt),changed=active.filter(w=>w.hasChanges),fresh=active.filter(w=>w.needsCheck||!w.latest),attention=active.filter(w=>needsAttention(w)||needsSession(w)),paused=active.filter(w=>!w.enabled||w.muted||needsSession(w));
   for(const [id,value] of Object.entries({navAll:active.length,navChanged:changed.length,navNew:fresh.length,navAttention:attention.length,navPaused:paused.length,navRemoved:removed.length,navSessions:state.sessions.length,summaryTotal:active.length,summaryChanged:changed.length,summaryAttention:attention.length}))text(id,value.toLocaleString());
   options($('siteFilter'),[...new Set(state.watches.map(w=>origin(w.url)))].filter(Boolean).sort(),'All sites');options($('folderFilter'),[...new Set(state.watches.map(w=>w.folder))].filter(Boolean).sort(),'All folders');
   const running=(state.work?.active||[]).length,queued=(state.work?.queued||[]).length,stalled=active.some(stopped);

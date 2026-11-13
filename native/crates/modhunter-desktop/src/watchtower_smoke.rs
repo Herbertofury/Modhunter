@@ -339,8 +339,7 @@ fn run(app: &tauri::AppHandle, output: &Path, checks: &mut Vec<Value>) -> Result
     )?;
 
     server.version.store(2, Ordering::Release);
-    load.finished.store(false, Ordering::Release);
-    load.native_completed.store(false, Ordering::Release);
+    load.navigation.lock().map_err(err)?.invalidate();
     page.0.navigate(tracked.clone()).map_err(err)?;
     let changed = observe(&page.0, &load, &tracked, ".release", &[".noise".into()])?;
     record(

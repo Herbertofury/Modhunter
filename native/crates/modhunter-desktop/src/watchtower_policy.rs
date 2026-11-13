@@ -5,6 +5,51 @@ use url::Url;
 
 pub const MAX_RESULT_BYTES: usize = 1_200_000;
 
+/// Readiness belongs to one top-level WebView2 navigation. In particular, the
+/// cancelled initial about:blank must never complete a newer website request.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct NavigationProgress {
+    pub revision: u64,
+    pub navigation_id: Option<u64>,
+    pub website: bool,
+    pub completed: bool,
+    pub success: bool,
+    pub http_status: u16,
+    pub web_error: i32,
+}
+impl NavigationProgress {
+    pub fn invalidate(&mut self) {
+        *self = Self {
+            revision: self.revision.wrapping_add(1),
+            ..Self::default()
+        };
+    }
+    pub fn started(&mut self, navigation_id: u64, website: bool) {
+        self.invalidate();
+        self.navigation_id = Some(navigation_id);
+        self.website = website;
+    }
+    pub fn complete(
+        &mut self,
+        navigation_id: u64,
+        success: bool,
+        http_status: u16,
+        web_error: i32,
+    ) -> bool {
+        if self.navigation_id != Some(navigation_id) {
+            return false;
+        }
+        self.completed = true;
+        self.success = success;
+        self.http_status = http_status;
+        self.web_error = web_error;
+        true
+    }
+    pub fn ready(&self) -> bool {
+        self.website && self.completed && self.success
+    }
+}
+
 pub fn trusted_manager(label: &str, url: &Url) -> bool {
     label == "watchtower" && crate::policy::local_asset(url, "/watchtower.html")
 }
@@ -90,6 +135,42 @@ return result;
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn obsolete_blank_completion_cannot_complete_a_website_navigation() {
+        let mut load = NavigationProgress::default();
+        assert!(!load.complete(1, false, 0, 14));
+        load.started(1, false);
+        load.started(2, true);
+        assert!(!load.complete(1, false, 0, 14));
+        assert!(!load.completed);
+        assert!(load.complete(2, true, 200, 0));
+        assert!(load.ready());
+        let complete = load.clone();
+        assert!(!load.complete(1, false, 0, 14));
+        assert_eq!(load, complete);
+        load.started(3, true);
+        assert!(!load.ready());
+        assert!(!load.complete(2, true, 200, 0));
+    }
+    #[test]
+    fn blank_success_and_same_url_reload_require_their_own_readiness() {
+        let mut load = NavigationProgress::default();
+        load.started(4, false);
+        load.complete(4, true, 0, 0);
+        assert!(!load.ready());
+        load.started(5, true);
+        load.complete(5, true, 200, 0);
+        let revision = load.revision;
+        load.invalidate();
+        assert_ne!(revision, load.revision);
+        assert!(!load.ready());
+        assert!(!load.complete(5, true, 200, 0));
+        load.started(6, true);
+        load.complete(6, false, 403, 9);
+        assert!(!load.ready());
+        assert_eq!(load.http_status, 403);
+        assert_eq!(load.web_error, 9);
+    }
     #[test]
     fn management_authority_requires_exact_label_origin_and_document() {
         assert!(trusted_manager(

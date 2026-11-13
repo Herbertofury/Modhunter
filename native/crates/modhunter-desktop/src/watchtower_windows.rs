@@ -20,7 +20,7 @@ use std::{
 };
 use tauri::{
     Emitter, Manager, Webview, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
-    webview::{NewWindowFeatures, NewWindowResponse, PageLoadEvent, PermissionResponse},
+    webview::{NewWindowFeatures, NewWindowResponse, PermissionResponse},
 };
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_notification::NotificationExt;
@@ -120,11 +120,7 @@ impl SiteContext {
 }
 #[derive(Default)]
 struct Load {
-    revision: AtomicU64,
-    finished: AtomicBool,
-    native_completed: AtomicBool,
-    native_success: AtomicBool,
-    http_status: AtomicU64,
+    navigation: Mutex<policy::NavigationProgress>,
     native_error: Mutex<Option<String>>,
 }
 pub struct WatchRuntime {
@@ -784,7 +780,6 @@ fn site_window(
     let nav_context = context.clone();
     let popup_app = app.clone();
     let popup_context = context.clone();
-    let load_state = load.clone();
     let initial = Url::parse("about:blank").expect("literal");
     let popup = features.is_some();
     let mut builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(initial))
@@ -816,14 +811,6 @@ fn site_window(
                     "Modhunter · {}",
                     event.url().origin().ascii_serialization()
                 ));
-            }
-            if event.event() == PageLoadEvent::Started {
-                load_state.revision.fetch_add(1, Ordering::AcqRel);
-                load_state.finished.store(false, Ordering::Release);
-                load_state.native_completed.store(false, Ordering::Release);
-                load_state.http_status.store(0, Ordering::Release);
-            } else {
-                load_state.finished.store(true, Ordering::Release);
             }
         })
         .on_new_window(move |target, features| {
@@ -870,28 +857,64 @@ fn site_window(
     }
     let window = builder.build().map_err(err)?;
     let native_load = load.clone();
-    window.with_webview(move|platform|{
-        let recorded=native_load.clone();
-        let result=(||->windows_core::Result<()>{unsafe{
-            let webview=platform.controller().CoreWebView2()?;
-            let handler=webview2_com::NavigationCompletedEventHandler::create(Box::new(move|_,args|{
-                if let Some(args)=args{
-                    let mut success=windows_core::BOOL(0);
-                    let valid=args.IsSuccess(&mut success).is_ok();
-                    let mut status=0;
-                    if let Ok(extended)=args.cast::<webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2NavigationCompletedEventArgs2>(){let _=extended.HttpStatusCode(&mut status);}
-                    recorded.native_success.store(valid&&success.as_bool(),Ordering::Release);
-                    recorded.http_status.store(status.max(0) as u64,Ordering::Release);
-                    recorded.native_completed.store(true,Ordering::Release);
+    window
+        .with_webview(move |platform| {
+            let starting_load = native_load.clone();
+            let completed_load = native_load.clone();
+            let result = (|| -> windows_core::Result<()> {
+                unsafe {
+                    let webview = platform.controller().CoreWebView2()?;
+                    let starting = webview2_com::NavigationStartingEventHandler::create(Box::new(
+                        move |_, args| {
+                            if let Some(args) = args {
+                                let mut id = 0;
+                                args.NavigationId(&mut id)?;
+                                let mut uri = windows_core::PWSTR::null();
+                                args.Uri(&mut uri)?;
+                                let website = webview2_com::take_pwstr(uri) != "about:blank";
+                                if let Ok(mut progress) = starting_load.navigation.lock() {
+                                    progress.started(id, website);
+                                }
+                            }
+                            Ok(())
+                        },
+                    ));
+                    let mut token = 0;
+                    webview.add_NavigationStarting(&starting, &mut token)?;
+                    let completed = webview2_com::NavigationCompletedEventHandler::create(Box::new(
+                        move |_, args| {
+                            if let Some(args) = args {
+                                let mut id = 0;
+                                args.NavigationId(&mut id)?;
+                                let mut success = windows_core::BOOL(0);
+                                let valid = args.IsSuccess(&mut success).is_ok();
+                                let mut status = 0;
+                                let mut web_error = Default::default();
+                                let _ = args.WebErrorStatus(&mut web_error);
+                                if let Ok(extended) = args.cast::<webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2NavigationCompletedEventArgs2>() {
+                                    let _ = extended.HttpStatusCode(&mut status);
+                                }
+                                if let Ok(mut progress) = completed_load.navigation.lock() {
+                                    progress.complete(id, valid && success.as_bool(), u16::try_from(status).unwrap_or(0), web_error.0);
+                                }
+                            }
+                            Ok(())
+                        },
+                    ));
+                    webview.add_NavigationCompleted(&completed, &mut token)?;
+                    Ok(())
                 }
-                Ok(())
-            }));
-            let mut token=0;
-            webview.add_NavigationCompleted(&handler,&mut token)?;
-            Ok(())
-        }})();
-        if let Err(error)=result&&let Ok(mut message)=native_load.native_error.lock(){*message=Some(format!("Could not observe browser navigation: {error}"));}
-    }).map_err(|error|{let _=window.close();err(error)})?;
+            })();
+            if let Err(error) = result
+                && let Ok(mut message) = native_load.native_error.lock()
+            {
+                *message = Some(format!("Could not observe browser navigation: {error}"));
+            }
+        })
+        .map_err(|error| {
+            let _ = window.close();
+            err(error)
+        })?;
     state.windows.lock().map_err(err)?.insert(
         label.clone(),
         SiteWindow {
@@ -974,14 +997,11 @@ fn wait_loaded(
         if let Some(error) = load.native_error.lock().map_err(err)?.as_ref() {
             return Err(error.clone());
         }
-        if load.finished.load(Ordering::Acquire)
-            && load.native_completed.load(Ordering::Acquire)
+        let progress = load.navigation.lock().map_err(err)?.clone();
+        if progress.website
+            && progress.completed
             && window.url().map_err(err)?.as_str() != "about:blank"
         {
-            if !load.native_success.load(Ordering::Acquire) {
-                return Err("The website connection failed or navigation was blocked. The last successful result is retained.".into());
-            }
-            let revision = load.revision.load(Ordering::Acquire);
             let settled = Instant::now() + Duration::from_millis(350);
             while Instant::now() < settled.min(deadline) {
                 if cancel.load(Ordering::Acquire) {
@@ -989,12 +1009,15 @@ fn wait_loaded(
                 }
                 std::thread::sleep(Duration::from_millis(25));
             }
-            if revision == load.revision.load(Ordering::Acquire)
-                && load.finished.load(Ordering::Acquire)
-                && load.native_completed.load(Ordering::Acquire)
-                && load.native_success.load(Ordering::Acquire)
-            {
-                return Ok(());
+            let current = load.navigation.lock().map_err(err)?.clone();
+            if current == progress {
+                if current.ready() {
+                    return Ok(());
+                }
+                return Err(format!(
+                    "The website connection failed or navigation was blocked (WebView2 error {}, HTTP {}). The last successful result is retained.",
+                    current.web_error, current.http_status
+                ));
             }
         }
         std::thread::sleep(Duration::from_millis(40));
@@ -1019,7 +1042,7 @@ fn capture(
     deadline: Instant,
 ) -> Result<PageObservation> {
     wait_loaded(window, load, cancel, deadline)?;
-    let revision = load.revision.load(Ordering::Acquire);
+    let navigation = load.navigation.lock().map_err(err)?.clone();
     let mut before = window.url().map_err(err)?;
     before.set_fragment(None);
     let value = eval_json(
@@ -1030,15 +1053,11 @@ fn capture(
     )?;
     let mut result: PageObservation = serde_json::from_value(value)
         .map_err(|_| "The page capture was incomplete. Try a smaller page region.".to_string())?;
-    result.http_status = u16::try_from(load.http_status.load(Ordering::Acquire))
-        .ok()
-        .filter(|status| *status > 0);
+    result.http_status = Some(navigation.http_status).filter(|status| *status > 0);
     let mut after = window.url().map_err(err)?;
     after.set_fragment(None);
-    if load.revision.load(Ordering::Acquire) != revision
-        || !load.finished.load(Ordering::Acquire)
-        || !load.native_completed.load(Ordering::Acquire)
-        || !load.native_success.load(Ordering::Acquire)
+    if *load.navigation.lock().map_err(err)? != navigation
+        || !navigation.ready()
         || before != after
         || result.final_url != before.as_str()
     {

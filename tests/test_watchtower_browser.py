@@ -104,6 +104,22 @@ class WatchtowerBrowserTests(unittest.TestCase):
         self.context.route("**/*", route)
 
     def tearDown(self):
+        result = self._outcome.result
+        failed = self.errors or any(test is self for test, _ in result.errors + result.failures)
+        if failed:
+            try:
+                diagnostics = self.page.evaluate("""() => ({
+                    messages: [...document.querySelectorAll('.notice, .form-error, #toast')]
+                        .filter(e => !e.hidden && e.getClientRects().length)
+                        .map(e => ({id: e.id, text: e.textContent.trim().slice(0, 1000)})),
+                    dialogs: [...document.querySelectorAll('dialog[open]')].map(e => e.id),
+                    commands: (window.__WATCH_FIX__?.calls || []).slice(-10).map(c => c.kind),
+                    active: window.__WATCH_FIX__?.active || {},
+                })""")
+                print(f"\nWatchtower failure context ({self._testMethodName}): {json.dumps(diagnostics)}", flush=True)
+                self.screenshot(f"watchtower-failed-{self._testMethodName.removeprefix('test_')}.png")
+            except Exception as error:
+                print(f"\nWatchtower failure diagnostics unavailable: {error}", flush=True)
         self.context.close()
         self.assertEqual(self.errors, [])
 

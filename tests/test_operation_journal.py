@@ -108,6 +108,31 @@ class OperationJournalTests(unittest.TestCase):
         restored = OperationJournal(self.path, "third")
         self.assertEqual(restored.profile("p1")["count"], 2)
 
+    def test_torn_utf8_tail_preserves_receipts_and_allows_future_append(self):
+        journal = OperationJournal(self.path, "old")
+        original = {**ticket(), "modName": "Étoile 雪"}
+        self.assertTrue(journal.record(original, 5))
+        with self.path.open("ab") as stream:
+            stream.write(b'{"ticket":{"modName":"\xe9\x9b')
+        reboot = OperationJournal(self.path, "new")
+        prior = reboot.profile("p1")["records"]
+        self.assertEqual([row["modName"] for row in prior], ["Étoile 雪"])
+        self.assertFalse(prior[0]["actionable"])
+        self.assertTrue(reboot.record(ticket(operation="next"), 6))
+        restored = OperationJournal(self.path, "third").profile("p1")
+        self.assertEqual(restored["count"], 2)
+        self.assertTrue(all(not row["actionable"] for row in restored["records"]))
+
+    def test_invalid_utf8_middle_line_does_not_hide_later_valid_receipts(self):
+        journal = OperationJournal(self.path, "old")
+        self.assertTrue(journal.record(ticket(), 5))
+        with self.path.open("ab") as stream:
+            stream.write(b'{"invalid":"\xff"}\n')
+        self.assertTrue(journal.record(ticket("p2", "second"), 6))
+        restored = OperationJournal(self.path, "new")
+        self.assertEqual(restored.profile("p1")["count"], 1)
+        self.assertEqual(restored.profile("p2")["count"], 1)
+
     def test_identical_callback_retries_failed_durable_write(self):
         journal = OperationJournal(self.path, "session")
         with patch.object(Path, "open", side_effect=OSError("fixture write unavailable")):

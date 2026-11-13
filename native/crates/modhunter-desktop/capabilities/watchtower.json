@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "watchtower",
+  "description": "Only the bundled Watchtower manager can edit page watches and native site sessions. Website views receive no native permissions.",
+  "local": true,
+  "webviews": ["watchtower"],
+  "permissions": ["allow-watchtower-command", "core:event:allow-listen", "core:event:allow-unlisten"]
+}

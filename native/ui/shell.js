@@ -15,6 +15,7 @@
   $('sourceText').title=state.connectionError||$('sourceText').textContent;
   $('connect').textContent=busy.has('connect')?'CONNECTING…':connected?'LINKED':'CONNECT';
   $('connect').disabled=busy.has('connect');
+  $('openWatchtower').disabled=busy.has('watchtower');
   $('discover').disabled=busy.has('discover');
   $('discover').textContent=busy.has('discover')?'FINDING…':'FIND MO2';
   $('importMo2').disabled=!!state.endpoint||!!state.importing||busy.has('importMo2')||busy.has('refreshProfile');
@@ -54,7 +55,7 @@
   return true;
  }
  async function command(kind,value){
-  const exclusive=['connect','discover','importMo2','refreshProfile','pluginAudit','cancelImport','configureIni','configureMods','configureEslifierData','clearEslifierData'].includes(kind);
+  const exclusive=['watchtower','connect','discover','importMo2','refreshProfile','pluginAudit','cancelImport','configureIni','configureMods','configureEslifierData','clearEslifierData'].includes(kind);
   if(exclusive&&busy.has(kind))return null;
   if(exclusive){busy.add(kind);render(state)}
   try{
@@ -66,7 +67,7 @@
   }catch(error){message(String(error));return null}
   finally{if(exclusive){busy.delete(kind);render(state)}}
  }
- for(const [id,kind,value] of [['newDash','new','dashboard'],['newSiege','new','siege'],['newRealm','new','realm'],['back','back'],['forward','forward'],['reload','reload'],['open','external'],['copy','copy'],['disconnect','disconnect'],['importMo2','importMo2'],['refreshProfile','refreshProfile'],['pluginAudit','pluginAudit'],['configureIni','configureIni'],['configureMods','configureMods'],['clearPaths','clearPaths'],['configureEslifierData','configureEslifierData'],['clearEslifierData','clearEslifierData']])$(id).onclick=()=>command(kind,value);
+ for(const [id,kind,value] of [['openWatchtower','watchtower'],['newDash','new','dashboard'],['newSiege','new','siege'],['newRealm','new','realm'],['back','back'],['forward','forward'],['reload','reload'],['open','external'],['copy','copy'],['disconnect','disconnect'],['importMo2','importMo2'],['refreshProfile','refreshProfile'],['pluginAudit','pluginAudit'],['configureIni','configureIni'],['configureMods','configureMods'],['clearPaths','clearPaths'],['configureEslifierData','configureEslifierData'],['clearEslifierData','clearEslifierData']])$(id).onclick=()=>command(kind,value);
  $('connect').onclick=()=>command('connect',$('endpoint').value.trim());
  $('discover').onclick=()=>command('discover');
  $('cancelImport').onclick=()=>command('cancelImport',{epoch:state.epoch,importOperationId:state.importOperationId});

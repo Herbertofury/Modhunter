@@ -58,6 +58,26 @@ REQUIRED_MO2_CHECKS = {
     "queued_refresh", "queued_focus", "native_dispatch_thread", "native_view_selection",
     "native_window_screenshot", "compact_game_response", "rust_cli_live_probe", "rust_plugin_audit",
 }
+REQUIRED_WATCHTOWER_CHECKS = {
+    "trusted_manager_ipc", "remote_ipc_denied", "session_persistent_reopen",
+    "session_account_isolation", "session_reset_generation", "authenticated_page_capture",
+    "authenticated_page_change", "selected_text_capture", "incomplete_capture_rejected",
+    "stale_operation_rejected", "cancelled_capture_rejected", "same_session_popup",
+    "public_https_end_to_end",
+}
+REQUIRED_WATCHTOWER_BROWSER_CHECKS = {
+    "page_add_and_targeted_check", "sessions_and_reset", "observation_acknowledgment_and_restore",
+    "import_preview_and_export", "preferences_and_mutes", "native_error_recovery",
+    "stale_state_and_focus", "renderer_boundary", "private_text_and_untrusted_content",
+    "responsive_complete_list",
+}
+WATCHTOWER_BROWSER_SOURCES = (
+    "native/ui/watchtower.html", "native/ui/watchtower.css", "native/ui/watchtower.js",
+    "tests/fixtures/watchtower_native_fixture.js", "tests/test_watchtower_browser.py",
+)
+WATCHTOWER_SCREENSHOTS = {
+    "watchtower-pages.png", "watchtower-sessions.png", "watchtower-details.png", "watchtower-mobile.png",
+}
 FORBIDDEN_JSON_KEYS = {
     "token", "accesstoken", "refreshtoken", "idtoken", "apikey", "authorization",
     "password", "passwd", "clientsecret", "cookie", "setcookie", "xarsenaltoken",
@@ -222,6 +242,48 @@ def validate_native_report(report: dict) -> None:
     require(report.get("gameViewNativeIpcDenied") in ("1", True), "Game-view native IPC isolation was not verified")
 
 
+def validate_watchtower_report(report: dict) -> None:
+    require(report.get("ok") is True and report.get("nativeWebView2") is True,
+            "Native Watchtower WebView2 fixture did not pass")
+    require(type(report.get("watchtowerSchema")) is int and report["watchtowerSchema"] == 1,
+            "Native Watchtower receipt must use schema 1")
+    checks = report.get("checks")
+    require(isinstance(checks, list) and bool(checks), "Native Watchtower receipt contains no checks")
+    require(all(isinstance(check, dict) and isinstance(check.get("name"), str) and bool(check["name"])
+                and check.get("passed") is True for check in checks),
+            "Native Watchtower receipt contains a failed or invalid check")
+    names = [check["name"] for check in checks]
+    require(len(names) == len(set(names)), "Native Watchtower receipt repeats a check")
+    missing = REQUIRED_WATCHTOWER_CHECKS - set(names)
+    require(not missing, "Native Watchtower receipt omitted required passing checks: " + ", ".join(sorted(missing)))
+
+
+def validate_watchtower_browser(report: dict, commit: str) -> None:
+    require(report.get("ok") is True and report.get("realChromium") is True,
+            "Watchtower Chromium interaction proof did not pass")
+    require(type(report.get("watchtowerSchema")) is int and report["watchtowerSchema"] == 1,
+            "Watchtower browser receipt must use schema 1")
+    require(report.get("candidateCommit") == commit and report.get("sourceDirty") is False,
+            "Watchtower browser proof does not identify the clean tested build commit")
+    sources = report.get("sourceFiles")
+    require(isinstance(sources, dict) and set(sources) == set(WATCHTOWER_BROWSER_SOURCES)
+            and all(sources[name] == file_hash(ROOT / name) for name in WATCHTOWER_BROWSER_SOURCES),
+            "Watchtower browser proof does not match the shipped UI and acceptance source")
+    checks = report.get("checks")
+    require(isinstance(checks, list) and bool(checks)
+            and all(isinstance(check, dict) and isinstance(check.get("name"), str) and bool(check["name"])
+                    and check.get("passed") is True for check in checks),
+            "Watchtower browser proof contains a failed or invalid check")
+    names = [check["name"] for check in checks]
+    require(len(names) == len(set(names)), "Watchtower browser proof repeats a check")
+    missing = REQUIRED_WATCHTOWER_BROWSER_CHECKS - set(names)
+    require(not missing, "Watchtower browser proof omitted required passing checks: " + ", ".join(sorted(missing)))
+    screenshots = report.get("screenshots")
+    require(isinstance(screenshots, list) and all(isinstance(name, str) for name in screenshots)
+            and WATCHTOWER_SCREENSHOTS.issubset(set(screenshots)),
+            "Watchtower browser proof omitted required screenshots")
+
+
 def validate_mo2(result: dict, receipt: dict) -> None:
     require(result.get("ok") is True and result.get("phase") == "completed", "MO2 orchestration did not complete successfully")
     require(result.get("nativeExitCode") == 0 and not isinstance(result.get("nativeExitCode"), bool), "MO2 did not exit cleanly with code zero")
@@ -307,7 +369,7 @@ def portable_checksums(archive: ZipFile, index: dict) -> dict[str, str]:
     return expected
 
 
-def portable_contents(path: Path, commit: str, run_url: str, native_report: dict, mo2_result: dict, qt_helper_hash: str) -> dict[str, bytes]:
+def portable_contents(path: Path, commit: str, run_url: str, native_report: dict, watchtower_report: dict, mo2_result: dict, qt_helper_hash: str) -> dict[str, bytes]:
     public: dict[str, bytes] = {}
     try:
         with ZipFile(path) as archive:
@@ -323,7 +385,7 @@ def portable_contents(path: Path, commit: str, run_url: str, native_report: dict
                 require(not stat.S_ISLNK(entry.external_attr >> 16), "Linked member in portable archive")
                 index[name] = entry
                 windows_names.add(name.casefold())
-            for name in ("BUILD_INFO.json", "Modhunter.exe", "modhunter-cli.exe", BUNDLED_HELPER, BUNDLED_QT_HELPER, "Install_MO2_Plugin.ps1", "Install_MO2_Plugin.bat", "Evidence/native-smoke.json"):
+            for name in ("BUILD_INFO.json", "Modhunter.exe", "modhunter-cli.exe", BUNDLED_HELPER, BUNDLED_QT_HELPER, "Install_MO2_Plugin.ps1", "Install_MO2_Plugin.bat", "Evidence/native-smoke.json", "Evidence/watchtower-smoke.json"):
                 require(name in index and not index[name].is_dir() and index[name].file_size > 0, f"Portable package is missing {name}")
             require(archive.testzip() is None, "Portable ZIP failed its CRC check")
             digests = portable_checksums(archive, index)
@@ -333,6 +395,8 @@ def portable_contents(path: Path, commit: str, run_url: str, native_report: dict
             require(str(build.get("workflow", "")).rstrip("/") == run_url.rstrip("/"), "Portable BUILD_INFO identifies a different workflow run")
             embedded_native = json_object(archive.read(index["Evidence/native-smoke.json"]), "portable native-smoke.json")
             require(embedded_native == native_report, "Portable native smoke differs from the Windows job receipt")
+            embedded_watchtower = json_object(archive.read(index["Evidence/watchtower-smoke.json"]), "portable watchtower-smoke.json")
+            require(embedded_watchtower == watchtower_report, "Portable Watchtower smoke differs from the Windows job receipt")
             # Both files come from this portable job's build. The separate MO2
             # job binds its installed helper to its own compiled CLI in its
             # receipt; independent Windows builds need not be byte-identical.
@@ -370,7 +434,17 @@ The Windows desktop, MO2 profile import/cache engine, connection checks, tab lif
 
 MO2's Python/Qt plugin remains the in-process adapter for MO2's authenticated Nexus connection, native downloads, interactive FOMOD installer, focus and verified rewards. Dashboard/game presentation remains HTML/CSS/JavaScript.
 
-## Faster refreshes, cancelable work and reliable source changes
+## Watchtower: site sign-ins and page tracking
+
+- **Watchtower** is a native page and session manager alongside the existing updater. Add public HTTPS release pages, creator feeds or changelogs, choose a named site session when needed, and organize pages with folders, tags, search and filters.
+- Sign in on the website itself in an isolated WebView2 profile. Remembered sessions persist across launches; non-remembered sessions use a temporary on-disk profile for the app run and a fresh profile next launch. Reset closes its windows, advances the session generation and rejects old work. Session confirmation is your readiness indication, not a guarantee of page entitlement.
+- The first complete successful observation establishes a baseline. Later checks retain changed text/history and explicit per-observation acknowledgment with guarded undo. Optional CSS region/ignore selectors keep comparisons focused. Failed, incomplete, canceled or stale captures preserve last-good data.
+- Checks are manual by default. Optional launch/background due checks run while Modhunter is open with bounded work and site pacing. Pause/mute affects execution, removed pages are recoverable, and import previews validate/deduplicate data before applying it. Exports contain watchlist data, never browser credentials.
+- WhimWatch 0.4.2's account/page-management behavior was statically inspected across its exact uploaded asset and all 96 first-party source files. Modhunter independently implements the relevant workflow; the reference's Sims-specific direct installer and assets are not included. MO2 continues to own Nexus authentication, exact-file downloads, FOMOD choices and installation. A changed page is an observation, not a verified mod update.
+
+See the [Watchtower guide]({repository_url}/blob/{commit}/wiki/Watchtower.md) and [pinned reference audit and acceptance scope]({repository_url}/blob/{commit}/native/evidence/whimwatch-parity-0.10.0.md).
+
+## Preserved refresh speed, cancelable work and reliable source changes
 
 - Repeated MO2 snapshot requests reuse one complete encoded catalog for the same observed state. Encoding runs outside the native execution guard; profile, source, metadata and audit changes invalidate the response, and health freshness remains bounded. Ordinary Chronicle saves avoid rebuilding the catalog.
 - The complete checklist and Workshop reuse unchanged row markup as well as DOM nodes. Catalog facts, row edits, source expiry and cooldown changes invalidate the relevant caches. Download controls retain their focus through row updates and moves. Every matching record remains available without virtualization or record caps.
@@ -400,11 +474,13 @@ JSON, CSV and PowerShell exports are saved to Windows Downloads with unique file
 - Rust tests, formatting and Clippy, Python MO2 lifecycle/source/cache tests, frontend runtime checks, and dashboard interaction checks in real Chromium. Cancellation tests verify explicit interruption without partial success and successful reuse of the same engine.
 - The shipped plugin installer under Windows PowerShell 5.1: fresh installation, upgrade/progress preservation, rejected incomplete or mixed packages, source-tree installation, exact version output and linked-directory handling.
 - A compiled Windows application running in real WebView2: fixture-profile import, rendered dashboard, actual backup export/readback, and denial of toolbar-native commands from the game view.
+- The same compiled application running a required native Watchtower fixture: account isolation, remembered-profile close/reopen within one process, generation-selected fresh profiles, same-session popups, authenticated page capture and changed content, selected text, incomplete/stale/canceled rejection, and denied remote IPC. Account checks use internally owned loopback pages and synthetic sign-in state; the reopen check does not restart the application. A separate anonymous `https://example.com/` check runs through production WebView2 capture and durable WatchStore baseline completion. No real website account is used.
+- The shipped Watchtower interface in real Chromium with a fixture native-command adapter, covering page/session actions, history, import preview, error recovery and responsive layout. This renderer proof is separate from native browser-profile proof.
 - The production plugin inside official **MO2 2.5.2**, using a disposable fixture game/profile: native initialization, real Qt dispatch, profile snapshot, protected loopback requests, row focus/selection, a native screenshot, and a compiled Rust CLI health probe against that running service. Its bundled Rust helper also completed the real plugin-audit endpoint, decorated both fixture mods, and verified the header and fresh SHA256 of an inert disabled plugin within a bounded background job.
 - The compiled Qt 6.7.1 helper loaded against MO2's existing Qt runtime. Synthetic metadata passed through the actual MO2-created C++ repository QObject, captured the Qt sender, and completed the raw JSON file callback while rejecting unowned and cancelled requests. This binding fixture makes no Nexus account or network requests and does not exercise authenticated downloads.
-- Release preparation verifies the commit inside the portable ZIP, every internal package checksum, matching native receipts, matching tested MO2 source hashes, complete passing required checks, and nonempty valid screenshot evidence before staging these files.
+- Release preparation verifies the commit inside the portable ZIP, every internal package checksum, matching dashboard and Watchtower native receipts, matching tested MO2 source hashes, complete passing required checks, and nonempty valid screenshot evidence before staging these files.
 
-The native MO2 fixture does not sign into Nexus, download mod archives, exercise account-specific callbacks or FOMOD choices, or launch an owned game. Its synthetic game does not prove ESL eligibility, conversion safety or the behavior of a populated personal installation. The application is not code-signed.
+The native MO2 fixture does not sign into Nexus, download mod archives, exercise account-specific callbacks or FOMOD choices, or launch an owned game. Its synthetic game does not prove ESL eligibility, conversion safety or the behavior of a populated personal installation. The Watchtower fixture does not prove each provider's OAuth, 2FA, challenge or permission-specific page behavior; the WhimWatch reference was not run. The application is not code-signed.
 
 The 0.9.2 delivery comparison uses the actual Python loopback HTTP service with complete generated 2,500- and 10,000-mod catalogs, local Chronicle writes and byte-for-byte response equivalence. The browser comparison measures complete-list changes against published 0.9.1. Rust audit comparison verifies that bounded cancellation preserves all non-timing results and hashes. These component measurements exclude Nexus/download speed, FOMOD installation and a user's actual mod list; they do not guarantee timings on other PCs. See the [delivery evidence]({repository_url}/blob/{commit}/native/evidence/mo2-catalog-delivery-comparison-0.9.2.json), [audit evidence]({repository_url}/blob/{commit}/native/evidence/plugin-audit-comparison-0.9.2.json) and the exact-run dashboard comparison in the verification ZIP.
 
@@ -434,13 +510,20 @@ def prepare(artifacts_dir: Path, output_dir: Path, commit: str, run_url: str) ->
             f"NSIS installer must be the nonempty {INSTALLER_NAME} from this release")
     native_report = read_json(windows / "native-smoke/native-smoke.json")
     validate_native_report(native_report)
+    watchtower_report = read_json(windows / "watchtower-smoke/watchtower-smoke.json")
+    validate_watchtower_report(watchtower_report)
     mo2_result = read_json(mo2 / "result.json")
     mo2_receipt = read_json(mo2 / "native-receipt.json")
     validate_mo2(mo2_result, mo2_receipt)
     qt_helper = regular_file(windows / "qt-bridge/Release/modhunter-qt-bridge.dll")
     require(qt_helper.stat().st_size > 0, "The same Windows job's compiled Qt helper is empty")
-    public = portable_contents(portable, commit, run_url, native_report, mo2_result, file_hash(qt_helper))
-    public.update({"windows/native-smoke.json": public_json(native_report), "mo2/result.json": public_json(mo2_result), "mo2/native-receipt.json": public_json(mo2_receipt), "mo2/mo2-fixture.png": png_bytes(mo2 / "mo2-fixture.png")})
+    public = portable_contents(portable, commit, run_url, native_report, watchtower_report, mo2_result, file_hash(qt_helper))
+    public.update({"windows/native-smoke.json": public_json(native_report), "windows/watchtower-smoke.json": public_json(watchtower_report), "mo2/result.json": public_json(mo2_result), "mo2/native-receipt.json": public_json(mo2_receipt), "mo2/mo2-fixture.png": png_bytes(mo2 / "mo2-fixture.png")})
+    watchtower_browser = read_json(browser / "watchtower-browser.json")
+    validate_watchtower_browser(watchtower_browser, commit)
+    public["browser/watchtower-browser.json"] = public_json(watchtower_browser)
+    for name in WATCHTOWER_SCREENSHOTS:
+        public["browser/" + name] = png_bytes(browser / name)
     dashboard_benchmark = browser / "dashboard-render-comparison.json"
     if dashboard_benchmark.exists():
         benchmark = read_json(dashboard_benchmark)
@@ -495,9 +578,18 @@ def self_test() -> None:
             self.windows = self.artifacts / "Modhunter-Rust-Windows"
             self.mo2 = self.artifacts / "Modhunter-MO2-Native-Proof"
             self.browser = self.artifacts / "Modhunter-Rust-Browser-Proof"
-            for path in (self.windows / "release/bundle/nsis", self.windows / "native-smoke", self.windows / "qt-bridge/Release", self.mo2, self.browser):
+            for path in (self.windows / "release/bundle/nsis", self.windows / "native-smoke", self.windows / "watchtower-smoke", self.windows / "qt-bridge/Release", self.mo2, self.browser):
                 path.mkdir(parents=True)
             self.native = {"ok": True, "nativeWebView2": True, "shellIpc": True, "exportDownloadVerified": True, "gameViewNativeIpcDenied": "1"}
+            self.watchtower = {"ok": True, "nativeWebView2": True, "watchtowerSchema": 1,
+                               "scope": "Synthetic release-validator fixture; no native execution",
+                               "checks": [{"name": name, "passed": True} for name in sorted(REQUIRED_WATCHTOWER_CHECKS)]}
+            self.watchtower_browser = {"ok": True, "realChromium": True, "watchtowerSchema": 1,
+                                      "candidateCommit": self.commit, "sourceDirty": False,
+                                      "scope": "Synthetic release-validator fixture; no Chromium execution",
+                                      "sourceFiles": {name: file_hash(ROOT / name) for name in WATCHTOWER_BROWSER_SOURCES},
+                                      "checks": [{"name": name, "passed": True} for name in sorted(REQUIRED_WATCHTOWER_BROWSER_CHECKS)],
+                                      "screenshots": sorted(WATCHTOWER_SCREENSHOTS)}
             self.cli_bytes = b"non-executable synthetic test fixture"
             self.cli_hash = hashlib.sha256(self.cli_bytes).hexdigest()
             self.qt_bytes = b"non-loadable synthetic Qt bridge fixture"
@@ -522,6 +614,8 @@ def self_test() -> None:
                            "qtBridge": {"required": True, "sha256": self.qt_hash, "buildQt": "6.7.1"},
                            "productionFileHashes": {name: hashlib.sha256(body).hexdigest() for name, body in self.sources.items()}}
             self.write_json(self.windows / "native-smoke/native-smoke.json", self.native)
+            self.write_json(self.windows / "watchtower-smoke/watchtower-smoke.json", self.watchtower)
+            self.write_json(self.browser / "watchtower-browser.json", self.watchtower_browser)
             self.write_json(self.mo2 / "result.json", self.result)
             self.write_json(self.mo2 / "native-receipt.json", self.receipt)
             self.zip_path = self.windows / PORTABLE_NAME
@@ -530,6 +624,8 @@ def self_test() -> None:
             image = self.png()
             (self.mo2 / "mo2-fixture.png").write_bytes(image)
             (self.browser / "review.png").write_bytes(image)
+            for name in WATCHTOWER_SCREENSHOTS:
+                (self.browser / name).write_bytes(image)
             (self.mo2 / "fixture-settings.ini").write_text("not public")
             (self.mo2 / "mo2.log").write_text("not public")
             (self.browser / "session.json").write_text('{"token":"must never be selected"}')
@@ -554,6 +650,7 @@ def self_test() -> None:
                 if include_qt_helper:
                     archive.writestr(BUNDLED_QT_HELPER, self.qt_bytes if qt_bytes is None else qt_bytes)
                 archive.writestr("Evidence/native-smoke.json", public_json(self.native))
+                archive.writestr("Evidence/watchtower-smoke.json", public_json(self.watchtower))
                 for name, body in self.sources.items():
                     archive.writestr("MO2/mo2_update_arsenal/" + name, body)
             self.refresh_portable_manifest()
@@ -677,15 +774,101 @@ def self_test() -> None:
             self.assertNotIn("release-notes.md", (self.output / "SHA256SUMS.txt").read_text())
             with ZipFile(self.output / VERIFICATION_NAME) as archive:
                 names = archive.namelist()
-                self.assertEqual(set(names), {"BUILD_INFO.json", "windows/native-smoke.json", "mo2/result.json", "mo2/native-receipt.json", "mo2/mo2-fixture.png", "browser/review.png"})
+                expected = {"BUILD_INFO.json", "windows/native-smoke.json", "windows/watchtower-smoke.json", "mo2/result.json", "mo2/native-receipt.json", "mo2/mo2-fixture.png", "browser/review.png", "browser/watchtower-browser.json"}
+                expected.update("browser/" + name for name in WATCHTOWER_SCREENSHOTS)
+                self.assertEqual(set(names), expected)
                 self.assertTrue(all(PurePosixPath(name).suffix in (".json", ".png") for name in names))
 
-        def test_missing_or_failed_proof_never_creates_output(self):
-            (self.browser / "review.png").unlink()
-            with self.assertRaisesRegex(ReleaseError, "no PNG"):
+        def test_watchtower_requires_native_complete_passing_unique_credential_free_receipt(self):
+            path = self.windows / "watchtower-smoke/watchtower-smoke.json"
+            path.unlink()
+            with self.assertRaisesRegex(ReleaseError, "Required artifact is missing"):
                 prepare(self.artifacts, self.output, self.commit, self.run)
             self.assertFalse(self.output.exists())
-            (self.browser / "review.png").write_bytes(self.png())
+            cases = (
+                ("not-native", "WebView2 fixture did not pass"),
+                ("invalid-success", "WebView2 fixture did not pass"),
+                ("invalid-schema", "schema 1"),
+                ("missing-check", "omitted required"),
+                ("failed-check", "failed or invalid check"),
+                ("duplicate-check", "repeats a check"),
+                ("credential-field", "Credential field"),
+            )
+            for case, message in cases:
+                with self.subTest(case=case):
+                    report = json.loads(json.dumps(self.watchtower))
+                    if case == "not-native":
+                        report["nativeWebView2"] = False
+                    elif case == "invalid-success":
+                        report["ok"] = "true"
+                    elif case == "invalid-schema":
+                        report["watchtowerSchema"] = True
+                    elif case == "missing-check":
+                        report["checks"].pop()
+                    elif case == "failed-check":
+                        report["checks"][0]["passed"] = False
+                    elif case == "duplicate-check":
+                        report["checks"].append(dict(report["checks"][0]))
+                    elif case == "credential-field":
+                        report["cookie"] = "not public"
+                    self.write_json(path, report)
+                    with self.assertRaisesRegex(ReleaseError, message):
+                        prepare(self.artifacts, self.output, self.commit, self.run)
+                    self.assertFalse(self.output.exists())
+
+        def test_packaged_watchtower_receipt_must_match_actual_windows_artifact(self):
+            report = dict(self.watchtower, scope="Different receipt")
+            self.write_json(self.windows / "watchtower-smoke/watchtower-smoke.json", report)
+            with self.assertRaisesRegex(ReleaseError, "Portable Watchtower smoke differs"):
+                prepare(self.artifacts, self.output, self.commit, self.run)
+            self.assertFalse(self.output.exists())
+
+        def test_watchtower_browser_requires_matching_source_and_complete_real_chromium_receipt(self):
+            path = self.browser / "watchtower-browser.json"
+            path.unlink()
+            with self.assertRaisesRegex(ReleaseError, "Required artifact is missing"):
+                prepare(self.artifacts, self.output, self.commit, self.run)
+            self.assertFalse(self.output.exists())
+            cases = (
+                ("not-chromium", "Chromium interaction proof"),
+                ("wrong-commit", "clean tested build commit"),
+                ("dirty-source", "clean tested build commit"),
+                ("changed-source", "shipped UI and acceptance source"),
+                ("missing-check", "omitted required passing checks"),
+                ("failed-check", "failed or invalid check"),
+                ("duplicate-check", "repeats a check"),
+                ("missing-screenshot", "omitted required screenshots"),
+            )
+            for case, message in cases:
+                with self.subTest(case=case):
+                    report = json.loads(json.dumps(self.watchtower_browser))
+                    if case == "not-chromium":
+                        report["realChromium"] = False
+                    elif case == "wrong-commit":
+                        report["candidateCommit"] = "b" * 40
+                    elif case == "dirty-source":
+                        report["sourceDirty"] = True
+                    elif case == "changed-source":
+                        report["sourceFiles"]["native/ui/watchtower.js"] = "0" * 64
+                    elif case == "missing-check":
+                        report["checks"].pop()
+                    elif case == "failed-check":
+                        report["checks"][0]["passed"] = False
+                    elif case == "duplicate-check":
+                        report["checks"].append(dict(report["checks"][0]))
+                    elif case == "missing-screenshot":
+                        report["screenshots"].pop()
+                    self.write_json(path, report)
+                    with self.assertRaisesRegex(ReleaseError, message):
+                        prepare(self.artifacts, self.output, self.commit, self.run)
+                    self.assertFalse(self.output.exists())
+
+        def test_missing_or_failed_proof_never_creates_output(self):
+            (self.browser / "watchtower-pages.png").unlink()
+            with self.assertRaisesRegex(ReleaseError, "Required artifact is missing"):
+                prepare(self.artifacts, self.output, self.commit, self.run)
+            self.assertFalse(self.output.exists())
+            (self.browser / "watchtower-pages.png").write_bytes(self.png())
             self.native["exportDownloadVerified"] = False
             self.write_json(self.windows / "native-smoke/native-smoke.json", self.native)
             with self.assertRaisesRegex(ReleaseError, "exported-backup"):

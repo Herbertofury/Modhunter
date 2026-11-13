@@ -512,6 +512,51 @@ fn inject_catalog(app: &tauri::AppHandle, label: &str) -> Result<()> {
     Ok(())
 }
 
+fn watchtower_handoff(app: &tauri::AppHandle, label: &str, target: &Url) {
+    let trusted = app.get_webview(label).is_some_and(|view| {
+        view.url().ok().is_some_and(|current| {
+            app.state::<Runtime>().model.lock().is_ok_and(|model| {
+                model
+                    .tabs
+                    .iter()
+                    .any(|tab| tab.label == label && tab.mode == Mode::Dashboard)
+                    && policy::owned_page(&current, model.endpoint.as_deref())
+                    && Mode::from_url(&current) == Mode::Dashboard
+            })
+        })
+    });
+    if !trusted {
+        return;
+    }
+    match crate::watchtower_policy::handoff(target) {
+        Ok(prefill) => {
+            let handle = app.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                if let Err(error) = crate::watchtower_windows::open(&handle, Some(prefill)) {
+                    alert(&handle, error);
+                }
+            });
+        }
+        Err(error) => alert(app, error),
+    }
+}
+
+fn inject_watchtower_capability(app: &tauri::AppHandle, view: &Webview) {
+    let trusted = view.url().ok().is_some_and(|current| {
+        app.state::<Runtime>().model.lock().is_ok_and(|model| {
+            model
+                .tabs
+                .iter()
+                .any(|tab| tab.label == view.label() && tab.mode == Mode::Dashboard)
+                && policy::owned_page(&current, model.endpoint.as_deref())
+                && Mode::from_url(&current) == Mode::Dashboard
+        })
+    });
+    if trusted {
+        let _ = view.eval("window.__MODHUNTER_NATIVE_WATCHTOWER__=true;window.dispatchEvent(new Event('modhunter-watchtower-ready'));");
+    }
+}
+
 fn invalidate_analysis(model: &mut Model) {
     if let Some(catalog) = model.catalog.as_mut() {
         let catalog = Arc::make_mut(catalog);
@@ -583,6 +628,10 @@ fn open_tab(app: &tauri::AppHandle, mode: Mode) -> Result<u64> {
             );
             if url.scheme() == "modhunter-proof" {
                 smoke_result(&nav_app, url, &nav_label);
+                return false;
+            }
+            if url.scheme() == "modhunter-watch" {
+                watchtower_handoff(&nav_app, &nav_label, url);
                 return false;
             }
             let allowed = {
@@ -757,6 +806,7 @@ fn open_tab(app: &tauri::AppHandle, mode: Mode) -> Result<u64> {
                 }
             }
             if done {
+                inject_watchtower_capability(&load_app, &view);
                 if let Err(error) = inject_catalog(&load_app, view.label()) {
                     smoke_event(
                         &load_app,
@@ -1049,6 +1099,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
     let state = app.state::<Runtime>();
     match kind {
         "state" => return Ok(json!({"ok": true, "state": state.snapshot()})),
+        "watchtower" => crate::watchtower_windows::open(app, None)?,
         "ready" => {
             smoke_event(app, "shell-ready-command", json!({}));
             let restore = {
@@ -1310,8 +1361,21 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .invoke_handler(tauri::generate_handler![shell_command])
+        .plugin(tauri_plugin_notification::init())
+        .invoke_handler(tauri::generate_handler![
+            shell_command,
+            crate::watchtower_windows::watchtower_command
+        ])
         .setup(|app| {
+            if let Some(path) = std::env::args().skip(1).find_map(|arg| {
+                arg.strip_prefix("--watchtower-smoke-output=")
+                    .map(PathBuf::from)
+            }) {
+                crate::watchtower_windows::start_smoke(app.handle(), path)
+                    .map_err(std::io::Error::other)?;
+                return Ok(());
+            }
+            crate::watchtower_windows::setup(app.handle()).map_err(std::io::Error::other)?;
             let prefs_path = app.path().app_config_dir()?.join("native-preferences.json");
             let mut prefs: Preferences = std::fs::File::open(&prefs_path)
                 .ok()
@@ -1378,7 +1442,23 @@ pub fn run() {
                 .min_inner_size(760.0, 550.0)
                 .build()?;
             let handle = app.handle().clone();
+            let closing = Arc::new(AtomicBool::new(false));
             window.on_window_event(move |event| {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    if closing.swap(true, Ordering::AcqRel) {
+                        return;
+                    }
+                    if let Some(main) = handle.get_window("main") {
+                        let _ = main.hide();
+                    }
+                    let close_app = handle.clone();
+                    tauri::async_runtime::spawn_blocking(move || {
+                        crate::watchtower_windows::shutdown(&close_app);
+                        close_app.exit(0);
+                    });
+                    return;
+                }
                 if matches!(
                     event,
                     tauri::WindowEvent::Resized(_) | tauri::WindowEvent::ScaleFactorChanged { .. }

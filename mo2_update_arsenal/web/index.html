@@ -1573,6 +1573,24 @@ const resolveSrc=(m)=>{
  return{url:'https://www.google.com/search?q='+encodeURIComponent((m.group==='Verified Creations'?'site:creations.bethesda.net/en/skyrim/details ':knownGame?'site:nexusmods.com/'+game+'/mods/ ':'')+'"'+m.name+'"'),verified:false,custom:false,type:'lookup',label:'Search for original source'};
 };
 const getSrc=(m)=>{const custom=getRow(m.id).url||'',game=LIVE_CATALOG?.game||DATA?.game||'',cached=SOURCE_CACHE.get(m);if(cached&&cached.revision===CATALOG_RENDER_REVISION&&cached.custom===custom&&cached.game===game)return cached.source;const source=resolveSrc(m);SOURCE_CACHE.set(m,{revision:CATALOG_RENDER_REVISION,custom,game,source});return source};
+// Only the native-owned dashboard receives this capability marker. The native
+// navigation handler still validates the originating view and the public URL.
+const nativeWatchAvailable=()=>window.__MODHUNTER_NATIVE_WATCHTOWER__===true;
+function trackPageIntent(mod,typedSource=''){
+ if(!nativeWatchAvailable()||!mod)return '';
+ const typed=String(typedSource||'').trim(),source=getSrc(mod),candidate=typed||(source.verified?source.url:'');
+ if(!candidate)return '';
+ try{const page=new URL(candidate);if(page.protocol!=='https:'||page.username||page.password)return '';page.hash='';
+  const intent=new URL('modhunter-watch://track');intent.searchParams.set('url',page.href);intent.searchParams.set('title',mod.name||'');
+  const profileId=LIVE_CATALOG?.profileId||DATA.profileId;
+  if(profileId&&mod.id){intent.searchParams.set('profileId',profileId);intent.searchParams.set('itemId',mod.id)}
+  return intent.href;
+ }catch{return ''}
+}
+function trackModPage(mod,typedSource=''){
+ const intent=trackPageIntent(mod,typedSource);if(!intent){toast('Enter the exact public HTTPS page you want to track.');return false}
+ window.location.assign(intent);return true;
+}
 const isRisk=(m)=>{const {verdict}=getAudit(m);return ['hold','check','avoid','ae-only'].includes(verdict)||(m.flags||[]).some(f=>['HARD_ESP','HARD_ESM','DLL','NEMESIS'].includes(f))};
 const isUpdate=(m)=>m.update&&m.update.verdict==='candidate';
 const hasReleaseAssets=m=>SOURCES?SOURCES.hasAssets(m):Boolean(m.update?.releaseAssets?.length||m.releaseAssets?.length);
@@ -1778,7 +1796,7 @@ function drawInspector(m){openedId=m.id;STORE.lastSelected=m.id;save(false);cons
  <div class="drawer-row"><div><label class="drawer-label" for="drawerInstalled">INSTALLED VERSION</label><input class="drawer-field" id="drawerInstalled" value="${escapeHTML(row.installed||m.installedVersion)}" placeholder="version"></div><div><label class="drawer-label" for="drawerVerifiedVersion">FILE YOU TESTED</label><input class="drawer-field" id="drawerVerifiedVersion" value="${escapeHTML(row.testedVersion||'')}" placeholder="${profileMode?'e.g. release version and FOMOD option':'e.g. SE 1.5.97 FOMOD'}"></div></div>
  <label class="drawer-label" for="drawerCompat">YOUR COMPATIBILITY VERDICT</label><select class="drawer-field" id="drawerCompat"><option value="" ${!row.compat?'selected':''}>Use evidence / unverified</option><option value="compatible" ${selected('compatible')}>✓ ${escapeHTML(verifiedLabel)}</option><option value="check" ${selected('check')}>? Must check specific file</option><option value="hold" ${selected('hold')}>⚠ Hold pinned version</option><option value="ae-only" ${selected('ae-only')}>⛔ ${profileMode?'Wrong runtime or edition':'AE-only or 1.7+ build'}</option></select>
  <label class="drawer-label" for="drawerUrl">EXACT MOD FILE DOWNLOAD PAGE</label><input class="drawer-field" id="drawerUrl" type="url" spellcheck="false" value="${escapeHTML(row.url||m.source.url||'')}" placeholder="https://www.nexusmods.com/skyrimspecialedition/mods/12345?tab=files"><div class="drawer-micro">${source.type==='creations'?'✓ Official Bethesda listing; downloads/installations are handled through in-game Creations.':source.verified?'✓ This mod has an exact source page.':'⚠ No verified original source ID yet. Use the lookup link and paste its exact Files page.'}</div>
- <div class="drawer-section" style="margin-top:10px">${BRIDGE.active?`<button class="button-bright drawer-m2-focus" id="drawerLocate" type="button" title="Reveal this exact mod in Mod Organizer 2">⌖ REVEAL IN MO2 · SELECT + SCROLL</button>`:''}<a class="drawer-link" id="drawerOpenLink" href="${escapeHTML(source.url)}" target="_blank" rel="noopener noreferrer">↗ ${source.type==='creations'?'OPEN OFFICIAL CREATION LISTING':source.verified?'OPEN EXACT FILE DOWNLOAD PAGE':'FIND ORIGINAL MOD PAGE (UNVERIFIED)'}</a><button class="quiet-button" style="height:29px;margin-top:7px" id="copySource">⧉ Copy source URL</button></div>
+ <div class="drawer-section" style="margin-top:10px">${BRIDGE.active?`<button class="button-bright drawer-m2-focus" id="drawerLocate" type="button" title="Reveal this exact mod in Mod Organizer 2">⌖ REVEAL IN MO2 · SELECT + SCROLL</button>`:''}<a class="drawer-link" id="drawerOpenLink" href="${escapeHTML(source.url)}" target="_blank" rel="noopener noreferrer">↗ ${source.type==='creations'?'OPEN OFFICIAL CREATION LISTING':source.verified?'OPEN EXACT FILE DOWNLOAD PAGE':'FIND ORIGINAL MOD PAGE (UNVERIFIED)'}</a><button class="quiet-button" style="height:29px;margin-top:7px" id="copySource">⧉ Copy source URL</button>${nativeWatchAvailable()?'<button class="quiet-button" style="height:29px;margin-top:7px" id="trackSource">◉ Track page</button>':''}</div>
  <label class="drawer-label" for="drawerNote">YOUR UPDATE NOTES / TEST RESULTS</label><textarea class="drawer-field" id="drawerNote" placeholder="Selections, dependencies, before/after, crashes, load order conflicts…">${escapeHTML(row.note||'')}</textarea>
  ${m.screenshotNote?`<div class="drawer-section"><span class="drawer-label" style="margin:0">ORIGINAL SCREENSHOT NOTES</span><p>${escapeHTML(m.screenshotNote)}</p></div>`:''}
  <div class="drawer-check"><input type="checkbox" id="drawerFavorite" ${row.favorite?'checked':''}><label for="drawerFavorite">Bookmark this mod in the sidebar</label></div>
@@ -1790,17 +1808,30 @@ function drawInspector(m){openedId=m.id;STORE.lastSelected=m.id;save(false);cons
  const sourceInput=$('drawerUrl'),sourceLink=$('drawerOpenLink');
  function syncDrawerSource(){
   const typed=sourceInput.value.trim(),url=typed?validUrl(typed):getSrc(m).url;
+  const track=$('trackSource');if(nativeWatchAvailable()&&track){track.disabled=!trackPageIntent(m,typed);track.title=track.disabled?'Enter an exact HTTPS source page first':'Add this page to Watchtower without changing your update notes'}
   if(url){sourceLink.href=url;sourceLink.removeAttribute('aria-disabled');sourceLink.textContent=typed?'↗ OPEN THIS SOURCE PAGE':'↗ '+(source.verified?'OPEN ORIGINAL MOD PAGE':'FIND ORIGINAL SOURCE');}
   else{sourceLink.removeAttribute('href');sourceLink.setAttribute('aria-disabled','true');sourceLink.textContent='Enter a valid http(s) source URL';}
  }
  sourceInput.addEventListener('input',syncDrawerSource);
  syncDrawerSource();
  $('copySource').onclick=()=>{const typed=sourceInput.value.trim(),url=typed?validUrl(typed):getSrc(m).url;if(url)copyToClipboard(url);else toast('Enter a valid http(s) source URL first.');};
+ if(nativeWatchAvailable()&&$('trackSource'))$('trackSource').onclick=()=>trackModPage(m,sourceInput.value);
  if(BRIDGE.active&&$('drawerLocate'))$('drawerLocate').onclick=()=>locateInMO2(m,$('drawerLocate'));
  $('saveInspector').onclick=()=>saveInspection(false);
  $('markInspectorDone').onclick=()=>saveInspection(true);
  if(BRIDGE.active){void loadModInsights(m);void loadSourceDetails(m);}
 }
+// The native marker may arrive after an inspector is already open. Attach only
+// its tracking control so website ownership changes never replace a user's draft.
+function attachNativeTracking(){
+ if(!nativeWatchAvailable()||!openedId)return;
+ const mod=ITEM_MAP.get(openedId),input=$('drawerUrl'),copy=$('copySource');if(!mod||!input||!copy)return;
+ let control=$('trackSource');if(!control){control=document.createElement('button');control.id='trackSource';control.type='button';control.className='quiet-button';control.style.cssText='height:29px;margin-top:7px';control.textContent='◉ Track page';copy.insertAdjacentElement('afterend',control)}
+ const sync=()=>{control.disabled=!trackPageIntent(mod,input.value);control.title=control.disabled?'Enter an exact HTTPS source page first':'Add this page to Watchtower without changing your update notes'};
+ control.onclick=()=>trackModPage(mod,input.value);sync();
+ if(control.dataset.boundInput!==mod.id){control.dataset.boundInput=mod.id;input.addEventListener('input',sync)}
+}
+window.addEventListener('modhunter-watchtower-ready',attachNativeTracking);
 function refreshInspectorInsights(){
  refreshSourceDetails();
  const panel=$('modInsightDetails'),mod=ITEM_MAP.get(openedId);

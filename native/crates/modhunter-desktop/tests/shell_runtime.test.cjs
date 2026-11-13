@@ -189,3 +189,16 @@ test('catalog injections retain the newest revision and can retry a failed impor
   h.run(6, 'Retry');
   assert.deepEqual(h.imported.map(c => c.profileName), ['New', 'Retry']);
 });
+
+
+test('Watchtower opening coalesces repeated clicks without blocking MO2 navigation', async () => {
+  const h = await harness(); h.deferred.add('watchtower');
+  const first = h.nodes.get('openWatchtower').onclick();
+  const second = h.nodes.get('openWatchtower').onclick(); await h.settle();
+  assert.equal(h.calls.filter(c => c.kind === 'watchtower').length, 1);
+  assert.equal(h.nodes.get('openWatchtower').disabled, true);
+  await h.nodes.get('newDash').onclick();
+  assert.equal(h.calls.filter(c => c.kind === 'new').length, 1);
+  h.resolve('watchtower', snapshot()); await Promise.all([first, second]);
+  assert.equal(h.nodes.get('openWatchtower').disabled, false);
+});

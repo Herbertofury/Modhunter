@@ -17,8 +17,8 @@ function catalog(profile='a',count=3){
   groups:[{id:'group',name:'Fixtures',count,startPriority:0,color:'mint'}],
   items:Array.from({length:count},(_,i)=>({id:'item-'+i,name:'Fixture '+i,groupId:'group',group:'Fixtures',priority:i,author:'Test Author',installedVersion:'1.0',screenshotNote:'',flags:[],audit:{},nexusId:i+1,source:{type:'nexus',verified:true,url:'https://www.nexusmods.com/skyrimspecialedition/mods/'+(i+1)},update:{verdict:'candidate',latestVersion:'2.0'}}))};
 }
-function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={},progressReadFailures=0}={}){
- const nodes=new Map(),timers=new Map(),pending=new Map(),calls=[],active=new Map(),maximum=new Map();
+function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={},progressReadFailures=0,nativeWatch=false}={}){
+ const nodes=new Map(),timers=new Map(),pending=new Map(),calls=[],active=new Map(),maximum=new Map(),nativeNavigations=[];
  let timerId=0;
  const state={catalog:catalog('a',count),generation:1,failSnapshots,progressRows,progressReadFailures,score:0,scan:{state:'idle'},defer:new Set()};
  const document={hidden:false,activeElement:null,addEventListener(){},querySelectorAll(){return[]},createElement:name=>element(name),getElementById:id=>node(id),querySelector:selector=>node(selector)};
@@ -47,7 +47,7 @@ function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={
   addEventListener(){},confirm:()=>true,
   __MO2_BRIDGE_BOOT__:{active:live,token:'test'},
  };
- context.window=context;
+ context.window=context;context.__MODHUNTER_NATIVE_WATCHTOWER__=nativeWatch;context.location={assign:value=>nativeNavigations.push(value)};
  context.fetch=async(url,options={})=>{
   const endpoint=String(url).slice(5),method=options.method||'GET',key=method+' '+endpoint;
   const body=JSON.parse(options.body||'{}'),c=structuredClone(state.catalog);
@@ -84,10 +84,10 @@ function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={
    return{ok:true,json:async()=>value};
   }finally{active.set(key,active.get(key)-1)}
  };
- const instrument='window.__RUNTIME__={getSrc,modHTML,renderWorkshop,sourceLinksPending,requestLiveCatalog,bridgeRequest,scanLive,fastUpdateAll,refreshWorkshop,refreshDownloads,nextWorkshopCandidate,pollLiveBridge,updatePrefs,save,counts,filtered,render,importOfflineCatalog,scheduleSearchRender,analyzePlugins,refreshModHealth,drawInspector,loadModInsights,loadSourceDetails,sourceDetailMod,openFilePicker,closeFilePicker,exportWorkshop,state:()=>({connected:LIVE_CONNECTED,quick:QUICK_RUNNING,profileEpoch:PROFILE_EPOCH}),setRow:(id,value,invalidatePlan=true)=>{markSourceEdit(getRow(id).url,value.url);STORE.rows[id]=value;save(invalidatePlan)},setQuery:q=>{STORE.prefs.query=q;scheduleSearchRender()}};';
+ const instrument='window.__RUNTIME__={attachNativeTracking,trackPageIntent,trackModPage,getSrc,modHTML,renderWorkshop,sourceLinksPending,requestLiveCatalog,bridgeRequest,scanLive,fastUpdateAll,refreshWorkshop,refreshDownloads,nextWorkshopCandidate,pollLiveBridge,updatePrefs,save,counts,filtered,render,importOfflineCatalog,scheduleSearchRender,analyzePlugins,refreshModHealth,drawInspector,loadModInsights,loadSourceDetails,sourceDetailMod,openFilePicker,closeFilePicker,exportWorkshop,state:()=>({connected:LIVE_CONNECTED,quick:QUICK_RUNNING,profileEpoch:PROFILE_EPOCH}),setRow:(id,value,invalidatePlan=true)=>{markSourceEdit(getRow(id).url,value.url);STORE.rows[id]=value;save(invalidatePlan)},setQuery:q=>{STORE.prefs.query=q;scheduleSearchRender()}};';
  const source=APP.replace('/*__POWERSHELL__*/','""').replace(/\}\)\(\);\s*$/,instrument+'\n})();');
  vm.createContext(context);vm.runInContext(SOURCES,context,{filename:'source_insights.js'});vm.runInContext(INSIGHTS,context,{filename:'mod_insights.js'});vm.runInContext(source,context,{filename:'app.js'});
- return{context,state,nodes,timers,calls,active,maximum,pending,api:context.__RUNTIME__,qa:context.__ARSENAL_QA__,
+ return{context,state,nodes,timers,calls,active,maximum,pending,nativeNavigations,api:context.__RUNTIME__,qa:context.__ARSENAL_QA__,
   release(key){state.defer.delete(key);for(const resolve of pending.get(key)||[])resolve();pending.delete(key)},
   async settle(){for(let i=0;i<6;i++)await new Promise(resolve=>setImmediate(resolve))},
   async tick(ms){const pair=[...timers].find(([,t])=>t.ms===ms);assert.ok(pair,'Expected timer '+ms);timers.delete(pair[0]);pair[1].fn();await this.settle()},
@@ -462,4 +462,39 @@ test('late row health cannot replace a newer catalog in the same execution conte
  assert.match(h.nodes.get('modList').innerHTML,/Bugs 7/);
  const current=h.qa.getCatalog().items[0];await h.api.refreshModHealth(current,false);
  assert.equal(current.modHealth.bugs.displayedCount,0,'A fresh request for the new row must still work');
+});
+
+
+test('page tracking requires the native dashboard and never tracks a fallback search',async()=>{
+ const browser=harness();await browser.settle();const mod=browser.qa.getCatalog().items[0];
+ assert.equal(browser.api.trackPageIntent(mod,'https://example.com/release'), '');
+ const native=harness({nativeWatch:true});await native.settle();
+ const unknown={...native.qa.getCatalog().items[0],nexusId:0,source:{verified:false,url:''}};
+ assert.equal(native.api.trackPageIntent(unknown), '', 'No manufactured search address becomes a watch');
+ for(const url of ['http://example.com/page','javascript:alert(1)','https://user:secret@example.com/page'])assert.equal(native.api.trackPageIntent(unknown,url),'');
+ assert.equal(native.nativeNavigations.length,0);
+});
+
+test('native page tracking preserves exact URL identity and MO2 ownership without changing notes',async()=>{
+ const h=harness({nativeWatch:true});await h.settle();const mod=h.qa.getCatalog().items[0];
+ h.api.drawInspector(mod);await h.settle();h.context.document.getElementById('drawerNote').value='Keep these unsaved notes';
+ h.nodes.get('drawerUrl').value='https://Example.com/Release/Case?Token=A%2BB&branch=Main#changelog';
+ const before=h.calls.length;h.nodes.get('trackSource').onclick();
+ assert.equal(h.nativeNavigations.length,1);const intent=new URL(h.nativeNavigations[0]);
+ assert.equal(intent.protocol,'modhunter-watch:');assert.equal(intent.host,'track');
+ assert.equal(intent.searchParams.get('url'),'https://example.com/Release/Case?Token=A%2BB&branch=Main');
+ assert.equal(intent.searchParams.get('profileId'),'a');assert.equal(intent.searchParams.get('itemId'),mod.id);assert.equal(intent.searchParams.get('title'),mod.name);
+ assert.equal(h.nodes.get('drawerNote').value,'Keep these unsaved notes');assert.equal(h.calls.length,before);
+ assert.equal(h.api.sourceLinksPending(),false,'Opening a watch draft must not mutate update execution context');
+});
+
+
+test('a late native tracking capability preserves an already open inspector draft',async()=>{
+ const h=harness();await h.settle();h.api.drawInspector(h.qa.getCatalog().items[0]);
+ h.context.document.getElementById('drawerNote').value='Unsaved MO2 install choices';
+ h.context.document.getElementById('drawerUrl').value='https://example.com/CaseSensitive';
+ const writes=h.nodes.get('drawerContent').writes;
+ h.context.__MODHUNTER_NATIVE_WATCHTOWER__=true;h.api.attachNativeTracking();
+ assert.equal(h.nodes.get('drawerContent').writes,writes);assert.equal(h.nodes.get('drawerNote').value,'Unsaved MO2 install choices');
+ h.nodes.get('trackSource').onclick();assert.equal(new URL(h.nativeNavigations[0]).searchParams.get('url'),'https://example.com/CaseSensitive');
 });

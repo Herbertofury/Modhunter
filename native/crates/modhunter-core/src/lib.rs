@@ -4,6 +4,7 @@ pub mod importer;
 pub mod ini;
 pub mod plugin_analysis;
 pub mod source_adapters;
+pub mod watchtower;
 
 pub use bridge::{BridgeClient, BridgeHealth, validate_bridge_endpoint};
 pub use importer::{ImportRequest, ImportResult, ImportStats, ProfileImporter};

@@ -6,7 +6,7 @@
 
 **Repair your load order. Hunt your unfinished mods. Build a legend.**
 
-[![Edition](https://img.shields.io/badge/Edition-Rust%200.9.2-cfa76d?style=for-the-badge&labelColor=182b30)](wiki/Rust-Desktop.md)
+[![Edition](https://img.shields.io/badge/Edition-Rust%200.10.0-cfa76d?style=for-the-badge&labelColor=182b30)](wiki/Rust-Desktop.md)
 [![MO2](https://img.shields.io/badge/MO2-Optional%20Live%20Link-78cfab?style=for-the-badge&labelColor=182b30)](wiki/MO2-Plugin.md)
 [![Modes](https://img.shields.io/badge/Modes-Siege%20%7C%20Survival%20%7C%20Atlas-9bb8f0?style=for-the-badge&labelColor=182b30)](wiki/Game-Modes.md)
 
@@ -14,7 +14,7 @@
 
 ---
 
-## Rust desktop 0.9.2
+## Rust desktop 0.10.0
 
 The new Windows app runs its desktop shell, profile import/cache engine, connection discovery and native file operations in **Rust**, with WebView2 displaying the complete existing dashboard and games. Running the compiled app requires no Node or Electron. The Python plugin remains MO2's in-process adapter for authenticated Nexus requests and its native download/installer API.
 
@@ -24,6 +24,16 @@ The new Windows app runs its desktop shell, profile import/cache engine, connect
 - Parallel, cached imports support portable and split-path MO2 configurations. In reproducible Linux fixtures, importing 2,500 mods took a median **70.78 ms** in Rust versus **477.03 ms** in the previous Node importer; 10,000 mods took **330.42 ms** versus **1,629.28 ms**. These include fresh metadata-content verification and root plugin inventory on generated fixtures without ESP payloads; they are not deep-audit, Windows GUI startup or Nexus download timings. [Raw measurements and method](native/evidence/import-comparison.json).
 - Profile changes invalidate stale scans and delayed UI replies. Expired queued commands cannot execute later. Requests share exact file lookups, metadata caches and connection resources, while search and background polling avoid redundant work.
 - Windows CI builds the executable and installer and launches the actual WebView2 app; separate browser and MO2 fixture checks enforce their own contracts. Real account downloads, FOMOD decisions and a user's game setup remain environment-specific acceptance checks.
+
+### 0.10.0 Watchtower: site sign-ins and page tracking
+
+**Watchtower** brings page tracking and site-session management into the Rust desktop. Add a release page, creator feed or changelog; choose an isolated site sign-in when the page needs your account. The first successful read establishes a baseline. Later checks show changed text, retained history and an explicit **Mark seen** action with guarded undo. Folders, tags, search, site filters, pause/mute controls and recoverable removal keep the full list manageable.
+
+Sign in on the website itself. Named sessions use separate WebView2 profiles; passwords and cookies stay in the browser engine. Remembered sessions survive restarts. Turning off **Remember this sign-in** uses a temporary profile on disk for the current app run, with a fresh profile next launch. Reset closes that session's windows and invalidates old work. Session confirmation is your indication that you are ready to check; actual page access still has to succeed.
+
+Checks are manual by default. Optional launch and background due checks run while Modhunter is open, with bounded work and per-site pacing. CSS region/ignore selectors help compare the useful page content. Import previews validate and deduplicate pages before adding them; exports contain watchlist data, never browser credentials. Last-good observations remain available after failures, cancellation or login challenges.
+
+This independently implements useful behavior identified in a static audit of **WhimWatch 0.4.2**. Its Sims-specific installer is not used: Nexus downloads, exact-file release review, FOMOD choices and native installation remain with MO2 and the existing Update Workshop. A page changing does not prove a compatible mod update. See the [Watchtower guide](wiki/Watchtower.md) and [exact reference audit, transfer decisions and release gates](native/evidence/whimwatch-parity-0.10.0.md).
 
 ### 0.9.2 refresh speed and reliable upgrades
 

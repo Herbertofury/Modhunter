@@ -8,6 +8,9 @@ Modhunter's maintenance game and verified-update rewards sit alongside a real mo
 | Mod Organizer 2 | [Project](https://github.com/ModOrganizer2/modorganizer) | Profile/installation workflows and the exact native handoff. MO2 is also an integration dependency, not a feature to remove. |
 | Vortex | [Nexus Mods project](https://github.com/Nexus-Mods/Vortex) | Discovery, update review and install recovery across supported games. |
 | Wabbajack | [Project documentation](https://github.com/wabbajack-tools/wiki) | Repeatable modlist installation and actionable failures; distinguish whole-list provisioning from individual-mod maintenance. |
+| WhimWatch 0.4.2 | [Pinned source](https://github.com/forthewhimsy/whimwatch/tree/7f782633aa4d07b2466f80c9b57cd62ee8ec51f2) | Site-session management, page additions, per-page acknowledgment/history, verification handling and privacy. Static inspection of the uploaded portable executable and all 96 first-party source files informed Watchtower; the Sims-specific installer is not transplanted. |
+
+The [WhimWatch inspection and transfer matrix](../native/evidence/whimwatch-parity-0.10.0.md), recorded 2026-11-13, binds the exact upload SHA-256, official release asset, source commit and MIT license. It inventories all 22 packaged entries outside `node_modules` and distinguishes implemented behavior, existing MO2 ownership and deferred/game-specific features. WhimWatch was not run and no real site sign-in was tested. No reference source, fonts or UI assets were copied into Modhunter.
 
 ## Differentiation hypotheses to test
 - A source-aware update workshop should reduce wrong-file choices without concealing ambiguous releases or compatibility warnings.
@@ -65,3 +68,6 @@ Do not copy upstream's account-password workaround, assume access to gated conte
 - [ ] Retain exact release/file identity, failed evidence and last-good data; record latency/memory and correctness together.
 
 Modhunter application: compare against the existing Rust source adapters and Update Workshop; retain MO2's authoritative profile/download/interactive installer path. This reference does not add an adapter or change updater behavior.
+
+
+**0.10.0 follow-through:** the note above preserves the earlier review at source commit `1ec5386f…`. The uploaded portable asset was subsequently matched to the official v0.4.2 release and audited against its exact tag commit `7f782633…`; see the [complete inspection and transfer record](../native/evidence/whimwatch-parity-0.10.0.md). [Watchtower](Watchtower.md) implements the relevant page/session-management workflow independently. Its non-remembered WebView2 sessions use temporary on-disk profiles, with a fresh profile on the next app launch. Existing source adapters and MO2's download/interactive installer ownership remain. The checklist records the original review scope; live provider/account comparisons remain separate acceptance work, and the current native/browser gates are documented in the linked evidence.

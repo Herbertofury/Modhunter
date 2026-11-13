@@ -4,6 +4,9 @@ mod catalog;
 mod discovery;
 mod import_operation;
 mod policy;
+mod watchtower_policy;
+#[cfg(windows)]
+mod watchtower_windows;
 #[cfg(windows)]
 mod windows;
 

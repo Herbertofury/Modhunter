@@ -1,4 +1,4 @@
-# Rust Desktop 0.9.2
+# Rust Desktop 0.10.0
 
 [Home](Home.md) / [Windows releases](https://github.com/Herbertofury/Modhunter/releases) / [Native build results](https://github.com/Herbertofury/Modhunter/actions/workflows/native-rust.yml)
 
@@ -18,6 +18,14 @@ The presentation remains HTML/CSS/JavaScript. The Python/Qt plugin remains insid
 6. Use the existing **Update now**, **Choose file**, background queue and **Install all ready** controls. MO2 supplies Nexus sign-in and its real FOMOD/replace dialogs. Network and disk analysis run in background workers. Native installer calls cross MO2's Qt queue; the dashboard stays responsive while MO2 owns its installer prompts.
 
 The MO2 plugin and Rust executable should come from the same release. The plugin installer validates the released package’s SHA-256 manifest and exact build/plugin version before replacing anything; keep `SHA256SUMS.txt`, `BUILD_INFO.json` and the `MO2` directory together when extracting the ZIP. An incomplete or mixed package leaves the active plugin and its progress untouched. Old plugins without protocol-1 health support receive an upgrade error. Session descriptors contain the local address/profile identity and process ID, never an API key or HTTP session secret. Discovery validates every candidate with the actual running service.
+
+## Watchtower pages and accounts
+
+The native **Watchtower** manager tracks release pages, creator pages and changelogs with separate named site sessions. Add a page, select its session when needed, and establish a first observation. Later changes retain text/history and stay unread until marked seen. Search, folders, tags, site filters, pause/mute, recoverable removal, guarded acknowledgment undo and import previews organize the list. Optional launch/background checks run while the app is open; manual checking is the default.
+
+Passwords stay in the website's own sign-in flow. Remembered WebView2 profiles persist across launches; non-remembered profiles are temporary on-disk profiles scoped to the app run, with a fresh profile on the next launch. Reset closes the session windows and invalidates pending work. Confirming a session is user-supplied readiness, not proof of a paid subscription or guaranteed page access. MO2 continues to own Nexus authentication, downloads and FOMOD installation.
+
+See [Watchtower](Watchtower.md) for controls, privacy and troubleshooting, and the [WhimWatch 0.4.2 audit](../native/evidence/whimwatch-parity-0.10.0.md) for the exact reference, independent adaptation and excluded Sims-specific behavior.
 
 ## Plugin and source intelligence
 
@@ -68,11 +76,15 @@ The [Rust desktop and MO2 readiness workflow](https://github.com/Herbertofury/Mo
 | Rust format, tests and Clippy | Parser/cache correctness, explicit cancellation and retry, shared catalog encoding, split paths and encodings, bridge validation, discovery and navigation/export policies |
 | Python and Node regressions | MO2 command/download/install lifecycle, response-cache invalidation, scan/source epochs, delayed Chronicle hydration, frontend polling/rendering/focus and preserved legacy importer |
 | Actual Chromium | Built dashboard interactions, update actions, search responsiveness, profile changes, connection recovery and existing update workshop flows |
+| Actual Chromium Watchtower | Shipped manager forms, session actions, watch/history controls, import preview, error recovery and responsive layout with a fixture native-command adapter |
 | Actual Windows WebView2 | Compiled application launch, native toolbar IPC, three-mod profile import into the real dashboard, actual JSON backup download and rejection of native IPC from game content |
+| Actual Windows Watchtower | Account isolation, remembered-profile close/reopen within one process, generation-selected fresh profiles, same-session popups, authenticated page capture/change, selected-region capture, incomplete/stale/canceled rejection and denied website IPC against internally owned loopback pages; an anonymous `https://example.com/` production check must also complete a durable baseline. No application restart is performed |
 | Actual MO2 2.5.2 fixture | Production plugin loading in official Windows MO2, actual C++ QObject/raw QVariant binding with synthetic callbacks, real loopback API and Qt focus, and a completed Rust plugin/hash audit of a disposable fixture |
 | Windows PowerShell 5.1 installer | Fresh install, upgrade/progress preservation, rejected incomplete/damaged/mixed packages, source-tree installation and linked-directory handling |
 
 CI uploads JSON receipts and browser proof alongside the portable app and NSIS installer. Inspect the linked run for the exact commit and outcome; a workflow definition is not proof that a particular run passed.
+
+The additional Watchtower receipt is required before packaging and must exactly match the copy inside the portable ZIP before publication. Browser/session data and diagnostic logs stay out of the public verification archive. The native fixture uses owned local pages and synthetic sign-in state, not a live website account; the reference WhimWatch audit was static and did not execute its uploaded EXE.
 
 The release version comes from the Rust workspace and is checked against the Tauri installer, Cargo lockfile and packaged MO2 plugin before building. The portable build identity and release tag use that validated value. Release preparation rejects a stale-version installer or portable ZIP and verifies that the plugin's version module and rebuilt dashboard match the source tested inside native MO2. Published releases are immutable; new code requires a new version to become a new download.
 

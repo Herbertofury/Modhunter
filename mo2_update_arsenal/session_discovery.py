@@ -55,8 +55,8 @@ class SessionDiscovery:
                 if len(encoded) > MAX_DESCRIPTOR_BYTES:
                     raise ValueError("MO2 discovery descriptor exceeds 4096 bytes")
                 destination = self.directory / f"{pid}-{url.port}.json"
-                if destination == self._path and encoded == self._written:
-                    return True  # Ordinary metadata refreshes do not rewrite it.
+                if destination == self._path and encoded == self._written and destination.is_file():
+                    return True  # Keep refreshes cheap, but recover a removed discovery hint.
                 self.directory.mkdir(parents=True, exist_ok=True)
                 with tempfile.NamedTemporaryFile(mode="wb", prefix=destination.name + ".tmp-",
                                                  dir=self.directory, delete=False) as output:

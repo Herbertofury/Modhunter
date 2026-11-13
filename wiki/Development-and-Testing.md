@@ -1,6 +1,6 @@
 # 🛠 Development & Testing
 
-## Rust 0.9 release gates
+## Rust 0.9.1 release gates
 
 The [native workflow](https://github.com/Herbertofury/Modhunter/actions/workflows/native-rust.yml) compiles and launches the actual Windows app, tests the production plugin inside an official MO2 2.5.2 fixture instance, runs Rust tests and strict Clippy, and executes browser and lifecycle regressions. See [Rust Desktop](Rust-Desktop.md) for the evidence boundaries and [native/README.md](../native/README.md) for build commands. Downloadable receipts identify each passing check and the compiled commit. The older acceptance notes below describe their original checkpoints.
 
@@ -9,6 +9,8 @@ The [native workflow](https://github.com/Herbertofury/Modhunter/actions/workflow
 `native/scripts/windows_smoke.ps1` launches the compiled WebView2 app and reads its import/export/IPC receipt. `native/scripts/mo2_native_smoke.ps1` creates a disposable native MO2 instance with a synthetic BasicGame and test-only tool, never a user's instance; those harness plugins are excluded from user packages. Fixture tests do not authenticate to Nexus, install real mod archives or launch a commercial game.
 
 `scripts/benchmark_native_import.py` compares complete Rust and previous Node import calls over identical metadata fixtures; all samples and environment details are stored in `native/evidence/import-comparison.json`. Full GUI startup and internet download speeds are outside that benchmark.
+
+`python native/scripts/prepare_release.py --print-version` validates workspace, lockfile, installer and MO2 version agreement. `python native/scripts/prepare_release.py --self-test` also checks stale portable/installer rejection, native proof requirements and source/helper identity. CI derives its package metadata and release tag from the validated workspace version. Release assets are immutable, so every newly distributed build needs a new version.
 
 ## Developer quick start
 
@@ -32,9 +34,9 @@ The browser tests use Chromium/Playwright. See `tests/` for actual game flows an
 - Shiverfell movement, crafting, survival, world-boss quest and roguelite entry.
 - AetherFX combat finishers and reduced-motion behavior.
 
-## Known unverified gates
+## Remaining environment-specific checks
 
-- Native Windows MO2 plugin installation and Qt live-focus testing.
+- The user's populated MO2 installation, installed-mod selection and account-specific native update workflow. The official MO2 2.5.2 disposable fixture covers native plugin installation, Qt dispatch and live focus separately.
 - Compiled Windows Electron portable `.exe` verification (source build is available).
 - Real Nexus auth/download workflows on a connected MO2 installation.
 - Long-form unique-content quality and 80-hour player study.

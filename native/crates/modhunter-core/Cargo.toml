@@ -1,6 +1,6 @@
 [package]
 name = "modhunter-core"
-version = "0.9.0"
+version.workspace = true
 edition = "2024"
 description = "Read-only, bounded-parallel MO2 profile engine and loopback connection client"
 license = "LicenseRef-Proprietary"

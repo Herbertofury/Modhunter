@@ -1,4 +1,4 @@
-# Modhunter 0.9 — Rust desktop
+# Modhunter 0.9.1 — Rust desktop
 
 The Windows desktop, profile import/cache engine, connection probing, tab lifecycle and native file dialogs run in Rust. Microsoft Edge WebView2 renders the existing Modhunter dashboard, Questbound, AetherFX, Shiverfell, Siege and Atlas. The shipped desktop does not require Node or Electron.
 
@@ -20,9 +20,10 @@ Existing Electron/standalone outputs remain available. Browser progress lives in
 
 ## Build from source
 
-The toolchain is pinned in `rust-toolchain.toml`; dependencies are pinned in `Cargo.lock`.
+The toolchain is pinned in `rust-toolchain.toml`; dependencies are pinned in `Cargo.lock`. Release tooling requires Python 3.11 or later.
 
 ```powershell
+python native/scripts/prepare_release.py --print-version
 python native/scripts/prepare_assets.py
 cd native
 cargo test --workspace --locked
@@ -66,6 +67,14 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo run --release --locked -p modhunter-core --bin modhunter-cli -- import --modlist /path/to/profiles/Default/modlist.txt --ini /path/to/ModOrganizer.ini
 cargo run --release --locked -p modhunter-core --bin modhunter-cli -- benchmark --mods 2500 --rounds 5 --workers 8
 ```
+
+## Release identity and upgrades
+
+`native/Cargo.toml` defines the release version inherited by both Rust crates. The release preflight checks the Tauri installer version, both workspace entries in `Cargo.lock`, and `mo2_update_arsenal/version.py` against it. The MO2 plugin and loopback health response share that packaged Python version. `--print-version` fails when any version is stale; CI uses its validated result for `BUILD_INFO.json` and the release tag.
+
+When preparing a new release, update the workspace version, Tauri version, packaged MO2 version and workspace lockfile entries together, then run the preflight and release self-tests. Package validation rejects an installer or portable archive labeled for a different version. The MO2 version module is covered by the same tested-source hash checks as the plugin code and rebuilt dashboard.
+
+Published release assets remain immutable. A new version is required to distribute new application code; passing CI for an already published version does not replace its downloads. The workflow tests `upgrade/**` branches and pull requests, then repeats the required gates on `main` before publishing a new version.
 
 ## Evidence and release boundaries
 

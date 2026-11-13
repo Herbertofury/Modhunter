@@ -161,7 +161,8 @@ class ScanOwnershipTests(unittest.TestCase):
                   "errors": [], "queried": 1, "mode": "deep"}
         def provider(cache, client):
             self.assertEqual(client.api_key, "fixture-api-key")
-            def scan(snapshot, mode, progress):
+            def scan(snapshot, mode, progress, *, cancel_event):
+                self.assertIs(cancel_event, self.service._scan_cancel)
                 calls.append(mode)
                 progress({"checked": 1, "total": 1})
                 return copy.deepcopy(result)

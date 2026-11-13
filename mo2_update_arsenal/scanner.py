@@ -20,6 +20,7 @@ from typing import Any, Callable
 API = "https://api.nexusmods.com/v1"
 DAY = 24 * 3600
 MAX_RESPONSE_BYTES = 8_000_000
+MAX_NEXUS_WORKERS = 5
 
 
 class NexusError(Exception):
@@ -107,6 +108,7 @@ class Cache:
     def __init__(self, path: Path):
         self.path = path
         self.lock = threading.RLock()
+        self._scan_epochs: dict[str, int] = {}
         self.data = {"schema": 1, "entries": {}, "activity": {}}
         try:
             raw = json.loads(self.path.read_text(encoding="utf-8"))
@@ -124,6 +126,37 @@ class Cache:
         with self.lock:
             self.data["entries"][f"{game}/{mod_id}"] = dict(value)
 
+    def begin_scan(self, game: str, cancel_event: threading.Event) -> int | None:
+        """Only the newest scan for a game may replace its shared metadata."""
+        with self.lock:
+            if cancel_event.is_set():
+                return None
+            epoch = self._scan_epochs.get(game, 0) + 1
+            self._scan_epochs[game] = epoch
+            return epoch
+
+    def scan_is_current(self, game: str, epoch: int | None, cancel_event: threading.Event) -> bool:
+        with self.lock:
+            return epoch is not None and not cancel_event.is_set() and self._scan_epochs.get(game) == epoch
+
+    def set_for_scan(self, game: str, mod_id: int, value: dict, *, epoch: int | None,
+                     cancel_event: threading.Event) -> bool:
+        # Ownership and cancellation must be checked inside the write lock.
+        # A caller's earlier check cannot protect a delayed cache write.
+        with self.lock:
+            if not self.scan_is_current(game, epoch, cancel_event):
+                return False
+            self.data["entries"][f"{game}/{mod_id}"] = dict(value)
+            return True
+
+    def persist_for_scan(self, game: str, *, epoch: int | None,
+                         cancel_event: threading.Event) -> bool:
+        with self.lock:
+            if not self.scan_is_current(game, epoch, cancel_event):
+                return False
+            self.persist()
+            return True
+
     def persist(self) -> None:
         with self.lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -137,8 +170,17 @@ class UpdateScanner:
         self.cache = cache
         self.client = client
 
-    def scan(self, snapshot: dict, mode: str = "quick", progress: Callable[[dict], None] | None = None) -> dict:
+    def scan(self, snapshot: dict, mode: str = "quick", progress: Callable[[dict], None] | None = None,
+             *, cancel_event: threading.Event | None = None) -> dict:
+        cancel_event = cancel_event if cancel_event is not None else threading.Event()
         game = safe_game_slug(snapshot.get("game", "skyrimspecialedition"))
+        if mode not in ("quick", "deep"):
+            raise ValueError("Mode must be quick or deep")
+        cache_epoch = self.cache.begin_scan(game, cancel_event)
+
+        def cancelled() -> bool:
+            return not self.cache.scan_is_current(game, cache_epoch, cancel_event)
+
         grouped: dict[int, list[dict]] = {}
         for item in snapshot.get("items", []):
             mod_id = int(item.get("nexusId") or 0)
@@ -149,10 +191,8 @@ class UpdateScanner:
         output: dict[str, dict] = {}
         item_records: dict[str, dict] = {}
         errors = []
-        if mode not in ("quick", "deep"):
-            raise ValueError("Mode must be quick or deep")
         candidate_ids: set[int]
-        if mode == "quick":
+        if mode == "quick" and not cancelled():
             data = self.client.get(f"/v1/games/{game}/mods/updated.json?period=1m")
             if not isinstance(data, list):
                 raise NexusError("Nexus updated feed is not an array")
@@ -171,7 +211,6 @@ class UpdateScanner:
         uncached: list[int] = []
         for mod_id in ids:
             cached = self.cache.get(game, mod_id)
-            fresh = cached and now - float(cached.get("checkedAt", 0)) < DAY
             # Deep = fresh server truth for every Nexus project, especially
             # after installs; Quick = cheap cached/activity-driven check.
             should = (mode == "deep" or (mod_id in candidate_ids and mode == "quick"))
@@ -190,51 +229,87 @@ class UpdateScanner:
         total = len(uncached)
         if progress:
             progress({"checked": 0, "total": total, "phase": "querying-nexus"})
-        # Bounded parallelism; work halts on quota or auth errors.
+        # Bound submitted work as well as active connections. A large profile
+        # must not allocate thousands of Futures or keep issuing old-profile
+        # requests after a switch, quota failure, or authentication failure.
         halt = threading.Event()
-        def fetch_one(mod_id: int) -> tuple[int, dict]:
-            if halt.is_set():
-                return mod_id, {"status": "skipped"}
-            metadata = self.client.get(f"/v1/games/{game}/mods/{mod_id}.json")
+        query_lock = threading.Lock()
+        queried = 0
+
+        def stopped() -> bool:
+            return halt.is_set() or cancelled()
+
+        def fetch_one(mod_id: int) -> dict | None:
+            nonlocal queried
+            with query_lock:
+                if stopped():
+                    return None
+                queried += 1
+            try:
+                metadata = self.client.get(f"/v1/games/{game}/mods/{mod_id}.json")
+            except (QuotaDepleted, MissingAuth):
+                halt.set()
+                raise
             if not isinstance(metadata, dict):
                 raise NexusError(f"Unexpected metadata for {mod_id}")
-            return mod_id, metadata
+            return metadata
+
+        def record(mid: int, info: dict) -> None:
+            output[str(mid)] = info
+            for item in grouped[mid]:
+                item_records[str(item.get("id", ""))] = info
+
         checked = 0
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
-            futures = {pool.submit(fetch_one, mid): mid for mid in uncached}
-            for future in concurrent.futures.as_completed(futures):
-                mid = futures[future]
-                checked += 1
-                try:
-                    _, meta = future.result()
-                    if meta.get("status") == "skipped":
-                        unknown = {"verdict": "unknown", "source": "nexus-api",
-                                   "reason": "Nexus audit was interrupted; latest version could not be verified"}
-                        output[str(mid)] = unknown
+        cursor = 0
+        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_NEXUS_WORKERS) as pool:
+            pending = {}
+            while pending or (cursor < total and not stopped()):
+                while len(pending) < MAX_NEXUS_WORKERS and cursor < total and not stopped():
+                    mid = uncached[cursor]
+                    cursor += 1
+                    pending[pool.submit(fetch_one, mid)] = mid
+                if not pending:
+                    break
+                finished, _ = concurrent.futures.wait(pending, return_when=concurrent.futures.FIRST_COMPLETED)
+                for future in finished:
+                    mid = pending.pop(future)
+                    try:
+                        meta = future.result()
+                        if meta is None:
+                            continue  # Submitted before cancellation, never queried.
+                        checked += 1
+                        if not self.cache.set_for_scan(game, mid, {"checkedAt": now, "meta": meta},
+                                                       epoch=cache_epoch, cancel_event=cancel_event):
+                            continue  # Superseded work must not overwrite a newer cache.
                         for item in grouped[mid]:
-                            item_records[str(item.get("id", ""))] = unknown
-                        continue
-                    self.cache.set(game, mid, {"checkedAt": now, "meta": meta})
-                    for item in grouped[mid]:
-                        info=summary_from_metadata(item, meta, now)
-                        item_records[str(item.get("id", ""))]=info
-                        output[str(mid)]=info
-                except (QuotaDepleted, MissingAuth) as ex:
-                    halt.set()
-                    errors.append(str(ex))
-                    unknown = {"verdict": "unknown", "source": "nexus-api",
-                               "reason": "Nexus quota or authentication failed; verification incomplete"}
-                    output[str(mid)] = unknown
-                    for item in grouped[mid]:
-                        item_records[str(item.get("id", ""))] = unknown
-                except (NexusError, ValueError) as ex:
-                    errors.append(f"{mid}: {ex}")
-                    output[str(mid)] = {"verdict": "unknown", "reason": str(ex)}
-                    for item in grouped[mid]:item_records[str(item.get("id", ""))]=output[str(mid)]
-                if progress:
-                    progress({"checked": checked, "total": total, "phase": "querying-nexus"})
-        self.cache.persist()
-        return {"records": output, "itemRecords": item_records, "uniqueNexusMods": len(ids), "queried": checked, "cachedOrDeferred": len(ids) - checked, "mode": mode, "errors": errors, "checkedAt": datetime.now(timezone.utc).isoformat(), "quotaRemaining": self.client.remaining}
+                            info = summary_from_metadata(item, meta, now)
+                            item_records[str(item.get("id", ""))] = info
+                            output[str(mid)] = info
+                    except (QuotaDepleted, MissingAuth) as ex:
+                        checked += 1
+                        halt.set()
+                        if str(ex) not in errors:
+                            errors.append(str(ex))
+                        record(mid, {"verdict": "unknown", "source": "nexus-api",
+                                     "reason": "Nexus quota or authentication failed; verification incomplete"})
+                    except (NexusError, ValueError) as ex:
+                        checked += 1
+                        errors.append(f"{mid}: {ex}")
+                        record(mid, {"verdict": "unknown", "reason": str(ex)})
+                    if progress and not cancelled():
+                        progress({"checked": checked, "total": total, "phase": "querying-nexus"})
+        for mid in uncached:
+            if str(mid) not in output:
+                record(mid, {"verdict": "unknown", "source": "nexus-api",
+                             "reason": "Nexus audit was interrupted; latest version could not be verified"})
+        was_cancelled = not self.cache.persist_for_scan(game, epoch=cache_epoch, cancel_event=cancel_event)
+        if was_cancelled:
+            errors.append("Nexus audit was cancelled; verification incomplete")
+        return {"records": output, "itemRecords": item_records, "uniqueNexusMods": len(ids),
+                "queried": queried, "cachedOrDeferred": len(ids) - queried, "cancelled": was_cancelled,
+                "mode": mode, "errors": errors, "checkedAt": datetime.now(timezone.utc).isoformat(),
+                "quotaRemaining": self.client.remaining}
+
 
 
 def local_mo2_candidates(snapshot: dict) -> dict:

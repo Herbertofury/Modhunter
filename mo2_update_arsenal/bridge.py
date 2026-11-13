@@ -28,6 +28,7 @@ from .operation_journal import OperationJournal
 from .session_discovery import SessionDiscovery
 from .intelligence import ModIntelligence
 from .source_adapters import compact_source_update, PUBLIC_API_PROVIDERS
+from .version import VERSION
 
 MAX_REQUEST = 16_384
 MAX_PROGRESS_REQUEST = 8_000_000
@@ -144,6 +145,7 @@ class ArsenalService:
         self.journal = OperationJournal(cache_path.with_name("update-operations.jsonl"))
         self._stopped = False
         self._generation = 1
+        self._execution_epoch = 0  # Monotonic identity for queued native intent.
         self._pending_ui: set[UIRequest] = set()
         self._discovery = SessionDiscovery(discovery_directory)
         self.intelligence = ModIntelligence(self, cache_path.with_name("mod-intelligence.json"))
@@ -171,7 +173,7 @@ class ArsenalService:
     def health(self) -> dict:
         with self._guard:
             return {"ok": True, "app": "Modhunter", "protocol": 1, "live": True,
-                    "version": "0.9.0", "profileId": self._snapshot.get("profileId"),
+                    "version": VERSION, "profileId": self._snapshot.get("profileId"),
                     "generation": self._generation}
 
     def snapshot_response(self) -> dict:
@@ -216,6 +218,7 @@ class ArsenalService:
                 snapshot = {key: deepcopy(value) for key, value in self._snapshot.items() if key != "items"}
                 snapshot["items"] = [deepcopy({**item, "update": compact_source_update(item["update"])})
                     if isinstance(item.get("update"), dict) else deepcopy(item) for item in self._snapshot.get("items", [])]
+            snapshot["executionEpoch"] = self._execution_epoch
         # The existing MO2 Chronicle persists explicit user source links by
         # profile. Rehydrate them for scans without overwriting MO2 metadata.
         links = self.chronicle.source_links(snapshot.get("profileId", ""))
@@ -226,6 +229,7 @@ class ArsenalService:
         with self._guard:
             snapshot = {key: self._snapshot.get(key) for key in
                         ("profileId", "profileName", "game", "gameRuntime", "loader")}
+            snapshot["executionEpoch"] = self._execution_epoch
             snapshot["items"] = [deepcopy(self._items_by_id[key]) for key in item_ids
                                  if key in self._items_by_id]
         links = self.chronicle.source_links(snapshot.get("profileId", ""), item_ids)
@@ -277,10 +281,15 @@ class ArsenalService:
             awards = self.chronicle.observe(old, snapshot) if same_profile else []
             scan_context_changed = not (same_profile and same_game and same_runtime) or versions_changed
             if scan_context_changed:
+                self._execution_epoch += 1
                 self._file_cache.clear()  # File identity belongs to a specific game/profile.
                 self._file_epoch += 1
                 self._scan_epoch += 1
                 self._scan_cancel.set()
+                # A previous bulk queue must neither hold the new profile's
+                # progress state nor resume after an A -> B -> A switch.
+                self._quick_job = {"state": "idle", "profileId": snapshot.get("profileId"),
+                                   "queued": [], "skipped": [], "failed": []}
             if not same_profile or not same_game:
                 self._scan = {"state": "idle", "reason": "MO2 profile changed"}
                 self.selected_mod_id = ""
@@ -372,10 +381,27 @@ class ArsenalService:
         with self._guard:
             self.api_key = str(key).strip()
 
-    def call_ui(self, cmd: str, payload: dict, timeout: float = 20) -> dict:
+    def call_ui(self, cmd: str, payload: dict, timeout: float = 20,
+                *, cancel_event: threading.Event | None = None) -> dict:
         req = UIRequest(cmd, payload, timeout=timeout)
+        cancellable_read = cmd in ("nexus-metadata", "nexus-files") and cancel_event is not None
+        if cancellable_read and cancel_event.is_set():
+            req.cancel()
+            return req.result
         self._submit_ui(req)
-        if not req.event.wait(timeout):
+        if cancellable_read:
+            while not req.event.is_set():
+                if cancel_event.is_set():
+                    req.cancel()  # Only an owned read may abandon a running Qt callback.
+                    break
+                remaining = req.deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                req.event.wait(min(0.1, remaining))
+            completed = req.event.is_set()
+        else:
+            completed = req.event.wait(timeout)
+        if not completed:
             if req.cancel_if_pending():
                 return req.result
             if cmd in ("nexus-metadata", "nexus-files"):
@@ -455,14 +481,16 @@ class ArsenalService:
                             if m is None:
                                 raise NexusError("Unsupported native Nexus request")
                             native = self.call_ui("nexus-metadata",
-                                {"game": game, "modId": int(m.group(1))}, timeout=70)
+                                {"game": game, "modId": int(m.group(1))}, timeout=70,
+                                cancel_event=scan_cancel)
                             if not native.get("ok"):
                                 raise NexusError(str(native.get("error") or "MO2 Nexus lookup failed"))
                             return native["meta"]
                         client = NexusClient("mo2-native", request_json=mo2_nexus_get)
                     else:
                         raise MissingAuth("Connect to Nexus in MO2 Settings > Nexus or use a fallback API key.")
-                    return UpdateScanner(self.cache, client).scan(snapshot, which, progress), which
+                    return UpdateScanner(self.cache, client).scan(
+                        snapshot, which, progress, cancel_event=scan_cancel), which
 
                 def scan_sources():
                     with self._guard:
@@ -645,16 +673,24 @@ class ArsenalService:
                     self._early_download_events.clear()
 
     def request_download(self, mod_id: int, file_id: int, confirmation: str,
-                         item_id: str = "", installed_version: str = "") -> dict:
+                         item_id: str = "", installed_version: str = "",
+                         *, reviewed_context: dict | None = None,
+                         expected_execution_epoch: int | None = None) -> dict:
         if confirmation != "DOWNLOAD":
             return {"ok": False, "error": "Confirmation required"}
-        profile = self.profile_id()
+        with self._guard:
+            profile = self.profile_id()
+            execution_epoch = self._execution_epoch
+            if expected_execution_epoch is not None and expected_execution_epoch != execution_epoch:
+                return {"ok": False, "error": "MO2 context changed; refresh before downloading"}
         files = self.fetch_files(mod_id)
         if not files.get("ok") or file_id not in {int(f["fileId"]) for f in files["files"]}:
             return {"ok": False, "error": "The selected file must be verified in the Nexus Files list first"}
         with self._guard:
-            if self._snapshot.get("profileId") != profile:
+            if self._snapshot.get("profileId") != profile or self._execution_epoch != execution_epoch:
                 return {"ok": False, "error": "MO2 profile changed while checking the download"}
+            if reviewed_context is not None and not self.download_context_matches(reviewed_context):
+                return {"ok": False, "error": "Reviewed release or compatibility changed; review the file again"}
             ticket = {"provider": "nexus", "modId": mod_id, "fileId": file_id,
                 "operationId": secrets.token_hex(12), "itemId": item_id,
                 "installedVersion": installed_version, "status": "downloading",
@@ -662,7 +698,42 @@ class ArsenalService:
                 "profileName": self._snapshot.get("profileName", ""),
                 "game": self._snapshot.get("game", ""),
                 "gameRuntime": self._snapshot.get("gameRuntime", "unknown")}
-        return self._start_native_download("download", {"modId": mod_id, "fileId": file_id}, ticket)
+        native = {"modId": mod_id, "fileId": file_id, "executionEpoch": execution_epoch}
+        if reviewed_context is not None:
+            native["reviewedContext"] = reviewed_context
+        return self._start_native_download("download", native, ticket)
+
+    @staticmethod
+    def _download_context(snapshot: dict, item: dict) -> dict:
+        """Small server-owned review identity carried through the Qt handoff."""
+        source = item.get("source") or {}
+        update = item.get("update") or {}
+        return {"profileId": snapshot.get("profileId"), "game": snapshot.get("game"),
+                "executionEpoch": snapshot.get("executionEpoch"),
+                "gameRuntime": snapshot.get("gameRuntime"), "loader": snapshot.get("loader"),
+                "itemId": str(item.get("id") or ""),
+                "installedVersion": str(item.get("installedVersion") or ""),
+                "nexusId": int(item.get("nexusId") or 0),
+                "sourceUrl": str(source.get("url") or ""), "sourceVerified": source.get("verified") is True,
+                "verdict": update.get("verdict"), "targetVersion": str(update.get("latestVersion") or ""),
+                "risks": risk_reasons(item)}
+
+    def download_context_matches(self, reviewed: dict) -> bool:
+        """Revalidate immediately before a native download, even after Qt delay."""
+        with self._guard:
+            live = self.selection_snapshot([str(reviewed.get("itemId") or "")])
+            rows = live.get("items", [])
+            return bool(rows and not self._stopped and self._download_context(live, rows[0]) == reviewed)
+
+    @staticmethod
+    def _ticket_blocks_update(ticket: dict, item: dict | None) -> bool:
+        if ticket.get("status") in ("failed", "removed"):
+            return False
+        # A completed installation remains history. After MO2 observes a new
+        # installed version it must not permanently block the next release.
+        if ticket.get("status") == "installed" and item is not None:
+            return str(ticket.get("installedVersion") or "") == str(item.get("installedVersion") or "")
+        return True
 
     def quick_update(self, payload: dict) -> dict:
         """One click: select a verified unique archive; no extra form or approval.
@@ -671,23 +742,30 @@ class ArsenalService:
         download finishes. Bulk uses a background worker and downloads only;
         it never launches a storm of FOMOD windows or blocks the browser.
         """
-        snapshot = self.snapshot()
-        profile = str(snapshot.get("profileId") or "")
-        if not profile or payload.get("profileId") != profile:
+        with self._guard:
+            profile = self.profile_id()
+            execution_epoch = self._execution_epoch
+        if (not profile or payload.get("profileId") != profile
+                or payload.get("executionEpoch", execution_epoch) != execution_epoch):
             return {"ok": False, "error": "MO2 profile changed; refresh and try again"}
         if payload.get("all") is True:
+            snapshot = self.snapshot()
+            if snapshot.get("profileId") != profile or snapshot.get("executionEpoch") != execution_epoch:
+                return {"ok": False, "error": "MO2 profile changed; refresh and try again"}
             ids = [str(item["id"]) for item in snapshot.get("items", [])
                    if (item.get("update") or {}).get("verdict") == "candidate"]
             if not ids:
                 return {"ok": True, "state": "completed", "queued": [], "skipped": [], "failed": [],
                         "message": "No verified update candidates yet. Run Check Sources first."}
             with self._guard:
+                if snapshot.get("executionEpoch") != self._execution_epoch:
+                    return {"ok": False, "error": "MO2 context changed; refresh and try again"}
                 if self._quick_job.get("state") == "running":
                     return {"ok": True, **deepcopy(self._quick_job)}
                 self._quick_job = {"state": "running", "profileId": profile, "total": len(ids),
                                    "completed": 0, "queued": [], "skipped": [], "failed": []}
                 job = self._quick_job
-            threading.Thread(target=self._quick_worker, args=(profile, ids, job), daemon=True,
+            threading.Thread(target=self._quick_worker, args=(profile, ids, job, execution_epoch), daemon=True,
                              name="ModhunterQuickQueue").start()
             return {"ok": True, "state": "running", "profileId": profile, "total": len(ids),
                     "message": "Finding verified file matches and queueing downloads in MO2"}
@@ -697,7 +775,8 @@ class ArsenalService:
         if not self._queue_lock.acquire(blocking=False):
             return {"ok": False, "error": "A download queue is already being prepared; retry shortly"}
         try:
-            result = self._quick_one(profile, ids[0], auto_install=payload.get("autoInstall") is True)
+            result = self._quick_one(profile, ids[0], auto_install=payload.get("autoInstall") is True,
+                                     execution_epoch=execution_epoch)
         finally:
             self._queue_lock.release()
         if result.get("queued") and payload.get("autoInstall") is True:
@@ -715,15 +794,19 @@ class ArsenalService:
             return {"ok": True, "state": "idle", "profileId": profile, "queued": [], "skipped": [], "failed": []}
         return {"ok": True, **job}
 
-    def _quick_worker(self, profile: str, ids: list[str], job: dict) -> None:
+    def _quick_worker(self, profile: str, ids: list[str], job: dict, execution_epoch: int) -> None:
         try:
             for item_id in ids:
-                if self._stopped or self.profile_id() != profile:
-                    with self._guard:
+                with self._guard:
+                    if self._stopped or self._quick_job is not job or self.profile_id() != profile:
                         job["skipped"].append({"itemId": item_id, "reason": "MO2 profile changed or session closed"})
-                    break
+                        break
                 with self._queue_lock:
-                    result = self._quick_one(profile, item_id, auto_install=False)
+                    with self._guard:
+                        if self._stopped or self._quick_job is not job or self.profile_id() != profile:
+                            break
+                    result = self._quick_one(profile, item_id, auto_install=False,
+                                             execution_epoch=execution_epoch)
                 with self._guard:
                     for key in ("queued", "skipped", "failed"):
                         job[key].extend(result.get(key, []))
@@ -735,16 +818,18 @@ class ArsenalService:
             with self._guard:
                 job["state"] = "completed" if not self._stopped else "stopped"
 
-    def _quick_one(self, profile: str, item_id: str, auto_install: bool) -> dict:
+    def _quick_one(self, profile: str, item_id: str, auto_install: bool,
+                   *, execution_epoch: int | None = None) -> dict:
         live = self.selection_snapshot([item_id])
-        if live.get("profileId") != profile:
+        if (live.get("profileId") != profile
+                or execution_epoch is not None and live.get("executionEpoch") != execution_epoch):
             return {"skipped": [{"itemId": item_id, "reason": "The active MO2 profile changed"}]}
         item = next((m for m in live.get("items", []) if str(m.get("id")) == item_id), None)
         if not item or (item.get("update") or {}).get("verdict") != "candidate":
             return {"skipped": [{"itemId": item_id, "reason": "No verified newer release; choose a file manually"}]}
         with self._guard:
             if any(str(t.get("itemId")) == item_id and t.get("profileId") == profile
-                   and t.get("status") not in ("failed", "removed") for t in self._downloads.values()):
+                   and self._ticket_blocks_update(t, item) for t in self._downloads.values()):
                 return {"skipped": [{"itemId": item_id, "reason": "Already in MO2 Downloads"}]}
         update = item.get("update") or {}
         entry: dict | None = None
@@ -774,7 +859,8 @@ class ArsenalService:
         if entry is None:
             return {"skipped": [{"itemId": item_id, "reason": reason}]}
         result = self._queue_reviewed_downloads_once({
-            "profileId": profile, "confirm": "QUEUE_REVIEWED_DOWNLOADS", "entries": [entry]})
+            "profileId": profile, "executionEpoch": live["executionEpoch"],
+            "confirm": "QUEUE_REVIEWED_DOWNLOADS", "entries": [entry]})
         if result.get("queued"):
             with self._guard:
                 for queued in result["queued"]:
@@ -872,6 +958,7 @@ class ArsenalService:
         else:
             return {"ok": False, "error": "Source unavailable. Choose another file."}
         result = self.queue_reviewed_downloads({"profileId": snapshot["profileId"],
+                                                "executionEpoch": snapshot["executionEpoch"],
                                                 "confirm": "QUEUE_REVIEWED_DOWNLOADS",
                                                 "entries": [entry]})
         if result.get("queued"):
@@ -883,6 +970,12 @@ class ArsenalService:
 
     def queue_reviewed_downloads(self, payload: dict) -> dict:
         """Serialize reviewed batches so concurrent clicks cannot enqueue duplicates."""
+        with self._guard:
+            epoch = self._execution_epoch
+            if payload.get("executionEpoch", epoch) != epoch:
+                return {"ok": False, "error": "MO2 context changed; refresh and review the files again",
+                        "queued": [], "failed": []}
+            payload = {**payload, "executionEpoch": epoch}
         with self._queue_lock:
             result = self._queue_reviewed_downloads_once(payload)
         # An instantly completed archive can already be ready by the time the
@@ -901,7 +994,9 @@ class ArsenalService:
         # must not repeatedly copy tens of thousands of unrelated mods.
         selected_ids = [str(x.get("itemId")) for x in raw if isinstance(x, dict)] if isinstance(raw, list) else []
         snapshot = self.selection_snapshot(selected_ids)
+        reviewed_items = {str(item.get("id")): item for item in snapshot.get("items", [])}
         if (payload.get("profileId") != snapshot.get("profileId") or
+                payload.get("executionEpoch", snapshot["executionEpoch"]) != snapshot["executionEpoch"] or
                 payload.get("confirm") != "QUEUE_REVIEWED_DOWNLOADS" or
                 not isinstance(raw, list) or not raw):
             return {"ok": False, "error": "Active profile, reviewed entries and confirmation required", "queued": [], "failed": []}
@@ -933,10 +1028,10 @@ class ArsenalService:
             already_queued = {str(ticket.get("itemId")) for ticket in self._downloads.values()
                               if ticket.get("profileId") == snapshot.get("profileId")
                               and ticket.get("itemId")
-                              and ticket.get("status") not in ("failed", "removed")}
+                              and self._ticket_blocks_update(ticket, self._items_by_id.get(str(ticket.get("itemId"))))}
             queued_archives = {(ticket.get("provider"), ticket.get("archiveUrl")) for ticket in self._downloads.values()
                                if ticket.get("profileId") == snapshot.get("profileId") and ticket.get("archiveUrl")
-                               and ticket.get("status") not in ("failed", "removed")}
+                               and self._ticket_blocks_update(ticket, self._items_by_id.get(str(ticket.get("itemId"))))}
         for item in approved + sources:
             if item["itemId"] in already_queued:
                 return {"ok": False, "queued": [], "failed": [],
@@ -962,11 +1057,13 @@ class ArsenalService:
         for item in approved + sources:
             live = self.selection_snapshot([item["itemId"]])
             current = next((x for x in live.get("items", []) if x.get("id") == item["itemId"]), None)
+            reviewed_context = self._download_context(snapshot, reviewed_items[item["itemId"]])
             same = bool(live.get("profileId") == snapshot.get("profileId") and current is not None
                         and str(current.get("installedVersion") or "") == item["installedVersion"]
-                        and (current.get("update") or {}).get("verdict") == "candidate")
+                        and (current.get("update") or {}).get("verdict") == "candidate"
+                        and self._download_context(live, current) == reviewed_context)
             if not same:
-                failed.append({"itemId": item["itemId"], "error": "Profile or update verdict changed"})
+                failed.append({"itemId": item["itemId"], "error": "Profile, reviewed release, or compatibility changed"})
                 break
             if item.get("kind") == "source":
                 try:
@@ -988,13 +1085,15 @@ class ArsenalService:
                     "status": "downloading", "profileId": live.get("profileId"),
                     "gameRuntime": live.get("gameRuntime", "unknown")}
                 result = self._start_native_download("download-url", {**renewed, "reviewed": True,
-                    "riskAcknowledged": True}, ticket)
+                    "riskAcknowledged": True, "reviewedContext": reviewed_context,
+                    "executionEpoch": reviewed_context["executionEpoch"]}, ticket)
             else:
                 if int(current.get("nexusId") or 0) != item["modId"]:
                     failed.append({"itemId": item["itemId"], "error": "Nexus project changed"})
                     break
                 result = self.request_download(item["modId"], item["fileId"], "DOWNLOAD",
-                                               item["itemId"], item["installedVersion"])
+                                               item["itemId"], item["installedVersion"],
+                                               reviewed_context=reviewed_context)
             if result.get("ok"):
                 with self._guard:
                     selected_row = current or {}
@@ -1081,10 +1180,11 @@ class ArsenalService:
                 if not preflight["canInstall"]:
                     return {"ok": False, "error": "; ".join(preflight["errors"])}
                 ticket["status"] = "installing"
+                execution_epoch = self._execution_epoch
                 ticket.pop("lastError", None)
                 self.journal.record(ticket, download_id)
             threading.Thread(target=self._complete_native_install,
-                             args=(download_id, ticket), daemon=True,
+                             args=(download_id, ticket, execution_epoch), daemon=True,
                              name=f"ArsenalInstall-{download_id}").start()
             started = True
             return {"ok": True, "state": "installing", "downloadId": download_id,
@@ -1098,10 +1198,11 @@ class ArsenalService:
             if not started:
                 self._install_lock.release()
 
-    def _complete_native_install(self, download_id: int, ticket: dict) -> None:
+    def _complete_native_install(self, download_id: int, ticket: dict, execution_epoch: int) -> None:
         """Wait on a daemon worker, never the HTTP thread or MO2 GUI thread."""
         try:
             request = UIRequest("install", {"downloadId": download_id,
+                                "executionEpoch": execution_epoch,
                                 "profileId": ticket.get("profileId"),
                                 "gameRuntime": ticket.get("gameRuntime"),
                                 "itemId": ticket.get("itemId", ""),
@@ -1148,6 +1249,7 @@ class ArsenalService:
     def stop(self) -> None:
         with self._guard:
             self._stopped = True
+            self._execution_epoch += 1
             self._scan_epoch += 1
             self._scan_cancel.set()
             self.intelligence.invalidate(reason="MO2 session closed")
@@ -1380,7 +1482,8 @@ class ArsenalService:
                     return self._reply(service.quick_update(data))
                 if uri.path == "/api/download":
                     try:
-                        result = service.request_download(int(data.get("modId") or 0), int(data.get("fileId") or 0), data.get("confirm"))
+                        result = service.request_download(int(data.get("modId") or 0), int(data.get("fileId") or 0),
+                            data.get("confirm"), expected_execution_epoch=data.get("executionEpoch"))
                     except (ValueError, TypeError):
                         result = {"ok": False, "error": "Invalid Nexus file identifiers"}
                     return self._reply(result)

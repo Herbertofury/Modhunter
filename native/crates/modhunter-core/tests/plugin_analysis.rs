@@ -169,6 +169,67 @@ fn fast_header_facts_are_cached_without_claiming_conversion_eligibility() {
 }
 
 #[test]
+fn payload_streaming_preserves_hashes_and_record_boundaries_for_every_buffer_size() {
+    let mut f = Fixture::new();
+    let root = f.add("Payloads", 0, true);
+    let path = root.join("Payloads.esp");
+    // Include empty, tiny, exactly buffered and multi-buffer payloads. Their
+    // contents are opaque to the record audit, but every byte must be hashed.
+    let sizes = [0, 1, 8191, 8192, 8193, 65535, 65536, 65537, 131077];
+    let entries: Vec<_> = sizes
+        .iter()
+        .enumerate()
+        .map(|(i, _)| ("MISC", 0x800 + i as u32))
+        .collect();
+    let mut bytes = plugin(0, 1.7, &[], &entries);
+    let header_length = 24 + u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;
+    bytes.truncate(header_length);
+    let mut body = Vec::new();
+    for (i, size) in sizes.into_iter().enumerate() {
+        let payload: Vec<_> = (0..size).map(|j| ((j + i) % 251) as u8).collect();
+        body.extend(record(b"MISC", 0, 0x800 + i as u32, &payload));
+    }
+    let mut group = vec![0_u8; 24];
+    group[..4].copy_from_slice(b"GRUP");
+    group[4..8].copy_from_slice(&(body.len() as u32 + 24).to_le_bytes());
+    bytes.extend(group);
+    bytes.extend(body);
+    fs::write(&path, &bytes).unwrap();
+    let old_time = fs::metadata(&path).unwrap().modified().unwrap();
+    let engine = PluginAnalyzer::new();
+    let result = engine.audit(&f.request).unwrap();
+    let copy = &result.mods["Payloads"].plugins[0];
+    let summary = copy.records.as_ref().unwrap();
+    assert!(summary.scan_complete);
+    assert_eq!(summary.total_records, sizes.len());
+    assert_eq!(summary.new_record_types["MISC"], sizes.len());
+    assert_eq!(result.stats.bytes_read, bytes.len() as u64);
+    assert_eq!(copy.fingerprint.as_ref().unwrap().sha256, Some(hash(&path)));
+    let old_hash = copy.fingerprint.as_ref().unwrap().sha256.clone();
+
+    // An equal-length payload edit with restored mtime must still produce a
+    // fresh hash, including data beyond the first buffer.
+    let last = bytes.len() - 1;
+    bytes[last] ^= 0x7f;
+    fs::write(&path, &bytes).unwrap();
+    restore_modified(&path, old_time);
+    let changed = engine.audit(&f.request).unwrap();
+    let copy = &changed.mods["Payloads"].plugins[0];
+    assert_eq!(copy.fingerprint.as_ref().unwrap().sha256, Some(hash(&path)));
+    assert_ne!(copy.fingerprint.as_ref().unwrap().sha256, old_hash);
+    assert_eq!(copy.records.as_ref().unwrap().total_records, sizes.len());
+
+    // Unsupported record formats hash the whole tail without claiming a
+    // record audit or conditional ESL eligibility.
+    f.request.game = "starfield".into();
+    let tail_only = engine.audit(&f.request).unwrap();
+    let copy = &tail_only.mods["Payloads"].plugins[0];
+    assert!(copy.records.is_none());
+    assert_eq!(copy.fingerprint.as_ref().unwrap().sha256, Some(hash(&path)));
+    assert_eq!(tail_only.stats.bytes_read, bytes.len() as u64);
+}
+
+#[test]
 fn fast_header_revalidation_reads_master_version_and_invalid_magic_with_preserved_mtime() {
     let mut f = Fixture::new();
     let root = f.add("Source", 0, true);

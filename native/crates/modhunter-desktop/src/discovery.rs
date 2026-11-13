@@ -4,7 +4,7 @@
 use modhunter_core::{BridgeClient, validate_bridge_endpoint};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashSet,
+    collections::{BTreeSet, HashSet},
     fs,
     io::Read,
     path::Path,
@@ -32,6 +32,7 @@ pub struct Session {
     pub profile_id: String,
     pub profile_name: String,
     pub version: String,
+    pub generation: u64,
     pub latency_ms: f64,
 }
 
@@ -53,10 +54,11 @@ pub fn discover(directory: &Path, client: &BridgeClient) -> std::io::Result<Vec<
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(e) => return Err(e),
     };
-    // Crashed MO2 processes can leave old hints. Inspect the newest files first
-    // so the bounded probe budget cannot be consumed by old dead sessions.
-    let mut candidates = Vec::new();
-    for entry in entries.take(256).flatten() {
+    // Crashed MO2 processes can leave hundreds of old hints. Directory order
+    // is not chronological: choose the newest files across the directory,
+    // retaining only 256 metadata entries and probing at most 32 endpoints.
+    let mut candidates = BTreeSet::new();
+    for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) != Some("json") {
             continue;
@@ -67,12 +69,14 @@ pub fn discover(directory: &Path, client: &BridgeClient) -> std::io::Result<Vec<
         if linked(&meta) || !meta.is_file() || meta.len() > 4096 {
             continue;
         }
-        candidates.push((meta.modified().unwrap_or(std::time::UNIX_EPOCH), path));
+        candidates.insert((meta.modified().unwrap_or(std::time::UNIX_EPOCH), path));
+        if candidates.len() > 256 {
+            candidates.pop_first();
+        }
     }
-    candidates.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
     let mut hints = Vec::new();
     let mut seen = HashSet::new();
-    for (_, path) in candidates {
+    for (_, path) in candidates.into_iter().rev() {
         let Ok(file) = fs::File::open(&path) else {
             continue;
         };
@@ -126,6 +130,7 @@ pub fn discover(directory: &Path, client: &BridgeClient) -> std::io::Result<Vec<
                             profile_id: health.profile_id,
                             profile_name,
                             version: health.version,
+                            generation: health.generation,
                             latency_ms: health.latency_ms,
                         });
                 }
@@ -152,10 +157,7 @@ mod tests {
         listener.set_nonblocking(true).unwrap();
         let endpoint = format!("http://{}/", listener.local_addr().unwrap());
         let descriptor = serde_json::json!({"app":"Modhunter","protocol":1,"endpoint":endpoint,"profileId":"qa","profileName":"Native QA","pid":123});
-        for name in ["first.json", "second.json"] {
-            fs::write(temp.path().join(name), descriptor.to_string()).unwrap();
-        }
-        for i in 0..40 {
+        for i in 0..400 {
             let path = temp.path().join(format!("stale-{i:03}.json"));
             let mut old = descriptor.clone();
             old["endpoint"] = serde_json::json!(format!("http://127.0.0.1:{}/", 11000 + i));
@@ -169,6 +171,11 @@ mod tests {
                         .set_modified(std::time::UNIX_EPOCH + Duration::from_secs(100)),
                 )
                 .unwrap();
+        }
+        // Create live descriptors after more than 256 stale ones. A bounded
+        // read_dir().take(256) silently omitted them on real filesystems.
+        for name in ["zz-first.json", "zz-second.json"] {
+            fs::write(temp.path().join(name), descriptor.to_string()).unwrap();
         }
         let worker = std::thread::spawn(move || {
             let deadline = std::time::Instant::now() + Duration::from_secs(5);
@@ -218,6 +225,7 @@ mod tests {
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].profile_name, "Native QA");
         assert_eq!(sessions[0].endpoint, endpoint);
+        assert_eq!(sessions[0].generation, 1);
     }
     #[test]
     fn stale_wrong_protocol_remote_and_oversized_descriptors_are_not_connections() {

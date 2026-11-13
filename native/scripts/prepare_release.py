@@ -2,6 +2,7 @@
 
 Usage:
   python native/scripts/prepare_release.py ARTIFACTS OUTPUT --commit SHA --run-url URL
+  python native/scripts/prepare_release.py --print-version
   python native/scripts/prepare_release.py --self-test
 
 This command does not publish anything. OUTPUT must be absent or empty. It
@@ -11,6 +12,7 @@ PNG evidence allowlist; diagnostic logs, settings and session files are omitted.
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
 import re
@@ -18,18 +20,18 @@ import shutil
 import stat
 import struct
 import tempfile
+import tomllib
 import zlib
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
 from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile
 
-VERSION = "0.9.0"
+ROOT = Path(__file__).resolve().parents[2]
 PORTABLE_NAME = "Modhunter-Rust-Windows.zip"
-VERIFICATION_NAME = f"Modhunter-{VERSION}-Verification.zip"
 JSON_LIMIT = 4 * 1024 * 1024
 PNG_LIMIT = 32 * 1024 * 1024
 PORTABLE_EXPANDED_LIMIT = 512 * 1024 * 1024
-PRODUCTION_FILES = ("plugin.py", "bridge.py", "model.py", "focus.py", "native_nexus.py", "qt_bridge.py", "intelligence.py",
+PRODUCTION_FILES = ("plugin.py", "version.py", "bridge.py", "model.py", "focus.py", "scanner.py", "native_nexus.py", "qt_bridge.py", "intelligence.py",
                     "plugin_intelligence.py", "mod_health.py", "source_adapters.py",
                     "source_registry.py", "update_plan.py", "quick_update.py",
                     "install_brief.py", "web/index.html")
@@ -62,6 +64,38 @@ class ReleaseError(ValueError):
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise ReleaseError(message)
+
+
+def source_version(root: Path = ROOT) -> str:
+    """Validate the separately deployed app/plugin versions without loading MO2."""
+    try:
+        workspace = tomllib.loads((root / "native/Cargo.toml").read_text("utf-8"))
+        version = workspace["workspace"]["package"]["version"]
+        require(isinstance(version, str) and re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version) is not None,
+                "The Rust workspace must specify a stable numeric release version")
+        config = json.loads((root / "native/crates/modhunter-desktop/tauri.conf.json").read_text("utf-8"))
+        require(config.get("version") == version, "Tauri version does not match the Rust workspace")
+        locked = tomllib.loads((root / "native/Cargo.lock").read_text("utf-8"))
+        for name in ("modhunter-core", "modhunter-desktop"):
+            manifest = tomllib.loads((root / "native/crates" / name / "Cargo.toml").read_text("utf-8"))
+            require(manifest.get("package", {}).get("version") == {"workspace": True},
+                    f"{name} must inherit the Rust workspace version")
+            matches = [package for package in locked.get("package", []) if package.get("name") == name]
+            require(len(matches) == 1 and matches[0].get("version") == version,
+                    f"Cargo.lock contains a missing or stale {name} version")
+        plugin = ast.parse((root / "mo2_update_arsenal/version.py").read_text("utf-8"))
+        declarations = [node.value for node in plugin.body if isinstance(node, ast.Assign)
+                        and any(isinstance(target, ast.Name) and target.id == "VERSION" for target in node.targets)]
+        require(len(declarations) == 1 and isinstance(declarations[0], ast.Constant)
+                and declarations[0].value == version, "Packaged MO2 plugin version does not match the Rust workspace")
+        return version
+    except (OSError, KeyError, TypeError, SyntaxError, tomllib.TOMLDecodeError, json.JSONDecodeError) as exc:
+        raise ReleaseError(f"Cannot read the release version manifests: {exc}") from exc
+
+
+VERSION = source_version()
+VERIFICATION_NAME = f"Modhunter-{VERSION}-Verification.zip"
+INSTALLER_NAME = f"Modhunter_{VERSION}_x64-setup.exe"
 
 
 def regular_file(path: Path) -> Path:
@@ -285,10 +319,11 @@ def portable_contents(path: Path, commit: str, run_url: str, native_report: dict
                 observed = hashlib.sha256(archive.read(index[name])).hexdigest()
                 require(observed == expected.lower(), f"Tested MO2 source differs from the portable plugin: {relative}")
             public["BUILD_INFO.json"] = public_json(build)
-            benchmark_name = "Evidence/import-comparison.json"
-            if benchmark_name in index:
-                benchmark = json_object(archive.read(index[benchmark_name]), "import-comparison.json")
-                public["benchmarks/import-comparison.json"] = public_json(benchmark)
+            for filename in ("import-comparison.json", f"plugin-audit-comparison-{VERSION}.json", "mo2-preflight-comparison.json"):
+                benchmark_name = "Evidence/" + filename
+                if benchmark_name in index:
+                    benchmark = json_object(archive.read(index[benchmark_name]), filename)
+                    public["benchmarks/" + filename] = public_json(benchmark)
     except (BadZipFile, RuntimeError, OSError) as exc:
         raise ReleaseError(f"Cannot validate portable archive: {path.name}: {exc}") from exc
     return public
@@ -300,6 +335,17 @@ def release_notes(commit: str, run_url: str, repository_url: str, installer_name
 The Windows desktop, MO2 profile import/cache engine, connection checks, tab lifecycle and native dialogs now run in Rust. Microsoft Edge WebView2 renders the existing dashboard and all game modes. The shipped desktop does not require Node or Electron.
 
 MO2's Python/Qt plugin remains the in-process adapter for MO2's authenticated Nexus connection, native downloads, interactive FOMOD installer, focus and verified rewards. Dashboard/game presentation remains HTML/CSS/JavaScript.
+
+## Faster audits, responsive lists and reliable updates
+
+- Rust record audits stream payloads into fresh SHA-256 checks without allocating and clearing a scratch buffer for every record. Import and audit share their worker pool; changing the worker count releases idle pools.
+- Single-mod Quick Update reads only the selected row. On the synthetic 10,000-mod cached-file fixture, preparation fell from 143.853 ms to 0.168 ms. A 100,000-record small-payload Rust audit fell from 150.30 ms to 11.68 ms. These are local component timings, not Nexus/download/install or personal-PC guarantees.
+- Full-list dashboard updates retain unchanged rows and keyboard focus. Workshop search coalesces rapid input; every matching record remains available without virtualization or record caps.
+- Nexus audits bound submitted work to five requests per scan. Cancelled scans cannot replace newer metadata; reviewed downloads recheck the profile session, target release, source and compatibility at the native handoff.
+- A completed prior installation no longer blocks a subsequent release once MO2 observes its new version. Find MO2 handles hundreds of stale session descriptors and avoids a second connection probe.
+- App, installer, plugin and package versions are validated together. Release assets remain immutable.
+
+See the [release evidence and repeatable workloads]({repository_url}/blob/{commit}/native/evidence/readiness-0.9.1.md) for the validation scope.
 
 ## Download and run
 
@@ -334,6 +380,7 @@ Import benchmarks use identical generated 2,500- and 10,000-mod metadata fixture
 
 
 def prepare(artifacts_dir: Path, output_dir: Path, commit: str, run_url: str) -> list[Path]:
+    require(source_version() == VERSION, "Source release version changed during preparation")
     commit, repository_url = validate_run(commit, run_url)
     artifacts_dir = artifact_directory(artifacts_dir.absolute())
     output_dir = output_dir.absolute()
@@ -348,8 +395,8 @@ def prepare(artifacts_dir: Path, output_dir: Path, commit: str, run_url: str) ->
     installers = sorted((windows / "release/bundle/nsis").glob("*.exe"))
     require(len(installers) == 1, "Expected exactly one NSIS installer in the Windows artifact")
     installer = regular_file(installers[0])
-    require(re.fullmatch(r"[A-Za-z0-9_.-]+\.exe", installer.name) is not None and installer.stat().st_size > 0,
-            "NSIS installer has an invalid filename or is empty")
+    require(installer.name == INSTALLER_NAME and installer.stat().st_size > 0,
+            f"NSIS installer must be the nonempty {INSTALLER_NAME} from this release")
     native_report = read_json(windows / "native-smoke/native-smoke.json")
     validate_native_report(native_report)
     mo2_result = read_json(mo2 / "result.json")
@@ -359,6 +406,11 @@ def prepare(artifacts_dir: Path, output_dir: Path, commit: str, run_url: str) ->
     require(qt_helper.stat().st_size > 0, "The same Windows job's compiled Qt helper is empty")
     public = portable_contents(portable, commit, run_url, native_report, mo2_result, file_hash(qt_helper))
     public.update({"windows/native-smoke.json": public_json(native_report), "mo2/result.json": public_json(mo2_result), "mo2/native-receipt.json": public_json(mo2_receipt), "mo2/mo2-fixture.png": png_bytes(mo2 / "mo2-fixture.png")})
+    dashboard_benchmark = browser / "dashboard-render-comparison.json"
+    if dashboard_benchmark.exists():
+        benchmark = read_json(dashboard_benchmark)
+        require(benchmark.get("candidateCommit") == commit, "Dashboard benchmark does not identify the tested build commit")
+        public["benchmarks/dashboard-render-comparison.json"] = public_json(benchmark)
     screenshots = sorted(browser.rglob("*.png"))
     require(bool(screenshots), "Browser proof contains no PNG screenshots")
     require(len(screenshots) <= 128, "Unexpectedly many browser screenshots")
@@ -439,7 +491,7 @@ def self_test() -> None:
             self.write_json(self.mo2 / "native-receipt.json", self.receipt)
             self.zip_path = self.windows / PORTABLE_NAME
             self.write_portable()
-            (self.windows / "release/bundle/nsis/Modhunter_0.9.0_x64-setup.exe").write_bytes(b"synthetic installer fixture - not executable")
+            (self.windows / "release/bundle/nsis" / INSTALLER_NAME).write_bytes(b"synthetic installer fixture - not executable")
             image = self.png()
             (self.mo2 / "mo2-fixture.png").write_bytes(image)
             (self.browser / "review.png").write_bytes(image)
@@ -457,9 +509,9 @@ def self_test() -> None:
                 return struct.pack(">I", len(content)) + kind + content + struct.pack(">I", zlib.crc32(kind + content) & 0xFFFFFFFF)
             return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(b"\0\0\0\0\0")) + chunk(b"IEND", b"")
 
-        def write_portable(self, commit=None, *, include_helper=True, helper_bytes=None, include_qt_helper=True, qt_bytes=None):
+        def write_portable(self, commit=None, *, build_version=None, include_helper=True, helper_bytes=None, include_qt_helper=True, qt_bytes=None):
             with ZipFile(self.zip_path, "w") as archive:
-                archive.writestr("BUILD_INFO.json", b"\xef\xbb\xbf" + public_json({"version": VERSION, "commit": commit or self.commit, "workflow": self.run}))
+                archive.writestr("BUILD_INFO.json", b"\xef\xbb\xbf" + public_json({"version": build_version or VERSION, "commit": commit or self.commit, "workflow": self.run}))
                 for name in ("Modhunter.exe", "modhunter-cli.exe", "Install_MO2_Plugin.ps1", "Install_MO2_Plugin.bat"):
                     archive.writestr(name, self.cli_bytes)
                 if include_helper:
@@ -469,6 +521,71 @@ def self_test() -> None:
                 archive.writestr("Evidence/native-smoke.json", public_json(self.native))
                 for name, body in self.sources.items():
                     archive.writestr("MO2/mo2_update_arsenal/" + name, body)
+
+        def test_source_versions_reject_stale_manifest_lockfile_and_plugin(self):
+            manifests = ("native/Cargo.toml", "native/Cargo.lock", "native/crates/modhunter-core/Cargo.toml",
+                         "native/crates/modhunter-desktop/Cargo.toml", "native/crates/modhunter-desktop/tauri.conf.json",
+                         "mo2_update_arsenal/version.py")
+            fixture = self.root / "source"
+            for relative in manifests:
+                target = fixture / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(ROOT / relative, target)
+            self.assertEqual(source_version(fixture), VERSION)
+            mutations = (
+                ("native/crates/modhunter-desktop/tauri.conf.json", f'"version": "{VERSION}"', '"version": "0.0.0"', "Tauri"),
+                ("mo2_update_arsenal/version.py", f'VERSION = "{VERSION}"', 'VERSION = "0.0.0"', "MO2 plugin"),
+                ("native/Cargo.lock", f'name = "modhunter-core"\nversion = "{VERSION}"', 'name = "modhunter-core"\nversion = "0.0.0"', "Cargo.lock"),
+                ("native/Cargo.lock", f'name = "modhunter-desktop"\nversion = "{VERSION}"', 'name = "modhunter-desktop"\nversion = "0.0.0"', "Cargo.lock"),
+                ("native/crates/modhunter-core/Cargo.toml", "version.workspace = true", f'version = "{VERSION}"', "must inherit"),
+                ("native/Cargo.toml", f'version = "{VERSION}"', 'version = "1.0.0-preview"', "stable numeric"),
+            )
+            for relative, before, after, error in mutations:
+                with self.subTest(file=relative, error=error):
+                    path = fixture / relative
+                    original = path.read_text("utf-8")
+                    self.assertIn(before, original)
+                    path.write_text(original.replace(before, after, 1), "utf-8")
+                    with self.assertRaisesRegex(ReleaseError, error):
+                        source_version(fixture)
+                    path.write_text(original, "utf-8")
+
+        def test_stale_portable_or_installer_version_cannot_be_published(self):
+            self.write_portable(build_version="0.0.0")
+            with self.assertRaisesRegex(ReleaseError, "Portable version"):
+                prepare(self.artifacts, self.output, self.commit, self.run)
+            self.assertFalse(self.output.exists())
+            self.write_portable()
+            (self.windows / "release/bundle/nsis" / INSTALLER_NAME).rename(
+                self.windows / "release/bundle/nsis/Modhunter_0.0.0_x64-setup.exe")
+            with self.assertRaisesRegex(ReleaseError, "NSIS installer must"):
+                prepare(self.artifacts, self.output, self.commit, self.run)
+            self.assertFalse(self.output.exists())
+
+        def test_new_benchmarks_are_preserved_with_identity_and_credential_checks(self):
+            filenames = (f"plugin-audit-comparison-{VERSION}.json", "mo2-preflight-comparison.json")
+            fixture = {"method": "synthetic release-test fixture", "medianMs": 12.5}
+            with ZipFile(self.zip_path, "a") as archive:
+                for name in filenames:
+                    archive.writestr("Evidence/" + name, public_json(fixture))
+            dashboard = {"candidateCommit": self.commit, "method": "synthetic release-test fixture"}
+            self.write_json(self.browser / "dashboard-render-comparison.json", dashboard)
+            prepare(self.artifacts, self.output, self.commit, self.run)
+            with ZipFile(self.output / VERIFICATION_NAME) as archive:
+                for name in filenames:
+                    self.assertEqual(json.loads(archive.read("benchmarks/" + name)), fixture)
+                self.assertEqual(json.loads(archive.read("benchmarks/dashboard-render-comparison.json")), dashboard)
+            dashboard["candidateCommit"] = "b" * 40
+            self.write_json(self.browser / "dashboard-render-comparison.json", dashboard)
+            rejected = self.root / "rejected"
+            with self.assertRaisesRegex(ReleaseError, "Dashboard benchmark"):
+                prepare(self.artifacts, rejected, self.commit, self.run)
+            self.assertFalse(rejected.exists())
+            dashboard["token"] = "must never be published"
+            self.write_json(self.browser / "dashboard-render-comparison.json", dashboard)
+            with self.assertRaisesRegex(ReleaseError, "Credential field"):
+                prepare(self.artifacts, rejected, self.commit, self.run)
+            self.assertFalse(rejected.exists())
 
         def test_success_keeps_binaries_and_checksums_and_public_allowlist(self):
             portable_digest = file_hash(self.zip_path)
@@ -534,7 +651,7 @@ def self_test() -> None:
                 prepare(self.artifacts, self.output, self.commit, self.run)
 
         def test_intelligence_and_adapter_sources_are_bound_to_native_proof(self):
-            for name in ("native_nexus.py", "qt_bridge.py", "intelligence.py", "plugin_intelligence.py", "mod_health.py",
+            for name in ("version.py", "scanner.py", "native_nexus.py", "qt_bridge.py", "intelligence.py", "plugin_intelligence.py", "mod_health.py",
                          "source_adapters.py", "source_registry.py", "update_plan.py",
                          "quick_update.py", "install_brief.py"):
                 with self.subTest(name=name):
@@ -619,8 +736,12 @@ def main() -> None:
     parser.add_argument("output_dir", nargs="?", type=Path)
     parser.add_argument("--commit")
     parser.add_argument("--run-url")
+    parser.add_argument("--print-version", action="store_true", help="Validate source version manifests and print the single release version")
     parser.add_argument("--self-test", action="store_true", help="Exercise validation using temporary synthetic artifacts; does not publish")
     args = parser.parse_args()
+    if args.print_version:
+        print(source_version())
+        return
     if args.self_test:
         self_test()
         return

@@ -29,7 +29,9 @@ function harness({live=true,failSnapshots=0,count=3}={}){
    get innerHTML(){return html},set innerHTML(value){html=value;this.writes++},
    getContext(){return{setTransform(){}}},addEventListener(){},setAttribute(){},removeAttribute(){},querySelector:selector=>node(id+' '+selector),querySelectorAll(){return[]},
    append(){},appendChild(){},remove(){},scrollIntoView(){},focus(){document.activeElement=this},getBoundingClientRect(){return{left:0,top:0,width:800,height:50}},
-   get children(){return[node(id+'-first'),node(id+'-second')]},get firstElementChild(){return node(id+'-first')},
+   // This transport harness does not parse HTML. Only the static footer has
+   // modeled children; actual row replacement is covered in Chromium tests.
+   get children(){return id==='.pagefooter'?[node(id+'-first'),node(id+'-second')]:[]},get firstElementChild(){return node(id+'-first')},
   };
  }
  function node(id){if(!nodes.has(id))nodes.set(id,element(id));return nodes.get(id)}
@@ -57,7 +59,7 @@ function harness({live=true,failSnapshots=0,count=3}={}){
    }else if(endpoint==='revision')value={ok:true,profileId:c.profileId,generation:state.generation};
    else if(endpoint==='game?compact=1')value={ok:true,profileId:c.profileId,score:state.score,updates:0,feed:[]};
    else if(endpoint==='progress')value={ok:true,profileId:c.profileId,progress:{rows:{},prefs:{}}};
-   else if(endpoint==='downloads')value={ok:true,profileId:c.profileId,downloads:{}};
+   else if(endpoint==='downloads')value={ok:true,profileId:c.profileId,downloads:state.downloads||{}};
    else if(endpoint==='activity')value={ok:true,profileId:c.profileId,records:[]};
    else if(endpoint==='plugin-audit')value={ok:true,profileId:c.profileId,state:'running',depth:'records'};
    else if(endpoint==='mod-health'||endpoint.startsWith('mod-health?')){
@@ -79,7 +81,7 @@ function harness({live=true,failSnapshots=0,count=3}={}){
    return{ok:true,json:async()=>value};
   }finally{active.set(key,active.get(key)-1)}
  };
- const instrument='window.__RUNTIME__={getSrc,bridgeRequest,scanLive,fastUpdateAll,refreshWorkshop,pollLiveBridge,updatePrefs,save,counts,filtered,render,importOfflineCatalog,scheduleSearchRender,analyzePlugins,refreshModHealth,drawInspector,loadModInsights,loadSourceDetails,sourceDetailMod,openFilePicker,closeFilePicker,exportWorkshop,state:()=>({connected:LIVE_CONNECTED,quick:QUICK_RUNNING,profileEpoch:PROFILE_EPOCH}),setRow:(id,value)=>{STORE.rows[id]=value;save()},setQuery:q=>{STORE.prefs.query=q;scheduleSearchRender()}};';
+ const instrument='window.__RUNTIME__={getSrc,bridgeRequest,scanLive,fastUpdateAll,refreshWorkshop,refreshDownloads,nextWorkshopCandidate,pollLiveBridge,updatePrefs,save,counts,filtered,render,importOfflineCatalog,scheduleSearchRender,analyzePlugins,refreshModHealth,drawInspector,loadModInsights,loadSourceDetails,sourceDetailMod,openFilePicker,closeFilePicker,exportWorkshop,state:()=>({connected:LIVE_CONNECTED,quick:QUICK_RUNNING,profileEpoch:PROFILE_EPOCH}),setRow:(id,value)=>{STORE.rows[id]=value;save()},setQuery:q=>{STORE.prefs.query=q;scheduleSearchRender()}};';
  const source=APP.replace('/*__POWERSHELL__*/','""').replace(/\}\)\(\);\s*$/,instrument+'\n})();');
  vm.createContext(context);vm.runInContext(SOURCES,context,{filename:'source_insights.js'});vm.runInContext(INSIGHTS,context,{filename:'mod_insights.js'});vm.runInContext(source,context,{filename:'app.js'});
  return{context,state,nodes,timers,calls,active,maximum,pending,api:context.__RUNTIME__,qa:context.__ARSENAL_QA__,
@@ -171,6 +173,54 @@ test('cosmetic settings leave catalog DOM intact; large searches keep all record
  assert.equal([...h.timers.values()].filter(t=>t.ms==='frame').length,1);await h.tick('frame');
  assert.equal(h.api.filtered().length,1);assert.equal(h.qa.getCatalog().items.length,2500);
  assert.equal(h.nodes.get('modList').writes,writes+1);
+});
+
+test('a completed prior release does not hide the next update or manual file selection',async()=>{
+ const h=harness({count:1});await h.settle();
+ h.state.downloads={'41':{itemId:'item-0',status:'installed',installedVersion:'1.0',targetVersion:'2.0'}};
+ await h.api.refreshDownloads();
+ assert.equal(h.api.nextWorkshopCandidate(),null,'Unconfirmed installation must still block a duplicate');
+ assert.match(h.nodes.get('workshopResults').innerHTML,/View download/);
+ const data=catalog('a',1);data.items[0].installedVersion='2.0';data.items[0].update.latestVersion='3.0';
+ h.state.catalog=data;await h.qa.setCatalog(data);
+ assert.equal(h.api.nextWorkshopCandidate().id,'item-0');
+ assert.match(h.nodes.get('workshopResults').innerHTML,/Update now/);
+ assert.match(h.nodes.get('workshopResults').innerHTML,/Choose file/);
+ assert.equal(h.state.downloads['41'].status,'installed','History is retained');
+});
+
+test('active downloads still block duplicate updates after an installed-version change',async()=>{
+ const h=harness({count:1});await h.settle();
+ for(const status of ['downloading','paused','complete','installing']){
+  h.state.downloads={'42':{itemId:'item-0',status,installedVersion:'0.9'}};
+  await h.api.refreshDownloads();
+  assert.equal(h.api.nextWorkshopCandidate(),null,status);
+  assert.doesNotMatch(h.nodes.get('workshopResults').innerHTML,/data-workshop-act="quick"/,status);
+ }
+});
+
+test('profile commands carry the observed execution epoch and never replace an explicit older review',async()=>{
+ const h=harness();await h.settle();const data=catalog('a');data.executionEpoch=7;
+ h.state.catalog=data;await h.qa.setCatalog(data);
+ await h.api.bridgeRequest('POST','quick-update',{profileId:'a',itemIds:['item-0']});
+ assert.equal(h.calls.at(-1).body.executionEpoch,7);
+ await h.api.bridgeRequest('POST','queue-reviewed',{profileId:'a',executionEpoch:3,entries:[]});
+ assert.equal(h.calls.at(-1).body.executionEpoch,3);
+ await h.api.bridgeRequest('POST','progress',{profileId:'old-profile',rows:{}});
+ assert.equal(h.calls.at(-1).body.executionEpoch,undefined,'Another profile must not receive the current session epoch');
+});
+
+test('large Workshop searches render the newest query once per animation frame',async()=>{
+ const h=harness({live:false,count:2500});await h.settle();
+ const input=h.nodes.get('workshopSearch'),results=h.nodes.get('workshopResults'),writes=results.writes;
+ for(const query of ['Fixture','Fixture 2','Fixture 2499']){input.value=query;input.oninput();}
+ assert.equal([...h.timers.values()].filter(t=>t.ms==='frame').length,1);
+ assert.equal(results.writes,writes);
+ await h.tick('frame');
+ assert.equal(results.writes,writes+1);
+ assert.equal((results.innerHTML.match(/data-workshop-id=/g)||[]).length,1);
+ assert.match(results.innerHTML,/Fixture 2499/);
+ assert.equal(h.qa.getCatalog().items.length,2500);
 });
 
 test('an explicit unknown or foreign game never becomes a fabricated active-game Nexus link',async()=>{

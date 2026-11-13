@@ -1,0 +1,447 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-11-13T01:12:16.734691+00:00",
+  "environment": {
+    "os": "Linux-6.18.57-x86_64-with-glibc2.41",
+    "architecture": "x86_64"
+  },
+  "executables": {
+    "baseline": {
+      "name": "modhunter-cli",
+      "sha256": "daf2d71c63a5d6af3b5b4d238baade2ffde4bab33032017c25f2ff850f8f13a8",
+      "version": "Modhunter Rust engine 0.9.0"
+    },
+    "candidate": {
+      "name": "modhunter-cli",
+      "sha256": "d660118fd39f24af5a025f3f66669cf0a0f2f28d57667bd7178f72f83ccfdf69",
+      "version": "Modhunter Rust engine 0.9.1"
+    }
+  },
+  "method": {
+    "fixture": "One deterministic Skyrim SE plugin per workload; 2 audit workers; fresh CLI per sample",
+    "order": "One discarded warmup per revision, then alternating baseline/candidate order",
+    "engine": "PluginAnalyzer audit elapsed time reported by the engine; includes enumeration, record scan, SHA-256 and fact resolution",
+    "process": "CLI launch, JSON request, complete audit, result serialization and exit; excludes parent JSON parsing",
+    "equivalence": "Every non-timing result field matches between revisions; exact file bytes, digest and record count also independently verified",
+    "osCache": "Generated files and warmup populate OS caches; this is not a cold disk benchmark",
+    "limitations": "Synthetic local Linux/Windows workload only, not actual MO2, mod files, GUI latency or download/install throughput"
+  },
+  "workloads": [
+    {
+      "records": 100000,
+      "payloadBytesPerRecord": 0,
+      "fileBytes": 2400066,
+      "fileSha256": "4a4ad94751ddf523adca9719b070f240c702daf7eabfa9d5c703e29c9f68c635",
+      "semanticallyEquivalent": true,
+      "baseline": {
+        "engineMedianMs": 136.554287,
+        "processMedianMs": 138.5872259999701,
+        "samples": [
+          {
+            "engineMs": 136.554287,
+            "processMs": 138.5872259999701,
+            "bytesRead": 2400066,
+            "records": 100000
+          },
+          {
+            "engineMs": 138.772226,
+            "processMs": 140.83903599998848,
+            "bytesRead": 2400066,
+            "records": 100000
+          },
+          {
+            "engineMs": 133.738835,
+            "processMs": 135.79547199998387,
+            "bytesRead": 2400066,
+            "records": 100000
+          },
+          {
+            "engineMs": 131.506155,
+            "processMs": 133.42442600003324,
+            "bytesRead": 2400066,
+            "records": 100000
+          },
+          {
+            "engineMs": 131.990937,
+            "processMs": 134.08172500004412,
+            "bytesRead": 2400066,
+            "records": 100000
+          },
+          {
+            "engineMs": 138.204378,
+            "processMs": 140.40025000002743,
+            "bytesRead": 2400066,
+            "records": 100000
+          },
+          {
+            "engineMs": 140.617368,
+            "processMs": 146.92182100003492,
+            "bytesRead": 2400066,
+            "records": 100000
+          }
+        ]
+      },
+      "candidate": {
+        "engineMedianMs": 8.656585,
+        "processMedianMs": 10.986603999981526,
+        "samples": [
+          {
+            "engineMs": 8.061402000000001,
+            "processMs": 9.907684999973299,
+            "bytesRead": 2400066,
+            "records": 100000
+          },
+          {
+            "engineMs": 8.656585,
+            "processMs": 10.986603999981526,
+            "bytesRead": 2400066,
+            "records": 100000
+          },
+          {
+            "engineMs": 8.902471,
+            "processMs": 10.92487600004688,
+            "bytesRead": 2400066,
+            "records": 100000
+          },
+          {
+            "engineMs": 8.194931,
+            "processMs": 11.684880000018438,
+            "bytesRead": 2400066,
+            "records": 100000
+          },
+          {
+            "engineMs": 11.959226999999998,
+            "processMs": 15.422800999999708,
+            "bytesRead": 2400066,
+            "records": 100000
+          },
+          {
+            "engineMs": 7.495438,
+            "processMs": 9.568318000049203,
+            "bytesRead": 2400066,
+            "records": 100000
+          },
+          {
+            "engineMs": 9.625474,
+            "processMs": 12.138827999990554,
+            "bytesRead": 2400066,
+            "records": 100000
+          }
+        ]
+      },
+      "engineSpeedup": 15.774614007717823
+    },
+    {
+      "records": 100000,
+      "payloadBytesPerRecord": 32,
+      "fileBytes": 5600066,
+      "fileSha256": "56537f43051f385bf258e76946c7dc8b8700c0c084e6c7ef61474f698eeaf4b3",
+      "semanticallyEquivalent": true,
+      "baseline": {
+        "engineMedianMs": 150.29925699999998,
+        "processMedianMs": 152.73861800000077,
+        "samples": [
+          {
+            "engineMs": 151.806416,
+            "processMs": 154.5242720000033,
+            "bytesRead": 5600066,
+            "records": 100000
+          },
+          {
+            "engineMs": 162.51225499999998,
+            "processMs": 165.0206950000097,
+            "bytesRead": 5600066,
+            "records": 100000
+          },
+          {
+            "engineMs": 150.29925699999998,
+            "processMs": 152.73861800000077,
+            "bytesRead": 5600066,
+            "records": 100000
+          },
+          {
+            "engineMs": 146.091363,
+            "processMs": 148.18422600001213,
+            "bytesRead": 5600066,
+            "records": 100000
+          },
+          {
+            "engineMs": 143.072577,
+            "processMs": 144.85512200002404,
+            "bytesRead": 5600066,
+            "records": 100000
+          },
+          {
+            "engineMs": 160.91803299999998,
+            "processMs": 163.1478820000325,
+            "bytesRead": 5600066,
+            "records": 100000
+          },
+          {
+            "engineMs": 141.81300199999998,
+            "processMs": 143.60252400001627,
+            "bytesRead": 5600066,
+            "records": 100000
+          }
+        ]
+      },
+      "candidate": {
+        "engineMedianMs": 11.680420999999999,
+        "processMedianMs": 13.68462099998169,
+        "samples": [
+          {
+            "engineMs": 14.14969,
+            "processMs": 18.127133000007234,
+            "bytesRead": 5600066,
+            "records": 100000
+          },
+          {
+            "engineMs": 13.489066,
+            "processMs": 15.863326999976834,
+            "bytesRead": 5600066,
+            "records": 100000
+          },
+          {
+            "engineMs": 10.481767,
+            "processMs": 12.634024999954363,
+            "bytesRead": 5600066,
+            "records": 100000
+          },
+          {
+            "engineMs": 11.680420999999999,
+            "processMs": 13.68462099998169,
+            "bytesRead": 5600066,
+            "records": 100000
+          },
+          {
+            "engineMs": 12.088066,
+            "processMs": 14.253555000038887,
+            "bytesRead": 5600066,
+            "records": 100000
+          },
+          {
+            "engineMs": 10.825364,
+            "processMs": 12.839997000014591,
+            "bytesRead": 5600066,
+            "records": 100000
+          },
+          {
+            "engineMs": 10.637616000000001,
+            "processMs": 12.514726000006249,
+            "bytesRead": 5600066,
+            "records": 100000
+          }
+        ]
+      },
+      "engineSpeedup": 12.867623264606644
+    },
+    {
+      "records": 10000,
+      "payloadBytesPerRecord": 1024,
+      "fileBytes": 10480066,
+      "fileSha256": "2ec896019243d90448324f07ee96cb4bb4eb9aa896070471d58859e9b2714fd3",
+      "semanticallyEquivalent": true,
+      "baseline": {
+        "engineMedianMs": 23.336076000000002,
+        "processMedianMs": 25.640427000041655,
+        "samples": [
+          {
+            "engineMs": 25.862962,
+            "processMs": 27.743214999986776,
+            "bytesRead": 10480066,
+            "records": 10000
+          },
+          {
+            "engineMs": 23.445527000000002,
+            "processMs": 25.640427000041655,
+            "bytesRead": 10480066,
+            "records": 10000
+          },
+          {
+            "engineMs": 24.297452,
+            "processMs": 26.054993999991893,
+            "bytesRead": 10480066,
+            "records": 10000
+          },
+          {
+            "engineMs": 23.336076000000002,
+            "processMs": 25.557299000013245,
+            "bytesRead": 10480066,
+            "records": 10000
+          },
+          {
+            "engineMs": 22.569062000000002,
+            "processMs": 27.002105000008214,
+            "bytesRead": 10480066,
+            "records": 10000
+          },
+          {
+            "engineMs": 21.963361,
+            "processMs": 24.10740799996347,
+            "bytesRead": 10480066,
+            "records": 10000
+          },
+          {
+            "engineMs": 22.953287999999997,
+            "processMs": 24.954368000010163,
+            "bytesRead": 10480066,
+            "records": 10000
+          }
+        ]
+      },
+      "candidate": {
+        "engineMedianMs": 10.927299,
+        "processMedianMs": 12.994729000013194,
+        "samples": [
+          {
+            "engineMs": 10.927299,
+            "processMs": 12.994729000013194,
+            "bytesRead": 10480066,
+            "records": 10000
+          },
+          {
+            "engineMs": 9.032,
+            "processMs": 11.017268999978569,
+            "bytesRead": 10480066,
+            "records": 10000
+          },
+          {
+            "engineMs": 11.081914,
+            "processMs": 13.543753000021752,
+            "bytesRead": 10480066,
+            "records": 10000
+          },
+          {
+            "engineMs": 10.077586,
+            "processMs": 12.374237000017274,
+            "bytesRead": 10480066,
+            "records": 10000
+          },
+          {
+            "engineMs": 9.775822,
+            "processMs": 12.438761999987946,
+            "bytesRead": 10480066,
+            "records": 10000
+          },
+          {
+            "engineMs": 11.832074,
+            "processMs": 14.025832000015725,
+            "bytesRead": 10480066,
+            "records": 10000
+          },
+          {
+            "engineMs": 23.141606,
+            "processMs": 27.70732500005124,
+            "bytesRead": 10480066,
+            "records": 10000
+          }
+        ]
+      },
+      "engineSpeedup": 2.1355758637152698
+    },
+    {
+      "records": 1024,
+      "payloadBytesPerRecord": 65537,
+      "fileBytes": 67134530,
+      "fileSha256": "77a396b19bc2e464903f046b8f4431b9a73b8ede1f30892b91470516f262c78e",
+      "semanticallyEquivalent": true,
+      "baseline": {
+        "engineMedianMs": 63.17440200000001,
+        "processMedianMs": 65.89698499999486,
+        "samples": [
+          {
+            "engineMs": 79.208793,
+            "processMs": 81.86946899996883,
+            "bytesRead": 67134530,
+            "records": 1024
+          },
+          {
+            "engineMs": 149.88449,
+            "processMs": 155.78201400001035,
+            "bytesRead": 67134530,
+            "records": 1024
+          },
+          {
+            "engineMs": 63.16258800000001,
+            "processMs": 65.48758399998178,
+            "bytesRead": 67134530,
+            "records": 1024
+          },
+          {
+            "engineMs": 58.860668999999994,
+            "processMs": 61.09913000000233,
+            "bytesRead": 67134530,
+            "records": 1024
+          },
+          {
+            "engineMs": 64.311853,
+            "processMs": 66.31771899998284,
+            "bytesRead": 67134530,
+            "records": 1024
+          },
+          {
+            "engineMs": 62.986236,
+            "processMs": 64.81098200003998,
+            "bytesRead": 67134530,
+            "records": 1024
+          },
+          {
+            "engineMs": 63.17440200000001,
+            "processMs": 65.89698499999486,
+            "bytesRead": 67134530,
+            "records": 1024
+          }
+        ]
+      },
+      "candidate": {
+        "engineMedianMs": 60.554714000000004,
+        "processMedianMs": 62.788452999996025,
+        "samples": [
+          {
+            "engineMs": 58.860532,
+            "processMs": 60.866683999961424,
+            "bytesRead": 67134530,
+            "records": 1024
+          },
+          {
+            "engineMs": 65.53315699999999,
+            "processMs": 68.22217999996383,
+            "bytesRead": 67134530,
+            "records": 1024
+          },
+          {
+            "engineMs": 60.554714000000004,
+            "processMs": 62.788452999996025,
+            "bytesRead": 67134530,
+            "records": 1024
+          },
+          {
+            "engineMs": 62.316923,
+            "processMs": 64.81415400003243,
+            "bytesRead": 67134530,
+            "records": 1024
+          },
+          {
+            "engineMs": 60.114156,
+            "processMs": 62.14080099999819,
+            "bytesRead": 67134530,
+            "records": 1024
+          },
+          {
+            "engineMs": 58.778963,
+            "processMs": 60.92364700003827,
+            "bytesRead": 67134530,
+            "records": 1024
+          },
+          {
+            "engineMs": 75.438452,
+            "processMs": 78.8220580000143,
+            "bytesRead": 67134530,
+            "records": 1024
+          }
+        ]
+      },
+      "engineSpeedup": 1.0432615039681303
+    }
+  ]
+}

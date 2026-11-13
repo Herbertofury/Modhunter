@@ -1,10 +1,10 @@
 name: Rust desktop and MO2 readiness
 on:
   push:
-    branches: [main, 'upgrade/rust-desktop-mo2']
-    paths: ['native/**', 'mo2_update_arsenal/**', 'tests/**', 'build.py', '.github/workflows/native-rust.yml']
+    branches: [main, 'upgrade/**']
+    paths: ['native/**', 'mo2_update_arsenal/**', 'desktop/**', 'tests/**', 'scripts/**', 'build.py', '.github/workflows/native-rust.yml']
   pull_request:
-    paths: ['native/**', 'mo2_update_arsenal/**', 'tests/**', 'build.py', '.github/workflows/native-rust.yml']
+    paths: ['native/**', 'mo2_update_arsenal/**', 'desktop/**', 'tests/**', 'scripts/**', 'build.py', '.github/workflows/native-rust.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -16,6 +16,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 64
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: '1.99.1'
@@ -29,6 +31,7 @@ jobs:
           node-version: '22'
       - name: Verify Rust, MO2 lifecycle, and existing features
         run: |
+          python3 native/scripts/prepare_release.py --print-version
           python3 native/scripts/prepare_assets.py
           cargo fmt --manifest-path native/Cargo.toml --all -- --check
           cargo test --manifest-path native/Cargo.toml --workspace --locked
@@ -53,6 +56,7 @@ jobs:
           /tmp/modhunter-qa/bin/python -m playwright install --with-deps chromium
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/updater_sss_browser_qa.py
           PYTHONPATH=. /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_frontend_responsiveness.py' -v
+          PYTHONPATH=. /tmp/modhunter-qa/bin/python scripts/benchmark_dashboard_render.py --baseline-ref 17e4a9fc93712f6f4db4aafd762a5e5aedb2647d --output /tmp/modhunter-proof/dashboard-render-comparison.json
       - name: Upload browser proof
         if: always()
         uses: actions/upload-artifact@v4
@@ -77,7 +81,10 @@ jobs:
         with:
           node-version: '22'
       - name: Prepare all existing dashboard and game assets
-        run: python native/scripts/prepare_assets.py
+        run: |
+          python native/scripts/prepare_release.py --print-version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python native/scripts/prepare_assets.py
       - name: Install the Qt SDK matching MO2 2.5.2
         id: qt
         uses: jurplel/install-qt-action@v4
@@ -117,6 +124,9 @@ jobs:
       - name: Package tested Windows app, MO2 plugin, and diagnostics
         shell: pwsh
         run: |
+          $ReleaseVersion = python native/scripts/prepare_release.py --print-version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $ReleaseVersion = $ReleaseVersion.Trim()
           if (Test-Path native/target/portable) { Remove-Item -Recurse -Force native/target/portable }
           New-Item -ItemType Directory -Force native/target/portable/MO2 | Out-Null
           Copy-Item native/target/release/Modhunter.exe native/target/portable/
@@ -132,7 +142,12 @@ jobs:
           New-Item -ItemType Directory -Force native/target/portable/Evidence | Out-Null
           Copy-Item native/target/native-smoke/native-smoke.json native/target/portable/Evidence/
           Copy-Item native/evidence/import-comparison.json native/target/portable/Evidence/
-          @{ version = '0.9.0'; commit = '${{ github.sha }}'; workflow = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}' } | ConvertTo-Json | Set-Content -Encoding utf8 native/target/portable/BUILD_INFO.json
+          foreach ($EvidenceName in @("plugin-audit-comparison-$ReleaseVersion.json", 'mo2-preflight-comparison.json')) {
+            if (Test-Path -LiteralPath "native/evidence/$EvidenceName" -PathType Leaf) {
+              Copy-Item -LiteralPath "native/evidence/$EvidenceName" -Destination native/target/portable/Evidence/
+            }
+          }
+          @{ version = $ReleaseVersion; commit = '${{ github.sha }}'; workflow = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}' } | ConvertTo-Json | Set-Content -Encoding utf8 native/target/portable/BUILD_INFO.json
           $packageRoot = (Resolve-Path native/target/portable).Path
           Get-ChildItem -File -Recurse $packageRoot | Where-Object { $_.Name -ne 'SHA256SUMS.txt' } | Sort-Object FullName | ForEach-Object { $relative = [IO.Path]::GetRelativePath($packageRoot, $_.FullName).Replace('\', '/'); "$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $relative" } | Set-Content -Encoding utf8 native/target/portable/SHA256SUMS.txt
           Compress-Archive -Path native/target/portable/* -DestinationPath native/target/Modhunter-Rust-Windows.zip -Force
@@ -175,7 +190,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          version=$(python3 -c "import json; print(json.load(open('native/crates/modhunter-desktop/tauri.conf.json'))['version'])")
+          version=$(python3 native/scripts/prepare_release.py --print-version)
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Invalid release version'; exit 1; }
           tag="v$version"
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
@@ -221,7 +236,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ctest --test-dir native/target/qt-bridge -C Release --output-on-failure
       - name: Prepare the production dashboard
-        run: python native/scripts/prepare_assets.py
+        run: |
+          python native/scripts/prepare_release.py --print-version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python native/scripts/prepare_assets.py
       - name: Build the real Rust connection client
         run: cargo build --manifest-path native/Cargo.toml --release --locked -p modhunter-core
       - name: Exercise the production plugin inside real MO2 2.5.2

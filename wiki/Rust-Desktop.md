@@ -1,4 +1,4 @@
-# Rust Desktop 0.9
+# Rust Desktop 0.9.1
 
 [Home](Home.md) / [Windows releases](https://github.com/Herbertofury/Modhunter/releases) / [Native build results](https://github.com/Herbertofury/Modhunter/actions/workflows/native-rust.yml)
 
@@ -67,6 +67,8 @@ The [Rust desktop and MO2 readiness workflow](https://github.com/Herbertofury/Mo
 | Actual MO2 2.5.2 fixture | Production plugin loading in official Windows MO2, actual C++ QObject/raw QVariant binding with synthetic callbacks, real loopback API and Qt focus, and a completed Rust plugin/hash audit of a disposable fixture |
 
 CI uploads JSON receipts and browser proof alongside the portable app and NSIS installer. Inspect the linked run for the exact commit and outcome; a workflow definition is not proof that a particular run passed.
+
+The release version comes from the Rust workspace and is checked against the Tauri installer, Cargo lockfile and packaged MO2 plugin before building. The portable build identity and release tag use that validated value. Release preparation rejects a stale-version installer or portable ZIP and verifies that the plugin's version module and rebuilt dashboard match the source tested inside native MO2. Published releases are immutable; new code requires a new version to become a new download.
 
 The MO2 fixture has no Nexus credentials, commercial game assets or actual mod downloads. Real free/premium account behavior, provider availability, native FOMOD choices, long-running sessions and the user's in-game result still require that environment. The executable is not code-signed. No universal zero-defect or mod-compatibility claim is made.
 

@@ -3,7 +3,7 @@ use crate::{CoreError, io_error};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::fs::File;
-use std::io::{BufReader, Read};
+use std::io::{BufRead, BufReader, Read};
 
 const HEADER_LIMIT: usize = 1_048_576;
 const RECORD_LIMIT: usize = 2_000_000;
@@ -33,10 +33,24 @@ impl Input {
         Ok(())
     }
     fn drain(&mut self, mut length: u64) -> Result<(), CoreError> {
-        let mut scratch = [0_u8; 64 * 1024];
+        // Most plugin records contain small payloads. Consume and hash the
+        // reader's existing buffer instead of zeroing a 64 KiB temporary and
+        // copying every payload into it. Every byte still enters the digest;
+        // seeking over payloads would silently break conversion evidence.
         while length > 0 {
-            let count = length.min(scratch.len() as u64) as usize;
-            self.exact(&mut scratch[..count])?;
+            let buffered = self
+                .reader
+                .fill_buf()
+                .map_err(|e| io_error("Read Bethesda plugin payload", e))?;
+            if buffered.is_empty() {
+                return invalid("Plugin payload is truncated");
+            }
+            let count = length.min(buffered.len() as u64) as usize;
+            if let Some(hash) = self.hash.as_mut() {
+                hash.update(&buffered[..count]);
+            }
+            self.reader.consume(count);
+            self.position += count as u64;
             length -= count as u64;
         }
         Ok(())
@@ -53,7 +67,7 @@ pub(super) fn scan(
     stats: &mut PluginAuditStats,
 ) -> Result<Parsed, CoreError> {
     let mut input = Input {
-        reader: BufReader::new(file),
+        reader: BufReader::with_capacity(if deep { 64 * 1024 } else { 8 * 1024 }, file),
         hash: deep.then(Sha256::new),
         position: 0,
     };
@@ -314,10 +328,15 @@ fn scan_records(
                     if local > 0xFFF {
                         summary.new_ids_above_0fff += 1;
                     }
-                    *summary
-                        .new_record_types
-                        .entry(String::from_utf8_lossy(&raw[..4]).into_owned())
-                        .or_default() += 1;
+                    // Signatures were checked as ASCII above. Allocate one
+                    // key per distinct type, not one String per record.
+                    let signature =
+                        std::str::from_utf8(&raw[..4]).expect("Validated ASCII record signature");
+                    if let Some(count) = summary.new_record_types.get_mut(signature) {
+                        *count += 1;
+                    } else {
+                        summary.new_record_types.insert(signature.into(), 1);
+                    }
                     if summary.new_record_types.len() > 512 {
                         return invalid("Plugin exceeds the 512 record-signature audit limit");
                     }

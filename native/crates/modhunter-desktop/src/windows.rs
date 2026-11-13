@@ -1,5 +1,5 @@
 use crate::policy::{self, BAR_HEIGHT, MAX_TABS, Mode};
-use modhunter_core::{BridgeClient, ImportRequest, ProfileImporter};
+use modhunter_core::{BridgeClient, BridgeHealth, ImportRequest, ProfileImporter};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
@@ -934,6 +934,11 @@ fn connect_at_epoch(app: &tauri::AppHandle, endpoint: &str, epoch: u64) -> Resul
         return Err("A newer connection request replaced this one.".into());
     }
     let health = state.client.probe(endpoint).map_err(err)?;
+    connect_with_health(app, health, epoch)
+}
+
+fn connect_with_health(app: &tauri::AppHandle, health: BridgeHealth, epoch: u64) -> Result<Value> {
+    let state = app.state::<Runtime>();
     {
         let mut m = state.model.lock().map_err(err)?;
         if state.epoch.load(Ordering::Acquire) != epoch {
@@ -1157,7 +1162,18 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
             }
             match sessions.len() {
                 0 => return Err("No live Modhunter session found. Start MO2 and open Tools → Update Arsenal, then use Find MO2 again.".into()),
-                1 => return connect_at_epoch(app, &sessions[0].endpoint, epoch),
+                1 => {
+                    // Discovery already validated this endpoint's health
+                    // contract. Reuse that result instead of a second probe.
+                    let session = sessions.into_iter().next().expect("one session");
+                    return connect_with_health(app, BridgeHealth {
+                        endpoint: session.endpoint,
+                        version: session.version,
+                        profile_id: session.profile_id,
+                        generation: session.generation,
+                        latency_ms: session.latency_ms,
+                    }, epoch);
+                },
                 _ => return Ok(json!({"ok":true,"sessions":sessions,"message":"Multiple MO2 sessions found. Choose a profile address from the address field, then Connect."})),
             }
         }

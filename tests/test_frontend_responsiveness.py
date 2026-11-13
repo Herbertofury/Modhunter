@@ -83,7 +83,7 @@ window.fetch=async(url,options={})=>{
    items:c.items.map(m=>({...m,lane:'candidate',latestVersion:'2.0',risks:[]}))};
   else if(path==='progress')result={ok:true,profileId:c.profileId,progress:{rows:{},prefs:{}}};
   else if(path==='game?compact=1')result={ok:true,profileId:c.profileId,score:x.gameScore,feed:[],updates:0};
-  else if(path==='downloads')result={ok:true,profileId:c.profileId,downloads:{}};
+  else if(path==='downloads')result={ok:true,profileId:c.profileId,downloads:x.downloads||{}};
   else if(path==='activity')result={ok:true,profileId:c.profileId,records:[]};
   else if(path==='scan'){
    if(method==='POST'){x.scan={state:'running',mode:body.mode,checked:0,total:c.items.length};result={ok:true,state:'running',profileId:c.profileId};}
@@ -211,6 +211,76 @@ class FrontendResponsivenessTests(unittest.TestCase):
         self.page.evaluate("__ARSENAL_QA__.refreshGame()")
         self.assertTrue(self.page.evaluate("document.activeElement===originalLink"))
 
+    def test_one_changed_row_preserves_the_full_list_and_unrelated_focus(self):
+        self.page.set_content(self.html, wait_until="domcontentloaded")
+        data = catalog(count=2500); data["offline"] = True
+        self.page.evaluate("c=>window.modhunterImportCatalog(c)", data)
+        self.page.evaluate("""()=>{
+          window.unchangedRow=document.getElementById('row-item-0');
+          window.unchangedLink=unchangedRow.querySelector('.source-title');unchangedLink.focus();
+          window.changedRow=document.getElementById('row-item-2499');
+          window.rowMutations=[];
+          new MutationObserver(rs=>rowMutations.push(...rs.map(r=>({added:r.addedNodes.length,removed:r.removedNodes.length}))))
+            .observe(document.getElementById('modList'),{childList:true});
+          changedRow.querySelector('[data-act="favorite"]').click();
+        }""")
+        self.assertEqual(self.page.locator("#modList .mod-row").count(), 2500)
+        self.assertTrue(self.page.evaluate("unchangedRow===document.getElementById('row-item-0')"))
+        self.assertTrue(self.page.evaluate("document.activeElement===unchangedLink"))
+        self.assertTrue(self.page.evaluate("changedRow!==document.getElementById('row-item-2499')"))
+        self.assertEqual(self.page.evaluate("rowMutations"), [{"added":1, "removed":1}])
+        self.assertIn("active", self.page.locator("#row-item-2499 .favorite-btn").get_attribute("class"))
+        # Removing a previously patched row and restoring the whole list must
+        # not resurrect the pre-edit HTML cache.
+        self.page.locator("#search").fill('"Unique Fixture 0"')
+        self.page.wait_for_function("document.querySelectorAll('#modList .mod-row').length===1")
+        self.page.locator("#clearSearch").click()
+        self.assertEqual(self.page.locator("#modList .mod-row").count(), 2500)
+        self.assertIn("active", self.page.locator("#row-item-2499 .favorite-btn").get_attribute("class"))
+        self.page.evaluate("""()=>{const button=document.querySelector('#row-item-2499 .favorite-btn');button.focus();button.click();}""")
+        self.assertTrue(self.page.evaluate("document.activeElement===document.querySelector('#row-item-2499 .favorite-btn')"))
+        self.assertNotIn("active", self.page.locator("#row-item-2499 .favorite-btn").get_attribute("class"))
+
+    def test_one_download_update_preserves_unrelated_workshop_controls(self):
+        self.open_live(); self.connected()
+        self.page.wait_for_function("document.querySelectorAll('#workshopResults .workshop-item').length===3")
+        self.page.evaluate("""async()=>{
+          window.unchangedWorkshop=document.querySelector('[data-workshop-id="item-1"]');
+          window.unchangedWorkshopLink=unchangedWorkshop.querySelector('.workshop-item-title');unchangedWorkshopLink.focus();
+          window.workshopMutations=[];
+          new MutationObserver(rs=>workshopMutations.push(...rs.map(r=>({added:r.addedNodes.length,removed:r.removedNodes.length}))))
+            .observe(document.getElementById('workshopResults'),{childList:true});
+          __RESP__.downloads={'73':{itemId:'item-0',status:'downloading',installedVersion:'1.0',targetVersion:'2.0'}};
+          await document.getElementById('workshopRefreshDownloads').onclick();
+        }""")
+        self.page.wait_for_function("document.querySelector('[data-workshop-id=\"item-0\"] .workshop-ticket-note')")
+        self.assertTrue(self.page.evaluate("unchangedWorkshop===document.querySelector('[data-workshop-id=\"item-1\"]')"))
+        self.assertTrue(self.page.evaluate("document.activeElement===unchangedWorkshopLink"))
+        self.assertEqual(self.page.evaluate("workshopMutations"), [{"added":1, "removed":1}])
+        self.assertEqual(self.page.locator("#workshopResults .workshop-item").count(), 3)
+
+    def test_external_row_removal_and_reordering_are_repaired_on_render(self):
+        self.page.set_content(self.html, wait_until="domcontentloaded")
+        data = catalog(count=12); data["offline"] = True
+        self.page.evaluate("c=>window.modhunterImportCatalog(c)", data)
+        self.page.evaluate("""()=>{
+          document.getElementById('row-item-5').remove();
+          const list=document.getElementById('modList');
+          list.insertBefore(document.getElementById('row-item-10'),document.getElementById('row-item-0'));
+          document.querySelector('#row-item-11 [data-act="favorite"]').click();
+        }""")
+        self.assertEqual(self.page.locator("#modList .mod-row").evaluate_all(
+            "rows=>rows.map(row=>row.dataset.id)"), [f"item-{i}" for i in range(12)])
+        self.assertIn("active", self.page.locator("#row-item-11 .favorite-btn").get_attribute("class"))
+        # Even an otherwise unchanged render must replace a structurally stale
+        # DOM; the whole-list HTML cache cannot suppress that repair.
+        self.page.evaluate("""()=>{
+          document.getElementById('row-item-6').remove();
+          document.getElementById('clearSearch').click();
+        }""")
+        self.assertEqual(self.page.locator("#modList .mod-row").count(), 12)
+        self.assertIn("active", self.page.locator("#row-item-11 .favorite-btn").get_attribute("class"))
+
     def test_large_catalog_search_coalesces_input_without_dropping_records(self):
         self.page.set_content(self.html, wait_until="domcontentloaded")
         data = catalog(count=2500); data["offline"] = True
@@ -227,6 +297,17 @@ class FrontendResponsivenessTests(unittest.TestCase):
         self.assertEqual(self.page.evaluate("__ARSENAL_QA__.getCatalog().items.length"), 2500)
         self.page.locator("#clearSearch").click()
         self.assertEqual(self.page.locator("#modList .mod-row").count(), 2500)
+        self.page.evaluate("""()=>{window.workshopSearchMutations=0;
+          new MutationObserver(rs=>workshopSearchMutations+=rs.length).observe(document.getElementById('workshopResults'),{childList:true});
+          const input=document.getElementById('workshopSearch');
+          for(const value of ['Unique','Unique Fixture','Unique Fixture 2','Unique Fixture 2499']){
+            input.value=value;input.dispatchEvent(new Event('input',{bubbles:true}));
+          }}""")
+        self.page.wait_for_function("document.querySelectorAll('#workshopResults .workshop-item').length===1")
+        self.assertEqual(self.page.evaluate("workshopSearchMutations"), 1)
+        self.assertEqual(self.page.evaluate("__ARSENAL_QA__.getCatalog().items.length"), 2500)
+        self.page.locator("#workshopSearch").fill("")
+        self.page.wait_for_function("document.querySelectorAll('#workshopResults .workshop-item').length===2500")
 
 
 if __name__ == "__main__":

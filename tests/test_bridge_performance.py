@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 from mo2_update_arsenal.bridge import ArsenalService
 from mo2_update_arsenal.model import LocalMetadataCache, take_snapshot
+from mo2_update_arsenal.version import VERSION
 
 
 def catalog(count=12000):
@@ -56,7 +57,7 @@ class LargeProfileTests(unittest.TestCase):
         self.assertNotIn(self.service.token.encode(), body)
         self.assertNotIn(b"private-nexus-key", body)
         self.assertEqual(json.loads(body), {"ok": True, "app": "Modhunter", "protocol": 1,
-            "version": "0.9.0", "live": True, "profileId": "large-profile", "generation": 1})
+            "version": VERSION, "live": True, "profileId": "large-profile", "generation": 1})
         self.assertEqual(self.http("/api/health", host="evil.example", token=False)[0], 403)
         self.assertEqual(self.http("/api/snapshot", token=False)[0], 403)
 
@@ -112,6 +113,12 @@ class LargeProfileTests(unittest.TestCase):
             result = self.service.begin_scan("local", "old-profile")
         self.assertFalse(result["ok"])
         worker.assert_not_called()
+
+    def test_single_update_never_copies_or_decorates_the_complete_catalog(self):
+        with patch.object(self.service, "snapshot", side_effect=AssertionError("Full catalog copied for one click")):
+            reply = self.service.quick_update({"profileId": "large-profile", "itemIds": ["live-20"]})
+        self.assertTrue(reply["ok"])
+        self.assertEqual(reply["skipped"][0]["itemId"], "live-20")
 
 
 class NexusRequestSharingTests(unittest.TestCase):

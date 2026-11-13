@@ -316,7 +316,7 @@ struct CachedDirectory {
 pub struct PluginAnalyzer {
     headers: Mutex<HashMap<PathBuf, CachedHeader>>,
     directories: Mutex<HashMap<PathBuf, CachedDirectory>>,
-    pools: Mutex<HashMap<usize, Arc<rayon::ThreadPool>>>,
+    pool: Mutex<Option<Arc<rayon::ThreadPool>>>,
 }
 
 pub fn audit_plugins(request: &PluginAuditRequest) -> Result<PluginAuditResult, CoreError> {
@@ -339,6 +339,17 @@ impl PluginAnalyzer {
     }
 
     pub fn audit(&self, request: &PluginAuditRequest) -> Result<PluginAuditResult, CoreError> {
+        self.audit_in_pool(request, None)
+    }
+
+    /// Profile imports already own a bounded worker pool. Reuse that pool for
+    /// their plugin phase instead of retaining a second identical set of idle
+    /// threads for the lifetime of the desktop process.
+    pub(crate) fn audit_in_pool(
+        &self,
+        request: &PluginAuditRequest,
+        existing_pool: Option<Arc<rayon::ThreadPool>>,
+    ) -> Result<PluginAuditResult, CoreError> {
         let started = Instant::now();
         let workers = request.workers.unwrap_or(8);
         if !(1..=32).contains(&workers)
@@ -378,7 +389,15 @@ impl PluginAnalyzer {
             "Overwrite",
             i64::MAX,
         );
-        let pool = self.pool(workers)?;
+        let pool = match existing_pool {
+            Some(pool) if pool.current_num_threads() == workers => pool,
+            Some(_) => {
+                return Err(CoreError::Invalid(
+                    "Plugin audit worker pool does not match its requested bound".into(),
+                ));
+            }
+            None => self.pool(workers)?,
+        };
         let listings: Vec<_> =
             pool.install(|| roots.par_iter().map(|m| self.list_plugins(m)).collect());
         let mut complete = true;
@@ -545,8 +564,11 @@ impl PluginAnalyzer {
     }
 
     fn pool(&self, workers: usize) -> Result<Arc<rayon::ThreadPool>, CoreError> {
-        let mut pools = self.pools.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(pool) = pools.get(&workers) {
+        let mut cached = self.pool.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(pool) = cached
+            .as_ref()
+            .filter(|pool| pool.current_num_threads() == workers)
+        {
             return Ok(Arc::clone(pool));
         }
         let pool = Arc::new(
@@ -556,7 +578,7 @@ impl PluginAnalyzer {
                 .build()
                 .map_err(|e| CoreError::Invalid(format!("Start plugin audit workers: {e}")))?,
         );
-        pools.insert(workers, Arc::clone(&pool));
+        *cached = Some(Arc::clone(&pool));
         Ok(pool)
     }
 
@@ -1166,5 +1188,49 @@ fn summarize(copies: &[PluginCopy]) -> String {
         first.clone()
     } else {
         "mixed".into()
+    }
+}
+
+#[cfg(test)]
+mod worker_pool_tests {
+    use super::*;
+
+    #[test]
+    fn changing_worker_count_retires_idle_pools_but_preserves_active_work() {
+        let engine = PluginAnalyzer::new();
+        let active = engine.pool(2).unwrap();
+        let retired = Arc::downgrade(&active);
+        let next = engine.pool(3).unwrap();
+        assert!(Arc::ptr_eq(&next, &engine.pool(3).unwrap()));
+        assert_eq!(active.install(rayon::current_num_threads), 2);
+        assert_eq!(next.install(rayon::current_num_threads), 3);
+        drop(active);
+        assert!(retired.upgrade().is_none());
+    }
+
+    #[test]
+    fn imported_audits_reuse_the_caller_pool_without_retaining_another() {
+        let engine = PluginAnalyzer::new();
+        let shared = Arc::new(
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(2)
+                .build()
+                .unwrap(),
+        );
+        let request = PluginAuditRequest {
+            workers: Some(2),
+            ..Default::default()
+        };
+        let result = engine
+            .audit_in_pool(&request, Some(Arc::clone(&shared)))
+            .unwrap();
+        assert_eq!(result.stats.workers, 2);
+        assert!(engine.pool.lock().unwrap().is_none());
+        assert_eq!(Arc::strong_count(&shared), 1);
+        let wrong = PluginAuditRequest {
+            workers: Some(3),
+            ..request
+        };
+        assert!(engine.audit_in_pool(&wrong, Some(shared)).is_err());
     }
 }

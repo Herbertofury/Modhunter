@@ -7,9 +7,10 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from mo2_update_arsenal.bridge import ArsenalService
-from mo2_update_arsenal.quick_update import choose_nexus_file, choose_github_asset
+from mo2_update_arsenal.quick_update import choose_nexus_file, choose_github_asset, choose_release_asset
 
 
 def mod(mid, project, *, flags=None, source="nexus-api"):
@@ -183,6 +184,68 @@ class QuickServiceTests(unittest.TestCase):
         result = self.service.quick_update({"profileId": SNAP["profileId"], "itemIds": ["live-a"]})
         self.assertFalse(result["queued"])
         self.assertTrue(result["skipped"])
+        self.assertFalse(self.downloads_started)
+
+    def test_bulk_queue_waiting_for_native_handoff_cannot_resume_after_profile_round_trip(self):
+        entered, release, finished = threading.Event(), threading.Event(), threading.Event()
+        seen = []
+        def blocked(profile, item_id, auto_install, *, execution_epoch=None):
+            seen.append(item_id)
+            entered.set()
+            if not release.wait(2):
+                raise AssertionError("Fixture queue handoff did not release")
+            return {"skipped": [{"itemId": item_id, "reason": "fixture"}]}
+
+        worker = self.service._quick_worker
+
+        def observed(*args):
+            try:
+                return worker(*args)
+            finally:
+                finished.set()
+
+        with patch.object(self.service, "_quick_one", side_effect=blocked), \
+             patch.object(self.service, "_quick_worker", side_effect=observed):
+            self.service.quick_update({"profileId": SNAP["profileId"], "all": True})
+            try:
+                self.assertTrue(entered.wait(1))
+                changed = copy.deepcopy(SNAP)
+                changed["profileId"] = "different-profile"
+                self.service.set_snapshot(changed)
+                self.service.set_snapshot(copy.deepcopy(SNAP))
+                self.assertEqual(self.service.quick_state()["state"], "idle")
+            finally:
+                release.set()
+                self.assertTrue(finished.wait(2))
+        self.assertEqual(seen, ["live-a"])
+        self.assertEqual(self.service.quick_state()["state"], "idle")
+        self.assertFalse(self.downloads_started)
+
+    def test_quick_source_selection_keeps_original_epoch_through_profile_round_trip(self):
+        def choose(item):
+            result = choose_release_asset(item)
+            changed = copy.deepcopy(SNAP)
+            changed["profileId"] = "different-profile"
+            self.service.set_snapshot(changed)
+            self.service.set_snapshot(copy.deepcopy(SNAP))
+            return result
+
+        with patch("mo2_update_arsenal.bridge.choose_release_asset", side_effect=choose):
+            result = self.service.quick_update({"profileId": SNAP["profileId"], "itemIds": ["live-github"]})
+        self.assertFalse(result["queued"])
+        self.assertTrue(result["failed"])
+        self.assertFalse(self.downloads_started)
+
+    def test_delayed_browser_quick_update_cannot_reuse_previous_profile_epoch(self):
+        old = self.service.selection_snapshot([])["executionEpoch"]
+        changed = copy.deepcopy(SNAP)
+        changed["profileId"] = "different-profile"
+        self.service.set_snapshot(changed)
+        self.service.set_snapshot(copy.deepcopy(SNAP))
+        with patch.object(self.service, "_quick_one", side_effect=AssertionError("Stale browser intent was accepted")):
+            result = self.service.quick_update({"profileId": SNAP["profileId"],
+                "executionEpoch": old, "itemIds": ["live-a"]})
+        self.assertFalse(result["ok"])
         self.assertFalse(self.downloads_started)
 
 

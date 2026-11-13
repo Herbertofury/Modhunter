@@ -88,7 +88,9 @@ struct CachedMeta {
 #[derive(Default)]
 pub struct ProfileImporter {
     cache: Mutex<HashMap<PathBuf, CachedMeta>>,
-    pools: Mutex<HashMap<usize, Arc<rayon::ThreadPool>>>,
+    // Retain only the latest worker configuration. In-flight imports own an
+    // Arc, so changing the setting retires idle pools without stopping work.
+    pool: Mutex<Option<Arc<rayon::ThreadPool>>>,
     plugins: PluginAnalyzer,
 }
 
@@ -300,8 +302,11 @@ impl ProfileImporter {
             )));
         }
         let pool = {
-            let mut pools = self.pools.lock().unwrap_or_else(|e| e.into_inner());
-            if let Some(p) = pools.get(&workers) {
+            let mut cached = self.pool.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(p) = cached
+                .as_ref()
+                .filter(|p| p.current_num_threads() == workers)
+            {
                 Arc::clone(p)
             } else {
                 let p = Arc::new(
@@ -313,7 +318,7 @@ impl ProfileImporter {
                             CoreError::Invalid(format!("Could not start import workers: {e}"))
                         })?,
                 );
-                pools.insert(workers, Arc::clone(&p));
+                *cached = Some(Arc::clone(&p));
                 p
             }
         };
@@ -426,21 +431,24 @@ impl ProfileImporter {
             });
         let plugins_path = profile_dir.join("plugins.txt");
         let loadorder_path = profile_dir.join("loadorder.txt");
-        let analysis = self.plugins.audit(&PluginAuditRequest {
-            game: game.clone(),
-            game_runtime: Some(runtime.into()),
-            profile_id: Some(profile_id.clone()),
-            profile_name: Some(profile_name.clone()),
-            mods: plugin_mods,
-            plugins_path: optional_analysis_path(plugins_path),
-            loadorder_path: optional_analysis_path(loadorder_path),
-            overwrite_path,
-            game_data_path,
-            plugin_states: None,
-            eslifier_data_paths: eslifier_data_paths.to_vec(),
-            deep,
-            workers: Some(workers),
-        })?;
+        let analysis = self.plugins.audit_in_pool(
+            &PluginAuditRequest {
+                game: game.clone(),
+                game_runtime: Some(runtime.into()),
+                profile_id: Some(profile_id.clone()),
+                profile_name: Some(profile_name.clone()),
+                mods: plugin_mods,
+                plugins_path: optional_analysis_path(plugins_path),
+                loadorder_path: optional_analysis_path(loadorder_path),
+                overwrite_path,
+                game_data_path,
+                plugin_states: None,
+                eslifier_data_paths: eslifier_data_paths.to_vec(),
+                deep,
+                workers: Some(workers),
+            },
+            Some(pool),
+        )?;
         stats.files_read += analysis.stats.files_read;
         stats.bytes_read += analysis.stats.bytes_read as usize;
         stats.directories_read += analysis.stats.directories_read;
@@ -1080,5 +1088,32 @@ mod identity_tests {
             windows_path_key("C:/Modding/MO2"),
             windows_path_key(r"C:\modding\mo2")
         );
+    }
+}
+
+#[cfg(test)]
+mod worker_pool_tests {
+    use super::*;
+
+    #[test]
+    fn changing_import_workers_releases_the_previous_idle_pool() {
+        let fixture = tempfile::tempdir().unwrap();
+        let profile = fixture.path().join("profiles/Test");
+        fs::create_dir_all(&profile).unwrap();
+        fs::create_dir(fixture.path().join("mods")).unwrap();
+        fs::write(profile.join("modlist.txt"), "# Empty disposable profile\n").unwrap();
+        let mut request = ImportRequest {
+            modlist_path: profile.join("modlist.txt"),
+            ini_path: None,
+            mods_path: None,
+            workers: Some(2),
+        };
+        let engine = ProfileImporter::new();
+        engine.import(&request).unwrap();
+        let retired = Arc::downgrade(engine.pool.lock().unwrap().as_ref().unwrap());
+        request.workers = Some(3);
+        let result = engine.import(&request).unwrap();
+        assert_eq!(result.stats.workers, 3);
+        assert!(retired.upgrade().is_none());
     }
 }

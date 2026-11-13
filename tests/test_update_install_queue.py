@@ -130,6 +130,99 @@ class TicketLifecycleTests(unittest.TestCase):
         self.service.set_download_status(744, "removed")
         self.assertFalse(self.service.install_reviewed_download(744)["ok"])
         self.assertTrue(self.queue()["ok"])  # User can queue a replacement.
+
+    def test_completed_install_does_not_block_the_next_release_after_version_refresh(self):
+        self.assertTrue(self.queue()["ok"])
+        self.service.set_download_status(744, "complete")
+        self.assertTrue(self.service.install_reviewed_download(744)["ok"])
+        self.await_ticket("installed")
+        self.assertFalse(self.queue()["ok"], "Unconfirmed installed version still prevents duplicate execution")
+        changed = copy.deepcopy(SNAPSHOT)
+        changed["items"][0]["installedVersion"] = "2.0"
+        changed["items"][0]["update"]["latestVersion"] = "3.0"
+        self.service.set_snapshot(changed)
+        self.service.fetch_files = lambda mid: {"ok": True, "files": [{"fileId": 66, "version": "3.0"}]}
+        self.service.ui_call = lambda req: req.finish({"ok": True, "downloadId": 745})
+        result = self.service.queue_reviewed_downloads({
+            "profileId": SNAPSHOT["profileId"], "confirm": "QUEUE_REVIEWED_DOWNLOADS",
+            "entries": [{"itemId": "live-test", "modId": 101, "fileId": 66,
+                         "installedVersion": "2.0", "targetVersion": "3.0", "reviewed": True}]})
+        self.assertEqual(result["queued"][0]["downloadId"], 745)
+        self.assertEqual(self.service.downloads()[744]["status"], "installed")
+        self.assertEqual(self.service.downloads()[745]["targetVersion"], "3.0")
+
+    def test_changed_release_or_new_warning_during_file_lookup_never_dispatches(self):
+        for field, value in (("target", "3.0"), ("risk", ["DLL"]), ("runtime", "1.6.1170")):
+            with self.subTest(changed=field):
+                self.service._snapshot = copy.deepcopy(SNAPSHOT)
+                self.service._items_by_id = {row["id"]: row for row in self.service._snapshot["items"]}
+
+                def files(mid):
+                    row = self.service._items_by_id["live-test"]
+                    if field == "target":
+                        row["update"]["latestVersion"] = value
+                    elif field == "risk":
+                        row["flags"] = value
+                    else:
+                        self.service._snapshot["gameRuntime"] = value
+                    return {"ok": True, "files": [{"fileId": 55}]}
+
+                self.service.fetch_files = files
+                result = self.queue()
+                self.assertEqual(result["queued"], [])
+                self.assertIn("changed", result["failed"][0]["error"])
+                self.assertFalse(self.calls)
+
+    def test_manual_batch_waiting_for_queue_lock_keeps_its_original_epoch(self):
+        entered, release = threading.Event(), threading.Event()
+        results = []
+
+        class Gate:
+            def __enter__(self):
+                entered.set()
+                if not release.wait(3):
+                    raise AssertionError("Queue-lock fixture was not released")
+
+            def __exit__(self, *_):
+                return False
+
+        self.service._queue_lock = Gate()
+        worker = threading.Thread(target=lambda: results.append(self.queue()))
+        worker.start()
+        try:
+            self.assertTrue(entered.wait(2))
+            other = copy.deepcopy(SNAPSHOT)
+            other["profileId"] = "other-profile"
+            self.service.set_snapshot(other)
+            self.service.set_snapshot(copy.deepcopy(SNAPSHOT))
+        finally:
+            release.set()
+            worker.join(3)
+        self.assertFalse(worker.is_alive())
+        self.assertFalse(results[0]["ok"])
+        self.assertFalse(results[0]["queued"])
+        self.assertFalse(self.calls)
+
+    def test_manual_batch_rejects_stale_browser_epoch_before_waiting_for_queue_lock(self):
+        class ForbiddenLock:
+            def __enter__(self):
+                raise AssertionError("Stale browser batch waited for the native queue")
+
+            def __exit__(self, *_):
+                return False
+
+        old = self.service.selection_snapshot([])["executionEpoch"]
+        other = copy.deepcopy(SNAPSHOT)
+        other["profileId"] = "other-profile"
+        self.service.set_snapshot(other)
+        self.service.set_snapshot(copy.deepcopy(SNAPSHOT))
+        self.service._queue_lock = ForbiddenLock()
+        result = self.service.queue_reviewed_downloads({"profileId": SNAPSHOT["profileId"],
+            "executionEpoch": old, "confirm": "QUEUE_REVIEWED_DOWNLOADS", "entries": [
+                {"itemId": "live-test", "modId": 101, "fileId": 55,
+                 "installedVersion": "1.0", "reviewed": True}]})
+        self.assertFalse(result["ok"])
+        self.assertFalse(self.calls)
         
 
 if __name__ == "__main__":

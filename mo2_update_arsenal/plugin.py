@@ -16,6 +16,7 @@ from .focus import navigate, find_mo2_view, name_column
 from .scanner import version_verdict
 from .native_nexus import NativeNexusGateway
 from .plugin_intelligence import attach_native_plugin_state, build_audit_request
+from .version import VERSION
 
 
 class Dispatcher(QtCore.QObject):
@@ -53,7 +54,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
         return "Animated MO2 update command center with Modhunter Atlas campaigns, survivor squads, mod-named bosses and verified Forge Sigil bounties."
 
     def version(self):
-        return mobase.VersionInfo("0.9.0")
+        return mobase.VersionInfo(VERSION)
 
     def settings(self):
         return []
@@ -350,7 +351,16 @@ class ModUpdateArsenal(mobase.IPluginTool):
                 if not self.server or request.payload.get("profileId") != self.server.profile_id():
                     request.finish({"ok": False, "error": "MO2 profile changed before native execution; refresh and review again"})
                     return
+                reviewed = request.payload.get("reviewedContext")
+                if (request.cmd in ("download", "download-url") and reviewed is not None
+                        and not self.server.download_context_matches(reviewed)):
+                    request.finish({"ok": False, "error": "Reviewed release or compatibility changed before native execution; review the file again"})
+                    return
                 context = self.server.selection_snapshot([])
+                if (request.payload.get("executionEpoch") is not None
+                        and request.payload["executionEpoch"] != context.get("executionEpoch")):
+                    request.finish({"ok": False, "error": "MO2 context changed before native execution; review the operation again"})
+                    return
                 if str(self.org.profileName()) != str(context.get("profileName") or ""):
                     # Profile-change refresh is debounced. Recheck the actual
                     # organizer instead of trusting that still-old snapshot.
@@ -366,6 +376,10 @@ class ModUpdateArsenal(mobase.IPluginTool):
                     if (not current or str(current[0].get("installedVersion") or "")
                             != str(request.payload.get("installedVersion") or "")):
                         request.finish({"ok": False, "error": "Installed mod changed before native execution; refresh and review again"})
+                        return
+                    if (request.cmd == "download" and int(current[0].get("nexusId") or 0)
+                            != int(request.payload.get("modId") or 0)):
+                        request.finish({"ok": False, "error": "Nexus project changed before native execution; review the file again"})
                         return
                     native_mod = self.org.modList().getMod(current[0].get("mo2InternalName"))
                     if native_mod is None:
@@ -385,10 +399,23 @@ class ModUpdateArsenal(mobase.IPluginTool):
                 return
             if request.cmd == "refresh":
                 result = self._refresh_snapshot(force_metadata=True)
-            elif request.cmd == "download":
-                result = self._download(int(request.payload["modId"]), int(request.payload["fileId"]))
-            elif request.cmd == "download-url":
-                result = self._download_url(request.payload)
+            elif request.cmd in ("download", "download-url"):
+                # Linearize the final evidence check with the short native
+                # start call. A provider worker must not replace the reviewed
+                # release between checking it and handing its archive to MO2.
+                # Never hold this lease across the interactive FOMOD installer.
+                with self.server._guard:
+                    context = self.server.selection_snapshot([])
+                    if (self.server._stopped or request.payload.get("profileId") != context.get("profileId")
+                            or request.payload.get("executionEpoch", context.get("executionEpoch")) != context.get("executionEpoch")):
+                        result = {"ok": False, "error": "MO2 context changed before native execution; review the operation again"}
+                    elif (request.payload.get("reviewedContext") is not None
+                            and not self.server.download_context_matches(request.payload["reviewedContext"])):
+                        result = {"ok": False, "error": "Reviewed release or compatibility changed before native execution; review the file again"}
+                    elif request.cmd == "download":
+                        result = self._download(int(request.payload["modId"]), int(request.payload["fileId"]))
+                    else:
+                        result = self._download_url(request.payload)
             elif request.cmd == "install":
                 result = self._install(int(request.payload["downloadId"]))
             elif request.cmd == "focus":

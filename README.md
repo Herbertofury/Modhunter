@@ -6,7 +6,7 @@
 
 **Repair your load order. Hunt your unfinished mods. Build a legend.**
 
-[![Edition](https://img.shields.io/badge/Edition-Rust%200.9-cfa76d?style=for-the-badge&labelColor=182b30)](wiki/Rust-Desktop.md)
+[![Edition](https://img.shields.io/badge/Edition-Rust%200.9.1-cfa76d?style=for-the-badge&labelColor=182b30)](wiki/Rust-Desktop.md)
 [![MO2](https://img.shields.io/badge/MO2-Optional%20Live%20Link-78cfab?style=for-the-badge&labelColor=182b30)](wiki/MO2-Plugin.md)
 [![Modes](https://img.shields.io/badge/Modes-Siege%20%7C%20Survival%20%7C%20Atlas-9bb8f0?style=for-the-badge&labelColor=182b30)](wiki/Game-Modes.md)
 
@@ -14,7 +14,7 @@
 
 ---
 
-## Rust desktop 0.9
+## Rust desktop 0.9.1
 
 The new Windows app runs its desktop shell, profile import/cache engine, connection discovery and native file operations in **Rust**, with WebView2 displaying the complete existing dashboard and games. Running the compiled app requires no Node or Electron. The Python plugin remains MO2's in-process adapter for authenticated Nexus requests and its native download/installer API.
 
@@ -24,6 +24,16 @@ The new Windows app runs its desktop shell, profile import/cache engine, connect
 - Parallel, cached imports support portable and split-path MO2 configurations. In reproducible Linux fixtures, importing 2,500 mods took a median **70.78 ms** in Rust versus **477.03 ms** in the previous Node importer; 10,000 mods took **330.42 ms** versus **1,629.28 ms**. These include fresh metadata-content verification and root plugin inventory on generated fixtures without ESP payloads; they are not deep-audit, Windows GUI startup or Nexus download timings. [Raw measurements and method](native/evidence/import-comparison.json).
 - Profile changes invalidate stale scans and delayed UI replies. Expired queued commands cannot execute later. Requests share exact file lookups, metadata caches and connection resources, while search and background polling avoid redundant work.
 - Windows CI builds the executable and installer and launches the actual WebView2 app; separate browser and MO2 fixture checks enforce their own contracts. Real account downloads, FOMOD decisions and a user's game setup remain environment-specific acceptance checks.
+
+### 0.9.1 responsiveness and update execution
+
+- Rust plugin audits stream payloads directly into fresh SHA-256 checks. On identical synthetic Linux fixtures, 100,000 small records took **11.68 ms versus 150.30 ms** before; larger payloads remain primarily hashing/I/O work. [Exact workloads, raw samples and equivalence checks](native/evidence/plugin-audit-comparison-0.9.1.json).
+- One-mod Quick Update reads that mod instead of copying the entire profile. On the cached ambiguous-file fixture, local preparation for 10,000 mods fell from **143.853 ms to 0.168 ms**. This excludes Nexus requests, native MO2 and installation. [Raw samples and scope](native/evidence/mo2-preflight-comparison.json).
+- Changing worker counts releases idle pools; import and audit reuse the same workers. Find MO2 considers the newest descriptors even after hundreds of old sessions and reuses the validated connection result.
+- Checklist and Workshop updates replace only changed rows while retaining the full list, unrelated controls and keyboard focus. Large Workshop searches coalesce within one animation frame; no records are capped or virtualized.
+- Audits keep at most five Nexus requests submitted per scan. Cancelled/profile-superseded work cannot publish stale cache or execute an old reviewed download. A prior installed ticket remains history and allows the next release after MO2 observes the installed-version change.
+
+[0.9.1 verification and remaining acceptance checks](native/evidence/readiness-0.9.1.md)
 
 ## Per-mod ESL, conversion and source checks
 

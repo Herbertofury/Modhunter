@@ -132,6 +132,32 @@ class RequestLifecycleTests(unittest.TestCase):
         self.assertTrue(request.result["cancelled"])
         self.assertEqual(self.service._pending_ui, set())
 
+    def test_superseded_native_read_releases_waiter_without_waiting_for_nexus_deadline(self):
+        cancel, started = threading.Event(), threading.Event()
+        results, requests = [], []
+
+        def submit(request):
+            request.begin()
+            requests.append(request)
+            started.set()
+
+        self.service.ui_call = submit
+        worker = threading.Thread(target=lambda: results.append(self.service.call_ui(
+            "nexus-metadata", {"game": "skyrimspecialedition", "modId": 7}, timeout=70,
+            cancel_event=cancel)))
+        worker.start()
+        try:
+            self.assertTrue(started.wait(1))
+            cancel.set()
+            worker.join(1)
+            self.assertFalse(worker.is_alive(), "Cancelled read waited for its 70-second provider deadline")
+            self.assertTrue(results[0]["cancelled"])
+            self.assertFalse(requests[0].finish({"ok": True, "meta": {"version": "9.0"}}))
+            self.assertEqual(self.service._pending_ui, set())
+        finally:
+            cancel.set()
+            worker.join(1)
+
     def test_dispatch_rechecks_actual_profile_before_debounced_refresh(self):
         request = UIRequest("download", {"profileId": "p1", "modId": 7, "fileId": 8})
         native = SimpleNamespace(server=self.service, org=SimpleNamespace(profileName=lambda: "Switched"),
@@ -180,6 +206,124 @@ class RequestLifecycleTests(unittest.TestCase):
         dispatch(native, request)
         native._download.assert_called_once_with(7, 8)
         self.assertEqual(request.result, {"ok": True, "downloadId": 40})
+
+    def test_qt_handoff_rechecks_reviewed_release_and_new_risks(self):
+        for changed in ("release", "risk", "source"):
+            with self.subTest(changed=changed):
+                row = self.service._items_by_id["live-one"]
+                row.update(update={"verdict": "candidate", "latestVersion": "2.0"}, flags=[],
+                           source={"type": "nexus", "url": "https://www.nexusmods.com/skyrimspecialedition/mods/7", "verified": True})
+                before = self.service.selection_snapshot(["live-one"])
+                reviewed = self.service._download_context(before, before["items"][0])
+                request = UIRequest("download", {"profileId": "p1", "itemId": "live-one",
+                    "installedVersion": "1.0", "modId": 7, "fileId": 8, "reviewedContext": reviewed})
+                if changed == "release":
+                    row["update"]["latestVersion"] = "3.0"
+                elif changed == "risk":
+                    row["flags"] = ["DLL"]
+                else:
+                    row["source"]["url"] = "https://github.com/another/project"
+                native = SimpleNamespace(server=self.service, _download=Mock())
+                actual_dispatcher()(native, request)
+                native._download.assert_not_called()
+                self.assertIn("Reviewed release or compatibility changed", request.result["error"])
+
+    def test_qt_handoff_rechecks_exact_nexus_project(self):
+        request = UIRequest("download", {"profileId": "p1", "itemId": "live-one",
+            "installedVersion": "1.0", "modId": 99, "fileId": 8})
+        native = SimpleNamespace(server=self.service,
+            org=SimpleNamespace(profileName=lambda: "One"), _download=Mock())
+        actual_dispatcher()(native, request)
+        native._download.assert_not_called()
+        self.assertIn("Nexus project changed", request.result["error"])
+
+    def test_qt_handoff_rejects_old_review_after_identical_profile_round_trip(self):
+        before = self.service.selection_snapshot(["live-one"])
+        reviewed = self.service._download_context(before, before["items"][0])
+        request = UIRequest("download", {"profileId": "p1", "itemId": "live-one",
+            "installedVersion": "1.0", "modId": 7, "fileId": 8, "reviewedContext": reviewed})
+        other = copy.deepcopy(PROFILE)
+        other["profileId"] = "p2"
+        self.service.set_snapshot(other)
+        self.service.set_snapshot(copy.deepcopy(PROFILE))
+        after = self.service.selection_snapshot(["live-one"])
+        current = self.service._download_context(after, after["items"][0])
+        self.assertEqual({k: v for k, v in reviewed.items() if k != "executionEpoch"},
+                         {k: v for k, v in current.items() if k != "executionEpoch"})
+        self.assertGreater(after["executionEpoch"], before["executionEpoch"])
+        native = SimpleNamespace(server=self.service, _download=Mock())
+        actual_dispatcher()(native, request)
+        native._download.assert_not_called()
+        self.assertIn("Reviewed release or compatibility changed", request.result["error"])
+
+    def test_unchanged_refresh_and_selection_do_not_expire_reviewed_native_intent(self):
+        before = self.service.selection_snapshot(["live-one"])
+        reviewed = self.service._download_context(before, before["items"][0])
+        self.service.set_selected("live-one")
+        self.service.set_snapshot(copy.deepcopy(PROFILE))
+        self.assertTrue(self.service.download_context_matches(reviewed))
+
+    def test_legacy_download_and_queued_install_keep_epoch_through_qt_wait(self):
+        for kind in ("download", "install"):
+            with self.subTest(kind=kind):
+                before = self.service.selection_snapshot([])
+                request = UIRequest(kind, {"profileId": "p1", "modId": 7, "fileId": 8,
+                    "downloadId": 9, "executionEpoch": before["executionEpoch"]})
+                other = copy.deepcopy(PROFILE)
+                other["profileId"] = "p2"
+                self.service.set_snapshot(other)
+                self.service.set_snapshot(copy.deepcopy(PROFILE))
+                native = SimpleNamespace(server=self.service, _download=Mock(), _install=Mock())
+                actual_dispatcher()(native, request)
+                native._download.assert_not_called()
+                native._install.assert_not_called()
+                self.assertIn("MO2 context changed", request.result["error"])
+
+    def test_legacy_download_payload_captures_epoch_before_native_handoff(self):
+        requests = []
+
+        def native(request):
+            requests.append(request)
+            request.finish({"ok": True, "downloadId": 40})
+
+        self.service.ui_call = native
+        self.service.fetch_files = lambda _: {"ok": True, "files": [{"fileId": 8}]}
+        epoch = self.service.selection_snapshot([])["executionEpoch"]
+        self.assertTrue(self.service.request_download(7, 8, "DOWNLOAD")["ok"])
+        self.assertEqual(requests[0].payload["executionEpoch"], epoch)
+
+    def test_legacy_download_rejects_delayed_browser_epoch_before_loading_files(self):
+        old = self.service.selection_snapshot([])["executionEpoch"]
+        other = copy.deepcopy(PROFILE)
+        other["profileId"] = "p2"
+        self.service.set_snapshot(other)
+        self.service.set_snapshot(copy.deepcopy(PROFILE))
+        self.service.fetch_files = Mock(side_effect=AssertionError("Stale request reached file lookup"))
+        result = self.service.request_download(7, 8, "DOWNLOAD", expected_execution_epoch=old)
+        self.assertFalse(result["ok"])
+        self.service.fetch_files.assert_not_called()
+
+    def test_review_is_rechecked_at_final_native_start_after_other_qt_checks(self):
+        row = self.service._items_by_id["live-one"]
+        row["update"] = {"verdict": "candidate", "latestVersion": "2.0"}
+        before = self.service.selection_snapshot(["live-one"])
+        request = UIRequest("download", {"profileId": "p1", "itemId": "live-one",
+            "installedVersion": "1.0", "modId": 7, "fileId": 8,
+            "executionEpoch": before["executionEpoch"],
+            "reviewedContext": self.service._download_context(before, before["items"][0])})
+
+        def profile_name():
+            # A provider's background completion can arrive after the early
+            # check while Qt is still resolving the actual organizer context.
+            row["update"]["latestVersion"] = "3.0"
+            return "One"
+
+        modlist = SimpleNamespace(getMod=lambda name: SimpleNamespace(version=lambda: "1.0"))
+        native = SimpleNamespace(server=self.service, org=SimpleNamespace(
+            profileName=profile_name, modList=lambda: modlist), _download=Mock())
+        actual_dispatcher()(native, request)
+        native._download.assert_not_called()
+        self.assertIn("Reviewed release or compatibility changed", request.result["error"])
 
 
 class NexusLifetimeTests(unittest.TestCase):

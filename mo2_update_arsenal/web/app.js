@@ -20,9 +20,10 @@ let ACTIVITY_RECORDS=[],ACTIVITY_GENERATION=0,ACTIVITY_WARNING='';
 let PROFILE_EPOCH=0,CATALOG_REQUEST=0,WORKSHOP_REQUEST=0,GAME_REQUEST=0;
 let SCAN_OPERATION=0,SCAN_START_BUSY=false,QUICK_OPERATION=0,WORKSHOP_OPERATION=0;
 let LIVE_CONNECTED=false,LIVE_POLL_TIMER=null,LIVE_INIT_PROMISE=null,GAME_SIGNATURE='';
-let SEARCH_FRAME=null,SAVE_TIMER=null,SAVE_REVISION=0,PROGRESS_SYNC_CHAIN=Promise.resolve();
+let SEARCH_FRAME=null,WORKSHOP_SEARCH_FRAME=null,SAVE_TIMER=null,SAVE_REVISION=0,PROGRESS_SYNC_CHAIN=Promise.resolve();
 let RENDER_COUNTS=null,LOCAL_PLAN_CACHE=null;
 const BRIDGE_READS=new Map(),SOURCE_CACHE=new WeakMap(),SEARCH_CACHE=new WeakMap(),HTML_CACHE=new WeakMap();
+const ROW_RENDER_CACHE=new WeakMap();
 const INSIGHT_REQUESTS=new Map();
 const SOURCE_DETAIL_READS=new WeakMap(),SOURCE_DETAILS=new WeakMap();
 let GAME=null,GAME_SEEN=-1,PROGRESS_READY=false,PROGRESS_TIMER=null,NATIVE_SELECTED='',VICTORY_ACTIVE=null,VICTORY_TIMERS=[],PRACTICE_CROWNED=false;
@@ -73,6 +74,39 @@ function saveSoon(){clearTimeout(SAVE_TIMER);SAVE_TIMER=setTimeout(save,180)}
 function profileContext(){return{profile:LIVE_CATALOG?.profileId,epoch:PROFILE_EPOCH}}
 function contextIsCurrent(context){return context.epoch===PROFILE_EPOCH&&context.profile===LIVE_CATALOG?.profileId}
 function setHTML(node,html){if(node&&HTML_CACHE.get(node)!==html){node.innerHTML=html;HTML_CACHE.set(node,html)}}
+// Keep the complete list in the DOM. A ticket or checklist change replaces
+// only its changed rows, preserving unrelated links, focus and scroll state.
+// Structural changes (filtering, sorting, profile replacement) use one parse.
+function setRows(node,entries,empty){
+ if(!node)return;
+ const previous=ROW_RENDER_CACHE.get(node);
+ if(previous&&previous.length===entries.length&&node.children.length===previous.length&&entries.every((entry,i)=>entry.key===previous[i].key&&previous[i].node===node.children[i])){
+  const changed=[];
+  for(let i=0;i<entries.length;i++)if(entries[i].html!==previous[i].html)changed.push(i);
+  if(!changed.length)return;
+  if(changed.length<=Math.max(8,entries.length/3)){
+   const template=document.createElement('template');
+   for(const i of changed){
+    const old=previous[i].node,focused=document.activeElement;
+    const action=old.contains(focused)?['data-act','data-workshop-act','data-insight-act','data-source-act'].find(name=>focused.hasAttribute(name)):null;
+    const actionValue=action?focused.getAttribute(action):null;
+    template.innerHTML=entries[i].html;
+    const next=template.content.firstElementChild;
+    old.replaceWith(next);
+    if(action){const control=[...next.querySelectorAll('['+action+']')].find(el=>el.getAttribute(action)===actionValue);if(control&&!control.disabled)control.focus({preventScroll:true});}
+    previous[i]={...entries[i],node:next};
+   }
+   HTML_CACHE.delete(node);
+   return;
+  }
+ }
+ if(previous)HTML_CACHE.delete(node);
+ setHTML(node,entries.length?entries.map(entry=>entry.html).join(''):empty);
+ const children=[...node.children];
+ // Do not retain an index if a host extension altered the generated structure.
+ if(entries.length&&children.length===entries.length)ROW_RENDER_CACHE.set(node,entries.map((entry,i)=>({...entry,node:children[i]})));
+ else ROW_RENDER_CACHE.delete(node);
+}
 function scheduleProgressSync(){clearTimeout(PROGRESS_TIMER);const context=profileContext();if(!context.profile)return;PROGRESS_TIMER=setTimeout(()=>{
  // Serialize writes and clone only when sending, rather than cloning every
  // row on each search keystroke. The final write always contains latest state.
@@ -134,11 +168,11 @@ function modHTML(m){const s=getSrc(m),sourceText=s.type==='creations'?'↗ Creat
 let GROUP_PROGRESS=new Map();function groupProgress(){GROUP_PROGRESS=new Map(DATA.groups.map(g=>[g.id,{done:0,total:0}]));for(const m of DATA.items){if(!GROUP_PROGRESS.has(m.groupId))GROUP_PROGRESS.set(m.groupId,{done:0,total:0});const o=GROUP_PROGRESS.get(m.groupId);o.total++;if(isDone(m))o.done++}}
 function renderChapters(){let needle=$('chapterSearch').value.trim().toLowerCase();const html=DATA.groups.filter(g=>!needle||g.name.toLowerCase().includes(needle)).map(g=>{const num=GROUP_PROGRESS.get(g.id)?.done||0;return `<button class="chapter-link" style="--group-clr:${PALETTE[g.color]||PALETTE.slate}" data-chapter="${g.id}" title="Jump to ${escapeHTML(g.name)}"><i></i><span>${escapeHTML(g.name)}</span><em>${num}/${g.count}</em></button>`}).join('');setHTML($('chapters'),html||'<div class="drawer-micro" style="padding:12px">No chapter found.</div>')}
 function renderList(){const visible=filtered(),byGroup=new Map();for(const m of visible){if(!byGroup.has(m.groupId))byGroup.set(m.groupId,[]);byGroup.get(m.groupId).push(m)}
- let html='';for(const g of DATA.groups){const ms=byGroup.get(g.id);if(!ms||!ms.length)continue;let sorted=[...ms];if(STORE.prefs.sort==='name')sorted.sort((a,b)=>a.name.localeCompare(b.name));else if(STORE.prefs.sort==='version')sorted.sort((a,b)=>a.installedVersion.localeCompare(b.installedVersion));else sorted.sort((a,b)=>a.priority-b.priority);
+ const entries=[];for(const g of DATA.groups){const ms=byGroup.get(g.id);if(!ms||!ms.length)continue;let sorted=[...ms];if(STORE.prefs.sort==='name')sorted.sort((a,b)=>a.name.localeCompare(b.name));else if(STORE.prefs.sort==='version')sorted.sort((a,b)=>a.installedVersion.localeCompare(b.installedVersion));else sorted.sort((a,b)=>a.priority-b.priority);
  const gd=GROUP_PROGRESS.get(g.id)?.done||0;const collapsed=STORE.prefs.collapsed.includes(g.id),pct=Math.round((gd/(g.count||1))*100);
- html+=`<button class="chapterbar ${collapsed?'closed':''}" id="section-${g.id}" data-chapter-toggle="${g.id}" style="--chapter-color:${PALETTE[g.color]||PALETTE.slate}" aria-expanded="${!collapsed}"><span class="diamond">◆</span><strong>${escapeHTML(g.name)}</strong><span class="chapter-count">${gd}/${g.count}</span><span class="chapter-mini-progress"><i style="width:${pct}%"></i></span><span class="chapter-priority">#${g.startPriority}</span></button>`;
- if(!collapsed)html+=sorted.map(modHTML).join('');}
- setHTML($('modList'),html||`<div class="empty-state"><div class="empty-icon">ᛟ</div><h3>No foes in this chamber.</h3><p>Nothing matches your current search and filters.</p><button id="emptyReset">Clear filters</button></div>`);
+ entries.push({key:'group:'+g.id,html:`<button class="chapterbar ${collapsed?'closed':''}" id="section-${g.id}" data-chapter-toggle="${g.id}" style="--chapter-color:${PALETTE[g.color]||PALETTE.slate}" aria-expanded="${!collapsed}"><span class="diamond">◆</span><strong>${escapeHTML(g.name)}</strong><span class="chapter-count">${gd}/${g.count}</span><span class="chapter-mini-progress"><i style="width:${pct}%"></i></span><span class="chapter-priority">#${g.startPriority}</span></button>`});
+ if(!collapsed)for(const m of sorted)entries.push({key:'mod:'+m.id,html:modHTML(m)});}
+ setRows($('modList'),entries,`<div class="empty-state"><div class="empty-icon">ᛟ</div><h3>No foes in this chamber.</h3><p>Nothing matches your current search and filters.</p><button id="emptyReset">Clear filters</button></div>`);
  const listCounts=counts(),parts=[visible.length+' of '+DATA.items.length+' mods',byGroup.size+' chapters'];if(STORE.prefs.query)parts.push('query: '+STORE.prefs.query);SET('resultsMeta',parts.join(' · '));SET('listFooter',`YOU'VE REACHED THE END · ${visible.length} MATCHING MODS · ${listCounts.total-listCounts.unlinked} EXACT ORIGINAL SOURCES`);$('sortSelect').value=STORE.prefs.sort;}
 function render(){if(SEARCH_FRAME!==null){cancelAnimationFrame(SEARCH_FRAME);SEARCH_FRAME=null}RENDER_COUNTS=counts();try{groupProgress();renderStats();renderList();renderChapters();renderQuest();paintNativeSelection();renderWorkshop();renderInsightToolbar();renderSourceCoverage()}finally{RENDER_COUNTS=null}}
 function renderSearch(){SEARCH_FRAME=null;renderList();paintNativeSelection()}
@@ -477,6 +511,7 @@ document.addEventListener('keydown',e=>{const inField=e.target.matches('input,te
 async function bridgeRequest(method,path,body){
  if(!BRIDGE.active)throw Error('Launch the app from the MO2 plugin to connect');
  if(method==='POST'&&!LIVE_CONNECTED)throw Error('MO2 is disconnected; wait for the connection to recover');
+ if(method==='POST'&&body?.profileId===LIVE_CATALOG?.profileId&&Number.isSafeInteger(LIVE_CATALOG?.executionEpoch))body={...body,executionEpoch:body.executionEpoch??LIVE_CATALOG.executionEpoch};
  const key=PROFILE_EPOCH+':'+path;
  if(method==='GET'&&BRIDGE_READS.has(key))return BRIDGE_READS.get(key);
  const pending=(async()=>{const controller=new AbortController(),tm=setTimeout(()=>controller.abort(),method==='GET'?24000:195000);
@@ -591,20 +626,26 @@ function renderWorkshopJourney(){
  const btn=$('workshopNextAction');btn.dataset.action=action;btn.textContent=label;
  btn.disabled=WORKSHOP_BUSY||(BRIDGE.active&&!LIVE_CONNECTED)||(LIVE_SCAN?.state==='running'&&action==='scan');
 }
+function blocksNextUpdate(ticket){
+ if(!ticket?.itemId||['failed','removed'].includes(ticket.status))return false;
+ const mod=ITEM_MAP.get(ticket.itemId);
+ return ticket.status!=='installed'||!mod||String(mod.installedVersion||'')===String(ticket.installedVersion||'');
+}
 function renderWorkshop(){
+ if(WORKSHOP_SEARCH_FRAME!==null){cancelAnimationFrame(WORKSHOP_SEARCH_FRAME);WORKSHOP_SEARCH_FRAME=null;}
  const area=$('workshopResults');if(!area)return;
  const plan=currentWorkshopPlan(),summary=plan.summary,filter=$('workshopFilter').value||'candidate',query=$('workshopSearch').value.trim().toLowerCase();
  const selected=[...WORKSHOP_CHOICES.values()].filter(x=>x.profileId===plan.profileId);
  SET('workshopCount',summary.candidates+' CANDIDATES · '+selected.length+' REVIEWED');
  // Index tickets once: keep constant-time lookups for arbitrarily large profiles.
  const ticketsByMod=new Map();
- for(const ticket of Object.values(WORKSHOP_TICKETS))if(ticket?.itemId&&!['failed','removed'].includes(ticket.status))ticketsByMod.set(ticket.itemId,ticket);
+ for(const ticket of Object.values(WORKSHOP_TICKETS))if(blocksNextUpdate(ticket))ticketsByMod.set(ticket.itemId,ticket);
  const ready=[...ticketsByMod.values()].filter(x=>x.status==='complete').length;
  const metrics=[['Candidates',summary.candidates,'candidate'],['Investigate',summary.review,'review'],['Manual sources',summary.manual,'manual'],['Current',summary.current,'current'],['Compatibility watch',summary.risky,'risky'],['Ready to install',ready,'ready']];
  setHTML($('workshopSummary'),metrics.map(([name,n,key])=>'<button type="button" class="workshop-metric'+(filter===key?' is-active':'')+'" data-lane="'+key+'" aria-pressed="'+(filter===key)+'"><strong>'+escapeHTML(n)+'</strong><small>'+escapeHTML(name)+'</small></button>').join(''));
  const visible=plan.items.filter(m=>(filter==='all'||m.lane===filter||filter==='risky'&&!!m.risks?.length||filter==='ready'&&ticketsByMod.get(m.id)?.status==='complete')&&(!query||[m.name,m.group,m.installedVersion,m.latestVersion,m.verdict,SOURCES?.searchText(ITEM_MAP.get(m.id)||m)||''].join(' ').toLowerCase().includes(query)));
  SET('workshopVisibleCount',visible.length+' of '+plan.items.length+' mods shown');
- const html=visible.map(m=>{
+ const entries=visible.map(m=>{
   const choice=WORKSHOP_CHOICES.get(m.id);
   const match=ITEM_MAP.get(m.id)||{id:m.id,name:m.name,group:m.group,nexusId:m.nexusId,source:{}};
   const source=getSrc(match),official=validUrl(m.sourceUrl),src=source.custom?source.url:(official||source.url);
@@ -616,9 +657,9 @@ function renderWorkshop(){
   const quickReason=QUICK_SKIPPED.get(m.id);
   const quickHint=quickReason&&!ticket?'<span class="workshop-choice-hint" title="'+escapeHTML(quickReason)+'">Choose edition · '+escapeHTML(quickReason)+'</span>':'';
   const ticketTag=ticket?'<span class="workshop-ticket-note">MO2 · '+escapeHTML(String(ticket.status||'').toUpperCase())+'</span>':'';
-  return '<article class="workshop-item" data-workshop-id="'+escapeHTML(m.id)+'"><div class="workshop-item-main"><div class="workshop-line"><span class="workshop-lane lane-'+escapeHTML(m.lane)+'">'+escapeHTML(m.lane.toUpperCase())+'</span><a class="workshop-item-title'+(exactSource?'':' source-unresolved')+'" href="'+escapeHTML(src)+'" target="_blank" rel="noopener noreferrer" data-workshop-act="source" data-id="'+escapeHTML(m.id)+'" title="'+escapeHTML(exactSource?'Open original project website':'Find the original project; source not verified')+'" aria-label="'+escapeHTML((exactSource?'Open source website for ':'Search for source of ')+m.name)+'">'+escapeHTML(m.name)+'<span class="source-open-glyph" aria-hidden="true">↗</span></a>'+(BRIDGE.active?'<button type="button" class="workshop-inline-locate" data-workshop-act="locate" data-id="'+escapeHTML(m.id)+'" aria-label="Reveal '+escapeHTML(m.name)+' in MO2" title="Reveal this mod in Mod Organizer 2">⌖</button>':'')+'</div><small>'+escapeHTML(m.group||'MO2 profile')+' · '+escapeHTML(m.installedVersion||'?')+' → '+escapeHTML(m.latestVersion||'?')+'</small>'+(INSIGHTS?.chips(match)||'')+(SOURCES?.chips(match)||'')+'<div class="workshop-tags">'+(warning?'<span class="workshop-warning">⚠ '+escapeHTML(m.risks.join(' · '))+'</span>':'')+(choice?'<span class="workshop-selected">✓ '+escapeHTML(choice.fileName||choice.displayName||('Reviewed file #'+(choice.fileId||choice.assetId||'')))+'</span><button type="button" class="workshop-remove" data-workshop-act="remove" data-id="'+escapeHTML(m.id)+'" aria-label="Remove reviewed file for '+escapeHTML(m.name)+'">× Remove file</button>':'')+ticketTag+quickHint+'</div></div><div class="workshop-item-actions"><a target="_blank" rel="noopener noreferrer" href="'+escapeHTML(src)+'" title="'+escapeHTML(exactSource?'Open the source website':'Find the original source')+'">'+(exactSource?'↗ Project website':'⌕ Find project')+'</a>'+(hasAlternateRelease?'<a target="_blank" rel="noopener noreferrer" href="'+escapeHTML(release)+'" title="Open the published release page">↗ Latest release</a>':'')+(BRIDGE.active&&compatible&&(INSIGHTS?.isNexus(match)||hasReleaseAssets(m))?ticket?'<button type="button" class="quiet-button" data-workshop-act="downloads" data-id="'+escapeHTML(m.id)+'">View download</button>':!sourceReady?'<button type="button" class="quiet-button" data-source-act="inspect" data-id="'+escapeHTML(m.id)+'">Review source status</button>':'<button type="button" class="button-bright quick-update" data-workshop-act="quick" data-id="'+escapeHTML(m.id)+'">ϟ Update now</button><button type="button" class="quiet-button" data-workshop-act="review" data-id="'+escapeHTML(m.id)+'">Choose file</button>':'')+'</div></article>';
- }).join('')||'<div class="workshop-empty">No mods in this lane. Change the filter or run a deeper audit.</div>';
- setHTML(area,html);
+  return {key:m.id,html:'<article class="workshop-item" data-workshop-id="'+escapeHTML(m.id)+'"><div class="workshop-item-main"><div class="workshop-line"><span class="workshop-lane lane-'+escapeHTML(m.lane)+'">'+escapeHTML(m.lane.toUpperCase())+'</span><a class="workshop-item-title'+(exactSource?'':' source-unresolved')+'" href="'+escapeHTML(src)+'" target="_blank" rel="noopener noreferrer" data-workshop-act="source" data-id="'+escapeHTML(m.id)+'" title="'+escapeHTML(exactSource?'Open original project website':'Find the original project; source not verified')+'" aria-label="'+escapeHTML((exactSource?'Open source website for ':'Search for source of ')+m.name)+'">'+escapeHTML(m.name)+'<span class="source-open-glyph" aria-hidden="true">↗</span></a>'+(BRIDGE.active?'<button type="button" class="workshop-inline-locate" data-workshop-act="locate" data-id="'+escapeHTML(m.id)+'" aria-label="Reveal '+escapeHTML(m.name)+' in MO2" title="Reveal this mod in Mod Organizer 2">⌖</button>':'')+'</div><small>'+escapeHTML(m.group||'MO2 profile')+' · '+escapeHTML(m.installedVersion||'?')+' → '+escapeHTML(m.latestVersion||'?')+'</small>'+(INSIGHTS?.chips(match)||'')+(SOURCES?.chips(match)||'')+'<div class="workshop-tags">'+(warning?'<span class="workshop-warning">⚠ '+escapeHTML(m.risks.join(' · '))+'</span>':'')+(choice?'<span class="workshop-selected">✓ '+escapeHTML(choice.fileName||choice.displayName||('Reviewed file #'+(choice.fileId||choice.assetId||'')))+'</span><button type="button" class="workshop-remove" data-workshop-act="remove" data-id="'+escapeHTML(m.id)+'" aria-label="Remove reviewed file for '+escapeHTML(m.name)+'">× Remove file</button>':'')+ticketTag+quickHint+'</div></div><div class="workshop-item-actions"><a target="_blank" rel="noopener noreferrer" href="'+escapeHTML(src)+'" title="'+escapeHTML(exactSource?'Open the source website':'Find the original source')+'">'+(exactSource?'↗ Project website':'⌕ Find project')+'</a>'+(hasAlternateRelease?'<a target="_blank" rel="noopener noreferrer" href="'+escapeHTML(release)+'" title="Open the published release page">↗ Latest release</a>':'')+(BRIDGE.active&&compatible&&(INSIGHTS?.isNexus(match)||hasReleaseAssets(m))?ticket?'<button type="button" class="quiet-button" data-workshop-act="downloads" data-id="'+escapeHTML(m.id)+'">View download</button>':!sourceReady?'<button type="button" class="quiet-button" data-source-act="inspect" data-id="'+escapeHTML(m.id)+'">Review source status</button>':'<button type="button" class="button-bright quick-update" data-workshop-act="quick" data-id="'+escapeHTML(m.id)+'">ϟ Update now</button><button type="button" class="quiet-button" data-workshop-act="review" data-id="'+escapeHTML(m.id)+'">Choose file</button>':'')+'</div></article>'};
+ });
+ setRows(area,entries,'<div class="workshop-empty">No mods in this lane. Change the filter or run a deeper audit.</div>');
  $('workshopQueue').disabled=!BRIDGE.active||!LIVE_CONNECTED||!selected.length||WORKSHOP_BUSY;
  $('workshopQuickAll').disabled=!BRIDGE.active||!LIVE_CONNECTED||!summary.candidates||QUICK_RUNNING;
  $('workshopInspectQueue').disabled=!BRIDGE.active||!LIVE_CONNECTED||!selected.length||WORKSHOP_BUSY;
@@ -785,7 +826,7 @@ $('workshopNextAction').onclick=()=>{
 function nextWorkshopCandidate(){
  if(!BRIDGE.active||!LIVE_CATALOG)return null;
  const plan=currentWorkshopPlan(),busyIds=new Set(Object.values(WORKSHOP_TICKETS)
-   .filter(t=>!['failed','removed'].includes(t.status)).map(t=>t.itemId));
+   .filter(blocksNextUpdate).map(t=>t.itemId));
  return plan.items.find(row=>row.lane==='candidate'&&!WORKSHOP_CHOICES.has(row.id)
    &&!busyIds.has(row.id)&&(INSIGHTS?.isNexus(ITEM_MAP.get(row.id)||row)||hasReleaseAssets(row)))||null;
 }
@@ -804,7 +845,7 @@ $('workshopExport').onclick=exportWorkshop;
 $('workshopQueue').onclick=queueWorkshop;
 $('workshopFilter').onchange=renderWorkshop;
 $('workshopSummary').addEventListener('click',e=>{const choice=e.target.closest('button[data-lane]');if(!choice)return;$('workshopFilter').value=choice.dataset.lane;renderWorkshop();});
-$('workshopSearch').oninput=renderWorkshop;
+$('workshopSearch').oninput=()=>{if(DATA.items.length<1000){renderWorkshop();return;}if(WORKSHOP_SEARCH_FRAME===null)WORKSHOP_SEARCH_FRAME=requestAnimationFrame(()=>{WORKSHOP_SEARCH_FRAME=null;renderWorkshop()});};
 $('workshopResults').addEventListener('click',e=>{
  const b=e.target.closest('[data-workshop-act]');if(!b)return;
  if(b.dataset.workshopAct==='source'){

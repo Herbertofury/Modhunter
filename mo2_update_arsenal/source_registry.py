@@ -10,6 +10,7 @@ import configparser
 from copy import deepcopy
 import ipaddress
 import json
+import logging
 import re
 import time
 import threading
@@ -25,6 +26,8 @@ from .version_evidence import compare_versions
 from .source_adapters import (RustSourceRunner, adapter_capabilities, normalize_adapter_record,
                               CACHE_LIMIT, PUBLIC_API_PROVIDERS, asset_proof)
 
+
+LOG = logging.getLogger(__name__)
 
 PROVIDER_HOSTS = {
     "nexusmods.com": "nexus", "github.com": "github",
@@ -293,7 +296,12 @@ class SourceScanner:
                 pass  # The in-memory observation remains usable; no stale cache claim.
             finally:
                 if temporary:
-                    temporary.unlink(missing_ok=True)
+                    try:
+                        temporary.unlink(missing_ok=True)
+                    except OSError as exc:
+                        # Cleanup is best-effort too: keep the completed scan
+                        # usable and the last-good on-disk cache untouched.
+                        LOG.warning("Source cache temporary cleanup failed: %s", type(exc).__name__)
             return True
 
     @staticmethod

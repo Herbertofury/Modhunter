@@ -141,6 +141,21 @@ class InstallBriefServerTests(unittest.TestCase):
         self.assertIn("runtime changed", result["error"])
         self.assertEqual(self.calls, ["download"])
 
+    def test_changed_or_removed_nexus_identity_blocks_install_dispatch(self):
+        for identity in (99, 0, None):
+            with self.subTest(identity=identity):
+                changed = copy.deepcopy(SNAP)
+                changed["items"][0]["nexusId"] = identity
+                self.service.set_snapshot(changed)
+                preview = self.service.preview_install(711)
+                self.assertFalse(preview["canInstall"])
+                result = self.service.install_reviewed_download(711)
+                self.assertFalse(result["ok"])
+                self.assertIn("Nexus project", result["error"])
+                self.assertEqual(self.calls, ["download"])
+        self.service.set_snapshot(copy.deepcopy(SNAP))
+        self.assertTrue(self.service.preview_install(711)["canInstall"])
+
     def test_install_preview_endpoint_is_session_authorized(self):
         root = self.service.start()
         url = root + "api/install-preview?downloadId=711"

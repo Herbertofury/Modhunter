@@ -77,6 +77,36 @@ class SessionDiscoveryTests(unittest.TestCase):
             service.set_snapshot(copy.deepcopy(PROFILE))
             service.start()
 
+    def test_refresh_restores_missing_descriptor_without_restarting_live_service(self):
+        service = self.service()
+        address = service.start()
+        server = service._server
+        own = next(self.folder.glob("*.json"))
+        original = own.read_bytes()
+        own.unlink()
+        service.set_snapshot(copy.deepcopy(PROFILE))
+        self.assertTrue(own.exists())
+        self.assertEqual(own.read_bytes(), original)
+        self.assertIs(service._server, server)
+        self.assertEqual(json.loads(own.read_bytes())["endpoint"], address)
+        self.assertNotIn(service.token.encode(), own.read_bytes())
+
+    def test_missing_descriptor_write_failure_retries_on_next_identical_publish(self):
+        discovery = SessionDiscovery(self.folder)
+        self.addCleanup(discovery.close)
+        endpoint = "http://127.0.0.1:51234/"
+        self.assertTrue(discovery.publish(endpoint, "first", "First"))
+        own = next(self.folder.glob("*.json"))
+        original = own.read_bytes()
+        own.unlink()
+        with patch("mo2_update_arsenal.session_discovery.os.replace", side_effect=OSError("fixture unavailable")), \
+             self.assertLogs("mo2_update_arsenal.session_discovery", level="WARNING"):
+            self.assertFalse(discovery.publish(endpoint, "first", "First"))
+        self.assertFalse(own.exists())
+        self.assertEqual(list(self.folder.glob("*.tmp-*")), [])
+        self.assertTrue(discovery.publish(endpoint, "first", "First"))
+        self.assertEqual(own.read_bytes(), original)
+
     def test_restarting_service_publishes_current_endpoint_without_leaving_old_hint(self):
         service = self.service()
         service.start()

@@ -72,9 +72,11 @@ class OperationJournal:
         self.lock = threading.RLock()
         self.records: dict[str, dict] = {}
         self.error = ""
+        self._pending_events: list[dict] = []
         self._read_existing()
 
     def _read_existing(self) -> None:
+        seen_events: set[str] = set()
         try:
             with self.path.open("r", encoding="utf-8") as reader:
                 for line in reader:
@@ -93,7 +95,13 @@ class OperationJournal:
                         validated = _clean(payload, download_id, status)
                         if not validated.get("profileId"):
                             continue
+                        event_id = event.get("eventId")
+                        if isinstance(event_id, str) and event_id in seen_events:
+                            continue
+                        validated["hasProfileBackup"] = payload.get("hasProfileBackup") is True
                         self._apply(key, event["sessionId"], event["at"], validated)
+                        if isinstance(event_id, str):
+                            seen_events.add(event_id)
                     except (ValueError, TypeError, KeyError, json.JSONDecodeError):
                         # A torn final line must not erase previously valid receipts.
                         continue
@@ -125,11 +133,18 @@ class OperationJournal:
             key = self.session_id + ":" + operation
             with self.lock:
                 previous = self.records.get(key)
-                if previous and all(previous.get(k) == v for k, v in sanitized.items()):
-                    return True  # Native signals can repeat without duplicate history.
-                at = _stamp()
-                event = {"schemaVersion": 1, "key": key, "sessionId": self.session_id,
-                         "at": at, "ticket": sanitized}
+                unchanged = previous and all(previous.get(k) == v for k, v in sanitized.items())
+                if not unchanged:
+                    at = _stamp()
+                    event = {"schemaVersion": 1, "eventId": secrets.token_hex(16),
+                             "key": key, "sessionId": self.session_id,
+                             "at": at, "ticket": sanitized}
+                    self._pending_events.append(event)
+                    self._apply(key, self.session_id, at, sanitized)
+                if not self._pending_events:
+                    return not bool(self.error)
+                # Retry only sanitized history writes, never native MO2 commands.
+                # Stable event IDs make an uncertain flush/fsync retry replay-safe.
                 try:
                     self.path.parent.mkdir(parents=True, exist_ok=True)
                     with self.path.open("a+b") as stream:
@@ -138,16 +153,17 @@ class OperationJournal:
                             stream.seek(-1, os.SEEK_END)
                             if stream.read(1) != b"\n":
                                 stream.write(b"\n")  # Isolate a torn previous line.
-                        payload = json.dumps(event, ensure_ascii=False, separators=(",", ":"))
-                        stream.write((payload + "\n").encode("utf-8"))
+                        for event in self._pending_events:
+                            payload = json.dumps(event, ensure_ascii=False, separators=(",", ":"))
+                            stream.write((payload + "\n").encode("utf-8"))
                         stream.flush()
                         os.fsync(stream.fileno())
+                    self._pending_events.clear()
                     self.error = ""
                     durable = True
                 except OSError as exc:
                     self.error = "Could not save updater history: " + type(exc).__name__
                     durable = False
-                self._apply(key, self.session_id, at, sanitized)
                 return durable
         except (ValueError, TypeError, KeyError):
             return False

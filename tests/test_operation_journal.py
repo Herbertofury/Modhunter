@@ -6,6 +6,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from mo2_update_arsenal.operation_journal import OperationJournal
@@ -106,6 +107,52 @@ class OperationJournalTests(unittest.TestCase):
         reboot.record(ticket(operation="next"), 6)
         restored = OperationJournal(self.path, "third")
         self.assertEqual(restored.profile("p1")["count"], 2)
+
+    def test_identical_callback_retries_failed_durable_write(self):
+        journal = OperationJournal(self.path, "session")
+        with patch.object(Path, "open", side_effect=OSError("fixture write unavailable")):
+            self.assertFalse(journal.record(ticket(), 11))
+        self.assertFalse(journal.profile("p1")["durable"])
+        self.assertTrue(journal.record(ticket(), 11))
+        self.assertTrue(journal.profile("p1")["durable"])
+        restored = OperationJournal(self.path, "next").profile("p1")["records"]
+        self.assertEqual(len(restored), 1)
+        self.assertEqual(len(restored[0]["timeline"]), 1)
+        self.assertTrue(restored[0]["hasProfileBackup"])
+        self.assertFalse(restored[0]["actionable"])
+
+    def test_next_transition_preserves_failed_prior_transition(self):
+        journal = OperationJournal(self.path, "session")
+        with patch.object(Path, "open", side_effect=OSError("fixture write unavailable")):
+            self.assertFalse(journal.record(ticket(), 11))
+        self.assertTrue(journal.record({**ticket(), "status": "complete"}, 11))
+        restored = OperationJournal(self.path, "next").profile("p1")["records"][0]
+        self.assertEqual([event["status"] for event in restored["timeline"]],
+                         ["downloading", "complete"])
+
+    def test_uncertain_fsync_retry_does_not_duplicate_replayed_transitions(self):
+        journal = OperationJournal(self.path, "session")
+        with patch("mo2_update_arsenal.operation_journal.os.fsync", side_effect=OSError("fixture fsync failure")):
+            self.assertFalse(journal.record(ticket(), 11))
+        self.assertTrue(journal.record(ticket(), 11))
+        self.assertTrue(journal.profile("p1")["durable"])
+        restored = OperationJournal(self.path, "next").profile("p1")["records"][0]
+        self.assertEqual(len(restored["timeline"]), 1)
+        self.assertTrue(restored["hasProfileBackup"])
+        text = self.path.read_text("utf-8")
+        for secret in ("SECRET_TOKEN", "private.example", "SecretBackups"):
+            self.assertNotIn(secret, text)
+
+    def test_legacy_receipts_without_event_ids_keep_backup_fact(self):
+        journal = OperationJournal(self.path, "session")
+        self.assertTrue(journal.record(ticket(), 11))
+        event = json.loads(self.path.read_text("utf-8"))
+        event.pop("eventId", None)
+        self.path.write_text(json.dumps(event) + "\n", "utf-8")
+        restored = OperationJournal(self.path, "next").profile("p1")["records"][0]
+        self.assertTrue(restored["hasProfileBackup"])
+        self.assertFalse(restored["actionable"])
+        self.assertTrue(restored["needsReview"])
 
     def test_full_history_has_no_result_cap(self):
         j = OperationJournal(self.path, "session")

@@ -86,6 +86,25 @@ class SourceCacheOwnershipTests(unittest.TestCase):
         self.assertEqual(self.scanner._scan_epoch, epoch)
         self.assertEqual(self.scanner._cache["entries"], [{"observation": 1}])
 
+    def test_cache_cleanup_failure_preserves_completed_scan_and_last_good_disk(self):
+        self.scanner.scan(PROFILE)
+        original = self.path.read_bytes()
+        with patch("mo2_update_arsenal.source_registry.os.replace", side_effect=OSError("fixture unavailable")), \
+             patch.object(Path, "unlink", side_effect=OSError("fixture cleanup unavailable")), \
+             self.assertLogs("mo2_update_arsenal.source_registry", level="WARNING") as messages:
+            result = self.scanner.scan(PROFILE)
+        self.assertIn("OSError", messages.output[0])
+        self.assertNotIn("fixture cleanup unavailable", messages.output[0])
+        self.assertNotIn("cancelled", result)
+        self.assertIn("external", result["itemRecords"])
+        self.assertEqual(self.scanner._cache["entries"], [{"observation": 2}])
+        self.assertEqual(self.path.read_bytes(), original)
+        self.assertEqual(SourceScanner(runner=Runner(), cache_path=self.path)._cache["entries"],
+                         [{"observation": 1}])
+        recovered = self.scanner.scan(PROFILE)
+        self.assertIn("external", recovered["itemRecords"])
+        self.assertEqual(json.loads(self.path.read_text())["entries"], [{"observation": 3}])
+
     def test_invalid_cache_does_not_discard_current_exact_row_results(self):
         self.runner.run = lambda request, **kwargs: {"itemRecords": {}, "cache": None, "errors": [], "stats": {}}
         result = self.scanner.scan(PROFILE)

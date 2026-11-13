@@ -1,16 +1,20 @@
 # 🛠 Development & Testing
 
-## Rust 0.9.1 release gates
+## Rust 0.9.2 release gates
 
 The [native workflow](https://github.com/Herbertofury/Modhunter/actions/workflows/native-rust.yml) compiles and launches the actual Windows app, tests the production plugin inside an official MO2 2.5.2 fixture instance, runs Rust tests and strict Clippy, and executes browser and lifecycle regressions. See [Rust Desktop](Rust-Desktop.md) for the evidence boundaries and [native/README.md](../native/README.md) for build commands. Downloadable receipts identify each passing check and the compiled commit. The older acceptance notes below describe their original checkpoints.
 
 `tests/test_scan_lifecycle.py` covers stale completions, errors and progress, including A→B→A; `tests/test_source_identity.py` covers source authority and route-preserving URL cleanup. `tests/frontend_runtime.test.cjs` checks polling, stale reads, cosmetic rendering and source identity. `tests/test_frontend_responsiveness.py` runs the compiled dashboard in actual Chromium. CI requires the browser with `MODHUNTER_REQUIRE_BROWSER=1`, so a missing browser cannot silently pass that gate.
 
+The 0.9.2 cases in `tests/test_catalog_delivery.py` cover concurrent full-response reuse, owned-copy isolation, cache/profile/source/audit invalidation, serialization outside the execution guard, health freshness and size bounds. `tests/test_source_cache_ownership.py` pauses older provider writes while a newer scan completes. The frontend runtime tests cover row/search cache dependencies, same-profile execution epochs, source synchronization and delayed/failed Chronicle reads. Chromium additionally checks actual download-control focus through ticket reordering, replacement and removal. Rust cancellation tests interrupt import and deep payload reads, reject partial success and reuse the same engine; the native shell tests cover ordered state replies and catalog injection guards.
+
 `native/scripts/windows_smoke.ps1` launches the compiled WebView2 app and reads its import/export/IPC receipt. `native/scripts/mo2_native_smoke.ps1` creates a disposable native MO2 instance with a synthetic BasicGame and test-only tool, never a user's instance; those harness plugins are excluded from user packages. Fixture tests do not authenticate to Nexus, install real mod archives or launch a commercial game.
 
 `scripts/benchmark_native_import.py` compares complete Rust and previous Node import calls over identical metadata fixtures; all samples and environment details are stored in `native/evidence/import-comparison.json`. Full GUI startup and internet download speeds are outside that benchmark.
 
-`python native/scripts/prepare_release.py --print-version` validates workspace, lockfile, installer and MO2 version agreement. `python native/scripts/prepare_release.py --self-test` also checks stale portable/installer rejection, native proof requirements and source/helper identity. CI derives its package metadata and release tag from the validated workspace version. Release assets are immutable, so every newly distributed build needs a new version.
+For this release, `scripts/benchmark_catalog_delivery.py` compares the complete Python loopback service against published 0.9.1 on generated 2,500- and 10,000-mod catalogs, including full response equivalence and real temporary Chronicle writes. `scripts/benchmark_dashboard_render.py` runs the actual compiled dashboard in Chromium against that same release baseline. `scripts/benchmark_plugin_audit.py` records fresh-hash equivalence and cancellation-checkpoint overhead. See [0.9.2 readiness](../native/evidence/readiness-0.9.2.md) for exact evidence and scope; historical comparison files retain their original baselines.
+
+`python native/scripts/prepare_release.py --print-version` validates workspace, lockfile, installer and MO2 version agreement. `python native/scripts/prepare_release.py --self-test` also checks stale portable/installer rejection, every embedded file checksum, Windows filename collisions, native proof requirements and source/helper identity. `native/scripts/test_plugin_installer.ps1` invokes the shipped installer in Windows PowerShell 5.1 and verifies preserved progress, rejected damaged/incomplete/mixed packages, source-tree installation and backup-directory safety. CI derives its package metadata and release tag from the validated workspace version. Release assets are immutable, so every newly distributed build needs a new version.
 
 ## Developer quick start
 

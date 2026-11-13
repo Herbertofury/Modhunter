@@ -51,6 +51,7 @@ class Chronicle:
     def __init__(self, path: Path):
         self.path = Path(path)
         self.lock = threading.RLock()
+        self._source_revisions: dict[str, int] = {}
         self.data = {"schemaVersion": 1, "profiles": {}}
         try:
             found = json.loads(self.path.read_text(encoding="utf-8"))
@@ -85,7 +86,17 @@ class Chronicle:
                     if isinstance(rows.get(key), dict) and isinstance(rows[key].get("url"), str)
                     and rows[key]["url"]}
 
-    def set_progress(self, profile_id: str, rows: dict, prefs: dict, runtime: str, valid_ids: set[str]) -> dict:
+    def source_revision(self, profile_id: str) -> int:
+        with self.lock:
+            return self._source_revisions.get(profile_id, 0)
+
+    def persist(self) -> None:
+        """Persist accepted in-memory changes outside the service execution lock."""
+        with self.lock:
+            self._write()
+
+    def set_progress(self, profile_id: str, rows: dict, prefs: dict, runtime: str, valid_ids: set[str],
+                     *, persist=True) -> dict:
         """User-editable progress cannot mutate scores, badges, or native event evidence."""
         if not isinstance(rows, dict) or not isinstance(prefs, dict):
             return {"ok": False, "error": "Invalid progress document"}
@@ -111,8 +122,12 @@ class Chronicle:
             elif k == "collapsed" and isinstance(v, list):
                 safe_prefs[k] = [str(x)[:100] for x in v if isinstance(x, str)]
         with self.lock:
+            previous_links = self.source_links(profile_id)
             self._profile(profile_id)["progress"] = {"rows": sanitized, "prefs": safe_prefs, "verifiedRuntime": str(runtime)[:100]}
-            self._write()
+            if previous_links != self.source_links(profile_id):
+                self._source_revisions[profile_id] = self._source_revisions.get(profile_id, 0) + 1
+            if persist:
+                self._write()
         return {"ok": True, "savedRows": len(sanitized), "profileId": profile_id}
 
     @staticmethod

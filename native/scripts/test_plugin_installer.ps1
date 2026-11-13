@@ -21,6 +21,7 @@ $Source = Join-Path $Package 'MO2/mo2_update_arsenal'
 $Installer = Join-Path $Package 'Install_MO2_Plugin.ps1'
 $Passed = $false
 $Checks = [Collections.Generic.List[object]]::new()
+$FixtureVersion = '1.2.3'
 
 function Write-FixtureFile([string]$Path, [string]$Text) {
     New-Item -ItemType Directory -Path (Split-Path -Parent $Path) -Force | Out-Null
@@ -32,6 +33,14 @@ function Require([bool]$Condition, [string]$Message) {
 }
 
 function Hash([string]$Path) { (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash }
+
+function Write-FixtureManifest {
+    $Lines = @(Get-ChildItem -LiteralPath $Package -File -Recurse | Where-Object { $_.Name -ne 'SHA256SUMS.txt' } | Sort-Object FullName | ForEach-Object {
+        $Relative = [IO.Path]::GetRelativePath($Package, $_.FullName).Replace('\', '/')
+        "$(Hash $_.FullName)  $Relative"
+    })
+    Write-FixtureFile (Join-Path $Package 'SHA256SUMS.txt') (($Lines -join "`n") + "`n")
+}
 
 function New-MO2Fixture([string]$Name) {
     $Directory = Join-Path $Root $Name
@@ -54,6 +63,7 @@ function Invoke-FixtureInstaller([string]$Directory, [bool]$MustSucceed = $true,
         $StandardError = $Child.StandardError.ReadToEndAsync()
         if (!$Child.WaitForExit(30000)) { throw 'Fixture plugin installer exceeded its 30 second deadline.' }
         $Output = $StandardOutput.GetAwaiter().GetResult() + $StandardError.GetAwaiter().GetResult()
+        $script:LastInstallerOutput = $Output
         if ($MustSucceed) { Require ($Child.ExitCode -eq 0) "Fixture installer failed: $Output" }
         else {
             Require ($Child.ExitCode -ne 0) 'Installer accepted an invalid upgrade fixture.'
@@ -75,11 +85,14 @@ try {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../Install_MO2_Plugin.ps1') -Destination $Installer
     Write-FixtureFile (Join-Path $Source '__init__.py') '# new fixture plugin'
     Write-FixtureFile (Join-Path $Source 'plugin.py') '# new fixture implementation'
+    Write-FixtureFile (Join-Path $Source 'version.py') ('VERSION = "' + $FixtureVersion + '"')
     Write-FixtureFile (Join-Path $Source 'web/index.html') '<html>New fixture dashboard</html>'
     Write-FixtureFile (Join-Path $Source 'bin/modhunter-cli.exe') 'New Rust helper fixture marker; never execute this file.'
     Write-FixtureFile (Join-Path $Source 'bin/modhunter-qt-bridge.dll') 'New Qt helper fixture marker; never load this file.'
     Write-FixtureFile (Join-Path $Source 'bin/unrelated.exe') 'Unrelated fixture marker; must not be installed.'
     Write-FixtureFile (Join-Path $Source 'bin/Qt6Core.dll') 'SDK runtime fixture marker; MO2 owns its Qt runtime.'
+    Write-FixtureFile (Join-Path $Package 'BUILD_INFO.json') (@{ version = $FixtureVersion; commit = ('a' * 40) } | ConvertTo-Json)
+    Write-FixtureManifest
 
     $Upgrade = New-MO2Fixture 'upgrade'
     $Installed = Join-Path $Upgrade 'plugins/mo2_update_arsenal'
@@ -108,6 +121,7 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $Installed 'data/empty-directory') | Out-Null
     $OldPluginHash = Hash (Join-Path $Installed '__init__.py')
     Invoke-FixtureInstaller $Upgrade
+    Require ($script:LastInstallerOutput.Contains("Installed Modhunter $FixtureVersion plugin")) 'Upgrade did not report the exact packaged plugin version.'
     Require ((Hash (Join-Path $Installed '__init__.py')) -eq (Hash (Join-Path $Source '__init__.py'))) 'Upgrade did not replace the plugin implementation.'
     Require ((Hash (Join-Path $Installed 'web/index.html')) -eq (Hash (Join-Path $Source 'web/index.html'))) 'Upgrade did not replace the dashboard.'
     Require ((Hash (Join-Path $Installed 'bin/modhunter-cli.exe')) -eq (Hash (Join-Path $Source 'bin/modhunter-cli.exe'))) 'Upgrade did not install the packaged Rust audit helper.'
@@ -156,6 +170,111 @@ try {
     Require (!(Test-Path -LiteralPath (Join-Path $MissingHelper 'ModhunterBackups'))) 'Missing-helper preflight moved the active plugin.'
     Assert-NoStaging $MissingHelper
     $Checks.Add(@{ name = 'missing_qt_helper_rejected_without_mutation'; passed = $true })
+
+    # Each corrupt/mixed package must fail before touching the previous plugin,
+    # its progress, its backup directory or any installation staging directory.
+    foreach ($Case in @('missing-manifest', 'damaged-helper', 'missing-python', 'unlisted-python', 'mixed-version')) {
+        $Fixture = New-MO2Fixture $Case
+        $Previous = Join-Path $Fixture 'plugins/mo2_update_arsenal'
+        Write-FixtureFile (Join-Path $Previous '__init__.py') '# unchanged previous plugin'
+        Write-FixtureFile (Join-Path $Previous 'data/chronicle.json') '{"score":9876}'
+        $PreviousHash = Hash (Join-Path $Previous '__init__.py')
+        $ProgressHash = Hash (Join-Path $Previous 'data/chronicle.json')
+        $Changed = switch ($Case) {
+            'missing-manifest' { Join-Path $Package 'SHA256SUMS.txt' }
+            'damaged-helper' { Join-Path $Source 'bin/modhunter-cli.exe' }
+            'missing-python' { Join-Path $Source 'plugin.py' }
+            'unlisted-python' { Join-Path $Source 'unlisted.py' }
+            'mixed-version' { Join-Path $Package 'BUILD_INFO.json' }
+        }
+        $Original = if (Test-Path -LiteralPath $Changed) { [IO.File]::ReadAllBytes($Changed) } else { $null }
+        try {
+            $ExpectedError = switch ($Case) {
+                'missing-manifest' { Remove-Item -LiteralPath $Changed; 'package checksum manifest is missing' }
+                'damaged-helper' { Write-FixtureFile $Changed 'incomplete helper'; 'checksum does not match' }
+                'missing-python' { Remove-Item -LiteralPath $Changed; 'packaged plugin file is missing' }
+                'unlisted-python' { Write-FixtureFile $Changed '# absent from the manifest'; 'outside its package checksum manifest' }
+                'mixed-version' { Write-FixtureFile $Changed (@{ version = '0.0.0'; commit = ('a' * 40) } | ConvertTo-Json); Write-FixtureManifest; 'build and MO2 plugin versions do not match' }
+            }
+            Invoke-FixtureInstaller $Fixture $false $ExpectedError
+        }
+        finally {
+            if ($null -ne $Original) { [IO.File]::WriteAllBytes($Changed, $Original) }
+            elseif (Test-Path -LiteralPath $Changed) { Remove-Item -LiteralPath $Changed }
+            Write-FixtureManifest
+        }
+        Require ((Hash (Join-Path $Previous '__init__.py')) -eq $PreviousHash) "Rejected package changed the previous plugin: $Case"
+        Require ((Hash (Join-Path $Previous 'data/chronicle.json')) -eq $ProgressHash) "Rejected package changed existing progress: $Case"
+        Require (!(Test-Path -LiteralPath (Join-Path $Fixture 'ModhunterBackups'))) "Rejected package moved the previous plugin: $Case"
+        Assert-NoStaging $Fixture
+        $Checks.Add(@{ name = $Case + '_rejected_without_mutation'; passed = $true })
+    }
+
+    # Instrument only a disposable copy of the installer to change staging
+    # after the final source copy, before its real validation. Production code
+    # has no test hook, and every source file still passes the first preflight.
+    $InstallerScript = [IO.File]::ReadAllText($Installer)
+    $FinalCopy = "    Copy-Item -LiteralPath `$qtHelper -Destination (Join-Path `$staging 'bin\modhunter-qt-bridge.dll')"
+    Require (([regex]::Matches($InstallerScript, [regex]::Escape($FinalCopy))).Count -eq 1) 'Could not identify the single staging-copy boundary for deterministic corruption.'
+    foreach ($Case in @('damaged-staged-helper', 'unlisted-staged-python')) {
+        $Fixture = New-MO2Fixture $Case
+        $Previous = Join-Path $Fixture 'plugins/mo2_update_arsenal'
+        Write-FixtureFile (Join-Path $Previous '__init__.py') '# unchanged previous plugin'
+        Write-FixtureFile (Join-Path $Previous 'data/chronicle.json') '{"score":6789}'
+        $PreviousHash = Hash (Join-Path $Previous '__init__.py')
+        $ProgressHash = Hash (Join-Path $Previous 'data/chronicle.json')
+        if ($Case -eq 'damaged-staged-helper') {
+            $Injected = "[IO.File]::WriteAllText((Join-Path `$staging 'bin\modhunter-cli.exe'), 'Changed after copying; never execute this fixture.')"
+            $ExpectedError = 'staged plugin checksum does not match'
+        }
+        else {
+            $Injected = "[IO.File]::WriteAllText((Join-Path `$staging 'unlisted.py'), '# Added after copying; never import this fixture.')"
+            $ExpectedError = 'staged plugin contains a file outside its package checksum manifest'
+        }
+        $PackagedInstaller = $Installer
+        $Installer = Join-Path $Package 'Install_MO2_Plugin.staging-fixture.ps1'
+        try {
+            Write-FixtureFile $Installer ($InstallerScript.Replace($FinalCopy, $FinalCopy + "`r`n    " + $Injected))
+            Invoke-FixtureInstaller $Fixture $false $ExpectedError
+        }
+        finally {
+            Remove-Item -LiteralPath $Installer -ErrorAction SilentlyContinue
+            $Installer = $PackagedInstaller
+        }
+        Require ((Hash (Join-Path $Previous '__init__.py')) -eq $PreviousHash) "Rejected staging changed the previous plugin: $Case"
+        Require ((Hash (Join-Path $Previous 'data/chronicle.json')) -eq $ProgressHash) "Rejected staging changed existing progress: $Case"
+        Require (!(Test-Path -LiteralPath (Join-Path $Fixture 'ModhunterBackups'))) "Rejected staging moved the previous plugin: $Case"
+        Assert-NoStaging $Fixture
+        $Checks.Add(@{ name = $Case + '_rejected_without_mutation'; passed = $true })
+    }
+
+    $LinkedBackup = New-MO2Fixture 'linked-backup'
+    $Previous = Join-Path $LinkedBackup 'plugins/mo2_update_arsenal'
+    Write-FixtureFile (Join-Path $Previous '__init__.py') '# unchanged previous plugin'
+    $PreviousHash = Hash (Join-Path $Previous '__init__.py')
+    $ExternalBackup = Join-Path $Root 'external-backup-target'
+    Write-FixtureFile (Join-Path $ExternalBackup 'sentinel.txt') 'unchanged external backup target'
+    New-Item -ItemType Junction -Path (Join-Path $LinkedBackup 'ModhunterBackups') -Target $ExternalBackup | Out-Null
+    Invoke-FixtureInstaller $LinkedBackup $false 'Refusing to use a linked backup directory'
+    Require ((Hash (Join-Path $Previous '__init__.py')) -eq $PreviousHash) 'Linked-backup rejection moved or changed the previous plugin.'
+    Require (@(Get-ChildItem -LiteralPath $ExternalBackup -Force).Count -eq 1) 'Linked-backup rejection wrote to the external target.'
+    Assert-NoStaging $LinkedBackup
+    $Checks.Add(@{ name = 'linked_backup_rejected_without_mutation'; passed = $true })
+
+    $SourceTree = Join-Path $Root 'source-tree'
+    New-Item -ItemType Directory -Path (Join-Path $SourceTree 'native') -Force | Out-Null
+    Copy-Item -LiteralPath $Source -Destination (Join-Path $SourceTree 'mo2_update_arsenal') -Recurse
+    $PackagedInstaller = $Installer
+    $Installer = Join-Path $SourceTree 'native/Install_MO2_Plugin.ps1'
+    Copy-Item -LiteralPath $PackagedInstaller -Destination $Installer
+    try {
+        $DeveloperMO2 = New-MO2Fixture 'source-tree-install'
+        Invoke-FixtureInstaller $DeveloperMO2
+        Require ((Hash (Join-Path $DeveloperMO2 'plugins/mo2_update_arsenal/plugin.py')) -eq (Hash (Join-Path $Source 'plugin.py'))) 'Documented source-tree installation stopped working.'
+        Assert-NoStaging $DeveloperMO2
+    }
+    finally { $Installer = $PackagedInstaller }
+    $Checks.Add(@{ name = 'source_tree_install_with_compiled_helpers'; passed = $true })
 
     foreach ($Case in @('linked-data-root', 'linked-data-child')) {
         $Fixture = New-MO2Fixture $Case

@@ -1,5 +1,5 @@
 use super::{Eligibility, PluginAuditStats, PluginHeader, RecordSummary, Stamp};
-use crate::{CoreError, io_error};
+use crate::{CancellationCheck, CoreError, check_cancelled, io_error};
 use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 use std::fs::File;
@@ -16,16 +16,46 @@ pub(super) struct Parsed {
     pub sha256: Option<String>,
 }
 
-struct Input {
-    reader: BufReader<File>,
+pub(super) struct ScanOptions<'a> {
+    pub deep: bool,
+    pub cached_header: Option<(&'a [u8; 32], &'a PluginHeader)>,
+    pub cancelled: CancellationCheck<'a>,
+}
+
+struct CancellableFile<'a> {
+    file: File,
+    cancelled: CancellationCheck<'a>,
+}
+impl Read for CancellableFile<'_> {
+    fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+        check_cancelled(self.cancelled).map_err(std::io::Error::other)?;
+        let count = bytes.len().min(64 * 1024);
+        self.file.read(&mut bytes[..count])
+    }
+}
+
+fn read_error(context: &str, error: std::io::Error) -> CoreError {
+    if error
+        .get_ref()
+        .and_then(|source| source.downcast_ref::<CoreError>())
+        .is_some_and(|source| matches!(source, CoreError::Cancelled))
+    {
+        CoreError::Cancelled
+    } else {
+        io_error(context, error)
+    }
+}
+
+struct Input<'a> {
+    reader: BufReader<CancellableFile<'a>>,
     hash: Option<Sha256>,
     position: u64,
 }
-impl Input {
+impl Input<'_> {
     fn exact(&mut self, bytes: &mut [u8]) -> Result<(), CoreError> {
         self.reader
             .read_exact(bytes)
-            .map_err(|e| io_error("Read Bethesda plugin bytes", e))?;
+            .map_err(|e| read_error("Read Bethesda plugin bytes", e))?;
         self.position += bytes.len() as u64;
         if let Some(hash) = self.hash.as_mut() {
             hash.update(bytes);
@@ -37,11 +67,13 @@ impl Input {
         // reader's existing buffer instead of zeroing a 64 KiB temporary and
         // copying every payload into it. Every byte still enters the digest;
         // seeking over payloads would silently break conversion evidence.
+        // Cancellation is checked by the file wrapper on each bounded refill,
+        // avoiding a callback/iterator in every small record's hot path.
         while length > 0 {
             let buffered = self
                 .reader
                 .fill_buf()
-                .map_err(|e| io_error("Read Bethesda plugin payload", e))?;
+                .map_err(|e| read_error("Read Bethesda plugin payload", e))?;
             if buffered.is_empty() {
                 return invalid("Plugin payload is truncated");
             }
@@ -62,12 +94,20 @@ pub(super) fn scan(
     stamp: &Stamp,
     name: &str,
     game: &str,
-    deep: bool,
-    cached_header: Option<(&[u8; 32], &PluginHeader)>,
+    options: ScanOptions<'_>,
     stats: &mut PluginAuditStats,
 ) -> Result<Parsed, CoreError> {
+    let ScanOptions {
+        deep,
+        cached_header,
+        cancelled,
+    } = options;
+    check_cancelled(cancelled)?;
     let mut input = Input {
-        reader: BufReader::with_capacity(if deep { 64 * 1024 } else { 8 * 1024 }, file),
+        reader: BufReader::with_capacity(
+            if deep { 64 * 1024 } else { 8 * 1024 },
+            CancellableFile { file, cancelled },
+        ),
         hash: deep.then(Sha256::new),
         position: 0,
     };
@@ -124,11 +164,13 @@ pub(super) fn scan(
         let opened = input
             .reader
             .get_ref()
+            .file
             .metadata()
             .map_err(|e| io_error("Recheck open plugin file", e))?;
         if Stamp::new(&opened) != *stamp {
             return invalid("Plugin changed during its read-only analysis");
         }
+        check_cancelled(cancelled)?;
         let sha256 = input.hash.take().map(|h| format!("{:x}", h.finalize()));
         Ok(Parsed {
             header,
@@ -244,7 +286,7 @@ fn parse_header(
 }
 
 fn scan_records(
-    input: &mut Input,
+    input: &mut Input<'_>,
     file_length: u64,
     width: usize,
     masters: usize,
@@ -564,4 +606,58 @@ fn u32_at(bytes: &[u8], offset: usize) -> u32 {
 
 fn invalid<T>(message: &str) -> Result<T, CoreError> {
     Err(CoreError::Invalid(message.into()))
+}
+
+#[cfg(test)]
+mod cancellation_tests {
+    use super::*;
+    use std::io::Write;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn large_record_and_unsupported_payload_reads_cancel_before_hashing_the_rest() {
+        for game in ["skyrimspecialedition", "starfield"] {
+            let mut file = tempfile::NamedTempFile::new().unwrap();
+            let mut header = [0_u8; 42];
+            header[..4].copy_from_slice(b"TES4");
+            header[4..8].copy_from_slice(&18_u32.to_le_bytes());
+            header[20..22].copy_from_slice(&44_u16.to_le_bytes());
+            header[24..28].copy_from_slice(b"HEDR");
+            header[28..30].copy_from_slice(&12_u16.to_le_bytes());
+            header[30..34].copy_from_slice(&1.7_f32.to_le_bytes());
+            header[34..38].copy_from_slice(&2_u32.to_le_bytes());
+            file.write_all(&header).unwrap();
+            let payload_len = 32 * 1024 * 1024_u32;
+            let mut group = [0_u8; 48];
+            group[..4].copy_from_slice(b"GRUP");
+            group[4..8].copy_from_slice(&(payload_len + 48).to_le_bytes());
+            group[24..28].copy_from_slice(b"MISC");
+            group[28..32].copy_from_slice(&payload_len.to_le_bytes());
+            group[36..40].copy_from_slice(&0x800_u32.to_le_bytes());
+            file.write_all(&group).unwrap();
+            file.as_file().set_len(90 + u64::from(payload_len)).unwrap();
+            let stamp = Stamp::new(&file.as_file().metadata().unwrap());
+            let checks = AtomicUsize::new(0);
+            let mut stats = PluginAuditStats::default();
+            let result = scan(
+                File::open(file.path()).unwrap(),
+                &stamp,
+                "Large.esp",
+                game,
+                ScanOptions {
+                    deep: true,
+                    cached_header: None,
+                    cancelled: &|| checks.fetch_add(1, Ordering::Relaxed) >= 3,
+                },
+                &mut stats,
+            );
+            assert!(matches!(result, Err(CoreError::Cancelled)), "{game}");
+            assert!(
+                (64 * 1024..=192 * 1024).contains(&stats.bytes_read),
+                "{game}: {}",
+                stats.bytes_read
+            );
+            assert_eq!(stats.deep_scanned, 0);
+        }
+    }
 }

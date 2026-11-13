@@ -219,6 +219,8 @@ class FrontendResponsivenessTests(unittest.TestCase):
           window.unchangedRow=document.getElementById('row-item-0');
           window.unchangedLink=unchangedRow.querySelector('.source-title');unchangedLink.focus();
           window.changedRow=document.getElementById('row-item-2499');
+          window.formattedMods=[];const originalChips=ModhunterInsights.chips;
+          ModhunterInsights.chips=mod=>{formattedMods.push(mod.id);return originalChips(mod);};
           window.rowMutations=[];
           new MutationObserver(rs=>rowMutations.push(...rs.map(r=>({added:r.addedNodes.length,removed:r.removedNodes.length}))))
             .observe(document.getElementById('modList'),{childList:true});
@@ -229,6 +231,7 @@ class FrontendResponsivenessTests(unittest.TestCase):
         self.assertTrue(self.page.evaluate("document.activeElement===unchangedLink"))
         self.assertTrue(self.page.evaluate("changedRow!==document.getElementById('row-item-2499')"))
         self.assertEqual(self.page.evaluate("rowMutations"), [{"added":1, "removed":1}])
+        self.assertEqual(self.page.evaluate("formattedMods"), ["item-2499"])
         self.assertIn("active", self.page.locator("#row-item-2499 .favorite-btn").get_attribute("class"))
         # Removing a previously patched row and restoring the whole list must
         # not resurrect the pre-edit HTML cache.
@@ -272,6 +275,7 @@ class FrontendResponsivenessTests(unittest.TestCase):
         self.assertEqual(self.page.locator("#modList .mod-row").evaluate_all(
             "rows=>rows.map(row=>row.dataset.id)"), [f"item-{i}" for i in range(12)])
         self.assertIn("active", self.page.locator("#row-item-11 .favorite-btn").get_attribute("class"))
+
         # Even an otherwise unchanged render must replace a structurally stale
         # DOM; the whole-list HTML cache cannot suppress that repair.
         self.page.evaluate("""()=>{
@@ -280,6 +284,39 @@ class FrontendResponsivenessTests(unittest.TestCase):
         }""")
         self.assertEqual(self.page.locator("#modList .mod-row").count(), 12)
         self.assertIn("active", self.page.locator("#row-item-11 .favorite-btn").get_attribute("class"))
+
+    def test_download_controls_keep_focus_through_status_reordering_and_replacement(self):
+        self.open_live(); self.connected()
+        self.page.evaluate("""async()=>{
+          __RESP__.downloads={
+            '10':{itemId:'item-0',status:'complete',installedVersion:'1.0'},
+            '20':{itemId:'item-1',status:'downloading',installedVersion:'1.0'},
+            '30':{itemId:'item-2',status:'failed',installedVersion:'1.0'}
+          };
+          await document.getElementById('workshopRefreshDownloads').onclick();
+          window.originalTicket=document.querySelector('[data-ticket-id="10"]');
+          window.installControl=document.querySelector('[data-download-id="10"]');installControl.focus();
+          __RESP__.downloads['20'].status='complete';
+          await document.getElementById('workshopRefreshDownloads').onclick();
+        }""")
+        self.assertTrue(self.page.evaluate("originalTicket===document.querySelector('[data-ticket-id=\"10\"]')"))
+        self.assertTrue(self.page.evaluate("document.activeElement===installControl"))
+        self.assertEqual(self.page.locator("#liveDownloadList .download-ticket").evaluate_all(
+            "rows=>rows.map(row=>row.dataset.ticketId)"), ["20", "10", "30"])
+        self.page.evaluate("""async()=>{
+          window.otherTicket=document.querySelector('[data-ticket-id="20"]');
+          __RESP__.downloads['10'].lastError='Review the selected archive before installing';
+          await document.getElementById('workshopRefreshDownloads').onclick();
+        }""")
+        self.assertTrue(self.page.evaluate("document.activeElement===document.querySelector('[data-download-id=\"10\"]')"))
+        self.assertTrue(self.page.evaluate("otherTicket===document.querySelector('[data-ticket-id=\"20\"]')"))
+        self.assertFalse(self.page.evaluate("originalTicket===document.querySelector('[data-ticket-id=\"10\"]')"))
+        self.page.evaluate("""async()=>{
+          delete __RESP__.downloads['20'];
+          await document.getElementById('workshopRefreshDownloads').onclick();
+        }""")
+        self.assertEqual(self.page.locator("#liveDownloadList .download-ticket").count(), 2)
+        self.assertTrue(self.page.evaluate("document.activeElement===document.querySelector('[data-download-id=\"10\"]')"))
 
     def test_large_catalog_search_coalesces_input_without_dropping_records(self):
         self.page.set_content(self.html, wait_until="domcontentloaded")

@@ -6,7 +6,7 @@
 
 **Repair your load order. Hunt your unfinished mods. Build a legend.**
 
-[![Edition](https://img.shields.io/badge/Edition-Rust%200.9.1-cfa76d?style=for-the-badge&labelColor=182b30)](wiki/Rust-Desktop.md)
+[![Edition](https://img.shields.io/badge/Edition-Rust%200.9.2-cfa76d?style=for-the-badge&labelColor=182b30)](wiki/Rust-Desktop.md)
 [![MO2](https://img.shields.io/badge/MO2-Optional%20Live%20Link-78cfab?style=for-the-badge&labelColor=182b30)](wiki/MO2-Plugin.md)
 [![Modes](https://img.shields.io/badge/Modes-Siege%20%7C%20Survival%20%7C%20Atlas-9bb8f0?style=for-the-badge&labelColor=182b30)](wiki/Game-Modes.md)
 
@@ -14,7 +14,7 @@
 
 ---
 
-## Rust desktop 0.9.1
+## Rust desktop 0.9.2
 
 The new Windows app runs its desktop shell, profile import/cache engine, connection discovery and native file operations in **Rust**, with WebView2 displaying the complete existing dashboard and games. Running the compiled app requires no Node or Electron. The Python plugin remains MO2's in-process adapter for authenticated Nexus requests and its native download/installer API.
 
@@ -24,6 +24,16 @@ The new Windows app runs its desktop shell, profile import/cache engine, connect
 - Parallel, cached imports support portable and split-path MO2 configurations. In reproducible Linux fixtures, importing 2,500 mods took a median **70.78 ms** in Rust versus **477.03 ms** in the previous Node importer; 10,000 mods took **330.42 ms** versus **1,629.28 ms**. These include fresh metadata-content verification and root plugin inventory on generated fixtures without ESP payloads; they are not deep-audit, Windows GUI startup or Nexus download timings. [Raw measurements and method](native/evidence/import-comparison.json).
 - Profile changes invalidate stale scans and delayed UI replies. Expired queued commands cannot execute later. Requests share exact file lookups, metadata caches and connection resources, while search and background polling avoid redundant work.
 - Windows CI builds the executable and installer and launches the actual WebView2 app; separate browser and MO2 fixture checks enforce their own contracts. Real account downloads, FOMOD decisions and a user's game setup remain environment-specific acceptance checks.
+
+### 0.9.2 refresh speed and reliable upgrades
+
+- Repeated live MO2 reads share one complete encoded snapshot for unchanged state; ordinary progress saves avoid rebuilding the catalog. On the 10,000-mod synthetic HTTP fixture, repeated complete snapshots fell from **285.561 ms to 4.217 ms**, and one-row progress saves from **235.108 ms to 1.288 ms**. Source, profile, metadata and audit changes invalidate the response, and source-health freshness stays bounded. These local component timings exclude native MO2, browser rendering, Nexus/downloads and installation. [Raw samples and scope](native/evidence/mo2-catalog-delivery-comparison-0.9.2.json).
+- The full checklist and Workshop cache unchanged row markup as well as DOM nodes. Source expiry/cooldown changes refresh both row status and search results. Download buttons retain focus through ticket changes and reordering; all records remain available.
+- **CANCEL** interrupts native imports, refreshes and deep plugin audits while preserving the last complete catalog. **CANCELING…** stays visible until workers settle, then the same engine is ready to retry. Cancellation checkpoints retain fresh hashes and complete audit evidence; the [0.9.2 equivalence comparison](native/evidence/plugin-audit-comparison-0.9.2.json) shows audit medians within roughly 2% of 0.9.1 on its four synthetic workloads.
+- Source-link edits synchronize before update execution. Clearing an override restores the native MO2 identity. Delayed profile/source replies and canceled scans cannot replace newer state; Chronicle loading preserves edits and retries failed reads without replacing unseen server progress.
+- The MO2 installer verifies packaged file checksums and build/plugin version agreement before replacing an installation. Damaged, incomplete and mixed packages leave the prior plugin and its progress intact. The release gate verifies every internal ZIP checksum and rejects Windows filename collisions.
+
+[0.9.2 measurements, verification and remaining acceptance checks](native/evidence/readiness-0.9.2.md)
 
 ### 0.9.1 responsiveness and update execution
 

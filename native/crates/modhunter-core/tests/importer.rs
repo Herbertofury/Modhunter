@@ -1,4 +1,4 @@
-use modhunter_core::{ImportRequest, ProfileImporter};
+use modhunter_core::{CoreError, ImportRequest, ProfileImporter};
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -57,6 +57,40 @@ fn names(catalog: &Value) -> Vec<String> {
         .iter()
         .map(|m| m["name"].as_str().unwrap().to_owned())
         .collect()
+}
+
+#[test]
+fn canceled_import_stops_traversal_and_the_same_engine_can_refresh_again() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let modlist = (0..100).map(|n| format!("+Mod{n}\n")).collect::<String>();
+    let fixture = Fixture::new(&modlist);
+    for n in 0..100 {
+        fixture.add(&format!("Mod{n}"), "[General]\nversion=1.0\n");
+    }
+    let engine = ProfileImporter::new();
+    let checks = AtomicUsize::new(0);
+    let canceled = engine.import_with_analysis_cancellable(&fixture.request(), false, &[], &|| {
+        checks.fetch_add(1, Ordering::Relaxed) >= 8
+    });
+    assert!(matches!(canceled, Err(CoreError::Cancelled)));
+    assert_eq!(checks.load(Ordering::Relaxed), 9);
+    let completed = engine.import(&fixture.request()).unwrap();
+    assert_eq!(completed.stats.mods, 100);
+    assert_eq!(completed.catalog["items"].as_array().unwrap().len(), 100);
+}
+
+#[test]
+fn already_canceled_import_does_not_open_an_absent_profile() {
+    let request = ImportRequest {
+        modlist_path: PathBuf::from("missing/modlist.txt"),
+        ini_path: None,
+        mods_path: None,
+        workers: Some(1),
+    };
+    assert!(matches!(
+        ProfileImporter::new().import_with_analysis_cancellable(&request, true, &[], &|| true,),
+        Err(CoreError::Cancelled)
+    ));
 }
 
 #[test]

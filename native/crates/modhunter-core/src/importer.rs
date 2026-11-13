@@ -1,6 +1,6 @@
 use crate::ini::{Ini, decode_text};
 use crate::plugin_analysis::{PluginAnalyzer, PluginAuditRequest, PluginMod};
-use crate::{CoreError, io_error};
+use crate::{CancellationCheck, CoreError, check_cancelled, io_error};
 use chrono::{SecondsFormat, Utc};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -129,6 +129,18 @@ impl ProfileImporter {
         deep: bool,
         eslifier_data_paths: &[PathBuf],
     ) -> Result<ImportResult, CoreError> {
+        self.import_with_analysis_cancellable(request, deep, eslifier_data_paths, &|| false)
+    }
+
+    /// Stop superseded imports and audits without publishing incomplete facts.
+    pub fn import_with_analysis_cancellable(
+        &self,
+        request: &ImportRequest,
+        deep: bool,
+        eslifier_data_paths: &[PathBuf],
+        cancelled: CancellationCheck<'_>,
+    ) -> Result<ImportResult, CoreError> {
+        check_cancelled(cancelled)?;
         let started = Instant::now();
         let workers = request.workers.unwrap_or_else(|| {
             std::thread::available_parallelism()
@@ -255,6 +267,7 @@ impl ProfileImporter {
         let listing =
             fs::read_dir(&mods_dir).map_err(|e| io_error("Read MO2 mods directory", e))?;
         for child in listing {
+            check_cancelled(cancelled)?;
             let child = child.map_err(|e| io_error("Read entry in MO2 mods directory", e))?;
             let name = child.file_name().to_string_lossy().into_owned();
             if !safe_name(&name) {
@@ -322,15 +335,19 @@ impl ProfileImporter {
                 p
             }
         };
-        let rows: Vec<ItemRead> = pool.install(|| {
+        let rows: Result<Vec<ItemRead>, CoreError> = pool.install(|| {
             entries
                 .par_iter()
                 .enumerate()
                 .map(|(priority, e)| {
-                    self.read_item(e, priority, &mods_dir, &dirs, &profile_id, &game)
+                    check_cancelled(cancelled)?;
+                    let row = self.read_item(e, priority, &mods_dir, &dirs, &profile_id, &game);
+                    check_cancelled(cancelled)?;
+                    Ok(row)
                 })
                 .collect()
         });
+        let rows = rows?;
         let mut groups = Vec::<Value>::new();
         let mut items = Vec::<Value>::new();
         groups.push(make_group(
@@ -343,6 +360,7 @@ impl ProfileImporter {
         let mut group_index = 0;
         let mut extra_group_created = false;
         for (entry, mut row) in entries.iter().zip(rows) {
+            check_cancelled(cancelled)?;
             stats.files_read += row.stats.files_read;
             stats.bytes_read += row.stats.bytes_read;
             stats.metadata_cache_hits += row.stats.metadata_cache_hits;
@@ -431,7 +449,7 @@ impl ProfileImporter {
             });
         let plugins_path = profile_dir.join("plugins.txt");
         let loadorder_path = profile_dir.join("loadorder.txt");
-        let analysis = self.plugins.audit_in_pool(
+        let analysis = self.plugins.audit_in_pool_cancellable(
             &PluginAuditRequest {
                 game: game.clone(),
                 game_runtime: Some(runtime.into()),
@@ -448,6 +466,7 @@ impl ProfileImporter {
                 workers: Some(workers),
             },
             Some(pool),
+            cancelled,
         )?;
         stats.files_read += analysis.stats.files_read;
         stats.bytes_read += analysis.stats.bytes_read as usize;
@@ -456,6 +475,7 @@ impl ProfileImporter {
         stats.plugin_header_cache_hits = analysis.stats.header_cache_hits;
         warnings.extend(analysis.warnings.iter().cloned());
         for item in &mut items {
+            check_cancelled(cancelled)?;
             let id = item["id"].as_str().unwrap_or_default();
             let row_scanned = analysis.mods.contains_key(id);
             item["localAnalysis"] = if let Some(audit) = analysis.mods.get(id) {
@@ -495,6 +515,7 @@ impl ProfileImporter {
             "offline":true,"importedAt":stamp
         });
         stats.elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
+        check_cancelled(cancelled)?;
         Ok(ImportResult {
             catalog,
             stats,

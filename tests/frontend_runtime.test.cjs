@@ -13,14 +13,14 @@ const INSIGHTS=fs.readFileSync(path.join(__dirname,'../mo2_update_arsenal/web/mo
 const SOURCES=fs.readFileSync(path.join(__dirname,'../mo2_update_arsenal/web/source_insights.js'),'utf8');
 
 function catalog(profile='a',count=3){
- return {profileId:profile,catalogId:profile,profileName:profile,game:'skyrimspecialedition',gameRuntime:'1.5.97',
+ return {executionEpoch:1,profileId:profile,catalogId:profile,profileName:profile,game:'skyrimspecialedition',gameRuntime:'1.5.97',
   groups:[{id:'group',name:'Fixtures',count,startPriority:0,color:'mint'}],
   items:Array.from({length:count},(_,i)=>({id:'item-'+i,name:'Fixture '+i,groupId:'group',group:'Fixtures',priority:i,author:'Test Author',installedVersion:'1.0',screenshotNote:'',flags:[],audit:{},nexusId:i+1,source:{type:'nexus',verified:true,url:'https://www.nexusmods.com/skyrimspecialedition/mods/'+(i+1)},update:{verdict:'candidate',latestVersion:'2.0'}}))};
 }
-function harness({live=true,failSnapshots=0,count=3}={}){
+function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={},progressReadFailures=0}={}){
  const nodes=new Map(),timers=new Map(),pending=new Map(),calls=[],active=new Map(),maximum=new Map();
  let timerId=0;
- const state={catalog:catalog('a',count),generation:1,failSnapshots,score:0,scan:{state:'idle'},defer:new Set()};
+ const state={catalog:catalog('a',count),generation:1,failSnapshots,progressRows,progressReadFailures,score:0,scan:{state:'idle'},defer:new Set()};
  const document={hidden:false,activeElement:null,addEventListener(){},querySelectorAll(){return[]},createElement:name=>element(name),getElementById:id=>node(id),querySelector:selector=>node(selector)};
  function element(id){
   const classes=new Set();let html='';
@@ -36,8 +36,9 @@ function harness({live=true,failSnapshots=0,count=3}={}){
  }
  function node(id){if(!nodes.has(id))nodes.set(id,element(id));return nodes.get(id)}
  document.body=element('body');node('embeddedCatalog').textContent=JSON.stringify(state.catalog);node('workshopFilter').value='candidate';
- const local=new Map();
- const context={console:{log(){},warn(){},error(){}},document,structuredClone,URL,AbortController,Blob,
+ const local=new Map([['mo2-update-arsenal:v2:a',JSON.stringify({rows:storedRows,prefs:{}})]]);
+ class FixtureDate extends Date{static now(){return state.now??Date.now()}}
+ const context={Date:FixtureDate,console:{log(){},warn(){},error(){}},document,structuredClone,URL,AbortController,Blob,
   innerWidth:1440,innerHeight:900,devicePixelRatio:1,performance:{now:()=>0},navigator:{},matchMedia:()=>({matches:true}),
   localStorage:{getItem:k=>local.get(k)||null,setItem:(k,v)=>local.set(k,v)},
   setTimeout(fn,ms){const id=++timerId;timers.set(id,{fn,ms});return id},clearTimeout:id=>timers.delete(id),
@@ -58,7 +59,9 @@ function harness({live=true,failSnapshots=0,count=3}={}){
     value={ok:true,catalog:c,generation:state.generation};
    }else if(endpoint==='revision')value={ok:true,profileId:c.profileId,generation:state.generation};
    else if(endpoint==='game?compact=1')value={ok:true,profileId:c.profileId,score:state.score,updates:0,feed:[]};
-   else if(endpoint==='progress')value={ok:true,profileId:c.profileId,progress:{rows:{},prefs:{}}};
+   else if(endpoint==='progress'&&method==='GET'&&state.progressReadFailures-- >0)throw Error('Fixture progress read failed');
+   else if(endpoint==='progress'&&method==='POST'&&state.progressError)throw Error(state.progressError);
+   else if(endpoint==='progress')value=method==='POST'&&state.progressReply?{...state.progressReply}:{ok:true,profileId:c.profileId,progress:{rows:structuredClone(state.progressRows),prefs:{}}};
    else if(endpoint==='downloads')value={ok:true,profileId:c.profileId,downloads:state.downloads||{}};
    else if(endpoint==='activity')value={ok:true,profileId:c.profileId,records:[]};
    else if(endpoint==='plugin-audit')value={ok:true,profileId:c.profileId,state:'running',depth:'records'};
@@ -81,7 +84,7 @@ function harness({live=true,failSnapshots=0,count=3}={}){
    return{ok:true,json:async()=>value};
   }finally{active.set(key,active.get(key)-1)}
  };
- const instrument='window.__RUNTIME__={getSrc,bridgeRequest,scanLive,fastUpdateAll,refreshWorkshop,refreshDownloads,nextWorkshopCandidate,pollLiveBridge,updatePrefs,save,counts,filtered,render,importOfflineCatalog,scheduleSearchRender,analyzePlugins,refreshModHealth,drawInspector,loadModInsights,loadSourceDetails,sourceDetailMod,openFilePicker,closeFilePicker,exportWorkshop,state:()=>({connected:LIVE_CONNECTED,quick:QUICK_RUNNING,profileEpoch:PROFILE_EPOCH}),setRow:(id,value)=>{STORE.rows[id]=value;save()},setQuery:q=>{STORE.prefs.query=q;scheduleSearchRender()}};';
+ const instrument='window.__RUNTIME__={getSrc,modHTML,renderWorkshop,sourceLinksPending,requestLiveCatalog,bridgeRequest,scanLive,fastUpdateAll,refreshWorkshop,refreshDownloads,nextWorkshopCandidate,pollLiveBridge,updatePrefs,save,counts,filtered,render,importOfflineCatalog,scheduleSearchRender,analyzePlugins,refreshModHealth,drawInspector,loadModInsights,loadSourceDetails,sourceDetailMod,openFilePicker,closeFilePicker,exportWorkshop,state:()=>({connected:LIVE_CONNECTED,quick:QUICK_RUNNING,profileEpoch:PROFILE_EPOCH}),setRow:(id,value,invalidatePlan=true)=>{markSourceEdit(getRow(id).url,value.url);STORE.rows[id]=value;save(invalidatePlan)},setQuery:q=>{STORE.prefs.query=q;scheduleSearchRender()}};';
  const source=APP.replace('/*__POWERSHELL__*/','""').replace(/\}\)\(\);\s*$/,instrument+'\n})();');
  vm.createContext(context);vm.runInContext(SOURCES,context,{filename:'source_insights.js'});vm.runInContext(INSIGHTS,context,{filename:'mod_insights.js'});vm.runInContext(source,context,{filename:'app.js'});
  return{context,state,nodes,timers,calls,active,maximum,pending,api:context.__RUNTIME__,qa:context.__ARSENAL_QA__,
@@ -268,4 +271,195 @@ test('real checklist filters include stale conversion evidence and scoped inspec
  h.api.drawInspector(h.qa.getCatalog().items[0]);await h.settle();
  assert.equal(h.calls.filter(c=>c.endpoint==='mod-health'&&c.method==='POST').length,before);
  assert.ok(h.calls.some(c=>c.endpoint.startsWith('mod-health?itemId=item-0')));
+});
+
+test('one checklist edit formats one mod and preserves every other cached row',async()=>{
+ const h=harness({live:false,count:2500});await h.settle();
+ const formatted=[],original=h.context.ModhunterInsights.chips;
+ h.context.ModhunterInsights.chips=mod=>{formatted.push(mod.id);return original(mod)};
+ h.api.setRow('item-2499',{favorite:true},false);h.api.render();
+ assert.deepEqual(formatted,['item-2499']);
+ assert.equal((h.nodes.get('modList').innerHTML.match(/class="mod-row /g)||[]).length,2500);
+ assert.equal((h.nodes.get('workshopResults').innerHTML.match(/data-workshop-id=/g)||[]).length,2500);
+ assert.match(h.api.modHTML(h.qa.getCatalog().items[2499]),/favorite-btn active/);
+ formatted.length=0;h.api.render();assert.deepEqual(formatted,[],'An unchanged render must reuse presentation work');
+ h.api.setRow('item-2499',{favorite:true,status:'done',note:'Keep this installation choice'},false);h.api.render();
+ assert.deepEqual(formatted,['item-2499']);assert.equal(h.api.counts().done,1);
+ assert.match(h.api.modHTML(h.qa.getCatalog().items[2499]),/Keep this installation choice/);
+});
+
+test('one changed download formats one Workshop row and health results invalidate their own rows',async()=>{
+ const h=harness({count:1500});await h.settle();
+ const formatted=[],original=h.context.ModhunterInsights.chips;
+ h.context.ModhunterInsights.chips=mod=>{formatted.push(mod.id);return original(mod)};
+ h.state.downloads={'7':{itemId:'item-1499',status:'downloading',installedVersion:'1.0'}};
+ await h.api.refreshDownloads();assert.deepEqual(formatted,['item-1499']);
+ assert.match(h.nodes.get('workshopResults').innerHTML,/MO2 · DOWNLOADING/);
+ formatted.length=0;
+ await h.api.refreshModHealth(h.qa.getCatalog().items[0],false);
+ assert.deepEqual(formatted,['item-0','item-0']);
+ assert.match(h.nodes.get('modList').innerHTML,/Bugs 0/);
+ assert.match(h.nodes.get('workshopResults').innerHTML,/Bugs 0/);
+ assert.equal(h.qa.getCatalog().items.length,1500);
+});
+
+test('cached source badges, search and update controls follow expiry without a new response',async()=>{
+ const h=harness({count:1});await h.settle();h.state.now=1000*1000;
+ const data=catalog('a',1);data.items[0].source={type:'github',verified:true,url:'https://github.com/example/project'};
+ data.items[0].update={provider:'github',verdict:'candidate',latestVersion:'2.0',freshness:'fresh',expiresAt:1002,releaseAssetCount:1};
+ h.state.catalog=data;await h.qa.setCatalog(data);
+ h.api.setQuery('"fresh api"');assert.equal(h.api.filtered().length,1);
+ assert.match(h.nodes.get('workshopResults').innerHTML,/data-workshop-act="quick"/);
+ h.state.now=1003*1000;h.api.render();
+ assert.equal(h.api.filtered().length,0,'Expired freshness must leave the search index');
+ assert.match(h.nodes.get('workshopResults').innerHTML,/Refresh needed/);
+ assert.doesNotMatch(h.nodes.get('workshopResults').innerHTML,/data-workshop-act="quick"|data-workshop-act="review"/);
+ h.api.setQuery('"refresh needed"');assert.equal(h.api.filtered().length,1);
+ const current=h.qa.getCatalog().items[0];
+ current.update={...current.update,expiresAt:2000,retryAt:1005};h.api.render();
+ h.api.setQuery('"provider cooldown"');assert.equal(h.api.filtered().length,1);
+ h.state.now=1006*1000;h.api.render();
+ assert.equal(h.api.filtered().length,0);
+ assert.match(h.nodes.get('workshopResults').innerHTML,/data-workshop-act="quick"/);
+});
+
+test('same-profile execution changes cancel old UI work and keep unsynced notes',async()=>{
+ const h=harness();await h.settle();const before=catalog('a');before.executionEpoch=1;
+ h.state.catalog=before;await h.qa.setCatalog(before);
+ h.api.setRow('item-0',{note:'Keep my chosen options'},false);
+ h.state.defer.add('POST mod-health');const late=h.api.refreshModHealth(h.qa.getCatalog().items[0],false);await h.settle();
+ await h.api.fastUpdateAll();assert.equal(h.api.state().quick,true);
+ const epoch=h.api.state().profileEpoch,after=catalog('a');after.executionEpoch=2;
+ h.state.catalog=after;await h.qa.setCatalog(after);
+ assert.ok(h.api.state().profileEpoch>epoch);assert.equal(h.api.state().quick,false);
+ assert.equal(h.qa.verifyRow('item-0').state.note,'Keep my chosen options');
+ h.release('POST mod-health');await late;
+ assert.equal(h.qa.getCatalog().items[0].modHealth,undefined,'Old source health cannot decorate the new execution context');
+ await h.tick(260);
+ const saved=h.calls.filter(c=>c.endpoint==='progress'&&c.method==='POST').at(-1);
+ assert.equal(saved.body.executionEpoch,2);assert.equal(saved.body.rows['item-0'].note,'Keep my chosen options');
+});
+
+test('a source-link save fetches a fresh snapshot while an older snapshot is still in flight',async()=>{
+ const h=harness();await h.settle();const before=catalog('a');before.executionEpoch=1;
+ h.state.catalog=before;await h.qa.setCatalog(before);
+ h.state.defer.add('GET snapshot');const oldRead=h.api.requestLiveCatalog();await h.settle();
+ const after=catalog('a');after.executionEpoch=2;after.items[0].source={type:'github',verified:true,url:'https://github.com/example/replacement'};
+ h.state.catalog=after;h.state.generation=2;h.state.defer.delete('GET snapshot');
+ h.state.progressReply={ok:true,profileId:'a',sourceLinksChanged:true,generation:2,executionEpoch:2};
+ h.api.setRow('item-0',{url:'https://github.com/example/replacement',note:'New source'});await h.tick(260);await h.settle();
+ assert.equal(h.qa.getCatalog().executionEpoch,2);
+ assert.equal(h.api.getSrc(h.qa.getCatalog().items[0]).url,'https://github.com/example/replacement');
+ assert.equal(h.maximum.get('GET snapshot'),2,'A new revision must not coalesce with the old snapshot');
+ h.release('GET snapshot');await oldRead;
+ assert.equal(h.qa.getCatalog().executionEpoch,2,'The older response must not restore obsolete source evidence');
+});
+
+test('a new execution context restarts unfinished Chronicle hydration',async()=>{
+ const h=harness();h.state.defer.add('GET progress');await h.settle();
+ assert.equal(h.active.get('GET progress'),1);
+ h.api.setRow('item-0',{note:'Written while the profile loads'},false);
+ const after=catalog('a');after.executionEpoch=2;h.state.catalog=after;
+ const activation=h.qa.setCatalog(after);await h.settle();
+ assert.equal(h.active.get('GET progress'),2,'The replacement context needs its own progress read');
+ h.release('GET progress');await activation;await h.settle();
+ h.api.setRow('item-0',{note:'Chronicle remains writable'},false);await h.tick(260);
+ const saved=h.calls.filter(c=>c.endpoint==='progress'&&c.method==='POST').at(-1);
+ assert.ok(saved,'Hydration must leave the new context able to save');
+ assert.equal(saved.body.executionEpoch,2);assert.equal(saved.body.rows['item-0'].note,'Chronicle remains writable');
+});
+
+test('source edits block execution until the newest edit is acknowledged',async()=>{
+ const h=harness();await h.settle();
+ h.api.setRow('item-0',{url:'https://github.com/example/first'});h.api.render();
+ assert.equal(h.api.sourceLinksPending(),true);
+ assert.equal(h.nodes.get('workshopQuickAll').disabled,true);
+ await assert.rejects(h.api.bridgeRequest('POST','quick-update',{profileId:'a',itemIds:['item-0']}),/Source links are still syncing/);
+ assert.equal(h.calls.filter(c=>c.endpoint==='quick-update').length,0);
+ h.state.defer.add('POST progress');await h.tick(260);
+ h.api.setRow('item-0',{url:'https://github.com/example/second'});
+ h.release('POST progress');await h.settle();
+ assert.equal(h.api.sourceLinksPending(),true,'An older save cannot unlock a newer edit');
+ await h.tick(260);
+ assert.equal(h.api.sourceLinksPending(),false);
+ assert.equal(h.calls.filter(c=>c.endpoint==='progress'&&c.method==='POST').at(-1).body.rows['item-0'].url,'https://github.com/example/second');
+ await h.api.bridgeRequest('POST','quick-update',{profileId:'a',itemIds:['item-0']});
+ assert.equal(h.calls.filter(c=>c.endpoint==='quick-update').length,1);
+});
+
+test('failed source saves retain the execution guard and ordinary notes never acquire it',async()=>{
+ const h=harness();await h.settle();
+ h.api.setRow('item-0',{note:'Only a note'},false);assert.equal(h.api.sourceLinksPending(),false);
+ h.state.progressError='Fixture Chronicle failure';h.api.setRow('item-0',{url:'https://github.com/example/project'});await h.tick(260);
+ assert.equal(h.api.sourceLinksPending(),true);
+ await assert.rejects(h.api.bridgeRequest('POST','download',{modId:1,fileId:2,confirm:'DOWNLOAD'}),/Source links are still syncing/);
+ assert.match(h.nodes.get('liveState').textContent,/Fixture Chronicle failure/);
+ h.state.progressError=null;h.api.save();await h.tick(260);
+ assert.equal(h.api.sourceLinksPending(),false);
+});
+
+test('restored source overrides stay guarded until Chronicle hydration and save finish',async()=>{
+ const h=harness({storedRows:{'item-0':{url:'https://github.com/example/restored'}}});
+ h.state.defer.add('GET progress');await h.settle();
+ assert.equal(h.api.getSrc(h.qa.getCatalog().items[0]).url,'https://github.com/example/restored');
+ assert.equal(h.api.sourceLinksPending(),true);
+ await assert.rejects(h.api.bridgeRequest('POST','quick-update',{profileId:'a',itemIds:['item-0']}),/Source links are still syncing/);
+ h.release('GET progress');await h.settle();assert.equal(h.api.sourceLinksPending(),true);
+ await h.tick(260);assert.equal(h.api.sourceLinksPending(),false);
+});
+
+test('failed Chronicle reads never replace unseen progress and polling retries the merge',async()=>{
+ const h=harness({progressReadFailures:1,storedRows:{'item-0':{url:'https://github.com/example/restored'}},
+  progressRows:{'item-1':{note:'Server-only saved instructions',favorite:true}}});
+ await h.settle();
+ assert.equal(h.calls.filter(c=>c.endpoint==='progress'&&c.method==='POST').length,0);
+ assert.equal([...h.timers.values()].filter(t=>t.ms===260).length,0,'No overwrite may be queued after a failed read');
+ assert.equal(h.api.sourceLinksPending(),true);
+ h.api.setRow('item-0',{url:'https://github.com/example/restored',note:'New local instructions'});
+ await h.api.pollLiveBridge();await h.tick(260);
+ const saved=h.calls.filter(c=>c.endpoint==='progress'&&c.method==='POST').at(-1);
+ assert.equal(saved.body.rows['item-0'].note,'New local instructions');
+ assert.equal(saved.body.rows['item-1'].note,'Server-only saved instructions');
+ assert.equal(saved.body.rows['item-1'].favorite,true);
+ assert.equal(h.api.sourceLinksPending(),false);
+});
+
+test('edits made during delayed hydration win while untouched server fields merge',async()=>{
+ const h=harness({storedRows:{'item-0':{favorite:false,note:'Old local note',updatedAt:'2020-01-01T00:00:00Z'}},
+  progressRows:{'item-0':{favorite:false,note:'Saved server note',compat:'compatible',updatedAt:'2021-01-01T00:00:00Z'}}});
+ h.state.defer.add('GET progress');await h.settle();
+ h.api.setRow('item-0',{...h.qa.verifyRow('item-0').state,favorite:true,note:'Typed while loading'},false);
+ h.release('GET progress');await h.settle();
+ const row=h.qa.verifyRow('item-0').state;
+ assert.equal(row.favorite,true);assert.equal(row.note,'Typed while loading');assert.equal(row.compat,'compatible');
+ await h.tick(260);
+ const saved=h.calls.filter(c=>c.endpoint==='progress'&&c.method==='POST').at(-1);
+ assert.equal(saved.body.rows['item-0'].note,'Typed while loading');
+});
+
+test('a source acknowledgment cannot unlock an intervening server execution context',async()=>{
+ const h=harness();await h.settle();
+ const chosen='https://github.com/example/chosen',intervening='https://github.com/example/other';
+ h.api.setRow('item-0',{url:chosen});
+ h.state.progressReply={ok:true,profileId:'a',sourceLinksChanged:true,executionEpoch:2,generation:2};
+ const third=catalog('a');third.executionEpoch=3;third.items[0].source={type:'github',verified:true,url:intervening};h.state.catalog=third;
+ await h.tick(260);await h.settle();
+ assert.equal(h.qa.getCatalog().executionEpoch,3);assert.equal(h.api.sourceLinksPending(),true);
+ await assert.rejects(h.api.bridgeRequest('POST','quick-update',{profileId:'a',itemIds:['item-0']}),/Source links are still syncing/);
+ const fourth=catalog('a');fourth.executionEpoch=4;fourth.items[0].source={type:'github',verified:true,url:chosen};h.state.catalog=fourth;
+ h.state.progressReply={ok:true,profileId:'a',sourceLinksChanged:true,executionEpoch:4,generation:4};
+ await h.tick(260);await h.settle();
+ assert.equal(h.qa.getCatalog().executionEpoch,4);assert.equal(h.api.sourceLinksPending(),false);
+});
+
+test('late row health cannot replace a newer catalog in the same execution context',async()=>{
+ const h=harness();await h.settle();h.state.defer.add('POST mod-health');
+ const old=h.api.refreshModHealth(h.qa.getCatalog().items[0],false);await h.settle();
+ const newer=catalog('a');newer.items[0].modHealth={provider:'nexus',bugs:{state:'available',displayedCount:7}};
+ h.state.catalog=newer;await h.qa.setCatalog(newer);
+ h.release('POST mod-health');await old;
+ assert.equal(h.qa.getCatalog().items[0].modHealth.bugs.displayedCount,7);
+ assert.match(h.nodes.get('modList').innerHTML,/Bugs 7/);
+ const current=h.qa.getCatalog().items[0];await h.api.refreshModHealth(current,false);
+ assert.equal(current.modHealth.bugs.displayedCount,0,'A fresh request for the new row must still work');
 });

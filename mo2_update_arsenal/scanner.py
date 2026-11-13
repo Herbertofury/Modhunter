@@ -108,6 +108,8 @@ class Cache:
     def __init__(self, path: Path):
         self.path = path
         self.lock = threading.RLock()
+        self._revision = 0
+        self._entry_revisions: dict[str, int] = {}
         self._scan_epochs: dict[str, int] = {}
         self.data = {"schema": 1, "entries": {}, "activity": {}}
         try:
@@ -122,9 +124,22 @@ class Cache:
             obj = self.data["entries"].get(f"{game}/{mod_id}")
             return dict(obj) if isinstance(obj, dict) else None
 
+    def revision(self) -> int:
+        """Cheap invalidation for immutable dashboard responses."""
+        with self.lock:
+            return self._revision
+
+    def get_with_revision(self, game: str, mod_id: int) -> tuple[dict | None, int]:
+        with self.lock:
+            key = f"{game}/{mod_id}"
+            obj = self.data["entries"].get(key)
+            return (dict(obj) if isinstance(obj, dict) else None), self._entry_revisions.get(key, 0)
+
     def set(self, game: str, mod_id: int, value: dict) -> None:
         with self.lock:
             self.data["entries"][f"{game}/{mod_id}"] = dict(value)
+            self._revision += 1
+            self._entry_revisions[f"{game}/{mod_id}"] = self._revision
 
     def begin_scan(self, game: str, cancel_event: threading.Event) -> int | None:
         """Only the newest scan for a game may replace its shared metadata."""
@@ -147,6 +162,8 @@ class Cache:
             if not self.scan_is_current(game, epoch, cancel_event):
                 return False
             self.data["entries"][f"{game}/{mod_id}"] = dict(value)
+            self._revision += 1
+            self._entry_revisions[f"{game}/{mod_id}"] = self._revision
             return True
 
     def persist_for_scan(self, game: str, *, epoch: int | None,

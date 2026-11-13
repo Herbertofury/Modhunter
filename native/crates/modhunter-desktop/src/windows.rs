@@ -1,5 +1,5 @@
 use crate::policy::{self, BAR_HEIGHT, MAX_TABS, Mode};
-use modhunter_core::{BridgeClient, BridgeHealth, ImportRequest, ProfileImporter};
+use modhunter_core::{BridgeClient, BridgeHealth, CoreError, ImportRequest, ProfileImporter};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::{
@@ -70,9 +70,12 @@ struct Runtime {
     client: BridgeClient,
     prefs_path: PathBuf,
     epoch: AtomicU64,
+    revision: AtomicU64,
     importing: AtomicBool,
     auditing: AtomicBool,
+    import_operation: crate::import_operation::ImportOperation,
     probing: AtomicBool,
+    catalog_cache: crate::catalog::CatalogCache,
     smoke_output: Option<PathBuf>,
     smoke_sent: AtomicBool,
     smoke_ui: Mutex<Option<Value>>,
@@ -84,11 +87,14 @@ impl Runtime {
         let m = self.model.lock().unwrap_or_else(|e| e.into_inner());
         json!({"tabs": m.tabs, "activeId": m.active_id, "connected": m.connected,
             "epoch": self.epoch.load(Ordering::Acquire),
+            "revision": self.revision.fetch_add(1, Ordering::AcqRel) + 1,
+            "importOperationId": self.import_operation.id(),
             "endpoint": m.endpoint, "connectionError": m.connection_error, "latencyMs": m.latency_ms,
             "offlineProfile": m.catalog.as_ref().and_then(|c| c.get("profileName")),
             "offlineModCount": m.catalog.as_ref().and_then(|c| c.get("items")).and_then(Value::as_array).map_or(0, Vec::len),
             "stats": m.stats, "warnings": m.warnings, "importing": self.importing.load(Ordering::Acquire),
             "auditing": self.auditing.load(Ordering::Acquire),
+            "cancelling": self.import_operation.is_cancelled(),
             "configPath": m.prefs.ini_path, "modsPath": m.prefs.mods_path,
             "eslifierDataPath": m.prefs.eslifier_data_path,
             "pluginAnalysis": m.catalog.as_ref().and_then(|c| c.get("pluginAnalysis")).map(|a| json!({
@@ -429,7 +435,7 @@ fn finish_smoke(app: &tauri::AppHandle) {
 fn inject_catalog(app: &tauri::AppHandle, label: &str) -> Result<()> {
     smoke_event(app, "catalog-injection-requested", json!({"label": label}));
     let state = app.state::<Runtime>();
-    let catalog = {
+    let (catalog, epoch, revision) = {
         let m = state.model.lock().map_err(err)?;
         if m.endpoint.is_some() {
             return Ok(());
@@ -441,7 +447,11 @@ fn inject_catalog(app: &tauri::AppHandle, label: &str) -> Result<()> {
         {
             return Ok(());
         }
-        m.catalog.clone()
+        (
+            m.catalog.clone(),
+            state.epoch.load(Ordering::Acquire),
+            state.revision.fetch_add(1, Ordering::AcqRel) + 1,
+        )
     };
     let Some(catalog) = catalog else {
         return Ok(());
@@ -456,13 +466,24 @@ fn inject_catalog(app: &tauri::AppHandle, label: &str) -> Result<()> {
     {
         return Ok(());
     }
-    let data = serde_json::to_string(catalog.as_ref())
-        .map_err(err)?
-        .replace('<', "\\u003c")
-        .replace('\u{2028}', "\\u2028")
-        .replace('\u{2029}', "\\u2029");
-    view.eval(format!("window.modhunterImportCatalog?.({data});"))
-        .map_err(err)?;
+    let data = state.catalog_cache.encode(&catalog).map_err(err)?;
+    let script = crate::catalog::injection_script(&data, revision);
+    {
+        let m = state.model.lock().map_err(err)?;
+        if state.epoch.load(Ordering::Acquire) != epoch
+            || m.endpoint.is_some()
+            || m.catalog
+                .as_ref()
+                .is_none_or(|current| !Arc::ptr_eq(current, &catalog))
+            || !m
+                .tabs
+                .iter()
+                .any(|t| t.label == label && t.mode == Mode::Dashboard && !t.loading)
+        {
+            return Ok(());
+        }
+    }
+    view.eval(script).map_err(err)?;
     smoke_event(app, "catalog-injection-scheduled", json!({"label": label}));
     if state.smoke_output.is_some() && !state.smoke_sent.swap(true, Ordering::AcqRel) {
         view.eval(r#"(async()=>{
@@ -810,18 +831,28 @@ struct ImportGuard<'a> {
 
 impl Drop for ImportGuard<'_> {
     fn drop(&mut self) {
-        self.state.auditing.store(false, Ordering::Release);
-        self.state.importing.store(false, Ordering::Release);
+        {
+            let _model = self.state.model.lock().unwrap_or_else(|e| e.into_inner());
+            self.state.auditing.store(false, Ordering::Release);
+            self.state.import_operation.finish();
+            self.state.importing.store(false, Ordering::Release);
+        }
         notify(self.app);
     }
 }
 
 fn import_profile(app: &tauri::AppHandle, refresh: bool, deep: bool) -> Result<Value> {
     let state = app.state::<Runtime>();
-    if state.importing.swap(true, Ordering::AcqRel) {
-        return Err("A profile import or plugin audit is already running.".into());
+    {
+        let _model = state.model.lock().map_err(err)?;
+        if state.importing.swap(true, Ordering::AcqRel) {
+            return Err("A profile import or plugin audit is already running.".into());
+        }
+        // Assign the job identity together with importing=true. Cancellation
+        // can arrive before the profile/connection epoch is advanced below.
+        state.import_operation.begin();
+        state.auditing.store(deep, Ordering::Release);
     }
-    state.auditing.store(deep, Ordering::Release);
     let guard = ImportGuard { state: &state, app };
     let (old, ini_path, mods_path, eslifier_data_paths, epoch) = {
         let m = state.model.lock().map_err(err)?;
@@ -868,15 +899,23 @@ fn import_profile(app: &tauri::AppHandle, refresh: bool, deep: bool) -> Result<V
             workers: None,
         }
     };
-    if state.epoch.load(Ordering::Acquire) != epoch {
-        return Err(
-            "Profile settings or connection changed; start the import or audit again.".into(),
-        );
+    if state.epoch.load(Ordering::Acquire) != epoch || state.import_operation.is_cancelled() {
+        drop(guard);
+        return Ok(cancelled_import(&state));
     }
-    let result = state
-        .importer
-        .import_with_analysis(&request, deep, &eslifier_data_paths)
-        .map_err(err)?;
+    let result = match state.importer.import_with_analysis_cancellable(
+        &request,
+        deep,
+        &eslifier_data_paths,
+        &|| state.epoch.load(Ordering::Acquire) != epoch || state.import_operation.is_cancelled(),
+    ) {
+        Ok(result) => result,
+        Err(CoreError::Cancelled) => {
+            drop(guard);
+            return Ok(cancelled_import(&state));
+        }
+        Err(error) => return Err(err(error)),
+    };
     let count = result.catalog["items"].as_array().map_or(0, Vec::len);
     let profile = result.catalog["profileName"]
         .as_str()
@@ -884,10 +923,13 @@ fn import_profile(app: &tauri::AppHandle, refresh: bool, deep: bool) -> Result<V
         .to_owned();
     let dashboard = {
         let mut m = state.model.lock().map_err(err)?;
-        if state.epoch.load(Ordering::Acquire) != epoch || m.endpoint.is_some() {
-            return Err(
-                "Profile settings or connection changed; the old result was discarded.".into(),
-            );
+        if state.epoch.load(Ordering::Acquire) != epoch
+            || m.endpoint.is_some()
+            || state.import_operation.is_cancelled()
+        {
+            drop(m);
+            drop(guard);
+            return Ok(cancelled_import(&state));
         }
         m.catalog = Some(Arc::new(result.catalog));
         m.stats = Some(serde_json::to_value(result.stats).map_err(err)?);
@@ -920,6 +962,12 @@ fn import_profile(app: &tauri::AppHandle, refresh: bool, deep: bool) -> Result<V
         format!("Loaded {count} mods from {profile}.")
     };
     Ok(json!({"ok": true, "count": count, "message": message, "state": state.snapshot()}))
+}
+
+fn cancelled_import(state: &Runtime) -> Value {
+    json!({"ok":true,"canceled":true,
+        "message":"Import or audit canceled. The last complete profile remains available.",
+        "state":state.snapshot()})
 }
 
 fn connect(app: &tauri::AppHandle, endpoint: &str) -> Result<Value> {
@@ -1060,6 +1108,14 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
         "importMo2" => return import_profile(app, false, false),
         "refreshProfile" => return import_profile(app, true, false),
         "pluginAudit" => return import_profile(app, true, true),
+        "cancelImport" => {
+            let _model = state.model.lock().map_err(err)?;
+            state.import_operation.cancel(
+                &value,
+                state.epoch.load(Ordering::Acquire),
+                state.importing.load(Ordering::Acquire),
+            );
+        }
         "configureIni" => {
             let picked = app
                 .dialog()
@@ -1174,7 +1230,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
                         latency_ms: session.latency_ms,
                     }, epoch);
                 },
-                _ => return Ok(json!({"ok":true,"sessions":sessions,"message":"Multiple MO2 sessions found. Choose a profile address from the address field, then Connect."})),
+                _ => return Ok(json!({"ok":true,"sessions":sessions,"state":state.snapshot(),"message":"Multiple MO2 sessions found. Choose a profile address from the address field, then Connect."})),
             }
         }
         "disconnect" => {
@@ -1304,9 +1360,12 @@ pub fn run() {
                 client: BridgeClient::new()?,
                 prefs_path,
                 epoch: AtomicU64::new(0),
+                revision: AtomicU64::new(0),
                 importing: AtomicBool::new(false),
                 auditing: AtomicBool::new(false),
+                import_operation: crate::import_operation::ImportOperation::default(),
                 probing: AtomicBool::new(false),
+                catalog_cache: crate::catalog::CatalogCache::default(),
                 smoke_output,
                 smoke_sent: AtomicBool::new(false),
                 smoke_ui: Mutex::new(None),

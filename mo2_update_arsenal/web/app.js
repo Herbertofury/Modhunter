@@ -17,13 +17,15 @@ let WORKSHOP_TICKETS={},WORKSHOP_TICKET_SIGNATURE='',DOWNLOAD_REFRESH_BUSY=false
 let ACTIVITY_RECORDS=[],ACTIVITY_GENERATION=0,ACTIVITY_WARNING='';
 // Requests may finish after MO2 switches profiles, including A -> B -> A.
 // An epoch, rather than the profile name alone, keeps those responses isolated.
-let PROFILE_EPOCH=0,CATALOG_REQUEST=0,WORKSHOP_REQUEST=0,GAME_REQUEST=0;
+let PROFILE_EPOCH=0,CATALOG_REQUEST=0,WORKSHOP_REQUEST=0,GAME_REQUEST=0,BRIDGE_READ_REVISION=0;
 let SCAN_OPERATION=0,SCAN_START_BUSY=false,QUICK_OPERATION=0,WORKSHOP_OPERATION=0;
 let LIVE_CONNECTED=false,LIVE_POLL_TIMER=null,LIVE_INIT_PROMISE=null,GAME_SIGNATURE='';
 let SEARCH_FRAME=null,WORKSHOP_SEARCH_FRAME=null,SAVE_TIMER=null,SAVE_REVISION=0,PROGRESS_SYNC_CHAIN=Promise.resolve();
-let RENDER_COUNTS=null,LOCAL_PLAN_CACHE=null;
+let RENDER_COUNTS=null,LOCAL_PLAN_CACHE=null,CATALOG_RENDER_REVISION=0;
+let SOURCE_EDIT_REVISION=0,SOURCE_SYNCED_REVISION=0;
 const BRIDGE_READS=new Map(),SOURCE_CACHE=new WeakMap(),SEARCH_CACHE=new WeakMap(),HTML_CACHE=new WeakMap();
 const ROW_RENDER_CACHE=new WeakMap();
+const MOD_MARKUP_CACHE=new WeakMap(),WORKSHOP_MARKUP_CACHE=new WeakMap();
 const INSIGHT_REQUESTS=new Map();
 const SOURCE_DETAIL_READS=new WeakMap(),SOURCE_DETAILS=new WeakMap();
 let GAME=null,GAME_SEEN=-1,PROGRESS_READY=false,PROGRESS_TIMER=null,NATIVE_SELECTED='',VICTORY_ACTIVE=null,VICTORY_TIMERS=[],PRACTICE_CROWNED=false;
@@ -53,7 +55,7 @@ const resolveSrc=(m)=>{
  if(official)return{url:official,verified:false,custom:false,type:src.type||'website',label:src.label||'Unverified source link'};
  return{url:'https://www.google.com/search?q='+encodeURIComponent((m.group==='Verified Creations'?'site:creations.bethesda.net/en/skyrim/details ':knownGame?'site:nexusmods.com/'+game+'/mods/ ':'')+'"'+m.name+'"'),verified:false,custom:false,type:'lookup',label:'Search for original source'};
 };
-const getSrc=(m)=>{const custom=getRow(m.id).url||'',game=LIVE_CATALOG?.game||DATA?.game||'',cached=SOURCE_CACHE.get(m);if(cached&&cached.custom===custom&&cached.game===game)return cached.source;const source=resolveSrc(m);SOURCE_CACHE.set(m,{custom,game,source});return source};
+const getSrc=(m)=>{const custom=getRow(m.id).url||'',game=LIVE_CATALOG?.game||DATA?.game||'',cached=SOURCE_CACHE.get(m);if(cached&&cached.revision===CATALOG_RENDER_REVISION&&cached.custom===custom&&cached.game===game)return cached.source;const source=resolveSrc(m);SOURCE_CACHE.set(m,{revision:CATALOG_RENDER_REVISION,custom,game,source});return source};
 const isRisk=(m)=>{const {verdict}=getAudit(m);return ['hold','check','avoid','ae-only'].includes(verdict)||(m.flags||[]).some(f=>['HARD_ESP','HARD_ESM','DLL','NEMESIS'].includes(f))};
 const isUpdate=(m)=>m.update&&m.update.verdict==='candidate';
 const hasReleaseAssets=m=>SOURCES?SOURCES.hasAssets(m):Boolean(m.update?.releaseAssets?.length||m.releaseAssets?.length);
@@ -69,32 +71,61 @@ function load(){try{const x=JSON.parse(localStorage.getItem(STORAGE)||'null');if
 }}catch(e){persistOK=false;console.warn('Local save unavailable:',e)}
  if(!Array.isArray(STORE.prefs.collapsed))STORE.prefs.collapsed=[];
 }
-function save(){clearTimeout(SAVE_TIMER);SAVE_TIMER=null;SAVE_REVISION++;LOCAL_PLAN_CACHE=null;try{localStorage.setItem(STORAGE,JSON.stringify(STORE));persistOK=true}catch(e){persistOK=false;console.warn('Local storage failed:',e)}updateStorageIndicator();if(BRIDGE.active&&LIVE_CATALOG&&PROGRESS_READY)scheduleProgressSync()}
-function saveSoon(){clearTimeout(SAVE_TIMER);SAVE_TIMER=setTimeout(save,180)}
+function save(invalidatePlan=true){clearTimeout(SAVE_TIMER);SAVE_TIMER=null;SAVE_REVISION++;if(invalidatePlan)LOCAL_PLAN_CACHE=null;try{localStorage.setItem(STORAGE,JSON.stringify(STORE));persistOK=true}catch(e){persistOK=false;console.warn('Local storage failed:',e)}updateStorageIndicator();if(BRIDGE.active&&LIVE_CATALOG&&PROGRESS_READY)scheduleProgressSync()}
+function saveSoon(){clearTimeout(SAVE_TIMER);SAVE_TIMER=setTimeout(()=>save(false),180)}
 function profileContext(){return{profile:LIVE_CATALOG?.profileId,epoch:PROFILE_EPOCH}}
 function contextIsCurrent(context){return context.epoch===PROFILE_EPOCH&&context.profile===LIVE_CATALOG?.profileId}
 function setHTML(node,html){if(node&&HTML_CACHE.get(node)!==html){node.innerHTML=html;HTML_CACHE.set(node,html)}}
+// A catalog replacement invalidates all presentation metadata. Local row edits
+// and asynchronously replaced analysis objects invalidate only their own row.
+// Provider deadlines remain live even when no response or object has changed.
+function sourceTimePhase(mod){const update=mod.update||{},now=Date.now()/1000;return(Number(update.expiresAt)>0&&Number(update.expiresAt)<=now?1:0)|(Number(update.retryAt)>now?2:0)}
+function cachedMarkup(cache,key,dependencies,build){
+ const cached=cache.get(key);
+ if(cached&&cached.dependencies.length===dependencies.length&&dependencies.every((value,index)=>Object.is(value,cached.dependencies[index])))return cached.html;
+ const html=build();cache.set(key,{dependencies,html});return html;
+}
 // Keep the complete list in the DOM. A ticket or checklist change replaces
 // only its changed rows, preserving unrelated links, focus and scroll state.
 // Structural changes (filtering, sorting, profile replacement) use one parse.
-function setRows(node,entries,empty){
+function replaceRenderedRow(previous,entry,template){
+ const old=previous.node,focused=document.activeElement;
+ const action=old.contains(focused)?['data-act','data-workshop-act','data-insight-act','data-source-act','data-download-id','data-download-details','data-retry-download-id','data-retry-item-id'].find(name=>focused.hasAttribute(name)):null;
+ const actionValue=action?focused.getAttribute(action):null;
+ template.innerHTML=entry.html;
+ const next=template.content.firstElementChild;
+ old.replaceWith(next);
+ if(action){const control=[...next.querySelectorAll('['+action+']')].find(el=>el.getAttribute(action)===actionValue);if(control&&!control.disabled)control.focus({preventScroll:true});}
+ return {...entry,node:next};
+}
+function setRows(node,entries,empty,preserveMoves=false){
  if(!node)return;
  const previous=ROW_RENDER_CACHE.get(node);
- if(previous&&previous.length===entries.length&&node.children.length===previous.length&&entries.every((entry,i)=>entry.key===previous[i].key&&previous[i].node===node.children[i])){
+ // Download status changes can reorder tickets. Retain their controls through
+ // moves as well as replacements, so a background poll cannot steal focus.
+ const intact=previous&&node.children.length===previous.length&&previous.every((entry,i)=>entry.node===node.children[i]);
+ if(preserveMoves&&entries.length&&intact&&new Set(entries.map(entry=>entry.key)).size===entries.length){
+  const byKey=new Map(previous.map(entry=>[entry.key,entry])),template=document.createElement('template');
+  const next=entries.map(entry=>{
+   const prior=byKey.get(entry.key);byKey.delete(entry.key);
+   if(prior)return prior.html===entry.html?prior:replaceRenderedRow(prior,entry,template);
+   template.innerHTML=entry.html;return {...entry,node:template.content.firstElementChild};
+  });
+  const focused=document.activeElement;
+  let cursor=node.firstElementChild;
+  for(const entry of next){if(entry.node!==cursor)node.insertBefore(entry.node,cursor);cursor=entry.node.nextElementSibling;}
+  for(const entry of byKey.values())entry.node.remove();
+  if(focused?.isConnected&&node.contains(focused)&&document.activeElement!==focused)focused.focus({preventScroll:true});
+  ROW_RENDER_CACHE.set(node,next);HTML_CACHE.delete(node);return;
+ }
+ if(intact&&previous.length===entries.length&&entries.every((entry,i)=>entry.key===previous[i].key)){
   const changed=[];
   for(let i=0;i<entries.length;i++)if(entries[i].html!==previous[i].html)changed.push(i);
   if(!changed.length)return;
   if(changed.length<=Math.max(8,entries.length/3)){
    const template=document.createElement('template');
    for(const i of changed){
-    const old=previous[i].node,focused=document.activeElement;
-    const action=old.contains(focused)?['data-act','data-workshop-act','data-insight-act','data-source-act'].find(name=>focused.hasAttribute(name)):null;
-    const actionValue=action?focused.getAttribute(action):null;
-    template.innerHTML=entries[i].html;
-    const next=template.content.firstElementChild;
-    old.replaceWith(next);
-    if(action){const control=[...next.querySelectorAll('['+action+']')].find(el=>el.getAttribute(action)===actionValue);if(control&&!control.disabled)control.focus({preventScroll:true});}
-    previous[i]={...entries[i],node:next};
+    previous[i]=replaceRenderedRow(previous[i],entries[i],template);
    }
    HTML_CACHE.delete(node);
    return;
@@ -107,17 +138,46 @@ function setRows(node,entries,empty){
  if(entries.length&&children.length===entries.length)ROW_RENDER_CACHE.set(node,entries.map((entry,i)=>({...entry,node:children[i]})));
  else ROW_RENDER_CACHE.delete(node);
 }
+function sourceLinksPending(){return BRIDGE.active&&SOURCE_EDIT_REVISION!==SOURCE_SYNCED_REVISION}
+function markSourceEdit(previous,next){if(BRIDGE.active&&txt(previous)!==txt(next))SOURCE_EDIT_REVISION++;}
 function scheduleProgressSync(){clearTimeout(PROGRESS_TIMER);const context=profileContext();if(!context.profile)return;PROGRESS_TIMER=setTimeout(()=>{
  // Serialize writes and clone only when sending, rather than cloning every
  // row on each search keystroke. The final write always contains latest state.
- PROGRESS_SYNC_CHAIN=PROGRESS_SYNC_CHAIN.then(async()=>{if(!contextIsCurrent(context))return;const snapshot={profileId:context.profile,rows:structuredClone(STORE.rows),prefs:structuredClone(STORE.prefs),verifiedRuntime:STORE.verifiedRuntime};try{await bridgeRequest('POST','progress',snapshot)}catch(ex){if(contextIsCurrent(context)){console.warn('MO2 Chronicle save:',ex.message);SET('liveState','Local save retained. MO2 Chronicle sync: '+ex.message)}}});
+ PROGRESS_SYNC_CHAIN=PROGRESS_SYNC_CHAIN.then(async()=>{
+  if(!contextIsCurrent(context))return;
+  const sourceRevision=SOURCE_EDIT_REVISION;
+  const snapshot={profileId:context.profile,rows:structuredClone(STORE.rows),prefs:structuredClone(STORE.prefs),verifiedRuntime:STORE.verifiedRuntime};
+  try{
+   const result=await bridgeRequest('POST','progress',snapshot);
+   if(!contextIsCurrent(context))return;
+   let acceptedContext=context;
+   if(result.sourceLinksChanged){
+    const snap=await requestLiveCatalog('GET','snapshot',undefined,true);if(!snap)return;
+    acceptedContext=profileContext();await snap.ready;
+   }
+   const sameExecution=!Number.isSafeInteger(result.executionEpoch)||LIVE_CATALOG?.executionEpoch===result.executionEpoch;
+   if(contextIsCurrent(acceptedContext)&&sameExecution&&sourceRevision===SOURCE_EDIT_REVISION){
+    const wasPending=sourceLinksPending();SOURCE_SYNCED_REVISION=sourceRevision;
+    if(wasPending)renderWorkshop();
+   }
+  }catch(ex){if(contextIsCurrent(context)){console.warn('MO2 Chronicle save:',ex.message);SET('liveState','Local save retained. MO2 Chronicle sync: '+ex.message)}}
+ });
 },260)}
-async function hydrateProgress(profile){const context=profileContext(),revision=SAVE_REVISION,query=STORE.prefs.query;try{const r=await bridgeRequest('GET','progress');if(!contextIsCurrent(context)||r.profileId!==profile)return;const stored=r.progress||{};
+async function hydrateProgress(profile){const context=profileContext(),revision=SAVE_REVISION,query=STORE.prefs.query,rowsBefore=structuredClone(STORE.rows);let hydrated=false;try{const r=await bridgeRequest('GET','progress');if(!contextIsCurrent(context)||r.profileId!==profile)return;const stored=r.progress||{};
  if(stored.rows&&typeof stored.rows==='object'){for(const [id,row]of Object.entries(stored.rows)){if(ITEM_MAP.has(id)&&row&&typeof row==='object'){
   const local=getRow(id),incoming=Date.parse(row.updatedAt||0)||0,existing=Date.parse(local.updatedAt||0)||0;
-  STORE.rows[id]=incoming>=existing?{...local,...row}:local;
+  const merged=incoming>=existing?{...local,...row}:{...local},before=rowsBefore[id]||{};
+  // Preserve fields edited while this read was in flight, including favorites
+  // and source links whose older saved records may have no timestamp.
+  for(const key of new Set([...Object.keys(before),...Object.keys(local)])){
+   if(JSON.stringify(before[key])!==JSON.stringify(local[key])){
+    if(Object.hasOwn(local,key))merged[key]=local[key];else delete merged[key];
+   }
+  }
+  STORE.rows[id]=merged;
  }}}
  if(revision===SAVE_REVISION&&query===STORE.prefs.query&&stored.prefs&&typeof stored.prefs==='object'){for(const k of Object.keys(BASE.prefs))if(k in stored.prefs)STORE.prefs[k]=stored.prefs[k]}
+ for(const [id,row] of Object.entries(STORE.rows))markSourceEdit(stored.rows?.[id]?.url,row.url);
  if(stored.verifiedRuntime)STORE.verifiedRuntime=stored.verifiedRuntime;
  // Server-origin progress still must be invalidated if the actual installed
  // version/runtime changed since the last save (including after MO2 restart).
@@ -126,10 +186,11 @@ async function hydrateProgress(profile){const context=profileContext(),revision=
  for(const mod of LIVE_CATALOG.items){const row=STORE.rows[mod.id];if(row?.status==='done'&&row.observedInstalledVersion&&row.observedInstalledVersion!==mod.installedVersion)row.status='review'}
  STORE.verifiedRuntime=currentRuntime;
  STORE.prefs.collapsed=Array.isArray(STORE.prefs.collapsed)?STORE.prefs.collapsed.filter(g=>GROUP_MAP.has(g)):[];
-} catch(ex){console.warn('MO2 profile save unavailable, local fallback:',ex.message)}finally{if(contextIsCurrent(context)){PROGRESS_READY=true;applyAppearance();$('search').value=STORE.prefs.query;render();save()}}}
+ hydrated=true;
+} catch(ex){console.warn('MO2 profile save unavailable, local fallback:',ex.message);if(contextIsCurrent(context))SET('liveState','Local notes retained. MO2 Chronicle loading will retry: '+ex.message)}finally{if(contextIsCurrent(context)){PROGRESS_READY=hydrated;LOCAL_PLAN_CACHE=null;applyAppearance();$('search').value=STORE.prefs.query;render();if(hydrated)save(false)}}}
 
 function updateStorageIndicator(){const b=$('storageStatus');if(!b)return;b.textContent=persistOK?'◉ AUTO-SAVED LOCALLY':'⚠ SESSION ONLY · EXPORT JSON';b.style.color=persistOK?'var(--teal)':'var(--red)'}
-function updatePrefs(p){STORE.prefs={...STORE.prefs,...p};save();applyAppearance();if(Object.keys(p).some(k=>['filter','insight','query','sort','collapsed'].includes(k)))render()}
+function updatePrefs(p){STORE.prefs={...STORE.prefs,...p};save(false);applyAppearance();if(Object.keys(p).some(k=>['filter','insight','query','sort','collapsed'].includes(k)))render()}
 function applyAppearance(){document.body.dataset.theme=STORE.prefs.theme==='snow'?'snow':'night';document.body.dataset.density=STORE.prefs.density==='comfy'?'comfy':'compact';$('effectSelect').value=STORE.prefs.effect;$('soundToggle').textContent=STORE.prefs.sound?'♫':'♪̸';$('soundToggle').title=STORE.prefs.sound?'Mute sounds':'Enable sounds';$('soundToggle').setAttribute('aria-label',STORE.prefs.sound?'Effect sounds on':'Effect sounds off');$('themeToggle').textContent=STORE.prefs.theme==='snow'?'☾':'◐';document.body.dataset.focus=STORE.prefs.focus?'yes':'no';$('focusToggle').textContent=STORE.prefs.focus?'◉ Exit Focus':'◎ Focus';$('focusToggle').setAttribute('aria-pressed',String(Boolean(STORE.prefs.focus)));$('focusTop').textContent=STORE.prefs.focus?'◉':'▦';$('focusTop').setAttribute('aria-pressed',String(Boolean(STORE.prefs.focus)));$('fxIntensity').value=STORE.prefs.vfxIntensity||'legendary';$('fxShake').checked=STORE.prefs.vfxShake!==false;$('fxTrails').checked=STORE.prefs.vfxTrails!==false;window.AetherFX?.config({intensity:STORE.prefs.vfxIntensity||'legendary',shake:STORE.prefs.vfxShake!==false,trails:STORE.prefs.vfxTrails!==false,sound:STORE.prefs.sound})}
 function counts(){if(RENDER_COUNTS)return RENDER_COUNTS;const c={total:DATA.items.length,done:0,review:0,risky:0,unlinked:0,favorites:0,pending:0,updates:0};for(const m of DATA.items){const status=getStatus(m);if(status==='done')c.done++;if(status==='review')c.review++;if(status==='pending')c.pending++;if(isRisk(m))c.risky++;if(!getSrc(m).verified)c.unlinked++;if(isFav(m))c.favorites++;if(isUpdate(m))c.updates++;}return{...c,left:c.total-c.done,percent:c.total?Math.round(c.done/c.total*100):0}}
 const SET=(id,val)=>{const el=$(id);if(el)el.textContent=val};
@@ -138,8 +199,8 @@ function renderStats(){const c=counts();SET('sidePercent',c.percent+'%');$('side
  $all('[data-filter]').forEach(el=>{const on=el.dataset.filter===STORE.prefs.filter;el.classList.toggle('active',on);if(el.tagName==='BUTTON')el.setAttribute('aria-pressed',String(on))});
 }
 function tokenizeQuery(raw){const out=[];const re=/"([^"]+)"|(\S+)/g;let m;while((m=re.exec(raw)))out.push((m[1]||m[2]).trim().toLowerCase());return out}
-function healthFilterMatches(mod,filter){return filter.startsWith('source-')?Boolean(SOURCES?.matches(mod,filter)):!INSIGHTS||INSIGHTS.matches(mod,filter)}
-function textMatches(m,query,terms){if(!query)return true;let base=SEARCH_CACHE.get(m);if(!base){base={text:[m.name,m.installedVersion,m.screenshotNote,m.author,m.group,m.priority,(m.flags||[]).join(' '),INSIGHTS?.searchText(m)||'',SOURCES?.searchText(m)||''].join(' ').toLowerCase(),author:txt(m.author).toLowerCase(),group:txt(m.group).toLowerCase(),flags:(m.flags||[]).join(' ').toLowerCase(),version:txt(m.installedVersion).toLowerCase()};SEARCH_CACHE.set(m,base)}const row=getRow(m.id),str=base.text+' '+txt(row.note).toLowerCase()+' '+txt(row.installed).toLowerCase();return(terms||tokenizeQuery(query)).every(part=>{const ix=part.indexOf(':');if(ix>0){const p=part.slice(0,ix),v=part.slice(ix+1);if(p==='health'||p==='esl')return (INSIGHTS?.searchText(m)||'').includes(v);if(p==='source'||p==='provider')return (SOURCES?.searchText(m)||'').includes(v);if(p==='author')return (base.author+' '+(SOURCES?.searchText(m)||'')).includes(v);if(p==='section'||p==='group')return base.group.includes(v);if(p==='flag')return base.flags.includes(v);if(p==='priority')return txt(m.priority).includes(v);if(p==='status')return getStatus(m).includes(v);if(p==='version')return base.version.includes(v);if(p==='note')return (m.screenshotNote+' '+txt(getRow(m.id).note)).toLowerCase().includes(v);}return str.includes(part)})}
+function healthFilterMatches(mod,filter){return filter==='all'||(filter.startsWith('source-')?Boolean(SOURCES?.matches(mod,filter)):!INSIGHTS||INSIGHTS.matches(mod,filter))}
+function textMatches(m,query,terms){if(!query)return true;const dependencies=[CATALOG_RENDER_REVISION,m.localAnalysis,m.modHealth,m.update,sourceTimePhase(m)],cached=SEARCH_CACHE.get(m);let base=cached&&dependencies.every((value,index)=>Object.is(value,cached.dependencies[index]))?cached.base:null;if(!base){base={text:[m.name,m.installedVersion,m.screenshotNote,m.author,m.group,m.priority,(m.flags||[]).join(' '),INSIGHTS?.searchText(m)||'',SOURCES?.searchText(m)||''].join(' ').toLowerCase(),author:txt(m.author).toLowerCase(),group:txt(m.group).toLowerCase(),flags:(m.flags||[]).join(' ').toLowerCase(),version:txt(m.installedVersion).toLowerCase()};SEARCH_CACHE.set(m,{dependencies,base})}const row=getRow(m.id),str=base.text+' '+txt(row.note).toLowerCase()+' '+txt(row.installed).toLowerCase();return(terms||tokenizeQuery(query)).every(part=>{const ix=part.indexOf(':');if(ix>0){const p=part.slice(0,ix),v=part.slice(ix+1);if(p==='health'||p==='esl')return (INSIGHTS?.searchText(m)||'').includes(v);if(p==='source'||p==='provider')return (SOURCES?.searchText(m)||'').includes(v);if(p==='author')return (base.author+' '+(SOURCES?.searchText(m)||'')).includes(v);if(p==='section'||p==='group')return base.group.includes(v);if(p==='flag')return base.flags.includes(v);if(p==='priority')return txt(m.priority).includes(v);if(p==='status')return getStatus(m).includes(v);if(p==='version')return base.version.includes(v);if(p==='note')return (m.screenshotNote+' '+txt(getRow(m.id).note)).toLowerCase().includes(v);}return str.includes(part)})}
 function filtered(){const f=STORE.prefs.filter,terms=tokenizeQuery(STORE.prefs.query);return DATA.items.filter(m=>healthFilterMatches(m,STORE.prefs.insight||'all')&&textMatches(m,STORE.prefs.query,terms)&&(
  f==='all'||(f==='pending'&&getStatus(m)==='pending')||(f==='done'&&isDone(m))||(f==='review'&&isReview(m))||(f==='risky'&&isRisk(m))||(f==='unlinked'&&!getSrc(m).verified)||(f==='favorites'&&isFav(m))||(f==='updates'&&isUpdate(m))));}
 function classFor(m){const s=getStatus(m);return s==='done'?'done':s==='review'?'needs-review':s==='skipped'?'skipped':''}
@@ -155,7 +216,8 @@ function assessmentHTML(m){const audit=getAudit(m),out=[];
  if(m.update&&m.update.verdict==='current')out.unshift('<span class="tag compatible">✓ CURRENT</span>');
  if(m.update&&m.update.verdict==='newer-installed')out.unshift('<span class="tag compatible">✓ AHEAD OF SOURCE</span>');
  if(!out.length)out.push('<span class="tag unknown" title="No file-specific compatibility proof yet">NOT VERIFIED</span>');return out.join('');}
-function modHTML(m){const s=getSrc(m),sourceText=s.type==='creations'?'↗ Creation':s.verified?'↗ Files':'⌕ Find page',note=getRow(m.id).note||m.screenshotNote||'',stat=getStatus(m),statusLabel=stat==='done'?'Clear completed status':stat==='review'?'Mark mod cleared':'Mark mod cleared';
+function modHTML(m){const row=getRow(m.id);return cachedMarkup(MOD_MARKUP_CACHE,m,[CATALOG_RENDER_REVISION,BRIDGE.active,DATA.offline,row.status,row.favorite,row.installed,row.note,row.compat,row.url,m.localAnalysis,m.modHealth,m.update,sourceTimePhase(m)],()=>buildModHTML(m))}
+function buildModHTML(m){const s=getSrc(m),sourceText=s.type==='creations'?'↗ Creation':s.verified?'↗ Files':'⌕ Find page',note=getRow(m.id).note||m.screenshotNote||'',stat=getStatus(m),statusLabel=stat==='done'?'Clear completed status':stat==='review'?'Mark mod cleared':'Mark mod cleared';
  return `<article class="mod-row ${classFor(m)}" id="row-${escapeHTML(m.id)}" data-id="${escapeHTML(m.id)}">
  <div class="mod-status"><button class="complete-btn" data-act="complete" data-id="${m.id}" aria-label="${escapeHTML(statusLabel+' for '+m.name)}" title="${escapeHTML(statusLabel)}">${stat==='done'?'✓':stat==='review'?'!':''}</button></div>
  <div class="mod-priority">${m.priority}</div>
@@ -177,8 +239,8 @@ function renderList(){const visible=filtered(),byGroup=new Map();for(const m of 
 function render(){if(SEARCH_FRAME!==null){cancelAnimationFrame(SEARCH_FRAME);SEARCH_FRAME=null}RENDER_COUNTS=counts();try{groupProgress();renderStats();renderList();renderChapters();renderQuest();paintNativeSelection();renderWorkshop();renderInsightToolbar();renderSourceCoverage()}finally{RENDER_COUNTS=null}}
 function renderSearch(){SEARCH_FRAME=null;renderList();paintNativeSelection()}
 function scheduleSearchRender(){if(DATA.items.length<1000){renderSearch();return}if(SEARCH_FRAME===null)SEARCH_FRAME=requestAnimationFrame(renderSearch)}
-function setStatus(m,status,withEffect=false,center){if(!['pending','done','review','skipped'].includes(status))return;const old=getStatus(m);if(old===status)return;const previousRow=$('row-'+m.id);const effectMode=STORE.prefs.effect==='random'?['shatter','fireworks','shot','slash','burn','arrow','frost','thunder'][Math.floor(Math.random()*8)]:STORE.prefs.effect;if(withEffect&&status==='done')window.AetherFX?.complete(previousRow,{mode:effectMode});else if(withEffect&&status==='pending')window.AetherFX?.undo(previousRow);getRow(m.id).status=old;STORE.rows[m.id]={...getRow(m.id),status,observedInstalledVersion:status==='done'?m.installedVersion:null,updatedAt:new Date().toISOString()};lastUndo={id:m.id,previous:old,next:status};save();render();if(withEffect&&status==='done')spawnFinisher(center||centerOfRow(m.id),effectMode);toast(status==='done'?'✦ '+m.name+' — quest cleared!'+(BRIDGE.active?' (manual, no ranked XP)':''):'Updated '+m.name,()=>undoLast(),'UNDO');if(!BRIDGE.active&&counts().total>0&&counts().done===counts().total&&!PRACTICE_CROWNED){PRACTICE_CROWNED=true;setTimeout(()=>launchVictory({verifiedMods:DATA.items.length,bonus:0,updates:DATA.items.length},true),420)}}
-function undoLast(){if(!lastUndo)return;const action=lastUndo;lastUndo=null;window.AetherFX?.undo($('row-'+action.id));STORE.rows[action.id]={...getRow(action.id),status:action.previous};save();render();toast('↶ Last change undone.');}
+function setStatus(m,status,withEffect=false,center){if(!['pending','done','review','skipped'].includes(status))return;const old=getStatus(m);if(old===status)return;const previousRow=$('row-'+m.id);const effectMode=STORE.prefs.effect==='random'?['shatter','fireworks','shot','slash','burn','arrow','frost','thunder'][Math.floor(Math.random()*8)]:STORE.prefs.effect;if(withEffect&&status==='done')window.AetherFX?.complete(previousRow,{mode:effectMode});else if(withEffect&&status==='pending')window.AetherFX?.undo(previousRow);getRow(m.id).status=old;STORE.rows[m.id]={...getRow(m.id),status,observedInstalledVersion:status==='done'?m.installedVersion:null,updatedAt:new Date().toISOString()};lastUndo={id:m.id,previous:old,next:status};save(false);render();if(withEffect&&status==='done')spawnFinisher(center||centerOfRow(m.id),effectMode);toast(status==='done'?'✦ '+m.name+' — quest cleared!'+(BRIDGE.active?' (manual, no ranked XP)':''):'Updated '+m.name,()=>undoLast(),'UNDO');if(!BRIDGE.active&&counts().total>0&&counts().done===counts().total&&!PRACTICE_CROWNED){PRACTICE_CROWNED=true;setTimeout(()=>launchVictory({verifiedMods:DATA.items.length,bonus:0,updates:DATA.items.length},true),420)}}
+function undoLast(){if(!lastUndo)return;const action=lastUndo;lastUndo=null;window.AetherFX?.undo($('row-'+action.id));STORE.rows[action.id]={...getRow(action.id),status:action.previous};save(false);render();toast('↶ Last change undone.');}
 function centerOfRow(id){const el=$('row-'+id);if(!el)return{x:window.innerWidth*.5,y:window.innerHeight*.45};const r=el.getBoundingClientRect();return{x:Math.max(20,r.left+Math.min(r.width*.42,420)),y:r.top+r.height*.5}}
 function toggleDone(id,el){const m=ITEM_MAP.get(id);if(!m)return;const r=el?.closest('.mod-row')?.getBoundingClientRect();const pos=r?{x:r.left+Math.min(r.width*.44,450),y:r.top+r.height*.5}:centerOfRow(id);setStatus(m,isDone(m)?'pending':'done',true,pos);}
 function toast(message,action,actionLabel){const w=$('toastWrap');const el=document.createElement('div');el.className='toast';el.innerHTML=`<span>${escapeHTML(message)}</span>`;if(action){const b=document.createElement('button');b.textContent=actionLabel||'UNDO';b.addEventListener('click',()=>{action();el.remove()});el.append(b)}w.append(el);while(w.children.length>3)w.firstChild.remove();setTimeout(()=>{el.style.opacity='0';el.style.transition='opacity .2s';setTimeout(()=>el.remove(),220)},3600)}
@@ -187,7 +249,7 @@ function focusRow(id){const row=$('row-'+id);if(!row)return;focusedRowId=id;row.
 function jumpChapter(id){STORE.prefs.filter='all';STORE.prefs.query='';$('search').value='';if(STORE.prefs.collapsed.includes(id))STORE.prefs.collapsed=STORE.prefs.collapsed.filter(x=>x!==id);save();render();const el=$('section-'+id);el?.scrollIntoView({behavior:'smooth',block:'start'});$('sidebar').classList.remove('open')}
 function resetFilters(){STORE.prefs.filter='all';STORE.prefs.insight='all';STORE.prefs.query='';$('search').value='';save();render()}
 function toggleAllChapters(){const allClosed=STORE.prefs.collapsed.length===DATA.groups.length;STORE.prefs.collapsed=allClosed?[]:DATA.groups.map(g=>g.id);$('collapseAll').textContent=allClosed?'Collapse':'Expand';save();render();}
-function drawInspector(m){openedId=m.id;STORE.lastSelected=m.id;save();const row=getRow(m.id),audit=getAudit(m),source=getSrc(m);SET('drawerTitle',m.name);
+function drawInspector(m){openedId=m.id;STORE.lastSelected=m.id;save(false);const row=getRow(m.id),audit=getAudit(m),source=getSrc(m);SET('drawerTitle',m.name);
  const selected=(v)=>row.compat===v?'selected':'';const status=getStatus(m);
  const profileMode=Boolean(BRIDGE.active||DATA.offline),runtime=profileMode?txt(DATA.gameRuntime).trim():'1.5.97';
  const verifiedLabel=runtime&&runtime.toLowerCase()!=='unknown'?'Verified working on '+runtime:'Verified working in this setup';
@@ -292,13 +354,13 @@ async function analyzePlugins(){
 }
 async function refreshModHealth(mod,force=true){
  if(!BRIDGE.active){toast('Connect the MO2 plugin to check public Nexus health.');return;}
- const context=profileContext(),key=PROFILE_EPOCH+':'+mod.id;
+ const context=profileContext(),key=PROFILE_EPOCH+':'+CATALOG_RENDER_REVISION+':'+mod.id;
  if(INSIGHT_REQUESTS.has(key))return INSIGHT_REQUESTS.get(key);
  const task=(async()=>{
   try{
    const result=await bridgeRequest('POST','mod-health',{profileId:context.profile,itemId:mod.id,force});
    if(!contextIsCurrent(context)||result.profileId!==context.profile)return;
-   const current=ITEM_MAP.get(mod.id);if(!current)return;
+   const current=ITEM_MAP.get(mod.id);if(!current||current!==mod)return;
    current.modHealth=result.health;
    if(Object.hasOwn(result,'localAnalysis'))current.localAnalysis=result.localAnalysis;
    if(result.pluginAuditState)DATA.pluginAuditState=result.pluginAuditState;
@@ -313,16 +375,16 @@ async function refreshModHealth(mod,force=true){
 async function loadModInsights(mod){
  if(!BRIDGE.active||!mod)return;
  if(INSIGHTS?.isNexus(mod))return refreshModHealth(mod,false);
- const context=profileContext(),key=PROFILE_EPOCH+':'+mod.id;
+ const context=profileContext(),key=PROFILE_EPOCH+':'+CATALOG_RENDER_REVISION+':'+mod.id;
  if(INSIGHT_REQUESTS.has(key))return INSIGHT_REQUESTS.get(key);
  const task=(async()=>{
   try{
    const result=await bridgeRequest('GET','mod-health?itemId='+encodeURIComponent(mod.id)+'&profileId='+encodeURIComponent(context.profile));
    if(!contextIsCurrent(context)||result.profileId!==context.profile)return;
-   const current=ITEM_MAP.get(mod.id);if(!current)return;
+   const current=ITEM_MAP.get(mod.id);if(!current||current!==mod)return;
    current.modHealth=result.health;current.localAnalysis=result.localAnalysis;
    if(result.pluginAuditState)DATA.pluginAuditState=result.pluginAuditState;
-   SEARCH_CACHE.delete(current);refreshInspectorInsights();
+   SEARCH_CACHE.delete(current);refreshInspectorInsights();renderList();renderWorkshop();
   }catch(ex){if(contextIsCurrent(context)&&openedId===mod.id)toast('Mod details: '+ex.message);}
  })();
  INSIGHT_REQUESTS.set(key,task);try{return await task}finally{if(INSIGHT_REQUESTS.get(key)===task)INSIGHT_REQUESTS.delete(key)}
@@ -349,7 +411,7 @@ if($('insightFilter'))$('insightFilter').addEventListener('change',e=>updatePref
 if($('analyzePlugins'))$('analyzePlugins').addEventListener('click',()=>void analyzePlugins());
 function saveInspection(forceDone){const m=ITEM_MAP.get(openedId);if(!m)return;const url=$('drawerUrl').value.trim();if(url&&!validUrl(url)){toast('Please enter a valid http(s) mod URL.');$('drawerUrl').focus();return}
  const old=getStatus(m);const selected=$('drawerStatus').value;const next=forceDone?'done':selected;
- STORE.rows[m.id]={...getRow(m.id),status:next,installed:$('drawerInstalled').value.trim(),testedVersion:$('drawerVerifiedVersion').value.trim(),compat:$('drawerCompat').value,url:url,note:$('drawerNote').value,favorite:$('drawerFavorite').checked,updatedAt:new Date().toISOString()};save();closeInspector();render();if(next==='done'&&old!=='done')spawnFinisher(centerOfRow(m.id));toast('✦ Inspection recorded for '+m.name);}
+ markSourceEdit(getRow(m.id).url,url);STORE.rows[m.id]={...getRow(m.id),status:next,installed:$('drawerInstalled').value.trim(),testedVersion:$('drawerVerifiedVersion').value.trim(),compat:$('drawerCompat').value,url:url,note:$('drawerNote').value,favorite:$('drawerFavorite').checked,updatedAt:new Date().toISOString()};save();closeInspector();render();if(next==='done'&&old!=='done')spawnFinisher(centerOfRow(m.id));toast('✦ Inspection recorded for '+m.name);}
 function closeInspector(){$('drawerVeil').hidden=true;$('detailDrawer').classList.remove('open');$('detailDrawer').setAttribute('aria-hidden','true');openedId=null}
 function help(open){$('helpVeil').hidden=!open;}
 async function copyToClipboard(value){try{await navigator.clipboard.writeText(value);toast('⧉ Source URL copied.')}catch{const t=document.createElement('textarea');t.value=value;document.body.append(t);t.select();let success=false;try{success=document.execCommand('copy')}catch{}t.remove();toast(success?'Source URL copied.':'Copy unavailable. Select the URL in the inspector.')}}
@@ -358,7 +420,7 @@ function exportJSON(){const obj={format:'Mod Update Arsenal Backup',version:1,cr
 function saveFile(name,type,body){const blob=new Blob([body],{type:type+';charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3500)}
 function csvCell(v){return'"'+txt(v).replace(/"/g,'""')+'"'}
 function exportCSV(){const cols=['Priority','Mod','Section','Installed version','Status',(BRIDGE.active||DATA.offline)?'Compatibility Verdict':'1.5.97 Verdict','Type Flags','Exact Source URL','Source Verified','Source Provider','Screenshot Note','User Note','Tested Version','Author'];const csv=[cols.map(csvCell).join(',')];cols.push('Winning light plugins','Winning full plugins','Light overrides','Flag-only candidates','Compaction review','ESLifier changes','Master issues','Plugin checked at','Bugs tab state','Nexus displayed bug count','Bugs checked at');cols.push(...(SOURCES?.csvHeaders||[]));csv[0]=cols.map(csvCell).join(',');for(const m of filtered()){const r=getRow(m.id),s=getSrc(m);const c=[m.priority,m.name,m.group,r.installed||m.installedVersion,getStatus(m),getAudit(m).verdict,m.flags.join(';'),s.verified?s.url:'',s.verified?'yes':'NO',s.label,m.screenshotNote,r.note||'',r.testedVersion||'',m.author];c.push(...(INSIGHTS?.csv(m)||Array(11).fill('')),...(SOURCES?.csv(m)||[]));csv.push(c.map(csvCell).join(','))}saveFile(exportFilename('Visible Mods','csv'),'text/csv','\ufeff'+csv.join('\r\n'));toast('⇩ CSV download requested for '+filtered().length+' visible mods.');}
-async function importJSON(file){if(!file)return;try{const obj=JSON.parse(await file.text());if(obj.catalogId!==DATA.catalogId||!obj.rows||typeof obj.rows!=='object')throw Error('This is not an Update Arsenal progress backup for the current catalog.');const imported=Object.entries(obj.rows).filter(([id])=>ITEM_MAP.has(id));if(!confirm('Restore '+imported.length+' saved mod records? This merges records from the backup into this browser.'))return;for(const[id,v]of imported)if(v&&typeof v==='object')STORE.rows[id]={...STORE.rows[id],...v};if(obj.prefs&&typeof obj.prefs==='object'){const allowed=Object.keys(BASE.prefs);for(const k of allowed)if(k in obj.prefs)STORE.prefs[k]=obj.prefs[k]}save();$('search').value=STORE.prefs.query;applyAppearance();render();toast('✓ Restored '+imported.length+' saved mod records.')}catch(e){toast('⚠ Restore failed: '+e.message)}finally{$('importFile').value=''}}
+async function importJSON(file){if(!file)return;try{const obj=JSON.parse(await file.text());if(obj.catalogId!==DATA.catalogId||!obj.rows||typeof obj.rows!=='object')throw Error('This is not an Update Arsenal progress backup for the current catalog.');const imported=Object.entries(obj.rows).filter(([id])=>ITEM_MAP.has(id));if(!confirm('Restore '+imported.length+' saved mod records? This merges records from the backup into this browser.'))return;for(const[id,v]of imported)if(v&&typeof v==='object'){const row={...STORE.rows[id],...v};markSourceEdit(getRow(id).url,row.url);STORE.rows[id]=row;}if(obj.prefs&&typeof obj.prefs==='object'){const allowed=Object.keys(BASE.prefs);for(const k of allowed)if(k in obj.prefs)STORE.prefs[k]=obj.prefs[k]}save();$('search').value=STORE.prefs.query;applyAppearance();render();toast('✓ Restored '+imported.length+' saved mod records.')}catch(e){toast('⚠ Restore failed: '+e.message)}finally{$('importFile').value=''}}
 // The optional PowerShell bridge is embedded as text, downloaded on demand and never executed by the browser.
 function mo2Open(){ $('mo2Veil').hidden=false; if(MO2_PENDING.length)drawMO2Matcher();else $('mo2Results').textContent=''; }
 function mo2Close(){ $('mo2Veil').hidden=true; }
@@ -367,7 +429,7 @@ const mo2Link=(id)=>'https://www.nexusmods.com/skyrimspecialedition/mods/'+id+'?
 const mo2ValidId=(id)=>/^[1-9]\d{0,9}$/.test(txt(id).trim());
 function mo2ApplyLink(m,input){const id=txt(input.modId).trim();if(!mo2ValidId(id))return false;const prev=getRow(m.id);if(prev.url||m.source.verified)return false;
  const files=Array.isArray(input.fileIds)?input.fileIds.filter(x=>mo2ValidId(x)).slice(0,25):[];
- STORE.rows[m.id]={...prev,url:mo2Link(id),mo2Source:true,mo2FileIds:files,mo2FolderName:input.name};return true;
+ markSourceEdit(prev.url,mo2Link(id));STORE.rows[m.id]={...prev,url:mo2Link(id),mo2Source:true,mo2FileIds:files,mo2FolderName:input.name};return true;
 }
 function drawMO2Matcher(){const panel=$('mo2Resolver');panel.hidden=!MO2_PENDING.length;if(panel.hidden)return;
  const q=mo2Key($('mo2Lookup').value);$('mo2PendingCount').textContent=MO2_PENDING.length+' folder'+(MO2_PENDING.length===1?'':'s')+' need review';
@@ -469,8 +531,8 @@ $('modList').addEventListener('click',e=>{if(e.target.closest('[data-insight-act
  if(act.dataset.act==='locate'){e.preventDefault();locateInMO2(m,act);return}
  if(act.dataset.act==='files'){e.preventDefault();openFilePicker(m);return}
  if(act.dataset.act==='inspect'){e.preventDefault();drawInspector(m)}
- if(act.dataset.act==='favorite'){e.preventDefault();window.AetherFX?.favorite(act);STORE.rows[m.id]={...getRow(m.id),favorite:!isFav(m)};save();render();toast(isFav(m)?'★ Bookmarked '+m.name:'Bookmark removed')}
- if(act.dataset.act==='source'){STORE.rows[m.id]={...getRow(m.id),lastOpened:new Date().toISOString()};save()}
+ if(act.dataset.act==='favorite'){e.preventDefault();window.AetherFX?.favorite(act);STORE.rows[m.id]={...getRow(m.id),favorite:!isFav(m)};save(false);render();toast(isFav(m)?'★ Bookmarked '+m.name:'Bookmark removed')}
+ if(act.dataset.act==='source'){STORE.rows[m.id]={...getRow(m.id),lastOpened:new Date().toISOString()};save(false)}
 });
 $('chapters').addEventListener('click',e=>{const b=e.target.closest('[data-chapter]');if(b)jumpChapter(b.dataset.chapter)});
 $('chapterSearch').addEventListener('input',renderChapters);
@@ -511,8 +573,9 @@ document.addEventListener('keydown',e=>{const inField=e.target.matches('input,te
 async function bridgeRequest(method,path,body){
  if(!BRIDGE.active)throw Error('Launch the app from the MO2 plugin to connect');
  if(method==='POST'&&!LIVE_CONNECTED)throw Error('MO2 is disconnected; wait for the connection to recover');
+ if(method==='POST'&&sourceLinksPending()&&['quick-update','update-queue','download','install','install-ready','retry-download','scan'].includes(path))throw Error('Source links are still syncing with MO2. Wait for the save to finish, then retry.');
  if(method==='POST'&&body?.profileId===LIVE_CATALOG?.profileId&&Number.isSafeInteger(LIVE_CATALOG?.executionEpoch))body={...body,executionEpoch:body.executionEpoch??LIVE_CATALOG.executionEpoch};
- const key=PROFILE_EPOCH+':'+path;
+ const key=PROFILE_EPOCH+':'+BRIDGE_READ_REVISION+':'+path;
  if(method==='GET'&&BRIDGE_READS.has(key))return BRIDGE_READS.get(key);
  const pending=(async()=>{const controller=new AbortController(),tm=setTimeout(()=>controller.abort(),method==='GET'?24000:195000);
   try{const r=await fetch('/api/'+path,{method,headers:{'X-Arsenal-Token':BRIDGE.token,...(method==='POST'?{'Content-Type':'application/json'}:{})},body:method==='POST'?JSON.stringify(body||{}):undefined,cache:'no-store',signal:controller.signal});const j=await r.json();if(!r.ok||j.ok===false)throw Error(j.error||'Bridge request rejected');return j}finally{clearTimeout(tm)}
@@ -527,7 +590,9 @@ function setBridgeConnection(connected,message){
  for(const id of ['liveAll','liveQuick','liveDeep','liveLocal','liveRefresh','liveRuntime','liveConnect','liveBackup'])$(id).disabled=!connected||(['liveAll','liveQuick','liveDeep','liveLocal'].includes(id)&&(SCAN_START_BUSY||LIVE_SCAN?.state==='running'));
  if(!connected){if(changed){renderWorkshop();renderDownloadPulse(WORKSHOP_TICKETS)}SET('liveSync','Connection lost · retrying automatically');SET('unifiedEdition',LIVE_CATALOG?'⚠ MO2 DISCONNECTED · LAST SNAPSHOT':'⚠ MO2 DISCONNECTED · RETRYING');}
 }
-async function requestLiveCatalog(method='GET',path='snapshot',body){
+async function requestLiveCatalog(method='GET',path='snapshot',body,fresh=false){
+ // A completed source edit must not reuse a snapshot started before that edit.
+ if(fresh)BRIDGE_READ_REVISION++;
  const request=++CATALOG_REQUEST,context=profileContext(),result=await bridgeRequest(method,path,body);
  if(request!==CATALOG_REQUEST||!contextIsCurrent(context))return null;
  const ready=activateLiveCatalog(result.catalog);
@@ -537,10 +602,12 @@ async function requestLiveCatalog(method='GET',path='snapshot',body){
 function activateLiveCatalog(c){
  if(!c||!Array.isArray(c.items)||!Array.isArray(c.groups)||!c.profileId)throw Error('Invalid profile snapshot');
  const newProfile=LIVE_CATALOG?.profileId!==c.profileId;
- CATALOG_REQUEST++;WORKSHOP_REQUEST++;GAME_REQUEST++;LOCAL_PLAN_CACHE=null;
+ const newExecutionContext=newProfile||(Number.isSafeInteger(LIVE_CATALOG?.executionEpoch)&&Number.isSafeInteger(c.executionEpoch)&&LIVE_CATALOG.executionEpoch!==c.executionEpoch);
+ CATALOG_REQUEST++;WORKSHOP_REQUEST++;GAME_REQUEST++;CATALOG_RENDER_REVISION++;LOCAL_PLAN_CACHE=null;
  if(newProfile&&(SAVE_TIMER!==null||(STORAGE.startsWith('mo2-update-arsenal:')&&PROGRESS_READY)))save();
  LIVE_CATALOG=c;DATA=c;ITEM_MAP=new Map(c.items.map(m=>[m.id,m]));GROUP_MAP=new Map(c.groups.map(g=>[g.id,g]));STORAGE='mo2-update-arsenal:v2:'+c.profileId;
- if(newProfile){PROFILE_EPOCH++;SCAN_OPERATION++;QUICK_OPERATION++;WORKSHOP_OPERATION++;clearTimeout(SCAN_TIMER);SCAN_TIMER=null;SCAN_START_BUSY=false;LIVE_SCAN=null;WORKSHOP_BUSY=false;clearTimeout(SAVE_TIMER);SAVE_TIMER=null;clearTimeout(PROGRESS_TIMER);PROGRESS_READY=false;GAME=null;GAME_SIGNATURE='';GAME_SEEN=-1;NATIVE_SELECTED='';focusedRowId='';STORE=structuredClone(BASE);load();}
+ if(newExecutionContext){PROFILE_EPOCH++;SCAN_OPERATION++;QUICK_OPERATION++;WORKSHOP_OPERATION++;clearTimeout(SCAN_TIMER);SCAN_TIMER=null;SCAN_START_BUSY=false;LIVE_SCAN=null;WORKSHOP_BUSY=false;}
+ if(newProfile){SOURCE_EDIT_REVISION=0;SOURCE_SYNCED_REVISION=0;clearTimeout(SAVE_TIMER);SAVE_TIMER=null;clearTimeout(PROGRESS_TIMER);PROGRESS_READY=false;GAME=null;GAME_SIGNATURE='';GAME_SEEN=-1;NATIVE_SELECTED='';focusedRowId='';STORE=structuredClone(BASE);load();for(const row of Object.values(STORE.rows))if(row.url)markSourceEdit('',row.url);}
  STORE.prefs.collapsed=(Array.isArray(STORE.prefs.collapsed)?STORE.prefs.collapsed:[]).filter(id=>GROUP_MAP.has(id));$('search').value=STORE.prefs.query;
  const currentRuntime=c.gameRuntime||'unknown';let changedRuntime=false,changedMods=0;
  if(STORE.verifiedRuntime&&STORE.verifiedRuntime!==currentRuntime){for(const [id,row] of Object.entries(STORE.rows)){if(row.compat==='compatible'){delete row.compat;if(row.status==='done')row.status='review';changedRuntime=true}}}
@@ -557,10 +624,12 @@ function activateLiveCatalog(c){
  $('liveSync').textContent='Snapshot: '+new Date().toLocaleTimeString();
  const chosen=STORE.prefs.filter;if(chosen==='updates'&&!c.items.some(isUpdate))STORE.prefs.filter='all';
  if(newProfile){closeInspector();}else{refreshInspectorInsights();if(openedId&&ITEM_MAP.has(openedId)){void loadModInsights(ITEM_MAP.get(openedId));void loadSourceDetails(ITEM_MAP.get(openedId));}}
- if(newProfile||changedRuntime||changedMods){WORKSHOP_PLAN=null;WORKSHOP_CHOICES.clear();QUEUE_PENDING=null;$('queueReviewVeil').hidden=true;INSTALL_PREVIEW_ID=0;$('installPreviewVeil').hidden=true;closeFilePicker();}
- if(newProfile){if(QUICK_POLL){clearTimeout(QUICK_POLL);QUICK_POLL=null;}QUICK_RUNNING=false;FAST_PICKER_ID=null;QUICK_SKIPPED.clear();WORKSHOP_TICKETS={};WORKSHOP_TICKET_SIGNATURE='';$('liveDownloadList').innerHTML='';renderDownloadPulse({});ACTIVITY_RECORDS=[];ACTIVITY_WARNING='';ACTIVITY_GENERATION++;renderActivity();refreshActivity();}
+ if(newExecutionContext||changedRuntime||changedMods){WORKSHOP_PLAN=null;WORKSHOP_CHOICES.clear();QUEUE_PENDING=null;$('queueReviewVeil').hidden=true;INSTALL_PREVIEW_ID=0;$('installPreviewVeil').hidden=true;closeFilePicker();}
+ if(newExecutionContext){if(QUICK_POLL){clearTimeout(QUICK_POLL);QUICK_POLL=null;}QUICK_RUNNING=false;FAST_PICKER_ID=null;QUICK_SKIPPED.clear();}
+ if(newProfile){WORKSHOP_TICKETS={};WORKSHOP_TICKET_SIGNATURE='';$('liveDownloadList').innerHTML='';renderDownloadPulse({});ACTIVITY_RECORDS=[];ACTIVITY_WARNING='';ACTIVITY_GENERATION++;renderActivity();refreshActivity();}
  applyAppearance();updateStorageIndicator();render();renderLiveStats();if(changedRuntime||changedMods)toast('⚠ Previous cleared checks need review: runtime or installed version changed.');
- const context=profileContext();return Promise.allSettled([...(newProfile?[hydrateProgress(c.profileId)]:[]),refreshGame(),refreshWorkshop().catch(ex=>{if(contextIsCurrent(context))workshopSetStatus('Plan unavailable: '+ex.message)})]);
+ if(newExecutionContext&&!newProfile&&PROGRESS_READY)scheduleProgressSync();
+ const context=profileContext();return Promise.allSettled([...((newProfile||(newExecutionContext&&!PROGRESS_READY))?[hydrateProgress(c.profileId)]:[]),refreshGame(),refreshWorkshop().catch(ex=>{if(contextIsCurrent(context))workshopSetStatus('Plan unavailable: '+ex.message)})]);
 }
 
 function refreshUnifiedCommand(){
@@ -624,12 +693,27 @@ function renderWorkshopJourney(){
  else if(scanned){action='scan';title='No verified updates to queue';hint=(s.review+s.manual)+' mod'+(s.review+s.manual===1?'':'s')+' still need manual verification.';label='Run scan again';}
  $('workshopNextTitle').textContent=title;$('workshopNextHint').textContent=hint;
  const btn=$('workshopNextAction');btn.dataset.action=action;btn.textContent=label;
- btn.disabled=WORKSHOP_BUSY||(BRIDGE.active&&!LIVE_CONNECTED)||(LIVE_SCAN?.state==='running'&&action==='scan');
+ btn.disabled=WORKSHOP_BUSY||(BRIDGE.active&&!LIVE_CONNECTED)||(LIVE_SCAN?.state==='running'&&action==='scan')||(sourceLinksPending()&&['quick','queue','install','scan'].includes(action));
 }
 function blocksNextUpdate(ticket){
  if(!ticket?.itemId||['failed','removed'].includes(ticket.status))return false;
  const mod=ITEM_MAP.get(ticket.itemId);
  return ticket.status!=='installed'||!mod||String(mod.installedVersion||'')===String(ticket.installedVersion||'');
+}
+function workshopEntry(m,ticket){
+  const choice=WORKSHOP_CHOICES.get(m.id);
+  const match=ITEM_MAP.get(m.id)||{id:m.id,name:m.name,group:m.group,nexusId:m.nexusId,source:{}};
+  const quickReason=QUICK_SKIPPED.get(m.id),row=getRow(m.id),sourcePending=sourceLinksPending();
+  return {key:m.id,html:cachedMarkup(WORKSHOP_MARKUP_CACHE,m,[CATALOG_RENDER_REVISION,BRIDGE.active,DATA.offline,match,match.localAnalysis,match.modHealth,match.update,row.url,choice,choice?.fileName,choice?.displayName,choice?.fileId,choice?.assetId,ticket?.status,quickReason,sourceTimePhase(match),sourcePending],()=>{
+  const source=getSrc(match),official=validUrl(m.sourceUrl),src=source.custom?source.url:(official||source.url);
+  const exactSource=Boolean(official||source.verified);
+  const release=validUrl(m.releaseUrl),hasAlternateRelease=Boolean(release&&release!==src);
+  const sourceReady=!['github','gitlab','modrinth','thunderstore'].includes(SOURCES?.provider(match))||SOURCES.canReview(match);
+  const compatible=m.lane==='candidate',warning=m.risks?.length;
+  const quickHint=quickReason&&!ticket?'<span class="workshop-choice-hint" title="'+escapeHTML(quickReason)+'">Choose edition · '+escapeHTML(quickReason)+'</span>':'';
+  const ticketTag=ticket?'<span class="workshop-ticket-note">MO2 · '+escapeHTML(String(ticket.status||'').toUpperCase())+'</span>':'';
+  return '<article class="workshop-item" data-workshop-id="'+escapeHTML(m.id)+'"><div class="workshop-item-main"><div class="workshop-line"><span class="workshop-lane lane-'+escapeHTML(m.lane)+'">'+escapeHTML(m.lane.toUpperCase())+'</span><a class="workshop-item-title'+(exactSource?'':' source-unresolved')+'" href="'+escapeHTML(src)+'" target="_blank" rel="noopener noreferrer" data-workshop-act="source" data-id="'+escapeHTML(m.id)+'" title="'+escapeHTML(exactSource?'Open original project website':'Find the original project; source not verified')+'" aria-label="'+escapeHTML((exactSource?'Open source website for ':'Search for source of ')+m.name)+'">'+escapeHTML(m.name)+'<span class="source-open-glyph" aria-hidden="true">↗</span></a>'+(BRIDGE.active?'<button type="button" class="workshop-inline-locate" data-workshop-act="locate" data-id="'+escapeHTML(m.id)+'" aria-label="Reveal '+escapeHTML(m.name)+' in MO2" title="Reveal this mod in Mod Organizer 2">⌖</button>':'')+'</div><small>'+escapeHTML(m.group||'MO2 profile')+' · '+escapeHTML(m.installedVersion||'?')+' → '+escapeHTML(m.latestVersion||'?')+'</small>'+(INSIGHTS?.chips(match)||'')+(SOURCES?.chips(match)||'')+'<div class="workshop-tags">'+(warning?'<span class="workshop-warning">⚠ '+escapeHTML(m.risks.join(' · '))+'</span>':'')+(choice?'<span class="workshop-selected">✓ '+escapeHTML(choice.fileName||choice.displayName||('Reviewed file #'+(choice.fileId||choice.assetId||'')))+'</span><button type="button" class="workshop-remove" data-workshop-act="remove" data-id="'+escapeHTML(m.id)+'" aria-label="Remove reviewed file for '+escapeHTML(m.name)+'">× Remove file</button>':'')+ticketTag+quickHint+'</div></div><div class="workshop-item-actions"><a target="_blank" rel="noopener noreferrer" href="'+escapeHTML(src)+'" title="'+escapeHTML(exactSource?'Open the source website':'Find the original source')+'">'+(exactSource?'↗ Project website':'⌕ Find project')+'</a>'+(hasAlternateRelease?'<a target="_blank" rel="noopener noreferrer" href="'+escapeHTML(release)+'" title="Open the published release page">↗ Latest release</a>':'')+(BRIDGE.active&&compatible&&(INSIGHTS?.isNexus(match)||hasReleaseAssets(m))?ticket?'<button type="button" class="quiet-button" data-workshop-act="downloads" data-id="'+escapeHTML(m.id)+'">View download</button>':!sourceReady?'<button type="button" class="quiet-button" data-source-act="inspect" data-id="'+escapeHTML(m.id)+'">Review source status</button>':'<button type="button" class="button-bright quick-update"'+(sourcePending?' disabled':'')+' data-workshop-act="quick" data-id="'+escapeHTML(m.id)+'">ϟ Update now</button><button type="button" class="quiet-button"'+(sourcePending?' disabled':'')+' data-workshop-act="review" data-id="'+escapeHTML(m.id)+'">Choose file</button>':'')+'</div></article>';
+  })};
 }
 function renderWorkshop(){
  if(WORKSHOP_SEARCH_FRAME!==null){cancelAnimationFrame(WORKSHOP_SEARCH_FRAME);WORKSHOP_SEARCH_FRAME=null;}
@@ -645,24 +729,11 @@ function renderWorkshop(){
  setHTML($('workshopSummary'),metrics.map(([name,n,key])=>'<button type="button" class="workshop-metric'+(filter===key?' is-active':'')+'" data-lane="'+key+'" aria-pressed="'+(filter===key)+'"><strong>'+escapeHTML(n)+'</strong><small>'+escapeHTML(name)+'</small></button>').join(''));
  const visible=plan.items.filter(m=>(filter==='all'||m.lane===filter||filter==='risky'&&!!m.risks?.length||filter==='ready'&&ticketsByMod.get(m.id)?.status==='complete')&&(!query||[m.name,m.group,m.installedVersion,m.latestVersion,m.verdict,SOURCES?.searchText(ITEM_MAP.get(m.id)||m)||''].join(' ').toLowerCase().includes(query)));
  SET('workshopVisibleCount',visible.length+' of '+plan.items.length+' mods shown');
- const entries=visible.map(m=>{
-  const choice=WORKSHOP_CHOICES.get(m.id);
-  const match=ITEM_MAP.get(m.id)||{id:m.id,name:m.name,group:m.group,nexusId:m.nexusId,source:{}};
-  const source=getSrc(match),official=validUrl(m.sourceUrl),src=source.custom?source.url:(official||source.url);
-  const exactSource=Boolean(official||source.verified);
-  const release=validUrl(m.releaseUrl),hasAlternateRelease=Boolean(release&&release!==src);
-  const sourceReady=!['github','gitlab','modrinth','thunderstore'].includes(SOURCES?.provider(match))||SOURCES.canReview(match);
-  const compatible=m.lane==='candidate',warning=m.risks?.length;
-  const ticket=ticketsByMod.get(m.id);
-  const quickReason=QUICK_SKIPPED.get(m.id);
-  const quickHint=quickReason&&!ticket?'<span class="workshop-choice-hint" title="'+escapeHTML(quickReason)+'">Choose edition · '+escapeHTML(quickReason)+'</span>':'';
-  const ticketTag=ticket?'<span class="workshop-ticket-note">MO2 · '+escapeHTML(String(ticket.status||'').toUpperCase())+'</span>':'';
-  return {key:m.id,html:'<article class="workshop-item" data-workshop-id="'+escapeHTML(m.id)+'"><div class="workshop-item-main"><div class="workshop-line"><span class="workshop-lane lane-'+escapeHTML(m.lane)+'">'+escapeHTML(m.lane.toUpperCase())+'</span><a class="workshop-item-title'+(exactSource?'':' source-unresolved')+'" href="'+escapeHTML(src)+'" target="_blank" rel="noopener noreferrer" data-workshop-act="source" data-id="'+escapeHTML(m.id)+'" title="'+escapeHTML(exactSource?'Open original project website':'Find the original project; source not verified')+'" aria-label="'+escapeHTML((exactSource?'Open source website for ':'Search for source of ')+m.name)+'">'+escapeHTML(m.name)+'<span class="source-open-glyph" aria-hidden="true">↗</span></a>'+(BRIDGE.active?'<button type="button" class="workshop-inline-locate" data-workshop-act="locate" data-id="'+escapeHTML(m.id)+'" aria-label="Reveal '+escapeHTML(m.name)+' in MO2" title="Reveal this mod in Mod Organizer 2">⌖</button>':'')+'</div><small>'+escapeHTML(m.group||'MO2 profile')+' · '+escapeHTML(m.installedVersion||'?')+' → '+escapeHTML(m.latestVersion||'?')+'</small>'+(INSIGHTS?.chips(match)||'')+(SOURCES?.chips(match)||'')+'<div class="workshop-tags">'+(warning?'<span class="workshop-warning">⚠ '+escapeHTML(m.risks.join(' · '))+'</span>':'')+(choice?'<span class="workshop-selected">✓ '+escapeHTML(choice.fileName||choice.displayName||('Reviewed file #'+(choice.fileId||choice.assetId||'')))+'</span><button type="button" class="workshop-remove" data-workshop-act="remove" data-id="'+escapeHTML(m.id)+'" aria-label="Remove reviewed file for '+escapeHTML(m.name)+'">× Remove file</button>':'')+ticketTag+quickHint+'</div></div><div class="workshop-item-actions"><a target="_blank" rel="noopener noreferrer" href="'+escapeHTML(src)+'" title="'+escapeHTML(exactSource?'Open the source website':'Find the original source')+'">'+(exactSource?'↗ Project website':'⌕ Find project')+'</a>'+(hasAlternateRelease?'<a target="_blank" rel="noopener noreferrer" href="'+escapeHTML(release)+'" title="Open the published release page">↗ Latest release</a>':'')+(BRIDGE.active&&compatible&&(INSIGHTS?.isNexus(match)||hasReleaseAssets(m))?ticket?'<button type="button" class="quiet-button" data-workshop-act="downloads" data-id="'+escapeHTML(m.id)+'">View download</button>':!sourceReady?'<button type="button" class="quiet-button" data-source-act="inspect" data-id="'+escapeHTML(m.id)+'">Review source status</button>':'<button type="button" class="button-bright quick-update" data-workshop-act="quick" data-id="'+escapeHTML(m.id)+'">ϟ Update now</button><button type="button" class="quiet-button" data-workshop-act="review" data-id="'+escapeHTML(m.id)+'">Choose file</button>':'')+'</div></article>'};
- });
+ const entries=visible.map(m=>workshopEntry(m,ticketsByMod.get(m.id)));
  setRows(area,entries,'<div class="workshop-empty">No mods in this lane. Change the filter or run a deeper audit.</div>');
- $('workshopQueue').disabled=!BRIDGE.active||!LIVE_CONNECTED||!selected.length||WORKSHOP_BUSY;
- $('workshopQuickAll').disabled=!BRIDGE.active||!LIVE_CONNECTED||!summary.candidates||QUICK_RUNNING;
- $('workshopInspectQueue').disabled=!BRIDGE.active||!LIVE_CONNECTED||!selected.length||WORKSHOP_BUSY;
+ $('workshopQueue').disabled=!BRIDGE.active||!LIVE_CONNECTED||!selected.length||WORKSHOP_BUSY||sourceLinksPending();
+ $('workshopQuickAll').disabled=!BRIDGE.active||!LIVE_CONNECTED||!summary.candidates||QUICK_RUNNING||sourceLinksPending();
+ $('workshopInspectQueue').disabled=!BRIDGE.active||!LIVE_CONNECTED||!selected.length||WORKSHOP_BUSY||sourceLinksPending();
  $('workshopRefresh').disabled=WORKSHOP_BUSY;
  $('workshopExport').disabled=WORKSHOP_BUSY;
  $('workshopReviewNext').disabled=WORKSHOP_BUSY||!LIVE_CONNECTED||!nextWorkshopCandidate();
@@ -850,7 +921,7 @@ $('workshopResults').addEventListener('click',e=>{
  const b=e.target.closest('[data-workshop-act]');if(!b)return;
  if(b.dataset.workshopAct==='source'){
   const m=ITEM_MAP.get(b.dataset.id);
-  if(m){STORE.rows[m.id]={...getRow(m.id),lastOpened:new Date().toISOString()};save();}
+  if(m){STORE.rows[m.id]={...getRow(m.id),lastOpened:new Date().toISOString()};save(false);}
   return; // Native anchor behavior: ctrl-click, middle-click and keyboard Enter keep working.
  }
  if(b.dataset.workshopAct==='locate'){
@@ -944,9 +1015,11 @@ async function pollLiveBridge(){
   const context=profileContext(),revision=await bridgeRequest('GET','revision');
   if(!contextIsCurrent(context))return;
   if(revision.generation!==LIVE_GENERATION||revision.profileId!==LIVE_CATALOG.profileId){const snap=await requestLiveCatalog();if(!snap)return;toast('⟳ MO2 changes synchronized');}
+  if(!contextIsCurrent(context))return;
   if(revision.profileId===LIVE_CATALOG?.profileId&&NATIVE_SELECTED!==revision.selectedModId){NATIVE_SELECTED=revision.selectedModId||'';paintNativeSelection();if(NATIVE_SELECTED)window.AetherFX?.select($('row-'+NATIVE_SELECTED),{source:'mo2'})}
   // Each endpoint coalesces concurrent readers. The next poll is scheduled only
   // after this turn completes, so a slow MO2 callback cannot pile up requests.
+  if(!PROGRESS_READY)await hydrateProgress(LIVE_CATALOG.profileId);
   await refreshGame();await refreshDownloads();
  }catch(ex){setBridgeConnection(false,'MO2 connection interrupted: '+ex.message)}
  finally{LIVE_REFRESH_BUSY=false;LIVE_POLL_TIMER=setTimeout(pollLiveBridge,4200)}
@@ -1063,14 +1136,16 @@ async function refreshDownloads(){
   const box=$('liveDownloadList'),order={complete:0,installing:1,downloading:2,paused:3,failed:4,removed:5,installed:6};
   const tickets=Object.entries(next).sort(([a,x],[b,y])=>(order[x.status]??8)-(order[y.status]??8)||Number(b)-Number(a));
   renderDownloadPulse(next);
-  box.innerHTML=tickets.length?'<div class="workshop-downloads-heading"><div><strong>MO2 Downloads & Installations</strong><small>Real MO2 download manager · every installation is interactive</small></div><span>'+tickets.length+' ticket'+(tickets.length===1?'':'s')+'</span></div>'+tickets.map(([id,d])=>{
+  const entries=tickets.map(([id,d])=>{
    const mod=ITEM_MAP.get(d.itemId),name=mod?.name||d.name||(d.provider==='nexus'?'Nexus mod #'+d.modId:'Reviewed source archive');
    const state=String(d.status||'unknown'),safeState=state.replace(/[^a-z-]/g,'');
    const title=state==='complete'?'Ready to install':state==='installing'?'MO2 installer open':state==='installed'?(d.verifiedUpdate?'Update confirmed':'Installed · needs verification'):state==='downloading'?'Downloading':state==='paused'?'Paused in MO2':state==='failed'?'Download failed':state==='removed'?'Removed from MO2':state;
    const detail=state==='complete'?'Profile snapshot and interactive FOMOD/overwrite review before installing':state==='installing'?'Finish the installer prompts inside MO2':state==='installed'?(d.verifiedUpdate?'Version change confirmed in MO2':'Rescan and verify the installed version and overwrite order'):state==='paused'?'Resume in the MO2 Downloads pane':state==='failed'?'Review an exact file to try again':state==='downloading'?'MO2 is handling this archive':'Check MO2 Downloads';
    const buttons=state==='complete'?'<button class="button-bright" data-download-id="'+escapeHTML(id)+'">ϟ Install now</button><button class="quiet-button" data-download-details="'+escapeHTML(id)+'">Details</button>':state==='failed'&&d.retriedBy?'<span class="ticket-requeued">Requeued as #'+escapeHTML(d.retriedBy)+'</span>':state==='failed'&&mod?'<button class="button-bright" data-retry-download-id="'+escapeHTML(id)+'">↻ Retry now</button><button class="quiet-button" data-retry-item-id="'+escapeHTML(d.itemId)+'">Choose another file</button>':'';
-   return '<article class="download-ticket ticket-'+escapeHTML(safeState)+'" data-ticket-item-id="'+escapeHTML(d.itemId||'')+'"><i class="ticket-status-dot" aria-hidden="true"></i><div class="ticket-copy"><strong>'+escapeHTML(name)+'</strong><span>'+escapeHTML(title)+' · '+(providerLabel(d.provider||'nexus'))+' · #'+escapeHTML(id)+'</span><small>'+escapeHTML(d.lastError||detail)+'</small></div>'+buttons+'</article>';
-  }).join(''):'';
+   return {key:'ticket:'+id,html:'<article data-ticket-id="'+escapeHTML(id)+'" class="download-ticket ticket-'+escapeHTML(safeState)+'" data-ticket-item-id="'+escapeHTML(d.itemId||'')+'"><i class="ticket-status-dot" aria-hidden="true"></i><div class="ticket-copy"><strong>'+escapeHTML(name)+'</strong><span>'+escapeHTML(title)+' · '+(providerLabel(d.provider||'nexus'))+' · #'+escapeHTML(id)+'</span><small>'+escapeHTML(d.lastError||detail)+'</small></div>'+buttons+'</article>'};
+  });
+  if(tickets.length)entries.unshift({key:'heading',html:'<div class="workshop-downloads-heading"><div><strong>MO2 Downloads & Installations</strong><small>Real MO2 download manager · every installation is interactive</small></div><span>'+tickets.length+' ticket'+(tickets.length===1?'':'s')+'</span></div>'});
+  setRows(box,entries,'',true);
   renderWorkshop();
   await refreshActivity();
  }catch(ex){SET('liveSync','Download status unavailable: '+ex.message)}
@@ -1260,7 +1335,7 @@ function importOfflineCatalog(c){
  if(!c||c.offline!==true||!c.profileId||!Array.isArray(c.items)||!Array.isArray(c.groups))
   throw Error('Not a valid local MO2 snapshot');
  const previousProfile=DATA.profileId;
- if(SAVE_TIMER!==null)save();PROFILE_EPOCH++;CATALOG_REQUEST++;WORKSHOP_REQUEST++;GAME_REQUEST++;LOCAL_PLAN_CACHE=null;
+ if(SAVE_TIMER!==null)save();PROFILE_EPOCH++;CATALOG_REQUEST++;WORKSHOP_REQUEST++;GAME_REQUEST++;CATALOG_RENDER_REVISION++;LOCAL_PLAN_CACHE=null;
  DATA=c;
  ITEM_MAP=new Map(c.items.map(m=>[m.id,m]));
  GROUP_MAP=new Map(c.groups.map(g=>[g.id,g]));

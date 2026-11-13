@@ -10,7 +10,7 @@ use super::{
     ConversionProvenance, PluginAuditRequest, PluginAuditStats, PluginCopy, is_link, path_key,
     read_small,
 };
-use crate::CoreError;
+use crate::{CancellationCheck, CoreError, check_cancelled};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
@@ -23,21 +23,25 @@ pub(super) fn apply(
     plugins: &mut BTreeMap<String, Vec<PluginCopy>>,
     stats: &mut PluginAuditStats,
     warnings: &mut Vec<String>,
-) {
+    cancelled: CancellationCheck<'_>,
+) -> Result<(), CoreError> {
+    check_cancelled(cancelled)?;
     if request.eslifier_data_paths.is_empty() {
-        return;
+        return Ok(());
     }
     if !request.deep {
         for copies in plugins.values_mut() {
+            check_cancelled(cancelled)?;
             for copy in copies {
                 copy.provenance.reason = "Selected ESLifier records need a deep audit with fresh original and output SHA-256 hashes.".into();
             }
         }
-        return;
+        return Ok(());
     }
     let mut observed: HashMap<String, ConversionProvenance> = HashMap::new();
     for directory in &request.eslifier_data_paths {
-        match inspect_directory(directory, request, plugins, stats) {
+        check_cancelled(cancelled)?;
+        match inspect_directory(directory, request, plugins, stats, cancelled) {
             Ok(results) => {
                 for (name, next) in results {
                     if let Some(previous) = observed.get_mut(&name) {
@@ -54,6 +58,7 @@ pub(super) fn apply(
                     }
                 }
             }
+            Err(CoreError::Cancelled) => return Err(CoreError::Cancelled),
             Err(error) => warnings.push(format!(
                 "ESLifier records in {} were not used: {error}",
                 directory.display()
@@ -61,12 +66,14 @@ pub(super) fn apply(
         }
     }
     for (name, provenance) in observed {
+        check_cancelled(cancelled)?;
         if let Some(copies) = plugins.get_mut(&name) {
             for copy in copies {
                 copy.provenance = provenance.clone();
             }
         }
     }
+    Ok(())
 }
 
 fn inspect_directory(
@@ -74,13 +81,16 @@ fn inspect_directory(
     request: &PluginAuditRequest,
     plugins: &BTreeMap<String, Vec<PluginCopy>>,
     stats: &mut PluginAuditStats,
+    cancelled: CancellationCheck<'_>,
 ) -> Result<HashMap<String, ConversionProvenance>, CoreError> {
+    check_cancelled(cancelled)?;
     let meta = fs::symlink_metadata(directory)
         .map_err(|e| crate::io_error("Inspect selected ESLifier data folder", e))?;
     if !directory.is_absolute() || is_link(&meta) || !meta.is_dir() {
         return invalid("ESLifier data must be an absolute regular directory, not a link");
     }
     let settings = json(directory, "settings.json", stats)?;
+    check_cancelled(cancelled)?;
     if settings.get("mod_manager_mode").and_then(Value::as_i64) != Some(2) {
         return invalid("ESLifier settings are not for Mod Organizer 2 mode");
     }
@@ -123,7 +133,9 @@ fn inspect_directory(
         return invalid("Recorded ESLifier output folder is not a supplied MO2-owned source");
     }
     let originals = json(directory, "original_files.json", stats)?;
+    check_cancelled(cancelled)?;
     let outputs = json(directory, "new_file_hashes.json", stats)?;
+    check_cancelled(cancelled)?;
     let originals = originals
         .as_object()
         .ok_or_else(|| CoreError::Invalid("original_files.json must be an object".into()))?;
@@ -132,6 +144,7 @@ fn inspect_directory(
         .ok_or_else(|| CoreError::Invalid("new_file_hashes.json must be an object".into()))?;
     let flagged =
         optional_json(directory, "esl_flagged.json", stats)?.unwrap_or(Value::Array(Vec::new()));
+    check_cancelled(cancelled)?;
     let compacted = optional_json(directory, "compacted_and_patched.json", stats)?
         .unwrap_or(Value::Object(Default::default()));
     let mut marked = HashSet::new();
@@ -139,6 +152,7 @@ fn inspect_directory(
         return invalid("esl_flagged.json must be a list");
     };
     for entry in flagged {
+        check_cancelled(cancelled)?;
         if let Some(name) = entry.as_str() {
             marked.insert(name.to_lowercase());
         }
@@ -149,6 +163,7 @@ fn inspect_directory(
     marked.extend(compacted.keys().map(|s| s.to_lowercase()));
     let mut result = HashMap::new();
     for (name, copies) in plugins {
+        check_cancelled(cancelled)?;
         if !marked.contains(name) {
             continue;
         }

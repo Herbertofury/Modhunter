@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tests"))
 from test_frontend_responsiveness import build_page, catalog  # noqa: E402
 
-DEFAULT_BASELINE = "17e4a9fc93712f6f4db4aafd762a5e5aedb2647d"
+DEFAULT_BASELINE = "63e5df3e3ef218ae72ce58b5e4502165c40ca604"
 APP_PATH = "mo2_update_arsenal/web/app.js"
 INSTRUMENT = """
 window.__RENDER_BENCHMARK__={ticket:(itemId,status)=>{

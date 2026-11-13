@@ -200,11 +200,13 @@ class ModIntelligence:
         for plugin in analysis.get("plugins", []):
             row = {key: plugin[key] for key in ("name", "winner", "winnerKnown", "winnerModId", "winnerLight",
                    "lightOverride", "active", "loadOrder", "masterIssues") if key in plugin}
+            if "masterIssues" in row:
+                row["masterIssues"] = deepcopy(row["masterIssues"])
             row["header"] = {"lightEffective": (plugin.get("header") or {}).get("lightEffective")}
             row["eligibility"] = {"status": (plugin.get("eligibility") or {}).get("status", "unknown")}
             row["provenance"] = {"state": (plugin.get("provenance") or {}).get("state", "unknown")}
             row["recordScanComplete"] = (plugin.get("records") or {}).get("scanComplete")
-            row["errors"] = (plugin.get("errors") or [])[:1]
+            row["errors"] = deepcopy((plugin.get("errors") or [])[:1])
             result["plugins"].append(row)
         return result
 
@@ -221,7 +223,12 @@ class ModIntelligence:
             now = time.time()
             for item in snapshot.get("items", []):
                 if analysis and str(item.get("id")) in analysis["mods"]:
-                    item["localAnalysis"] = deepcopy(analysis["mods"][str(item["id"])])
+                    raw = analysis["mods"][str(item["id"])]
+                    # Compact list rows never expose the raw plugin report.
+                    # Keep its nested data read-only under the guard and copy
+                    # only the compact projection below; detailed inspectors
+                    # still receive a completely independent deep copy.
+                    item["localAnalysis"] = deepcopy(raw) if detailed else dict(raw)
                     item["localAnalysis"].update(depth=analysis.get("depth"), checkedAt=analysis.get("checkedAt"),
                                                  inventoryComplete=analysis.get("inventoryComplete"))
                 local = item.get("localAnalysis")
@@ -237,12 +244,12 @@ class ModIntelligence:
                     provider = "nexus" if identity else provider_of(source.get("url", ""))
                     self._identity_cache[str(item.get("id"))] = (identity_key, identity, provider)
                 key = f"{identity[0]}/{identity[1]}" if identity else ""
-                cache = self.service.cache.get(*identity) if identity else None
+                cache, cache_revision = self.service.cache.get_with_revision(*identity) if identity else (None, 0)
                 evidence = self._evidence.get(key)
                 update = item.get("update") or {}
                 summary_key = (snapshot.get("profileId"), identity_key, self._epoch,
                     update.get("source"), update.get("verdict"), update.get("checkedAt"), update.get("latestVersion"),
-                    item.get("installedVersion"), (cache or {}).get("checkedAt"),
+                    item.get("installedVersion"), (cache or {}).get("checkedAt"), cache_revision,
                     (evidence or {}).get("checkedAt"), (analysis or {}).get("checkedAt"),
                     self._state.get("state"), int(now // 15))
                 saved_summary = self._summary_cache.get(str(item.get("id"))) if not detailed else None
@@ -328,6 +335,7 @@ class ModIntelligence:
                     and isinstance(expires, (int, float)) and not isinstance(expires, bool)
                     and 0 <= time.time() - stamp < lifetime and time.time() < expires <= stamp + lifetime + 5):
                 self._health_jobs[key] = {"state": "completed", "cached": True}
+                self.service._generation += 1
                 return self.health_state(item_id, profile_id)
             if key in self._health_active:
                 return self.health_state(item_id, profile_id)
@@ -335,6 +343,7 @@ class ModIntelligence:
                 return {"ok": False, "error": "Two Nexus health checks are running. Retry when one finishes."}
             self._health_active.add(key)
             self._health_jobs[key] = {"state": "running", "startedAt": time.time()}
+            self.service._generation += 1
             threading.Thread(target=self._health_worker, args=(identity, key, bool(force)),
                              daemon=True, name="ModhunterPageHealth").start()
             return self.health_state(item_id, profile_id)
@@ -362,3 +371,4 @@ class ModIntelligence:
                 self._health_active.discard(key)
                 while len(self._health_jobs) > 400:
                     self._health_jobs.popitem(last=False)
+                    self.service._generation += 1

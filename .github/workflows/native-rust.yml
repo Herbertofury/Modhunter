@@ -56,7 +56,7 @@ jobs:
           /tmp/modhunter-qa/bin/python -m playwright install --with-deps chromium
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/updater_sss_browser_qa.py
           PYTHONPATH=. /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_frontend_responsiveness.py' -v
-          PYTHONPATH=. /tmp/modhunter-qa/bin/python scripts/benchmark_dashboard_render.py --baseline-ref 17e4a9fc93712f6f4db4aafd762a5e5aedb2647d --output /tmp/modhunter-proof/dashboard-render-comparison.json
+          PYTHONPATH=. /tmp/modhunter-qa/bin/python scripts/benchmark_dashboard_render.py --baseline-ref 63e5df3e3ef218ae72ce58b5e4502165c40ca604 --output /tmp/modhunter-proof/dashboard-render-comparison.json
       - name: Upload browser proof
         if: always()
         uses: actions/upload-artifact@v4
@@ -141,11 +141,10 @@ jobs:
           Copy-Item native/target/qt-bridge/Release/modhunter-qt-bridge.dll native/target/portable/MO2/mo2_update_arsenal/bin/modhunter-qt-bridge.dll
           New-Item -ItemType Directory -Force native/target/portable/Evidence | Out-Null
           Copy-Item native/target/native-smoke/native-smoke.json native/target/portable/Evidence/
-          Copy-Item native/evidence/import-comparison.json native/target/portable/Evidence/
-          foreach ($EvidenceName in @("plugin-audit-comparison-$ReleaseVersion.json", 'mo2-preflight-comparison.json')) {
-            if (Test-Path -LiteralPath "native/evidence/$EvidenceName" -PathType Leaf) {
-              Copy-Item -LiteralPath "native/evidence/$EvidenceName" -Destination native/target/portable/Evidence/
-            }
+          $BenchmarkFiles = @(python native/scripts/prepare_release.py --benchmark-files)
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($EvidenceName in $BenchmarkFiles) {
+            Copy-Item -LiteralPath "native/evidence/$EvidenceName" -Destination native/target/portable/Evidence/ -ErrorAction Stop
           }
           @{ version = $ReleaseVersion; commit = '${{ github.sha }}'; workflow = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}' } | ConvertTo-Json | Set-Content -Encoding utf8 native/target/portable/BUILD_INFO.json
           $packageRoot = (Resolve-Path native/target/portable).Path

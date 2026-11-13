@@ -12,7 +12,7 @@ mod provenance;
 mod records;
 
 use crate::ini::decode_text;
-use crate::{CoreError, io_error};
+use crate::{CancellationCheck, CoreError, check_cancelled, io_error};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -342,6 +342,14 @@ impl PluginAnalyzer {
         self.audit_in_pool(request, None)
     }
 
+    pub fn audit_cancellable(
+        &self,
+        request: &PluginAuditRequest,
+        cancelled: CancellationCheck<'_>,
+    ) -> Result<PluginAuditResult, CoreError> {
+        self.audit_in_pool_cancellable(request, None, cancelled)
+    }
+
     /// Profile imports already own a bounded worker pool. Reuse that pool for
     /// their plugin phase instead of retaining a second identical set of idle
     /// threads for the lifetime of the desktop process.
@@ -350,6 +358,16 @@ impl PluginAnalyzer {
         request: &PluginAuditRequest,
         existing_pool: Option<Arc<rayon::ThreadPool>>,
     ) -> Result<PluginAuditResult, CoreError> {
+        self.audit_in_pool_cancellable(request, existing_pool, &|| false)
+    }
+
+    pub(crate) fn audit_in_pool_cancellable(
+        &self,
+        request: &PluginAuditRequest,
+        existing_pool: Option<Arc<rayon::ThreadPool>>,
+        cancelled: CancellationCheck<'_>,
+    ) -> Result<PluginAuditResult, CoreError> {
+        check_cancelled(cancelled)?;
         let started = Instant::now();
         let workers = request.workers.unwrap_or(8);
         if !(1..=32).contains(&workers)
@@ -360,6 +378,7 @@ impl PluginAnalyzer {
         }
         let mut ids = HashSet::new();
         for m in &request.mods {
+            check_cancelled(cancelled)?;
             if m.id.is_empty() || !ids.insert(&m.id) {
                 return Err(CoreError::Invalid(
                     "Plugin audit mod IDs must be nonempty and unique".into(),
@@ -398,13 +417,19 @@ impl PluginAnalyzer {
             }
             None => self.pool(workers)?,
         };
-        let listings: Vec<_> =
-            pool.install(|| roots.par_iter().map(|m| self.list_plugins(m)).collect());
+        let listings: Vec<_> = pool.install(|| {
+            roots
+                .par_iter()
+                .map(|m| self.list_plugins(m, cancelled))
+                .collect()
+        });
+        check_cancelled(cancelled)?;
         let mut complete = true;
         let mut game_data_scanned = false;
         let mut mods = BTreeMap::new();
         let mut seeds = Vec::new();
         for (owner, listing) in roots.iter().zip(listings) {
+            check_cancelled(cancelled)?;
             let mut audit = ModPluginAudit {
                 status: "no-plugins".into(),
                 ..Default::default()
@@ -441,6 +466,7 @@ impl PluginAnalyzer {
         let mut deep_bytes = 0_u64;
         if request.deep {
             for (_, path) in &seeds {
+                check_cancelled(cancelled)?;
                 if let Ok(meta) = fs::symlink_metadata(path) {
                     deep_bytes = deep_bytes.saturating_add(meta.len());
                 }
@@ -452,14 +478,16 @@ impl PluginAnalyzer {
                 ));
             }
         }
-        let scans: Vec<_> = pool.install(|| {
+        let scans: Result<Vec<_>, CoreError> = pool.install(|| {
             seeds
                 .par_iter()
-                .map(|(owner, path)| self.scan_copy(owner, path, request, &game))
+                .map(|(owner, path)| self.scan_copy(owner, path, request, &game, cancelled))
                 .collect()
         });
+        let scans = scans?;
         let mut by_name: BTreeMap<String, Vec<PluginCopy>> = BTreeMap::new();
         for (mut copy, scan_stats, stamp) in scans {
+            check_cancelled(cancelled)?;
             stats.files_read += scan_stats.files_read;
             stats.bytes_read += scan_stats.bytes_read;
             stats.header_cache_hits += scan_stats.header_cache_hits;
@@ -498,6 +526,7 @@ impl PluginAnalyzer {
         }
         stats.plugin_copies = seeds.len();
         for (key, copies) in &mut by_name {
+            check_cancelled(cancelled)?;
             // A missing text-file entry can be an implicitly enabled base-game
             // master. Only a complete native MO2 state list proves absence.
             resolve_winner(
@@ -512,10 +541,13 @@ impl PluginAnalyzer {
             &states,
             complete && game_data_scanned,
             request.plugin_states.is_some(),
-        );
-        provenance::apply(request, &mut by_name, &mut stats, &mut warnings);
+            cancelled,
+        )?;
+        check_cancelled(cancelled)?;
+        provenance::apply(request, &mut by_name, &mut stats, &mut warnings, cancelled)?;
         let mut plugins = Vec::new();
         for copies in by_name.values_mut() {
+            check_cancelled(cancelled)?;
             copies.sort_by(|a, b| {
                 a.priority
                     .cmp(&b.priority)
@@ -543,12 +575,14 @@ impl PluginAnalyzer {
             });
         }
         for audit in mods.values_mut() {
+            check_cancelled(cancelled)?;
             audit.plugins.sort_by_key(|p| p.name.to_lowercase());
             if !audit.plugins.is_empty() {
                 audit.status = summarize(&audit.plugins);
             }
         }
         stats.elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
+        check_cancelled(cancelled)?;
         Ok(PluginAuditResult {
             schema_version: 1,
             profile_id: request.profile_id.clone(),
@@ -582,7 +616,12 @@ impl PluginAnalyzer {
         Ok(pool)
     }
 
-    fn list_plugins(&self, owner: &PluginMod) -> Result<(Vec<PathBuf>, bool), CoreError> {
+    fn list_plugins(
+        &self,
+        owner: &PluginMod,
+        cancelled: CancellationCheck<'_>,
+    ) -> Result<(Vec<PathBuf>, bool), CoreError> {
+        check_cancelled(cancelled)?;
         if !owner.path.is_absolute() {
             return Err(CoreError::Invalid(
                 "Plugin source folder must be an absolute MO2-owned path".into(),
@@ -604,6 +643,7 @@ impl PluginAnalyzer {
             .map_err(|e| io_error("Read plugin source folder", e))?
             .enumerate()
         {
+            check_cancelled(cancelled)?;
             if i >= MAX_ROOT_ENTRIES {
                 return Err(CoreError::Invalid(
                     "Plugin source folder exceeds the 100000-entry limit".into(),
@@ -623,6 +663,7 @@ impl PluginAnalyzer {
             ));
         }
         let mut cache = self.directories.lock().unwrap_or_else(|e| e.into_inner());
+        check_cancelled(cancelled)?;
         if let Some(cached) = cache.get(&owner.path).filter(|c| c.files == files) {
             return Ok((cached.files.clone(), true));
         }
@@ -644,7 +685,9 @@ impl PluginAnalyzer {
         path: &Path,
         request: &PluginAuditRequest,
         game: &str,
-    ) -> (PluginCopy, PluginAuditStats, Option<Stamp>) {
+        cancelled: CancellationCheck<'_>,
+    ) -> Result<(PluginCopy, PluginAuditStats, Option<Stamp>), CoreError> {
+        check_cancelled(cancelled)?;
         let raw_name = path.file_name().unwrap_or_default().to_string_lossy();
         let (name, ghosted) = plugin_name(&raw_name).expect("Only plugin names enter scan_copy");
         let mut stats = PluginAuditStats::default();
@@ -707,10 +750,14 @@ impl PluginAnalyzer {
                 &stamp,
                 &copy.name,
                 game,
-                request.deep,
-                cached.as_ref().map(|c| (&c.digest, &c.header)),
+                records::ScanOptions {
+                    deep: request.deep,
+                    cached_header: cached.as_ref().map(|c| (&c.digest, &c.header)),
+                    cancelled,
+                },
                 &mut stats,
             )?;
+            check_cancelled(cancelled)?;
             let after =
                 fs::symlink_metadata(path).map_err(|e| io_error("Recheck plugin file", e))?;
             if is_link(&after) || Stamp::new(&after) != stamp {
@@ -727,6 +774,7 @@ impl PluginAnalyzer {
             copy.header = Some(parsed.header.clone());
             copy.records = parsed.records;
             let mut cache = self.headers.lock().unwrap_or_else(|e| e.into_inner());
+            check_cancelled(cancelled)?;
             if cache.len() >= CACHE_LIMIT {
                 cache.clear();
             }
@@ -754,6 +802,9 @@ impl PluginAnalyzer {
                 copy.runtime_support = runtime;
             }
             Err(error) => {
+                if matches!(error, CoreError::Cancelled) {
+                    return Err(error);
+                }
                 copy.errors.push(error.to_string());
                 copy.eligibility = Eligibility::new(
                     "unknown",
@@ -762,7 +813,8 @@ impl PluginAnalyzer {
                 );
             }
         }
-        (copy, stats, scanned_stamp)
+        check_cancelled(cancelled)?;
+        Ok((copy, stats, scanned_stamp))
     }
 }
 
@@ -1099,7 +1151,8 @@ fn apply_master_facts(
     states: &BTreeMap<String, PluginState>,
     inventory_complete: bool,
     native_states: bool,
-) {
+    cancelled: CancellationCheck<'_>,
+) -> Result<(), CoreError> {
     let known: BTreeMap<_, _> = by_name
         .iter()
         .map(|(name, copies)| {
@@ -1114,6 +1167,7 @@ fn apply_master_facts(
         .collect();
     for copies in by_name.values_mut() {
         for copy in copies {
+            check_cancelled(cancelled)?;
             if let Some(header) = &copy.header {
                 for master in &header.masters {
                     let key = master.to_lowercase();
@@ -1163,6 +1217,7 @@ fn apply_master_facts(
             }
         }
     }
+    Ok(())
 }
 
 fn summarize(copies: &[PluginCopy]) -> String {

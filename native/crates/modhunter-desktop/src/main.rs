@@ -1,6 +1,8 @@
 #![cfg_attr(all(not(debug_assertions), windows), windows_subsystem = "windows")]
 
+mod catalog;
 mod discovery;
+mod import_operation;
 mod policy;
 #[cfg(windows)]
 mod windows;

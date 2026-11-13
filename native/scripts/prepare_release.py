@@ -3,6 +3,7 @@
 Usage:
   python native/scripts/prepare_release.py ARTIFACTS OUTPUT --commit SHA --run-url URL
   python native/scripts/prepare_release.py --print-version
+  python native/scripts/prepare_release.py --benchmark-files
   python native/scripts/prepare_release.py --self-test
 
 This command does not publish anything. OUTPUT must be absent or empty. It
@@ -31,10 +32,20 @@ PORTABLE_NAME = "Modhunter-Rust-Windows.zip"
 JSON_LIMIT = 4 * 1024 * 1024
 PNG_LIMIT = 32 * 1024 * 1024
 PORTABLE_EXPANDED_LIMIT = 512 * 1024 * 1024
-PRODUCTION_FILES = ("plugin.py", "version.py", "bridge.py", "model.py", "focus.py", "scanner.py", "native_nexus.py", "qt_bridge.py", "intelligence.py",
+PRODUCTION_FILES = ("plugin.py", "version.py", "bridge.py", "gameplay.py", "model.py", "focus.py", "scanner.py", "native_nexus.py", "qt_bridge.py", "intelligence.py",
                     "plugin_intelligence.py", "mod_health.py", "source_adapters.py",
                     "source_registry.py", "update_plan.py", "quick_update.py",
                     "install_brief.py", "web/index.html")
+# Historical evidence retains its original filename and baseline. Packaging and
+# public release staging share this list so a version bump cannot silently drop
+# earlier measurements or relabel them as evidence from a newer implementation.
+BENCHMARK_FILES = (
+    "import-comparison.json",
+    "plugin-audit-comparison-0.9.1.json",
+    "mo2-preflight-comparison.json",
+    "plugin-audit-comparison-0.9.2.json",
+    "mo2-catalog-delivery-comparison-0.9.2.json",
+)
 BUNDLED_HELPER = "MO2/mo2_update_arsenal/bin/modhunter-cli.exe"
 BUNDLED_QT_HELPER = "MO2/mo2_update_arsenal/bin/modhunter-qt-bridge.dll"
 FIXTURE_PLUGIN_SHA256 = hashlib.sha256(
@@ -269,6 +280,33 @@ def validate_mo2(result: dict, receipt: dict) -> None:
             "Loaded MO2 Qt helper differs from the supplied compiled helper")
 
 
+def portable_checksums(archive: ZipFile, index: dict) -> dict[str, str]:
+    """Verify the exact manifest shipped to the installer and the user."""
+    entry = index.get("SHA256SUMS.txt")
+    require(entry is not None and not entry.is_dir() and 0 < entry.file_size <= JSON_LIMIT,
+            "Portable package is missing a bounded SHA256SUMS.txt")
+    try:
+        lines = archive.read(entry).decode("utf-8-sig").splitlines()
+    except UnicodeError as exc:
+        raise ReleaseError("Portable checksum manifest is not UTF-8") from exc
+    expected = {}
+    for line in lines:
+        match = re.fullmatch(r"([0-9a-fA-F]{64})  (.+)", line)
+        require(match is not None, "Portable checksum manifest contains an invalid line")
+        name = match[2].replace("\\", "/")
+        require(name not in expected, f"Portable checksum manifest repeats a file: {name}")
+        expected[name] = match[1].lower()
+    files = {name for name, item in index.items() if not item.is_dir()} - {"SHA256SUMS.txt"}
+    require(set(expected) == files, "Portable checksum manifest does not cover exactly the packaged files")
+    for name, expected_digest in expected.items():
+        digest = hashlib.sha256()
+        with archive.open(index[name]) as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        require(digest.hexdigest() == expected_digest, f"Portable checksum failed: {name}")
+    return expected
+
+
 def portable_contents(path: Path, commit: str, run_url: str, native_report: dict, mo2_result: dict, qt_helper_hash: str) -> dict[str, bytes]:
     public: dict[str, bytes] = {}
     try:
@@ -276,35 +314,31 @@ def portable_contents(path: Path, commit: str, run_url: str, native_report: dict
             entries = archive.infolist()
             require(len(entries) <= 10000 and sum(e.file_size for e in entries) <= PORTABLE_EXPANDED_LIMIT, "Portable archive exceeds the release validation bounds")
             index = {}
+            windows_names = set()
             for entry in entries:
                 name = entry.filename.replace("\\", "/")
                 parts = PurePosixPath(name).parts
                 require(not name.startswith("/") and ".." not in parts and not any(":" in part for part in parts), "Unsafe path in portable archive")
-                require(name not in index, f"Duplicate portable archive member: {name}")
+                require(name not in index and name.casefold() not in windows_names, f"Duplicate portable archive member: {name}")
                 require(not stat.S_ISLNK(entry.external_attr >> 16), "Linked member in portable archive")
                 index[name] = entry
+                windows_names.add(name.casefold())
             for name in ("BUILD_INFO.json", "Modhunter.exe", "modhunter-cli.exe", BUNDLED_HELPER, BUNDLED_QT_HELPER, "Install_MO2_Plugin.ps1", "Install_MO2_Plugin.bat", "Evidence/native-smoke.json"):
                 require(name in index and not index[name].is_dir() and index[name].file_size > 0, f"Portable package is missing {name}")
             require(archive.testzip() is None, "Portable ZIP failed its CRC check")
+            digests = portable_checksums(archive, index)
             build = json_object(archive.read(index["BUILD_INFO.json"]), "BUILD_INFO.json")
             require(build.get("version") == VERSION, f"Portable version must be {VERSION}")
             require(str(build.get("commit", "")).lower() == commit, "Portable BUILD_INFO commit does not match the requested build")
             require(str(build.get("workflow", "")).rstrip("/") == run_url.rstrip("/"), "Portable BUILD_INFO identifies a different workflow run")
             embedded_native = json_object(archive.read(index["Evidence/native-smoke.json"]), "portable native-smoke.json")
             require(embedded_native == native_report, "Portable native smoke differs from the Windows job receipt")
-            def binary_hash(name):
-                digest = hashlib.sha256()
-                with archive.open(index[name]) as handle:
-                    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                        digest.update(chunk)
-                return digest.hexdigest()
-
             # Both files come from this portable job's build. The separate MO2
             # job binds its installed helper to its own compiled CLI in its
             # receipt; independent Windows builds need not be byte-identical.
-            require(binary_hash(BUNDLED_HELPER) == binary_hash("modhunter-cli.exe"),
+            require(digests[BUNDLED_HELPER] == digests["modhunter-cli.exe"],
                     "Packaged MO2 Rust helper differs from the portable diagnostic CLI")
-            require(binary_hash(BUNDLED_QT_HELPER) == qt_helper_hash,
+            require(digests[BUNDLED_QT_HELPER] == qt_helper_hash,
                     "Packaged MO2 Qt helper differs from the same Windows job's compiled helper")
             require(not any(PurePosixPath(name).name.lower().startswith("qt6") and name.lower().endswith(".dll") for name in index),
                     "The portable plugin must use MO2's Qt runtime; SDK Qt DLLs must not be packaged")
@@ -316,10 +350,10 @@ def portable_contents(path: Path, commit: str, run_url: str, native_report: dict
                 expected = source_hashes.get(relative)
                 require(isinstance(expected, str) and re.fullmatch(r"[0-9a-fA-F]{64}", expected) is not None,
                         f"Native MO2 proof omitted the production hash for {relative}")
-                observed = hashlib.sha256(archive.read(index[name])).hexdigest()
+                observed = digests[name]
                 require(observed == expected.lower(), f"Tested MO2 source differs from the portable plugin: {relative}")
             public["BUILD_INFO.json"] = public_json(build)
-            for filename in ("import-comparison.json", f"plugin-audit-comparison-{VERSION}.json", "mo2-preflight-comparison.json"):
+            for filename in BENCHMARK_FILES:
                 benchmark_name = "Evidence/" + filename
                 if benchmark_name in index:
                     benchmark = json_object(archive.read(index[benchmark_name]), filename)
@@ -336,16 +370,16 @@ The Windows desktop, MO2 profile import/cache engine, connection checks, tab lif
 
 MO2's Python/Qt plugin remains the in-process adapter for MO2's authenticated Nexus connection, native downloads, interactive FOMOD installer, focus and verified rewards. Dashboard/game presentation remains HTML/CSS/JavaScript.
 
-## Faster audits, responsive lists and reliable updates
+## Faster refreshes, cancelable work and reliable source changes
 
-- Rust record audits stream payloads into fresh SHA-256 checks without allocating and clearing a scratch buffer for every record. Import and audit share their worker pool; changing the worker count releases idle pools.
-- Single-mod Quick Update reads only the selected row. On the synthetic 10,000-mod cached-file fixture, preparation fell from 143.853 ms to 0.168 ms. A 100,000-record small-payload Rust audit fell from 150.30 ms to 11.68 ms. These are local component timings, not Nexus/download/install or personal-PC guarantees.
-- Full-list dashboard updates retain unchanged rows and keyboard focus. Workshop search coalesces rapid input; every matching record remains available without virtualization or record caps.
-- Nexus audits bound submitted work to five requests per scan. Cancelled scans cannot replace newer metadata; reviewed downloads recheck the profile session, target release, source and compatibility at the native handoff.
-- A completed prior installation no longer blocks a subsequent release once MO2 observes its new version. Find MO2 handles hundreds of stale session descriptors and avoids a second connection probe.
-- App, installer, plugin and package versions are validated together. Release assets remain immutable.
+- Repeated MO2 snapshot requests reuse one complete encoded catalog for the same observed state. Encoding runs outside the native execution guard; profile, source, metadata and audit changes invalidate the response, and health freshness remains bounded. Ordinary Chronicle saves avoid rebuilding the catalog.
+- The complete checklist and Workshop reuse unchanged row markup as well as DOM nodes. Catalog facts, row edits, source expiry and cooldown changes invalidate the relevant caches. Download controls retain their focus through row updates and moves. Every matching record remains available without virtualization or record caps.
+- Native imports and deep plugin audits offer **CANCEL**, preserve the last complete catalog, and can be retried after their workers settle. Payload reads check cancellation at bounded 64 KiB intervals while preserving fresh hashes and all existing audit results. Tabs share one immutable catalog encoding; ordered replies cannot overwrite newer toolbar or page state.
+- Changing or clearing a source link advances the execution context and restores the original MO2 identity when appropriate. Pending source edits must synchronize before an update can execute. A canceled or superseded provider scan cannot overwrite a newer cache result.
+- Chronicle loading preserves edits made during a delayed read and retries failed hydration without overwriting unseen server progress. Profile and execution changes invalidate late replies and restart incomplete hydration.
+- The MO2 installer validates package checksums and build/plugin versions before replacing the existing plugin. Incomplete, damaged or mixed packages leave the current installation and its progress intact. Release preparation verifies every file in the portable checksum manifest and rejects Windows filename collisions.
 
-See the [release evidence and repeatable workloads]({repository_url}/blob/{commit}/native/evidence/readiness-0.9.1.md) for the validation scope.
+See the [0.9.2 evidence and repeatable workloads]({repository_url}/blob/{commit}/native/evidence/readiness-0.9.2.md) for exact measurements and validation scope. Historical import and 0.9.1 comparisons retain their original baselines.
 
 ## Download and run
 
@@ -355,23 +389,24 @@ See the [release evidence and repeatable workloads]({repository_url}/blob/{commi
 
 ## Controls and existing progress
 
-Choose **Import MO2** and select a profile's modlist.txt. For split directories, select **Instance INI**, or set an explicit **Mods path**. **Auto paths** clears overrides. **Refresh** reloads metadata, reusing unchanged cached files; import remains read-only.
+Choose **Import MO2** and select a profile's modlist.txt. For split directories, select **Instance INI**, or set an explicit **Mods path**. **Auto paths** clears overrides. **Refresh** reloads metadata, reusing unchanged cached files; import remains read-only. **Plugin audit** performs deeper inspection. **CANCEL** stops either operation cooperatively; **CANCELING…** remains visible until its workers settle, leaving the last complete result available.
 
-For live updates, close MO2, run **Install_MO2_Plugin.bat**, select the folder containing ModOrganizer.exe, then restart MO2 and open **Tools → Update Arsenal – Quest Board**. Click **Find MO2** in Modhunter; choose a session if several are running. A loopback address can also be entered in **Connect**. Nexus sign-in stays in MO2. **Update now**, background queues, retries and sequential installation retain MO2's native installation choices.
+For live updates, extract the complete portable ZIP with its checksum manifest and BUILD_INFO.json. Close MO2, run **Install_MO2_Plugin.bat**, select the folder containing ModOrganizer.exe, then restart MO2 and open **Tools → Update Arsenal – Quest Board**. Click **Find MO2** in Modhunter; choose a session if several are running. A loopback address can also be entered in **Connect**. Nexus sign-in stays in MO2. **Update now**, background queues, retries and sequential installation retain MO2's native installation choices.
 
 JSON, CSV and PowerShell exports are saved to Windows Downloads with unique filenames. Export a progress backup in the older Electron edition and import it in the Rust edition after selecting the same portable profile. Existing Electron browser storage is not automatically migrated; the live MO2 Chronicle remains with the plugin.
 
 ## What this build actually passed
 
-- Rust tests, formatting and Clippy, Python MO2 lifecycle tests, and dashboard interaction checks in Chromium.
+- Rust tests, formatting and Clippy, Python MO2 lifecycle/source/cache tests, frontend runtime checks, and dashboard interaction checks in real Chromium. Cancellation tests verify explicit interruption without partial success and successful reuse of the same engine.
+- The shipped plugin installer under Windows PowerShell 5.1: fresh installation, upgrade/progress preservation, rejected incomplete or mixed packages, source-tree installation, exact version output and linked-directory handling.
 - A compiled Windows application running in real WebView2: fixture-profile import, rendered dashboard, actual backup export/readback, and denial of toolbar-native commands from the game view.
 - The production plugin inside official **MO2 2.5.2**, using a disposable fixture game/profile: native initialization, real Qt dispatch, profile snapshot, protected loopback requests, row focus/selection, a native screenshot, and a compiled Rust CLI health probe against that running service. Its bundled Rust helper also completed the real plugin-audit endpoint, decorated both fixture mods, and verified the header and fresh SHA256 of an inert disabled plugin within a bounded background job.
 - The compiled Qt 6.7.1 helper loaded against MO2's existing Qt runtime. Synthetic metadata passed through the actual MO2-created C++ repository QObject, captured the Qt sender, and completed the raw JSON file callback while rejecting unowned and cancelled requests. This binding fixture makes no Nexus account or network requests and does not exercise authenticated downloads.
-- Release preparation verifies the commit inside the portable ZIP, matching native receipts, matching tested MO2 source hashes, complete passing required checks, and nonempty valid screenshot evidence before staging these files.
+- Release preparation verifies the commit inside the portable ZIP, every internal package checksum, matching native receipts, matching tested MO2 source hashes, complete passing required checks, and nonempty valid screenshot evidence before staging these files.
 
 The native MO2 fixture does not sign into Nexus, download mod archives, exercise account-specific callbacks or FOMOD choices, or launch an owned game. Its synthetic game does not prove ESL eligibility, conversion safety or the behavior of a populated personal installation. The application is not code-signed.
 
-Import benchmarks use identical generated 2,500- and 10,000-mod metadata fixtures. They distinguish engine duration, import-worker process startup, and persistent metadata-cache reuse; they do not measure full desktop startup or guarantee timing on other disks or PCs. See the [benchmark evidence]({repository_url}/blob/{commit}/native/evidence/import-comparison.json) and [reproducible comparison script]({repository_url}/blob/{commit}/scripts/benchmark_native_import.py).
+The 0.9.2 delivery comparison uses the actual Python loopback HTTP service with complete generated 2,500- and 10,000-mod catalogs, local Chronicle writes and byte-for-byte response equivalence. The browser comparison measures complete-list changes against published 0.9.1. Rust audit comparison verifies that bounded cancellation preserves all non-timing results and hashes. These component measurements exclude Nexus/download speed, FOMOD installation and a user's actual mod list; they do not guarantee timings on other PCs. See the [delivery evidence]({repository_url}/blob/{commit}/native/evidence/mo2-catalog-delivery-comparison-0.9.2.json), [audit evidence]({repository_url}/blob/{commit}/native/evidence/plugin-audit-comparison-0.9.2.json) and the exact-run dashboard comparison in the verification ZIP.
 
 **Build commit:** [{commit}]({repository_url}/commit/{commit})  
 **Passing workflow and original artifacts:** [Rust desktop and MO2 readiness]({run_url})  
@@ -521,6 +556,50 @@ def self_test() -> None:
                 archive.writestr("Evidence/native-smoke.json", public_json(self.native))
                 for name, body in self.sources.items():
                     archive.writestr("MO2/mo2_update_arsenal/" + name, body)
+            self.refresh_portable_manifest()
+
+        def refresh_portable_manifest(self):
+            with ZipFile(self.zip_path) as archive:
+                bodies = {name: archive.read(name) for name in archive.namelist() if name != "SHA256SUMS.txt"}
+            manifest = "".join(f"{hashlib.sha256(body).hexdigest()}  {name}\n" for name, body in sorted(bodies.items()))
+            with ZipFile(self.zip_path, "w") as archive:
+                for name, body in bodies.items():
+                    archive.writestr(name, body)
+                archive.writestr("SHA256SUMS.txt", b"\xef\xbb\xbf" + manifest.encode("utf-8"))
+
+        def test_portable_manifest_rejects_missing_damaged_mixed_and_duplicate_files(self):
+            with ZipFile(self.zip_path) as archive:
+                original = {name: archive.read(name) for name in archive.namelist()}
+            cases = (
+                ("missing-manifest", "missing.*SHA256SUMS"),
+                ("damaged-binary", "checksum failed.*Modhunter.exe"),
+                ("unlisted-file", "does not cover exactly"),
+                ("duplicate-manifest-entry", "repeats a file"),
+                ("malformed-manifest", "invalid line"),
+                ("windows-case-collision", "Duplicate portable"),
+            )
+            for case, message in cases:
+                with self.subTest(case=case):
+                    bodies = dict(original)
+                    if case == "missing-manifest":
+                        bodies.pop("SHA256SUMS.txt")
+                    elif case == "damaged-binary":
+                        bodies["Modhunter.exe"] = b"truncated synthetic executable"
+                    elif case == "unlisted-file":
+                        bodies["unlisted.py"] = b"unexpected file"
+                    elif case == "duplicate-manifest-entry":
+                        lines = bodies["SHA256SUMS.txt"].decode("utf-8-sig").splitlines()
+                        bodies["SHA256SUMS.txt"] += (lines[0] + "\n").encode()
+                    elif case == "malformed-manifest":
+                        bodies["SHA256SUMS.txt"] = b"not a checksum manifest\n"
+                    elif case == "windows-case-collision":
+                        bodies["modhunter.exe"] = bodies["Modhunter.exe"]
+                    with ZipFile(self.zip_path, "w") as archive:
+                        for name, body in bodies.items():
+                            archive.writestr(name, body)
+                    with self.assertRaisesRegex(ReleaseError, message):
+                        prepare(self.artifacts, self.output, self.commit, self.run)
+                    self.assertFalse(self.output.exists())
 
         def test_source_versions_reject_stale_manifest_lockfile_and_plugin(self):
             manifests = ("native/Cargo.toml", "native/Cargo.lock", "native/crates/modhunter-core/Cargo.toml",
@@ -563,11 +642,12 @@ def self_test() -> None:
             self.assertFalse(self.output.exists())
 
         def test_new_benchmarks_are_preserved_with_identity_and_credential_checks(self):
-            filenames = (f"plugin-audit-comparison-{VERSION}.json", "mo2-preflight-comparison.json")
+            filenames = BENCHMARK_FILES
             fixture = {"method": "synthetic release-test fixture", "medianMs": 12.5}
             with ZipFile(self.zip_path, "a") as archive:
                 for name in filenames:
                     archive.writestr("Evidence/" + name, public_json(fixture))
+            self.refresh_portable_manifest()
             dashboard = {"candidateCommit": self.commit, "method": "synthetic release-test fixture"}
             self.write_json(self.browser / "dashboard-render-comparison.json", dashboard)
             prepare(self.artifacts, self.output, self.commit, self.run)
@@ -651,7 +731,7 @@ def self_test() -> None:
                 prepare(self.artifacts, self.output, self.commit, self.run)
 
         def test_intelligence_and_adapter_sources_are_bound_to_native_proof(self):
-            for name in ("version.py", "scanner.py", "native_nexus.py", "qt_bridge.py", "intelligence.py", "plugin_intelligence.py", "mod_health.py",
+            for name in ("version.py", "gameplay.py", "scanner.py", "native_nexus.py", "qt_bridge.py", "intelligence.py", "plugin_intelligence.py", "mod_health.py",
                          "source_adapters.py", "source_registry.py", "update_plan.py",
                          "quick_update.py", "install_brief.py"):
                 with self.subTest(name=name):
@@ -737,10 +817,14 @@ def main() -> None:
     parser.add_argument("--commit")
     parser.add_argument("--run-url")
     parser.add_argument("--print-version", action="store_true", help="Validate source version manifests and print the single release version")
+    parser.add_argument("--benchmark-files", action="store_true", help="Print the explicit benchmark evidence allowlist shared with packaging")
     parser.add_argument("--self-test", action="store_true", help="Exercise validation using temporary synthetic artifacts; does not publish")
     args = parser.parse_args()
     if args.print_version:
         print(source_version())
+        return
+    if args.benchmark_files:
+        print("\n".join(BENCHMARK_FILES))
         return
     if args.self_test:
         self_test()

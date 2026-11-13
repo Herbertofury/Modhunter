@@ -252,6 +252,7 @@ class SourceScanner:
         self.runner = runner or RustSourceRunner(timeout=130)
         self.cache_path = cache_path
         self._cache_lock = threading.Lock()
+        self._scan_epoch = 0
         self._cache = {"entries": []}
         if cache_path:
             try:
@@ -262,16 +263,22 @@ class SourceScanner:
             except (OSError, ValueError, UnicodeError):
                 pass
 
-    def _save_cache(self, cache: dict) -> None:
+    def _save_cache(self, cache: dict, *, epoch: int, cancel_event) -> bool:
         if not isinstance(cache, dict) or not isinstance(cache.get("entries"), list) or len(cache["entries"]) > 256:
-            return
+            with self._cache_lock:
+                return self._scan_epoch == epoch and not cancel_event.is_set()
         payload = json.dumps(cache, ensure_ascii=False, separators=(",", ":")).encode()
         if len(payload) > CACHE_LIMIT:
-            return
+            with self._cache_lock:
+                return self._scan_epoch == epoch and not cancel_event.is_set()
         with self._cache_lock:
+            # Cancellation checked before this lock cannot protect a delayed
+            # write. Only the newest owned scan may update memory or disk.
+            if self._scan_epoch != epoch or cancel_event.is_set():
+                return False
             self._cache = deepcopy(cache)
             if not self.cache_path:
-                return
+                return True
             temporary = None
             try:
                 self.cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -286,6 +293,7 @@ class SourceScanner:
             finally:
                 if temporary:
                     temporary.unlink(missing_ok=True)
+            return True
 
     @staticmethod
     def _items(snapshot: dict) -> list[dict]:
@@ -304,11 +312,17 @@ class SourceScanner:
 
     def scan(self, snapshot: dict, progress: Callable[[dict], None] | None = None, *, cancel_event=None, force=False) -> dict:
         """Check exact external sources with Rust; keep missing helpers recoverable."""
+        cancel_event = cancel_event if cancel_event is not None else threading.Event()
+        cancelled_result = {"records": {}, "itemRecords": {}, "mode": "sources", "queried": 0, "errors": [], "cancelled": True}
+        with self._cache_lock:
+            if cancel_event.is_set():
+                return cancelled_result
+            self._scan_epoch += 1
+            epoch = self._scan_epoch
+            cache = deepcopy(self._cache)
         items = self._items(snapshot)
         if self._injected_fetch or not self.runner.available:
             return self._scan_legacy(snapshot, items, progress, cancel_event=cancel_event)
-        with self._cache_lock:
-            cache = deepcopy(self._cache)
         request = {"schemaVersion": 1, "profileId": str(snapshot.get("profileId") or ""),
                    "game": str(snapshot.get("game") or "unknown"),
                    "gameRuntime": str(snapshot.get("gameRuntime") or "unknown"),
@@ -328,9 +342,8 @@ class SourceScanner:
             return {"records": {}, "itemRecords": records, "mode": "sources", "sourceEngine": "rust",
                     "sourceProjects": 0, "manualSources": 0, "queried": 0,
                     "errors": ["Rust source check failed; existing observations were not promoted to current."], "checkedAt": time.time()}
-        if cancel_event is not None and cancel_event.is_set():
-            return {"records": {}, "itemRecords": {}, "mode": "sources", "queried": 0, "errors": [], "cancelled": True}
-        self._save_cache(result.get("cache") or {})
+        if not self._save_cache(result.get("cache") or {}, epoch=epoch, cancel_event=cancel_event):
+            return cancelled_result
         records = {}
         for item in items:
             raw = result["itemRecords"].get(str(item.get("id")))

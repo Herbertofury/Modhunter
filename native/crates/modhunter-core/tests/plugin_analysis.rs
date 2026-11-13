@@ -1,5 +1,6 @@
 use modhunter_core::{
-    ImportRequest, PluginAnalyzer, PluginAuditRequest, PluginMod, PluginState, ProfileImporter,
+    CoreError, ImportRequest, PluginAnalyzer, PluginAuditRequest, PluginMod, PluginState,
+    ProfileImporter,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -105,6 +106,38 @@ fn record(tag: &[u8; 4], flags: u32, id: u32, payload: &[u8]) -> Vec<u8> {
 }
 fn hash(path: &Path) -> String {
     format!("{:x}", Sha256::digest(fs::read(path).unwrap()))
+}
+
+#[test]
+fn canceled_deep_audit_is_not_a_partial_success_and_can_be_retried() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let mut f = Fixture::new();
+    let directory = f.add("Source", 0, true);
+    let path = directory.join("Large.esp");
+    // An unsupported record grammar still requires fresh hashing; a large
+    // payload proves cancellation reaches the bounded byte reader itself.
+    f.request.game = "starfield".into();
+    f.request.workers = Some(1);
+    fs::write(&path, plugin(0, 1.0, &[], &[])).unwrap();
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_len(8 * 1024 * 1024)
+        .unwrap();
+    let engine = PluginAnalyzer::new();
+    let checks = AtomicUsize::new(0);
+    let canceled =
+        engine.audit_cancellable(&f.request, &|| checks.fetch_add(1, Ordering::Relaxed) >= 20);
+    assert!(matches!(canceled, Err(CoreError::Cancelled)));
+    let completed = engine.audit(&f.request).unwrap();
+    let copy = &completed.mods["Source"].plugins[0];
+    assert_eq!(
+        copy.fingerprint.as_ref().unwrap().sha256.as_deref(),
+        Some(hash(&path).as_str())
+    );
+    assert_eq!(completed.stats.deep_scanned, 1);
+    assert!(copy.errors.is_empty());
 }
 
 fn restore_modified(path: &Path, modified: std::time::SystemTime) {

@@ -33,6 +33,7 @@ from .version import VERSION
 MAX_REQUEST = 16_384
 MAX_PROGRESS_REQUEST = 8_000_000
 MAX_REALM_REQUEST = 800_000
+MAX_CACHED_SNAPSHOT = 32 * 1024 * 1024
 
 
 class UIRequest:
@@ -124,6 +125,8 @@ class ArsenalService:
         self._labels_to_ids = self._label_index(snapshot)
         self._nexus_ids = {int(i.get("nexusId") or 0) for i in snapshot.get("items", [])}
         self._guard = threading.RLock()
+        self._snapshot_build_lock = threading.Lock()
+        self._snapshot_payload_cache: tuple[tuple, bytes] | None = None
         self._queue_lock = threading.Lock()  # Serialize reviewed batches; never enqueue the same mod twice.
         self._quick_job: dict[str, Any] = {"state": "idle", "profileId": snapshot.get("profileId"), "queued": [], "skipped": [], "failed": []}
         self._install_lock = threading.Lock()  # MO2 supports one interactive installer at a time.
@@ -181,6 +184,34 @@ class ArsenalService:
         # MO2 switches profiles while an HTTP response is being built.
         with self._guard:
             return {"ok": True, "catalog": self.snapshot(), "generation": self._generation}
+
+    def _snapshot_payload_key(self) -> tuple:
+        # Called while holding _guard. Time-derived health summaries already
+        # use this same 15-second freshness window; no command uses this cache.
+        return (self._generation, self._execution_epoch, self.cache.revision(),
+                self.chronicle.source_revision(str(self._snapshot.get("profileId") or "")),
+                tuple(self.intelligence._state.items()), bool(self.intelligence._configured),
+                bool(self.intelligence.runner.available), int(time.time() // 15))
+
+    def snapshot_response_bytes(self) -> bytes:
+        """Share one complete, immutable response per observed catalog state.
+
+        Only concurrent snapshot builders wait on _snapshot_build_lock. JSON
+        serialization uses an owned snapshot outside the native execution lock.
+        A superseded build may finish its original response but can never enter
+        the current cache. Keep at most one response, and no oversized cache.
+        """
+        with self._snapshot_build_lock:
+            with self._guard:
+                key = self._snapshot_payload_key()
+                if self._snapshot_payload_cache and self._snapshot_payload_cache[0] == key:
+                    return self._snapshot_payload_cache[1]
+                response = self.snapshot_response()
+            payload = json.dumps(response, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+            with self._guard:
+                if self._snapshot_payload_key() == key and not self._stopped:
+                    self._snapshot_payload_cache = (key, payload) if len(payload) <= MAX_CACHED_SNAPSHOT else None
+            return payload
 
     @staticmethod
     def _label_index(snapshot: dict) -> dict:
@@ -250,10 +281,62 @@ class ArsenalService:
     def _apply_source_links(snapshot: dict, links: dict) -> dict:
         for item in snapshot.get("items", []):
             candidate = canonical_source_url(links.get(str(item.get("id")), ""))
-            if candidate and candidate != (item.get("source") or {}).get("url"):
+            update = item.get("update") or {}
+            if not candidate and "sourceUrl" not in update:
+                continue
+            previous = canonical_source_url((item.get("source") or {}).get("url", ""))
+            if candidate and candidate != previous:
                 item["source"] = source_record(candidate, "MO2 Chronicle source link")
-                item.pop("update", None)  # Old source verdict is not transferable.
+            expected = candidate or previous
+            # A scanned override is evidence for that exact URL; retaining it
+            # must not rewrite native MO2 metadata or survive clearing the link.
+            if ((candidate and candidate != previous and update.get("sourceUrl") != candidate)
+                    or "sourceUrl" in update and update["sourceUrl"] != expected):
+                item.pop("update", None)
         return snapshot
+
+    def save_progress(self, payload: dict) -> dict:
+        """Save exact-profile notes without preparing the entire catalog.
+
+        Source edits are execution-context changes. Commit their in-memory
+        state and invalidate old intent atomically; filesystem persistence is
+        outside the native execution guard.
+        """
+        with self._guard:
+            profile = str(self._snapshot.get("profileId") or "")
+            if self._stopped or payload.get("profileId") != profile:
+                return {"ok": False, "profileChanged": True,
+                        "error": "Profile changed while saving; retry after refresh"}
+            expected_epoch = payload.get("executionEpoch", self._execution_epoch)
+            if type(expected_epoch) is not int or expected_epoch != self._execution_epoch:
+                return {"ok": False, "profileChanged": True,
+                        "error": "MO2 context changed before saving; refresh before replacing progress"}
+            before = {key: canonical_source_url(url) for key, url in self.chronicle.source_links(profile).items()}
+            result = self.chronicle.set_progress(profile, payload.get("rows"), payload.get("prefs"),
+                payload.get("verifiedRuntime", ""), self._items_by_id.keys(), persist=False)
+            if not result.get("ok"):
+                return result
+            after = {key: canonical_source_url(url) for key, url in self.chronicle.source_links(profile).items()}
+            changed = {key for key in before.keys() | after.keys() if before.get(key, "") != after.get(key, "")}
+            if changed:
+                self._execution_epoch += 1
+                self._file_cache.clear()
+                self._file_epoch += 1
+                self._scan_epoch += 1
+                self._scan_cancel.set()
+                self._scan = {"state": "stale", "reason": "Mod source links changed; rescan their release information"}
+                self._quick_job = {"state": "idle", "profileId": profile, "queued": [], "skipped": [], "failed": []}
+                for item_id in changed:
+                    if item_id in self._items_by_id:
+                        self._items_by_id[item_id].pop("update", None)
+                self._generation += 1
+            result.update(sourceLinksChanged=bool(changed), generation=self._generation,
+                          executionEpoch=self._execution_epoch)
+        try:
+            self.chronicle.persist()
+        except OSError as exc:
+            return {**result, "ok": False, "error": "Could not persist MO2 progress: " + str(exc)}
+        return result
 
     def set_snapshot(self, snapshot: dict) -> None:
         with self._guard:
@@ -336,20 +419,15 @@ class ArsenalService:
         An unknown, failed, ambiguous, locally generated, or already-current mod
         must never be represented as a pending-update boss.
         """
-        from .scanner import version_verdict
         from .lore import describe_enemy_theme
         snapshot = self.snapshot()
         seen = set()
         targets = []
         for item in snapshot.get("items", []):
             update = item.get("update") or {}
-            if not str(item.get("id", "")).startswith("live-") or not int(item.get("nexusId") or 0):
-                continue
-            if update.get("verdict") != "candidate":
-                continue
             before = str(item.get("installedVersion") or "")
             target = str(update.get("latestVersion") or "")
-            if version_verdict(before, target) != "candidate":
+            if not self._siege_candidate(item):
                 continue
             mid = str(item["id"])
             if mid in seen:
@@ -365,15 +443,27 @@ class ArsenalService:
                 "scanState": self.scan_state().get("state", "idle"),
                 "targets": targets, "count": len(targets)}
 
+    @staticmethod
+    def _siege_candidate(item: dict) -> bool:
+        from .scanner import version_verdict
+        update = item.get("update") or {}
+        try:
+            nexus_id = int(item.get("nexusId") or 0)
+        except (TypeError, ValueError, OverflowError):
+            return False
+        return (str(item.get("id", "")).startswith("live-") and nexus_id > 0
+                and update.get("verdict") == "candidate"
+                and version_verdict(item.get("installedVersion"), update.get("latestVersion")) == "candidate")
+
     def siege_boss_defeated(self, profile_id: str, mod_id: str, run_id: str) -> dict:
         # Inspect native snapshot under the same lock as profile replacement.
         with self._guard:
             if profile_id != self._snapshot.get("profileId"):
                 return {"ok": False, "error": "Profile changed before boss victory"}
-            eligible_ids = {t["id"] for t in self.siege_targets()["targets"]}
-            if mod_id not in eligible_ids:
+            rows = self.selection_snapshot([mod_id])["items"]
+            if not rows or not self._siege_candidate(rows[0]):
                 return {"ok": False, "error": "Target is not a currently outdated MO2 mod"}
-            mod = next((m for m in self._snapshot["items"] if m.get("id") == mod_id), None)
+            mod = self._items_by_id[mod_id]
             return self.chronicle.claim_mod_boss(profile_id, mod, run_id)
 
     def set_key(self, key: str) -> None:
@@ -524,11 +614,12 @@ class ArsenalService:
                     for item in self._snapshot.get("items", []):
                         item_key = str(item.get("id", ""))
                         scanned_item = from_source.get(item_key)
-                        if scanned_item and scanned_item.get("source"):
-                            item["source"] = scanned_item["source"]
                         update = result.get("itemRecords", {}).get(item_key) or result["records"].get(str(item.get("nexusId") or 0))
                         if update:
-                            item["update"] = update
+                            item["update"] = dict(update)
+                            source_url = canonical_source_url(((scanned_item or {}).get("source") or {}).get("url", ""))
+                            if source_url != canonical_source_url((item.get("source") or {}).get("url", "")):
+                                item["update"]["sourceUrl"] = source_url
                     self._scan = {"state": "partial" if result.get("errors") else "completed", "mode": effective_mode, **result, "checked": result.get("queried", 0), "total": result.get("queried", 0), "jobId": job_epoch}
                     # A full audit is required, following the latest verified install.
                     # Local / cached and quick activity checks cannot crown a profile.
@@ -1249,6 +1340,7 @@ class ArsenalService:
     def stop(self) -> None:
         with self._guard:
             self._stopped = True
+            self._snapshot_payload_cache = None
             self._execution_epoch += 1
             self._scan_epoch += 1
             self._scan_cancel.set()
@@ -1288,7 +1380,7 @@ class ArsenalService:
                 self.end_headers()
 
             def _reply(self, obj, status=200):
-                payload = json.dumps(obj, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+                payload = obj if isinstance(obj, bytes) else json.dumps(obj, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
                 self.send_response(status)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Content-Length", str(len(payload)))
@@ -1339,7 +1431,7 @@ class ArsenalService:
                 if not self._authorize():
                     return
                 if uri.path == "/api/snapshot":
-                    return self._reply(service.snapshot_response())
+                    return self._reply(service.snapshot_response_bytes())
                 if uri.path == "/api/revision":
                     return self._reply(service.revision())
                 if uri.path == "/api/plugin-audit":
@@ -1428,40 +1520,38 @@ class ArsenalService:
                     return self._reply(service.siege_boss_defeated(str(data.get("profileId") or ""),
                         str(data.get("modId") or ""), str(data.get("runId") or "")))
                 if uri.path == "/api/siege/state":
-                    current = service.snapshot()
-                    if data.get("profileId") != current.get("profileId"):
+                    profile = service.profile_id()
+                    if data.get("profileId") != profile:
                         return self._reply({"ok": False, "error": "Profile changed while saving Siege"}, 409)
                     try:
                         revision = int(data.get("revision", -1))
                     except (TypeError, ValueError):
                         return self._reply({"ok": False, "error": "Invalid siege revision"}, 400)
-                    return self._reply(service.chronicle.save_siege_state(current["profileId"], data.get("state"), revision))
+                    return self._reply(service.chronicle.save_siege_state(profile, data.get("state"), revision))
                 if uri.path == "/api/realm/purchase":
-                    current = service.snapshot()
-                    if data.get("profileId") != current.get("profileId"):
+                    profile = service.profile_id()
+                    if data.get("profileId") != profile:
                         return self._reply({"ok": False, "error": "Profile changed while spending Realm currency"}, 409)
-                    return self._reply(service.chronicle.purchase_realm(current["profileId"], str(data.get("sku", "")), str(data.get("txn", ""))))
+                    return self._reply(service.chronicle.purchase_realm(profile, str(data.get("sku", "")), str(data.get("txn", ""))))
                 if uri.path == "/api/realm/world":
-                    current = service.snapshot()
-                    if data.get("profileId") != current.get("profileId"):
+                    profile = service.profile_id()
+                    if data.get("profileId") != profile:
                         return self._reply({"ok": False, "error": "Profile changed while saving the world"}, 409)
                     try:
                         revision = int(data.get("revision", -1))
                     except (TypeError, ValueError):
                         return self._reply({"ok": False, "error": "Invalid world revision"}, 400)
-                    return self._reply(service.chronicle.save_realm_world(current["profileId"], data.get("world"), revision))
+                    return self._reply(service.chronicle.save_realm_world(profile, data.get("world"), revision))
                 if uri.path == "/api/focus":
                     return self._reply(service.focus_mod(str(data.get("id") or ""), str(data.get("profileId") or "")))
                 if uri.path == "/api/progress":
-                    current = service.snapshot()
-                    if data.get("profileId") != current.get("profileId"):
-                        return self._reply({"ok": False, "error": "Profile changed while saving; retry after refresh"}, 409)
-                    return self._reply(service.chronicle.set_progress(current["profileId"], data.get("rows"), data.get("prefs"), data.get("verifiedRuntime", ""), {str(m["id"]) for m in current.get("items", [])}))
+                    result = service.save_progress(data)
+                    return self._reply(result, 409 if result.get("profileChanged") else 200)
                 if uri.path == "/api/victory/ack":
-                    current = service.snapshot()
-                    if data.get("profileId") != current.get("profileId"):
+                    profile = service.profile_id()
+                    if data.get("profileId") != profile:
                         return self._reply({"ok": False, "error": "Profile changed while acknowledging victory"}, 409)
-                    return self._reply(service.chronicle.ack_victory(current["profileId"], str(data.get("victoryId") or "")))
+                    return self._reply(service.chronicle.ack_victory(profile, str(data.get("victoryId") or "")))
                 if uri.path == "/api/refresh":
                     return self._reply(service.call_ui("refresh", {}))
                 if uri.path == "/api/runtime":

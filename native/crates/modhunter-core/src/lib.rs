@@ -15,6 +15,8 @@ pub use source_adapters::{SourceScanRequest, SourceScanResult, scan_sources};
 
 #[derive(Debug, thiserror::Error)]
 pub enum CoreError {
+    #[error("Operation canceled; the last complete profile remains available.")]
+    Cancelled,
     #[error("{0}")]
     Invalid(String),
     #[error("{context}: {source}")]
@@ -27,6 +29,19 @@ pub enum CoreError {
     Network(#[from] reqwest::Error),
     #[error("Invalid MO2 response: {0}")]
     Json(#[from] serde_json::Error),
+}
+
+/// A cheap, thread-safe cancellation check. Once true, it must stay true for
+/// this operation. Engines check it between files and bounded payload reads;
+/// cancellation returns an error instead of a partial success catalog.
+pub type CancellationCheck<'a> = &'a (dyn Fn() -> bool + Sync);
+
+pub(crate) fn check_cancelled(check: CancellationCheck<'_>) -> Result<(), CoreError> {
+    if check() {
+        Err(CoreError::Cancelled)
+    } else {
+        Ok(())
+    }
 }
 
 pub(crate) fn io_error(context: impl Into<String>, source: std::io::Error) -> CoreError {

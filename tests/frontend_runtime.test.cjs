@@ -84,7 +84,7 @@ function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={
    return{ok:true,json:async()=>value};
   }finally{active.set(key,active.get(key)-1)}
  };
- const instrument='window.__RUNTIME__={getSrc,modHTML,renderWorkshop,sourceLinksPending,requestLiveCatalog,bridgeRequest,scanLive,fastUpdateAll,refreshWorkshop,refreshDownloads,nextWorkshopCandidate,pollLiveBridge,updatePrefs,save,counts,filtered,render,importOfflineCatalog,scheduleSearchRender,analyzePlugins,refreshModHealth,drawInspector,loadModInsights,loadSourceDetails,sourceDetailMod,openFilePicker,closeFilePicker,exportWorkshop,state:()=>({connected:LIVE_CONNECTED,quick:QUICK_RUNNING,profileEpoch:PROFILE_EPOCH}),setRow:(id,value,invalidatePlan=true)=>{markSourceEdit(getRow(id).url,value.url);STORE.rows[id]=value;save(invalidatePlan)},setQuery:q=>{STORE.prefs.query=q;scheduleSearchRender()}};';
+ const instrument='window.__RUNTIME__={importJSON,getSrc,modHTML,renderWorkshop,sourceLinksPending,requestLiveCatalog,bridgeRequest,scanLive,fastUpdateAll,refreshWorkshop,refreshDownloads,nextWorkshopCandidate,pollLiveBridge,updatePrefs,save,counts,filtered,render,importOfflineCatalog,scheduleSearchRender,analyzePlugins,refreshModHealth,drawInspector,loadModInsights,loadSourceDetails,sourceDetailMod,openFilePicker,closeFilePicker,exportWorkshop,state:()=>({connected:LIVE_CONNECTED,quick:QUICK_RUNNING,profileEpoch:PROFILE_EPOCH}),setRow:(id,value,invalidatePlan=true)=>{markSourceEdit(getRow(id).url,value.url);STORE.rows[id]=value;save(invalidatePlan)},setQuery:q=>{STORE.prefs.query=q;scheduleSearchRender()}};';
  const source=APP.replace('/*__POWERSHELL__*/','""').replace(/\}\)\(\);\s*$/,instrument+'\n})();');
  vm.createContext(context);vm.runInContext(SOURCES,context,{filename:'source_insights.js'});vm.runInContext(INSIGHTS,context,{filename:'mod_insights.js'});vm.runInContext(source,context,{filename:'app.js'});
  return{context,state,nodes,timers,calls,active,maximum,pending,api:context.__RUNTIME__,qa:context.__ARSENAL_QA__,
@@ -462,4 +462,30 @@ test('late row health cannot replace a newer catalog in the same execution conte
  assert.match(h.nodes.get('modList').innerHTML,/Bugs 7/);
  const current=h.qa.getCatalog().items[0];await h.api.refreshModHealth(current,false);
  assert.equal(current.modHealth.bugs.displayedCount,0,'A fresh request for the new row must still work');
+});
+
+test('malformed backup preferences cannot partially replace existing progress',async()=>{
+ const h=harness();await h.settle();h.api.setRow('item-0',{note:'Keep my progress',status:'review'});
+ const before=JSON.stringify(h.qa.verifyRow('item-0').state),saved=h.context.localStorage.getItem('mo2-update-arsenal:v2:a');
+ await h.api.importJSON({text:async()=>JSON.stringify({catalogId:'a',rows:{'item-0':{note:'Damaged replacement',status:'done'}},prefs:{collapsed:7}})});
+ assert.equal(JSON.stringify(h.qa.verifyRow('item-0').state),before);
+ assert.equal(h.context.localStorage.getItem('mo2-update-arsenal:v2:a'),saved);
+ assert.doesNotThrow(()=>h.api.render());
+});
+test('valid backup merges matching rows and preferences without losing other progress',async()=>{
+ const h=harness();await h.settle();h.api.setRow('item-0',{note:'Keep note',status:'review'});h.api.setRow('item-1',{note:'Untouched'});
+ await h.api.importJSON({text:async()=>JSON.stringify({catalogId:'a',rows:{'item-0':{status:'done'},missing:{note:'not in catalog'}},prefs:{query:'Fixture',collapsed:[],sound:false}})});
+ assert.equal(h.qa.verifyRow('item-0').state.note,'Keep note');assert.equal(h.qa.verifyRow('item-0').state.status,'done');assert.equal(h.qa.verifyRow('item-1').state.note,'Untouched');assert.equal(h.qa.getSnapshot().search,'Fixture');
+});
+test('backup read from an earlier profile epoch cannot restore after A to B to A',async()=>{
+ const h=harness();await h.settle();let release;
+ const pending=h.api.importJSON({text:()=>new Promise(resolve=>{release=resolve})});
+ h.state.catalog=catalog('b');await h.qa.setCatalog(h.state.catalog);h.state.catalog=catalog('a');await h.qa.setCatalog(h.state.catalog);h.api.setRow('item-0',{note:'Current profile work'});
+ release(JSON.stringify({catalogId:'a',rows:{'item-0':{note:'Stale file'}}}));await pending;
+ assert.equal(h.qa.verifyRow('item-0').state.note,'Current profile work');
+});
+test('canceling valid backup restore leaves progress and preferences intact',async()=>{
+ const h=harness();await h.settle();h.api.setRow('item-0',{note:'Keep'});const saved=h.context.localStorage.getItem('mo2-update-arsenal:v2:a');h.context.confirm=()=>false;
+ await h.api.importJSON({text:async()=>JSON.stringify({catalogId:'a',rows:{'item-0':{note:'Replace'}},prefs:{query:'Changed'}})});
+ assert.equal(h.qa.verifyRow('item-0').state.note,'Keep');assert.equal(h.qa.getSnapshot().search,'');assert.equal(h.context.localStorage.getItem('mo2-update-arsenal:v2:a'),saved);
 });

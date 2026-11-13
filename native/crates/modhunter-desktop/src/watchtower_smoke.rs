@@ -459,11 +459,24 @@ fn run(app: &tauri::AppHandle, output: &Path, checks: &mut Vec<Value>) -> Result
         && public_result.final_url == "https://example.com/"
         && public_result.text.contains("Example Domain")
         && public_result.text.len() > 20;
+    // This fixture is an anonymous public document. Retain a bounded diagnostic
+    // so CI distinguishes a blocked public response from a persistence failure.
+    let mut public_diagnostic = json!({"status":public_result.status,"httpStatus":public_result.http_status,
+        "finalUrl":public_result.final_url,"title":public_result.title,"textBytes":public_result.text.len(),
+        "textPreview":public_result.text.chars().take(600).collect::<String>(),"message":public_result.message});
     finish_check(app, &public_job, Ok(public_result), &public_cancel);
     let public_watch = state
         .store
         .watch(public_id)
         .ok_or("Public HTTPS fixture watch vanished.")?;
+    public_diagnostic["watchState"] = json!(public_watch.state);
+    public_diagnostic["watchError"] = json!(public_watch.last_error);
+    public_diagnostic["baselinePresent"] = json!(public_watch.latest.is_some());
+    std::fs::write(
+        output.with_file_name("public-https-observation.json"),
+        serde_json::to_vec_pretty(&public_diagnostic).map_err(err)?,
+    )
+    .map_err(err)?;
     record(
         checks,
         output,

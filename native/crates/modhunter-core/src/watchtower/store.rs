@@ -9,6 +9,9 @@ use std::sync::Mutex;
 
 mod commands;
 #[cfg(test)]
+#[path = "store/recovery_tests.rs"]
+mod recovery_tests;
+#[cfg(test)]
 mod tests;
 
 struct Inner {
@@ -554,14 +557,24 @@ impl WatchStore {
         if !self.writable {
             return Err("This Modhunter instance does not own Watchtower. Close the other instance before recovering its data.".into());
         }
-        if !self.inner.lock().map_err(lock_error)?.read_only {
-            return Ok(json!({"ok":true,"recovered":false}));
-        }
+        let prior_revision = {
+            let inner = self.inner.lock().map_err(lock_error)?;
+            if !inner.read_only {
+                return Ok(json!({"ok":true,"recovered":false}));
+            }
+            inner.document.revision
+        };
         if payload.get("mode").and_then(Value::as_str) != Some("reset") {
             let mut document = read_document(&self.path)?;
-            if recover_runtime_state(&mut document)? {
-                write_document(&self.path, &document)?;
-            }
+            recover_runtime_state(&mut document)?;
+            // Recovery is a new committed state, even when the repaired file is
+            // an older backup. Observers must never mistake it for a late reply.
+            document.revision = document
+                .revision
+                .max(prior_revision)
+                .checked_add(1)
+                .ok_or("Watchtower revision limit reached.")?;
+            write_document(&self.path, &document)?;
             *self.inner.lock().map_err(lock_error)? = Inner {
                 document,
                 warning: String::new(),
@@ -587,12 +600,17 @@ impl WatchStore {
                     .into(),
             );
         }
+        let document = Document {
+            revision: prior_revision
+                .checked_add(1)
+                .ok_or("Watchtower revision limit reached.")?,
+            ..Document::default()
+        };
         let had_original = self.path.exists();
         if had_original {
             std::fs::rename(&self.path, &backup)
                 .map_err(|e| format!("Could not preserve the original Watchtower file: {e}"))?;
         }
-        let document = Document::default();
         if let Err(error) = write_document(&self.path, &document) {
             if had_original {
                 let _ = std::fs::rename(&backup, &self.path);

@@ -4,6 +4,18 @@
   const state = __WATCHTOWER_INITIAL_STATE__;
   const listeners = new Set();
   let counter = 100;
+  // Seed every existing identity: a large fixture already contains watch-100.
+  // New fixture objects must obey the same uniqueness contract as the store.
+  const allocated = new Set([
+    ...state.watches.flatMap(w => [w.id, w.latest?.id, ...(w.history || []).map(e => e.observationId)]),
+    ...state.sessions.map(s => s.id), ...state.history.map(e => e.id),
+  ].filter(Boolean));
+  const nextId = prefix => {
+    let id;
+    do { id = prefix + counter++; } while (allocated.has(id));
+    allocated.add(id);
+    return id;
+  };
   let runtimeRevision = 0;
   const now = () => Date.now();
   const f = window.__WATCH_FIX__ = {state, calls: [], failNext: {}, pending: [], defer: {}, active: {}, max: {}, exports: []};
@@ -39,7 +51,7 @@
   const find = id => state.watches.find(w => w.id === id);
   const changed = extra => { state.revision++; return {ok: true, state: snapshot(), ...extra}; };
   const add = value => ({
-    id: 'watch-' + counter++, url: value.url, title: value.title || new URL(value.url).host,
+    id: nextId('watch-'), url: value.url, title: value.title || new URL(value.url).host,
     folder: '', tags: [], notes: '', enabled: true, sessionId: null, requiresSession: false,
     selector: '', ignoreSelectors: [], intervalMinutes: 60, association: null,
     createdAt: now(), updatedAt: now(), addedAt: now(), removedAt: null,
@@ -96,7 +108,7 @@
           for (const watch of targets.filter(Boolean)) {
             watch.operationId++; watch.lastAttemptAt = now(); watch.lastSuccessAt = now();
             if (!watch.latest) {
-              watch.latest = {id: 'observation-' + counter++, hash: 'fixture-baseline', title: watch.title,
+              watch.latest = {id: nextId('observation-'), hash: 'fixture-baseline', title: watch.title,
                 finalUrl: watch.url, startedAt: now(), checkedAt: now(), textBytes: 17,
                 textPreview: 'Fixture release 1', previewTruncated: false};
               watch.seenObservationId = watch.latest.id; watch.seenHash = watch.latest.hash;
@@ -117,7 +129,7 @@
           const eventIds = [];
           for (const entry of observations) {
             const watch = find(entry.id);
-            const event = {id: 'seen-' + counter++, watchId: watch.id, title: watch.title, at: now(),
+            const event = {id: nextId('seen-'), watchId: watch.id, title: watch.title, at: now(),
               observationId: watch.latest.id, hash: watch.latest.hash, previousObservationId: watch.seenObservationId,
               previousHash: watch.seenHash, undone: false};
             state.history.push(event); watch.seenObservationId = watch.latest.id; watch.seenHash = watch.latest.hash; watch.seenEventId = event.id;
@@ -135,7 +147,7 @@
         if (kind === 'saveSession') {
           let session = state.sessions.find(s => s.id === value.id);
           if (session) Object.assign(session, clone(value), {updatedAt: now()});
-          else { session = {id: 'session-' + counter++, state: 'notOpened', storageGeneration: 1, createdAt: now(), updatedAt: now(), lastOpenedAt: null, lastConfirmedAt: null, ...clone(value)}; state.sessions.push(session); }
+          else { session = {id: nextId('session-'), state: 'notOpened', storageGeneration: 1, createdAt: now(), updatedAt: now(), lastOpenedAt: null, lastConfirmedAt: null, ...clone(value)}; state.sessions.push(session); }
           return changed({sessionId: session.id});
         }
         if (kind === 'openSession' || kind === 'confirmSession' || kind === 'resetSession') {
@@ -158,7 +170,10 @@
         }
         if (kind === 'exportFile') { f.exports.push(clone(value)); return {ok: true, message: 'Watchlist exported to Downloads/Modhunter-watchlist.json'}; }
         if (kind === 'openPage' || kind === 'openExternal') return {ok: true};
-        if (kind === 'recover') { state.watches = []; state.readOnly = false; state.recoveryWarning = ''; return changed(); }
+        if (kind === 'recover') {
+          if (value.mode !== 'reset' || value.confirm !== 'RESET') throw Error('Confirm RESET before preserving and resetting the store.');
+          state.watches = []; state.sessions = []; state.history = []; state.readOnly = false; state.recoveryWarning = ''; return changed();
+        }
         throw Error('Unsupported native fixture operation: ' + kind);
       } finally { f.active[kind]--; }
     }},

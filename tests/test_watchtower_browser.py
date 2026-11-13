@@ -210,7 +210,9 @@ class WatchtowerBrowserTests(unittest.TestCase):
         self.assertEqual(self.page.locator("#pageSession").input_value(), "")
         self.page.locator("#pageSession").select_option(session_id)
         self.page.locator("#pageUrl").fill("https://other.example.org/release")
-        self.assertTrue(self.page.locator('#pageSession option:not([value=""])').is_disabled())
+        # An <option> is not a standalone interactive control in every
+        # Playwright version. Assert its native DOM disabled state directly.
+        self.assertTrue(self.page.locator('#pageSession option:not([value=""])').evaluate('option => option.disabled'))
         self.assertEqual(self.page.locator("#pageSession").input_value(), "")
 
     def test_observation_acknowledgment_and_restore(self):
@@ -292,6 +294,36 @@ class WatchtowerBrowserTests(unittest.TestCase):
         self.page.locator("#saveExport").click()
         self.page.wait_for_function("!document.querySelector('#exportDialog').open")
         self.assertEqual(self.calls("exportFile")[2]["value"], {"format": "csv", "includeHistory": False})
+
+        # Completing an earlier export must not close or reset a newer dialog.
+        self.page.locator("#exportOpen").click()
+        self.page.evaluate("__WATCH_FIX__.defer.exportFile = true")
+        self.page.locator("#saveExport").click()
+        self.page.wait_for_function("__WATCH_FIX__.pending.some(p => p.kind === 'exportFile')")
+        self.page.locator('#exportDialog [data-close-dialog="exportDialog"]').last.click()
+        self.page.locator("#exportOpen").click()
+        self.page.locator("#exportFormat").select_option("csv")
+        self.page.evaluate("__WATCH_FIX__.release('exportFile')")
+        self.page.wait_for_function("__WATCH_FIX__.active.exportFile === 0")
+        self.assertTrue(self.page.locator("#exportDialog").is_visible())
+        self.assertEqual(self.page.locator("#exportFormat").input_value(), "csv")
+        self.page.locator('#exportDialog [data-close-dialog="exportDialog"]').last.click()
+        # The same ownership rule applies to a submitted import and a new draft.
+        self.page.locator("#importOpen").click()
+        self.page.locator("#importText").fill("https://mods.example.com/submitted-import")
+        self.page.locator("#previewImport").click()
+        self.page.wait_for_function("!document.querySelector('#applyImport').disabled")
+        self.page.evaluate("__WATCH_FIX__.defer.import = true")
+        self.page.locator("#applyImport").click()
+        self.page.wait_for_function("__WATCH_FIX__.pending.some(p => p.kind === 'import')")
+        self.page.locator('#importDialog [data-close-dialog="importDialog"]').last.click()
+        self.page.locator("#importOpen").click()
+        self.page.locator("#importText").fill("https://mods.example.com/newer-unsaved-import")
+        self.page.evaluate("__WATCH_FIX__.release('import')")
+        self.page.wait_for_function("__WATCH_FIX__.state.watches.length === 2")
+        self.assertTrue(self.page.locator("#importDialog").is_visible())
+        self.assertEqual(self.page.locator("#importText").input_value(), "https://mods.example.com/newer-unsaved-import")
+        self.assertTrue(self.page.locator("#applyImport").is_disabled())
 
     def test_preferences_and_mutes(self):
         self.open()
@@ -382,6 +414,22 @@ class WatchtowerBrowserTests(unittest.TestCase):
         self.assertEqual(self.calls("cancel")[-1]["value"], {"id": stopped_id})
         self.assertEqual(self.page.locator("#watchList .watch-row").count(), 0)
         self.assertTrue(self.page.locator("#cancelAll").is_hidden())
+        self.page.evaluate("""__WATCH_FIX__.change(s => {
+          s.readOnly = true; s.runtimeWarning = '';
+          s.recoveryWarning = 'Fixture unreadable store; original preserved.';
+        })""")
+        self.assertTrue(self.page.locator("#addPage").is_disabled())
+        self.page.locator("#recoverStore").click()
+        self.assertEqual(self.calls("recover"), [])
+        self.page.locator("#confirmCancel").click()
+        self.assertEqual(self.calls("recover"), [])
+        self.page.locator("#recoverStore").click()
+        self.page.locator("#confirmProceed").click()
+        self.page.wait_for_function("!__WATCH_FIX__.state.readOnly")
+        self.assertEqual(self.calls("recover")[-1]["value"], {"mode": "reset", "confirm": "RESET"})
+        self.assertTrue(self.page.locator("#recoveryBanner").is_hidden())
+        self.assertFalse(self.page.locator("#addPage").is_disabled())
+        self.assertEqual(self.page.evaluate("__WATCH_FIX__.state.watches.length"), 0)
 
     def test_stale_state_and_focus(self):
         self.open()
@@ -400,6 +448,25 @@ class WatchtowerBrowserTests(unittest.TestCase):
         self.page.wait_for_function("__WATCH_FIX__.active.state === 0")
         self.assertIn("Newer accepted title", self.page.locator('[data-watch-id="watch-0"]').inner_text())
         self.assertEqual(self.page.evaluate("__WATCH_FIX__.max.state"), 1)
+        # A delayed native snapshot may receive a newer transport sequence even
+        # though its persisted revision predates an already accepted edit.
+        self.page.evaluate("""() => {
+          const stale = structuredClone(__WATCH_FIX__.state);
+          stale.storeRevision = stale.revision - 1;
+          stale.revision = 10000;
+          stale.watches[0].title = 'Obsolete persisted title';
+          __WATCH_FIX__.publish(stale);
+        }""")
+        self.assertIn("Newer accepted title", self.page.locator('[data-watch-id="watch-0"]').inner_text())
+        self.assertNotIn("Obsolete persisted title", self.page.locator("#watchList").inner_text())
+        self.page.evaluate("__WATCH_FIX__.change(s => {s.watches[0].title = 'Next valid title'; s.watches[0].generation++})")
+        self.assertIn("Next valid title", self.page.locator('[data-watch-id="watch-0"]').inner_text())
+        row = self.page.locator('[data-watch-id="watch-1"]')
+        self.assertIn("Manual", row.inner_text())
+        self.page.evaluate("__WATCH_FIX__.change(s => {s.settings.backgroundChecking = true})")
+        self.assertIn("Every 1 hr", row.inner_text())
+        self.assertNotIn("due interval", row.inner_text())
+
 
     def test_renderer_boundary(self):
         self.open(native=False)
@@ -446,6 +513,8 @@ class WatchtowerBrowserTests(unittest.TestCase):
         self.assertEqual(self.page.locator("#watchList .watch-row").count(), 2500)
         self.page.set_viewport_size({"width": 390, "height": 844})
         self.assertLessEqual(self.page.evaluate("document.documentElement.scrollWidth"), 391)
+        self.assertLessEqual(self.page.locator('.sidebar').bounding_box()['width'], 390)
+        self.assertTrue(self.page.locator('#navigation').evaluate('e => e.scrollWidth > e.clientWidth'))
         self.assertTrue(self.page.locator("#addPage").is_visible())
         self.assertTrue(self.page.locator("#checkAll").is_visible())
         self.screenshot("watchtower-mobile.png")
@@ -455,6 +524,7 @@ class WatchtowerBrowserTests(unittest.TestCase):
         self.page.locator("#checkAfterSave").uncheck()
         self.page.locator("#savePage").click()
         self.page.wait_for_function("document.querySelectorAll('#watchList .watch-row').length === 2501")
+        self.assertEqual(self.page.evaluate("new Set(__WATCH_FIX__.state.watches.map(w => w.id)).size"), 2501)
 
 
 class ProofResult(unittest.TextTestResult):

@@ -457,7 +457,8 @@ fn run(app: &tauri::AppHandle, output: &Path, checks: &mut Vec<Value>) -> Result
     let public_result = run_check(app, &public_job, &public_cancel)?;
     let meaningful = public_result.status == "ok"
         && public_result.final_url == "https://example.com/"
-        && public_result.text.contains("Example Domain")
+        && public_result.title == "Example Domain"
+        && public_result.http_status == Some(200)
         && public_result.text.len() > 20;
     // This fixture is an anonymous public document. Retain a bounded diagnostic
     // so CI distinguishes a blocked public response from a persistence failure.

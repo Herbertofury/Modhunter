@@ -158,6 +158,30 @@ try {
     Assert-NoStaging $Fresh
     $Checks.Add(@{ name = 'new_install_has_clean_state'; passed = $true })
 
+    # A Windows PowerShell child may inherit a host's module search path, where
+    # Get-FileHash is unavailable. Shadow it only in a disposable installer copy
+    # so this compatibility check remains deterministic on every Windows runner.
+    $InstallerScript = [IO.File]::ReadAllText($Installer)
+    $ParameterDeclaration = 'param([string]$MO2Directory)'
+    Require ($InstallerScript.StartsWith($ParameterDeclaration, [StringComparison]::Ordinal)) 'Could not identify the installer parameter declaration for the missing-cmdlet fixture.'
+    $PackagedInstaller = $Installer
+    $Installer = Join-Path $Package 'Install_MO2_Plugin.no-filehash-fixture.ps1'
+    $NoFileHash = New-MO2Fixture 'no-get-filehash-cmdlet'
+    try {
+        $Shadow = "function Get-FileHash { throw 'Get-FileHash is unavailable in this fixture.' }"
+        Write-FixtureFile $Installer ($InstallerScript.Replace($ParameterDeclaration, $ParameterDeclaration + "`r`n" + $Shadow))
+        Invoke-FixtureInstaller $NoFileHash
+        foreach ($Relative in @('__init__.py', 'plugin.py', 'version.py', 'web/index.html', 'bin/modhunter-cli.exe', 'bin/modhunter-qt-bridge.dll')) {
+            Require ((Hash (Join-Path $NoFileHash "plugins/mo2_update_arsenal/$Relative")) -eq (Hash (Join-Path $Source $Relative))) "Missing-cmdlet installation did not preserve exact packaged bytes: $Relative"
+        }
+        Assert-NoStaging $NoFileHash
+    }
+    finally {
+        Remove-Item -LiteralPath $Installer -ErrorAction SilentlyContinue
+        $Installer = $PackagedInstaller
+    }
+    $Checks.Add(@{ name = 'sha256_does_not_require_get_filehash_cmdlet'; passed = $true })
+
     $MissingHelper = New-MO2Fixture 'missing-qt-helper'
     $Previous = Join-Path $MissingHelper 'plugins/mo2_update_arsenal'
     Write-FixtureFile (Join-Path $Previous '__init__.py') '# unchanged previous plugin'

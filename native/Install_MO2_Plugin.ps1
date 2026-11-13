@@ -1,5 +1,18 @@
 param([string]$MO2Directory)
 $ErrorActionPreference = 'Stop'
+
+function Get-PluginFileSHA256([string]$Path) {
+    # Windows PowerShell launched from another host can inherit a module path
+    # without Get-FileHash. Stream through .NET instead of relying on its module.
+    $stream = [IO.File]::OpenRead($Path)
+    try {
+        $sha256 = [Security.Cryptography.SHA256]::Create()
+        try { return [BitConverter]::ToString($sha256.ComputeHash($stream)).Replace('-', '') }
+        finally { $sha256.Dispose() }
+    }
+    finally { $stream.Dispose() }
+}
+
 if (!$MO2Directory) {
     Add-Type -AssemblyName System.Windows.Forms
     $picker = New-Object System.Windows.Forms.FolderBrowserDialog
@@ -55,7 +68,7 @@ if ($packagedSource) {
         $path = Join-Path $PSScriptRoot $relative
         if (!(Test-Path -LiteralPath $path -PathType Leaf)) { throw "A packaged plugin file is missing: $relative" }
         if ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Refusing to install a linked package file: $relative" }
-        if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $manifest[$relative]) { throw "The packaged plugin checksum does not match: $relative. Extract the complete Windows ZIP again." }
+        if ((Get-PluginFileSHA256 $path) -ne $manifest[$relative]) { throw "The packaged plugin checksum does not match: $relative. Extract the complete Windows ZIP again." }
     }
     foreach ($file in (Get-ChildItem -LiteralPath $source -File -Filter '*.py')) {
         if (!$manifest.ContainsKey('MO2/mo2_update_arsenal/' + $file.Name)) { throw "The plugin contains a file outside its package checksum manifest: $($file.Name)" }
@@ -111,7 +124,7 @@ try {
             $path = Join-Path $staging ($relative.Substring('MO2/mo2_update_arsenal/'.Length))
             if (!(Test-Path -LiteralPath $path -PathType Leaf)) { throw "A staged plugin file is missing: $relative" }
             if ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Refusing to install a linked staged plugin file: $relative" }
-            if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $manifest[$relative]) { throw "The staged plugin checksum does not match: $relative. Extract the complete Windows ZIP again." }
+            if ((Get-PluginFileSHA256 $path) -ne $manifest[$relative]) { throw "The staged plugin checksum does not match: $relative. Extract the complete Windows ZIP again." }
         }
         foreach ($file in (Get-ChildItem -LiteralPath $staging -File -Filter '*.py' -Force)) {
             if (!$manifest.ContainsKey('MO2/mo2_update_arsenal/' + $file.Name)) { throw "The staged plugin contains a file outside its package checksum manifest: $($file.Name)" }

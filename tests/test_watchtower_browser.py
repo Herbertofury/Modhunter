@@ -581,7 +581,7 @@ if __name__ == "__main__":
     OUTPUT.mkdir(parents=True, exist_ok=True)
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     dirty = bool(subprocess.check_output(["git", "status", "--porcelain", "--", *SOURCE_FILES], cwd=ROOT, text=True).strip())
-    proof = {"ok": result.wasSuccessful() and result.testsRun == 10 and not result.skipped,
+    proof = {"ok": result.wasSuccessful() and result.testsRun == 11 and not result.skipped,
              "realChromium": result.testsRun > 0 and sync_playwright is not None,
              "watchtowerSchema": 1, "candidateCommit": commit, "sourceDirty": dirty,
              "sourceFiles": {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest() for name in SOURCE_FILES},

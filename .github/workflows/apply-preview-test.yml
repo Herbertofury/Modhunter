@@ -1,0 +1,41 @@
+name: Apply awaited preview regression
+on:
+  push:
+    branches: [repair/preview-readiness-0102]
+    paths: ['.github/workflows/apply-preview-test.yml']
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.repository == 'Herbertofury/Modhunter' && github.ref == 'refs/heads/repair/preview-readiness-0102'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply the exact locally verified asynchronous assertion
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          p=Path('tests/updater_sss_browser_qa.py')
+          assert hashlib.sha256(p.read_bytes()).hexdigest()=='10d57426fb6eb161fc7c90505aea4c07a62ab607f2ca1130362d993a75e7e8cd'
+          s=p.read_text()
+          old=" else if(endpoint.startsWith('install-preview?')){\n"
+          assert s.count(old)==1
+          s=s.replace(old,old+"  if(x.holdInstallPreview)await new Promise(resolve=>{x.releaseInstallPreview=resolve});\n")
+          old="    page.locator('button[data-download-details]').click()\n    page.locator('#installPreviewVeil').wait_for(state='visible')\n    page.locator('#installPreviewConfirm').wait_for(state='attached')\n    assert page.locator('#installBriefTitle').inner_text()=='Arcane Example'"
+          new="    # The dialog opens immediately, but installation remains unavailable until\n    # the asynchronous profile/file verification finishes. Hold that response\n    # explicitly instead of relying on machine speed or an arbitrary sleep.\n    page.evaluate('window.__SSS_MOCK__.holdInstallPreview=true')\n    page.locator('button[data-download-details]').click()\n    page.locator('#installPreviewVeil').wait_for(state='visible')\n    page.wait_for_function('typeof window.__SSS_MOCK__.releaseInstallPreview === \"function\"')\n    expect(page.locator('#installBriefTitle')).to_have_text('Preparing installation briefing\u2026')\n    expect(page.locator('#installPreviewConfirm')).to_be_disabled()\n    page.evaluate('window.__SSS_MOCK__.holdInstallPreview=false;window.__SSS_MOCK__.releaseInstallPreview()')\n    expect(page.locator('#installBriefTitle')).to_have_text('Arcane Example')\n    expect(page.locator('#installPreviewConfirm')).to_be_enabled()"
+          assert s.count(old)==1
+          s=s.replace(old,new)
+          assert hashlib.sha256(s.encode()).hexdigest()=='c5db4a80071dd8a3bb4c97bb62cfa8d0f600e4996b8ee6e65dd8f3db5f1b13ab'
+          p.write_text(s)
+          PY
+          python3 -m py_compile tests/updater_sss_browser_qa.py
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add tests/updater_sss_browser_qa.py
+          git commit -m 'Wait for validated install preview and explicitly test loading-state lockout' -m 'Preserve every title/archive/backup/installation assertion. Hold the fixture reply to verify the loading title and disabled install action, then await verified details without arbitrary sleeps. The complete real Chromium suite passes locally.'
+          git push origin HEAD:refs/heads/repair/preview-readiness-0102

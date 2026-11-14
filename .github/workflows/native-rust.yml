@@ -132,11 +132,15 @@ jobs:
           Copy-Item native/target/qt-bridge/Release/modhunter-qt-bridge.dll native/target/qt-forward/Release/modhunter-qt-bridge.dll -Force
           ctest --test-dir native/target/qt-forward -C Release --output-on-failure
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python -m venv native/target/qt-forward-venv
+          # Python environments are not relocatable build outputs. Never reuse
+          # one restored with the Cargo target cache or from a cancelled run.
+          $QtTestVenv = Join-Path $env:RUNNER_TEMP ('modhunter-qt-forward-' + [guid]::NewGuid().ToString('N'))
+          $QtTestPython = Join-Path $QtTestVenv 'Scripts/python.exe'
+          python -m venv $QtTestVenv
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & native/target/qt-forward-venv/Scripts/python.exe -m pip install --disable-pip-version-check PyQt6==6.11.0 PyQt6-Qt6==6.11.1
+          & $QtTestPython -m pip install --disable-pip-version-check PyQt6==6.11.0 PyQt6-Qt6==6.11.1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & native/target/qt-forward-venv/Scripts/python.exe native/scripts/verify_qt_forward.py --bridge-dir native/target/qt-forward/Release --output native/target/qt-forward/qt-forward.json
+          & $QtTestPython native/scripts/verify_qt_forward.py --bridge-dir native/target/qt-forward/Release --output native/target/qt-forward/qt-forward.json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Verify non-destructive Windows PowerShell readiness checks
         shell: pwsh

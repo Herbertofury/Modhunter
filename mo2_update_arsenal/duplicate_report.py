@@ -102,7 +102,7 @@ class DuplicateReports:
     def start(self, data):
         try:
             action = data.get("action", "scan")
-            if action not in {"scan", "previewQuarantine", "quarantine", "previewRestore", "restore", "recover", "list"}:
+            if action not in {"scan", "previewQuarantine", "quarantine", "previewRestore", "restore", "recover", "previewDrop", "drop", "list"}:
                 raise ValueError("Unknown duplicate review operation")
             if action in {"previewQuarantine", "quarantine"}:
                 a, b = valid_target_name(data.get("modName")), valid_target_name(data.get("retainedModName"))
@@ -112,15 +112,17 @@ class DuplicateReports:
                     raise ValueError("Review the complete current duplicate report before selecting cleanup")
             if action == "quarantine" and data.get("confirm") != "QUARANTINE":
                 raise ValueError("Confirm QUARANTINE for the exact disabled duplicate and retained counterpart")
-            if action in {"previewRestore", "restore", "recover"} and not re.fullmatch(r"[A-Za-z0-9_-]{1,120}", str(data.get("id", ""))):
+            if action in {"previewRestore", "restore", "recover", "previewDrop", "drop"} and not re.fullmatch(r"[A-Za-z0-9_-]{1,120}", str(data.get("id", ""))):
                 raise ValueError("Choose an exact retained duplicate quarantine receipt")
             if action == "restore" and (data.get("confirm") != "RESTORE" or not re.fullmatch(r"[0-9a-f]{64}", str(data.get("expectedDigest", "")))):
                 raise ValueError("Preview the exact duplicate undo and confirm RESTORE with its current digest")
             if action == "recover" and data.get("confirm") != "RECOVER":
                 raise ValueError("Confirm RECOVER for the exact interrupted duplicate transaction")
+            if action == "drop" and (data.get("confirm") != "DELETE QUARANTINE" or not re.fullmatch(r"[0-9a-f]{64}", str(data.get("expectedDigest", "")))):
+                raise ValueError("Preview the exact retained quarantine record and confirm DELETE QUARANTINE with its digest")
             job, duplicate = self.content._new_job(data, "duplicate:" + action)
             if not duplicate:
-                if action in {"quarantine", "restore", "recover"}:
+                if action in {"quarantine", "restore", "recover", "drop"}:
                     worker = lambda: self.content._worker(job, deepcopy(data), self._mutate)
                 else:
                     worker = lambda: self._read_worker(job, deepcopy(data))
@@ -192,6 +194,8 @@ class DuplicateReports:
         result = self.runner.run(request)
         if result.get("ok") is not True:
             return {"ok": False, "state": "failed", "result": result, "error": result.get("error", "Duplicate transaction did not complete")}
+        if data["action"] == "drop":
+            return {"ok": True, "state": "complete", "quarantineDeleted": True, "result": result, "refreshRequired": False}
         self.content._update(job, state="refreshing", filesRestored=data["action"] == "restore", result=result)
         refreshed = self.content._ui("content-refresh", {"jobId": job["jobId"], "context": context}, timeout=75)
         if not refreshed.get("ok"):

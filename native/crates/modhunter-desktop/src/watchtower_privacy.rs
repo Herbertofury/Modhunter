@@ -303,39 +303,14 @@ pub(crate) fn toggle(app: &tauri::AppHandle) -> Result<()> {
     let a = app.clone();
     on_gui(app, move || toggle_on_gui(&a))
 }
-pub(crate) fn configure(
-    app: &tauri::AppHandle,
-    quick_hide: bool,
-    capture_protection: bool,
-) -> Result<()> {
-    let state = app
-        .try_state::<Privacy>()
-        .ok_or("Native privacy has not initialized.")?;
-    if !quick_hide && is_hidden(app) {
-        toggle(app)?;
-    }
-    let (send, receive) = mpsc::sync_channel(1);
-    state
-        .commands
-        .send(DriverCommand::Configure(quick_hide, send))
-        .map_err(err)?;
-    if unsafe { PostThreadMessageW(state.driver_thread, DRIVER_WAKE, 0, 0) } == 0 {
-        return Err("Could not contact the quick-hide shortcut message queue.".into());
-    }
-    let registered = receive
-        .recv_timeout(Duration::from_secs(5))
-        .map_err(|_| "Shortcut registration timed out.")?;
-    {
-        let mut model = state.model.lock().map_err(err)?;
-        model.registration_error = registered.as_ref().err().cloned().unwrap_or_default();
-        if registered.is_ok() {
-            model.quick_hide = quick_hide;
-            model.shortcut_registered = quick_hide;
-        }
-        model.capture_protection = capture_protection;
-    }
+fn apply_capture_policy(app: &tauri::AppHandle, enabled: bool) -> Result<()> {
     let a = app.clone();
-    let captures = on_gui(app, move || {
+    on_gui(app, move || {
+        a.state::<Privacy>()
+            .model
+            .lock()
+            .map_err(err)?
+            .capture_protection = enabled;
         let mut errors = Vec::new();
         for window in a.windows().values() {
             if let Err(error) = apply_on_gui(&a, window) {
@@ -347,9 +322,62 @@ pub(crate) fn configure(
         } else {
             Err(errors.join(" "))
         }
-    });
+    })
+}
+pub(crate) fn configure(
+    app: &tauri::AppHandle,
+    quick_hide: bool,
+    capture_protection: bool,
+) -> Result<()> {
+    let state = app
+        .try_state::<Privacy>()
+        .ok_or("Native privacy has not initialized.")?;
+    let previous_capture = state.model.lock().map_err(err)?.capture_protection;
+    let operation = (|| {
+        // Apply capture first so disabling protection can also recover a hidden
+        // window on a runtime that no longer supports exclusion. A failed
+        // configuration rolls back instead of stranding the settings window.
+        apply_capture_policy(app, capture_protection)?;
+        if !quick_hide && is_hidden(app) {
+            toggle(app)?;
+        }
+        let (send, receive) = mpsc::sync_channel(1);
+        state
+            .commands
+            .send(DriverCommand::Configure(quick_hide, send))
+            .map_err(err)?;
+        if unsafe { PostThreadMessageW(state.driver_thread, DRIVER_WAKE, 0, 0) } == 0 {
+            return Err("Could not contact the quick-hide shortcut message queue.".into());
+        }
+        let registered = receive
+            .recv_timeout(Duration::from_secs(5))
+            .map_err(|_| "Shortcut registration timed out.")?;
+        let mut model = state.model.lock().map_err(err)?;
+        model.registration_error = registered.as_ref().err().cloned().unwrap_or_default();
+        if registered.is_ok() {
+            model.quick_hide = quick_hide;
+            model.shortcut_registered = quick_hide;
+        }
+        registered
+    })();
+    if let Err(error) = &operation {
+        let rollback = apply_capture_policy(app, previous_capture);
+        if let Ok(mut model) = state.model.lock() {
+            model.capture_errors.insert(
+                "configuration".into(),
+                format!(
+                    "Requested privacy settings were not applied: {error}{}",
+                    rollback.err().map_or(String::new(), |e| format!(
+                        " Previous capture policy also needs review: {e}"
+                    ))
+                ),
+            );
+        }
+    } else if let Ok(mut model) = state.model.lock() {
+        model.capture_errors.remove("configuration");
+    }
     let _ = app.emit("modhunter-privacy", snapshot(app));
-    registered.and(captures)
+    operation
 }
 pub(crate) fn forget_window(app: &tauri::AppHandle, label: &str) {
     if let Some(state) = app.try_state::<Privacy>()

@@ -12,6 +12,9 @@ mod windows;
 
 #[cfg(windows)]
 fn main() {
+    if watchtower_windows::dispatch_reset_helper() {
+        return;
+    }
     windows::run();
 }
 

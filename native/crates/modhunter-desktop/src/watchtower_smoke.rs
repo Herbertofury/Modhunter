@@ -24,7 +24,11 @@ impl FixtureServer {
             while !server_stop.load(Ordering::Acquire) {
                 match listener.accept() {
                     Ok((stream, peer)) if peer.ip().is_loopback() => {
-                        let _ = respond(stream, &token, server_version.load(Ordering::Acquire));
+                        let token = token.clone();
+                        let version = server_version.load(Ordering::Acquire);
+                        std::thread::spawn(move || {
+                            let _ = respond(stream, &token, version);
+                        });
                     }
                     Ok(_) => {}
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
@@ -63,6 +67,7 @@ impl FixtureServer {
             lease: None,
             download_watch: None,
             download_file_key: None,
+            download_scope: None,
             cancellation: None,
         }
     }
@@ -111,6 +116,39 @@ fn respond(mut stream: TcpStream, token: &str, version: u64) -> Result<()> {
                         .split(';')
                         .any(|cookie| cookie.trim() == format!("fixture_session={token}"))
             });
+    if path == "/redirect-download.zip" {
+        stream.write_all(b"HTTP/1.1 302 Found\r\nLocation: /download.zip\r\nCache-Control: no-store\r\nConnection: close\r\nContent-Length: 0\r\n\r\n").map_err(err)?;
+        return Ok(());
+    }
+    if matches!(path, "/download.zip" | "/slow.zip" | "/disguised.zip") {
+        let mut bytes = if authenticated && path != "/disguised.zip" {
+            download_fixture::archive_bytes()
+        } else {
+            b"<!doctype html><h1>Sign in required</h1>".to_vec()
+        };
+        if path == "/slow.zip" && authenticated {
+            bytes.resize(16 * 1024 * 1024, 0);
+        }
+        let name = if path == "/disguised.zip" {
+            "disguised.zip"
+        } else if path == "/slow.zip" {
+            "slow.zip"
+        } else {
+            "fixture.zip"
+        };
+        let headers = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename=\"{name}\"\r\nCache-Control: no-store\r\nConnection: close\r\nContent-Length: {}\r\n\r\n",
+            bytes.len()
+        );
+        stream.write_all(headers.as_bytes()).map_err(err)?;
+        for block in bytes.chunks(32 * 1024) {
+            stream.write_all(block).map_err(err)?;
+            if path == "/slow.zip" {
+                std::thread::sleep(Duration::from_millis(60));
+            }
+        }
+        return Ok(());
+    }
     let mut cookie = String::new();
     let body = match path {
         "/login" => {
@@ -241,7 +279,15 @@ fn wait_closed(app: &tauri::AppHandle, label: &str) -> Result<()> {
     Err("A fixture browser did not close in time.".into())
 }
 
-fn run(app: &tauri::AppHandle, output: &Path, checks: &mut Vec<Value>) -> Result<()> {
+#[path = "watchtower_acquisition_smoke.rs"]
+mod download_fixture;
+
+fn run(
+    app: &tauri::AppHandle,
+    output: &Path,
+    fixture_root: &Path,
+    checks: &mut Vec<Value>,
+) -> Result<()> {
     event(output, "opening-manager");
     open(app, None)?;
     let manager = app
@@ -449,6 +495,25 @@ fn run(app: &tauri::AppHandle, output: &Path, checks: &mut Vec<Value>) -> Result
             && cancelled_snapshot == state.store.snapshot(),
         "Cancelling while an actual WebView2 ExecuteScript callback is outstanding discards the late result and clears the durable checking state.",
     )?;
+    download_fixture::check(app, &manager, &server, fixture_root, output, checks)?;
+    let browser_evidence = browser_data::smoke_check(app)?;
+    record(
+        checks,
+        output,
+        "native_browser_cache_and_resource_policy",
+        true,
+        "Real WebView2 cache refetch with HttpOnly/localStorage retention, account isolation, bounded hidden resource filtering and required-resource failure rejection.",
+    )?;
+    checks.last_mut().unwrap()["evidence"] = browser_evidence;
+    let privacy_evidence = privacy::smoke_check(app)?;
+    record(
+        checks,
+        output,
+        "native_privacy_quick_hide_and_capture",
+        true,
+        "Real Windows shortcut registration, display-affinity query, and synthetic registered WM_HOTKEY hide/restore; no physical key or universal capture-protection claim.",
+    )?;
+    checks.last_mut().unwrap()["evidence"] = privacy_evidence;
     event(output, "checking-public-https-production-path");
     let public = state.store.command("saveWatch", &json!({"url":"https://example.com/","title":"Public HTTPS acceptance check","enabled":true}), now())?;
     let public_id = public["watchId"]
@@ -521,7 +586,7 @@ pub fn start(app: &tauri::AppHandle, output: PathBuf) -> Result<()> {
     std::thread::spawn(move || {
         let mut checks = Vec::new();
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            run(&handle, &output, &mut checks)
+            run(&handle, &output, root.path(), &mut checks)
         }))
         .unwrap_or_else(|_| Err("The native fixture stopped unexpectedly.".into()));
         let ok = result.is_ok();

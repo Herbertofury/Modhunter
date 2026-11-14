@@ -4,7 +4,7 @@
 
 Watchtower is the Rust desktop's page and account-session manager. Track a mod release page, creator feed, changelog or other public HTTPS page, using an isolated browser session when the page needs your sign-in. The first successful observation establishes what the page currently says. Later checks identify changed readable text for you to review.
 
-A page observation does not establish a new compatible mod version. Continue to use the Update Workshop's exact source/release/file review and MO2's native download and installation workflow when updating an installed mod.
+A page observation does not establish a new compatible mod version. Watchtower keeps page observations, exact file choices, downloaded archives and installation reviews as separate steps. Updating an installed mod requires an explicit source relationship, a compatible exact target and a reviewed archive; a changed page never starts an installation.
 
 ## Add and check a page
 
@@ -32,7 +32,36 @@ Each named session has a separate WebView2 profile. This supports separate sessi
 | Confirm the session | Your indication that the session is ready for another check. Page access must still succeed; confirmation does not independently prove membership or subscription entitlement. |
 | Reset the session | Closes its windows, advances its storage generation and invalidates pending observations before a fresh session is used. |
 
+The account list separates your last confirmation, observed website sign-in indicators, the current page's accessibility and a verification hold. A visible sign-out control can indicate a signed-in account while the release remains locked. Sign-in or human-verification failures hold checks sharing that account; opening its browser or observing a successful login does not silently release that hold. Complete the website flow, then explicitly confirm the session to resume eligible checks. Observations contain categorical state, never account names, passwords, cookies or page text.
+
 Nexus authentication, authenticated Nexus downloads and native install choices remain inside MO2. Signing into the same website in your system browser does not transfer that browser's session into Watchtower. Some identity providers refuse embedded login; use the site's supported sign-in method where available. Watchtower does not bypass login, payment or human-verification barriers.
+
+## Choose exact sources and files
+
+Open page details and choose **Source & creator choices** to connect that page to an exact installed item. The association uses the profile and item identities, not a similar mod name. Record the game, runtime and variant, confirm their compatibility, then choose whether this source supplies an installed update or separate content. Changing the association or compatibility choices invalidates earlier download and review work. A runtime marked not applicable cannot override a known, different installed runtime.
+
+Alternative sources are grouped only when their exact installed item and confirmed game/runtime/variant match. A source you explicitly prefer remains preferred when another page is newer or temporarily more accessible. Accessibility is displayed separately from version information. Page dates never override compatibility or select an update automatically.
+
+A creator group can opt into discovery of linked new releases and mute that creator on selected site origins. New releases remain separate choices until you classify them. Creator opt-in, an account login or a similar filename does not connect a new mod to an installed one. Saved creator preferences and exact file choices survive restart and watchlist JSON interchange; account observations are local and are not imported.
+
+Choose **Find files** from the tracked page to inspect its accessible archives. Each returned file has its own durable identity and one explicit relationship:
+
+- **Installed update** names the exact installed target and still requires confirmed source compatibility.
+- **Separate content** has no installed update association. Its later installation review must choose a new target.
+- **Ignore file** records that exact file as not wanted. You can restore or reset the choice without deleting the tracked page or its history.
+
+| Source | Supported discovery boundary |
+| --- | --- |
+| Patreon | Exact post attachment relationships from the selected browser session; same-creator linked releases are labeled separately. Membership or post access must actually be available. |
+| LoversLab | The exact release page and its complete accessible chooser, resolving attachment IDs or a direct archive response. An unresolved chooser is never treated as one update file. |
+| Google Drive and MEGA | Explicit direct file links. File identity excludes access/decryption keys. Shared folders remain visible as unsupported containers; select a direct file link. |
+| Other HTTPS pages | Explicit archive links. For an unfamiliar signed URL, a changed request address requires a new file choice rather than assuming the token names the same file. |
+
+Discovery accepts a complete bounded result. A missing attachment record, unresolved chooser, timeout or oversized result preserves the previous complete result instead of replacing it with a shortened list. Signed download addresses remain transient inside the native browser workflow; saved file choices contain identity hashes and your decisions.
+
+Opening a classified file creates a short-lived native lease for that exact request. The host verifies the browser's navigation and actual download address, including observed redirects. Navigating to another file or page revokes that lease, and a popup does not inherit it. A supported MEGA blob transfer requires the exact file page to have loaded and the blob to come from that page's origin. Ordinary downloads started from an unclassified browsing page can be saved, but carry no installed update association; use **Find files** for a classified managed update.
+
+A resulting archive waits in **Page downloads** for explicit download approval. After the complete bytes are verified, **Review contents** begins a separate archive and target review. Account changes, source edits, expiry or changed file decisions can invalidate pending work. Downloads do not grant installation authority by themselves.
 
 ## Organize and control checking
 
@@ -56,6 +85,18 @@ Preferences can hide page titles, obscure the manager when it loses focus and en
 
 State is versioned and atomically saved. If the stored document cannot be read safely, the manager shows a recovery error rather than silently overwriting it. **Preserve file & start fresh** is an explicit recovery action; inspect/export any available data first.
 
+## Native privacy and browser cleanup
+
+**Global quick hide** is opt-in. When enabled, **Ctrl + Alt + H** hides currently visible Modhunter windows and remembers which windows to restore. A window requested while the app is hidden stays hidden until you restore the app; background checking windows stay hidden. Registration conflicts or unsupported native operations are reported rather than presented as a successful setting.
+
+**Request capture protection** applies Windows capture exclusion to the app's native windows, including newly created website windows before they become visible. This is a supported Windows capture-policy request, not a guarantee against every capture tool, remote desktop path or camera. Hiding page titles and obscuring an unfocused manager remain separate controls.
+
+The **Clear cache** action on one named account clears that account profile's disk cache and browsing/download history. It deliberately retains cookies, credentials and site storage, and does not clear another account. **Clear site browsing data** and the exit option use the saved sign-in retention preference; disabling retention also resets named accounts through their normal session-generation workflow. Browser-profile cleanup is scoped to Modhunter's own profiles and does not touch a separate system-browser profile.
+
+Clearing all profiles shares one 20-second time budget. If a profile fails or the budget runs out, the result identifies the profiles confirmed cleared and those not started or still unconfirmed. It does not report complete cleanup from a partial result. Site storage is retained by the cache-only action because websites may depend on it for sign-in; this is not a secure-erasure feature.
+
+**Reduce hidden-check media** is optional and off by default. It blocks only image, media and font requests in hidden checking windows; scripts, documents, fetch and XHR remain enabled, and interactive login/review windows are unaffected. A reported required-resource failure prevents a successful capture. Changing this policy establishes a fresh observation context while retaining the last complete baseline until a new complete check succeeds. Leave it disabled for pages whose meaningful content depends on media or for provider behavior that has not been verified with the option enabled.
+
 ## Troubleshooting
 
 | What you see | What to do |
@@ -68,12 +109,14 @@ State is versioned and atomically saved. If the stored document cannot be read s
 | A page does not run in a background check | Check its enabled state, site/folder mute, interval, retry state and selected session. |
 | Removed page seems missing | Open **Removed pages** and restore it. |
 | Session changes seem ignored | Reopen the selected native session. A system-browser login is separate, and reset cancels older in-flight work. |
-| An update is available on the page | Review its exact provider release/file and compatibility in the Update Workshop; page tracking does not install files. |
+| An update is available on the page | Confirm its exact source compatibility, use Find files, classify the intended archive and review the installation target. Page tracking does not install files. |
+| A download no longer matches the selected file | Find files again and reopen the exact attachment. A different page, folder, popup or expired lease cannot reuse the old update relationship. |
+| Shared folder has no managed download action | Select a direct file link from that folder; Modhunter does not guess one file or silently choose a folder archive. |
 
 ## Evidence and feature scope
 
 The implementation was informed by a static audit of WhimWatch **0.4.2**, pinned to its exact source and uploaded asset. Its useful account/page-management behaviors were independently implemented in Rust and the existing Modhunter presentation. Sims DBPF discovery, direct `.package`/`.ts4script` installation and file-level rollback were not transferred into MO2's installation ownership. Generic page monitoring, multiple named sessions and watchlist interchange are Modhunter additions beyond that reference.
 
-Required Chromium checks load the shipped manager with a native-command fixture to exercise forms, row actions, history, import validation, errors and responsive layout. Required Windows checks use actual WebView2 and internally owned loopback pages to verify account isolation, reuse of a remembered profile after closing/reopening its views within one process, a fresh profile selected by a new storage generation, authenticated capture and changed content, incomplete/stale/canceled rejection, same-session popups and remote IPC denial. The fixture's reopen check does not restart Modhunter. An additional anonymous `https://example.com/` check exercises the production capture path through a durable saved baseline. The release validator requires these receipts alongside the existing dashboard, installer and native MO2 gates.
+Required Chromium checks load the shipped manager with a native-command fixture to exercise forms, row actions, history, import validation, exact source/creator choices, stale-response rejection, account-state distinctions, errors and responsive layout. Required Windows checks use actual WebView2 and internally owned loopback pages to verify account isolation, reuse of a remembered profile after closing/reopening its views within one process, a fresh profile selected by a new storage generation, authenticated capture and changed content, incomplete/stale/canceled rejection, same-session popups and remote IPC denial. The fixture's reopen check does not restart Modhunter. An additional anonymous `https://example.com/` check exercises the production capture path through a durable saved baseline. Additional native gates exercise real DownloadStarting deferrals and explicit consent, exact selected-file redirect authority, rejection of an unrelated same-host download, cache retention and account isolation, optional hidden-resource filtering, native capture-affinity requests and quick-hide intent restoration. The quick-hide fixture sends the native hotkey message through the registered driver; it does not claim a physical keyboard or universal capture-exclusion test. The release validator requires these receipts alongside the existing dashboard, installer and native MO2 gates.
 
-These fixtures do not use a real website account. Provider-specific OAuth/2FA/challenges, long-running account sessions, populated MO2 installations, real Nexus downloads and FOMOD decisions need that real environment. See the [exact audit and release boundaries](../native/evidence/whimwatch-parity-0.10.0.md) and the passing workflow attached to each release.
+A green compile or a source fixture test alone does not satisfy the native runtime gates. These fixtures do not use a real website account. Provider-specific OAuth/2FA/challenges, long-running account sessions, populated MO2 installations, real Nexus downloads and FOMOD decisions need that real environment. See the [exact audit and release boundaries](../native/evidence/whimwatch-parity-0.10.0.md) and the passing workflow attached to each release.

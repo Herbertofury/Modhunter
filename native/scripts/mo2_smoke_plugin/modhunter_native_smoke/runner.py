@@ -37,7 +37,7 @@ from mo2_update_arsenal.focus import find_mo2_view, name_column
 from mo2_update_arsenal.plugin import ModUpdateArsenal
 
 from .audit_probe import exercise_plugin_audit
-from .content_probe import exercise_content_recovery
+from .content_probe import exercise_content_recovery, exercise_native_install
 
 
 GAME_NAME = "Modhunter CI Fixture"
@@ -203,6 +203,9 @@ class NativeSmokePlugin(ModUpdateArsenal):
         self._signals = None
         self._capture = None
         self._watchdog = None
+        self._installer_probe = None
+        self._installer_probe_lock = threading.Lock()
+        self._installer_silent_before = None
 
     def name(self):
         return "Modhunter Native Smoke Harness"
@@ -263,11 +266,68 @@ class NativeSmokePlugin(ModUpdateArsenal):
             return
         dialog = QtWidgets.QApplication.activeModalWidget()
         if dialog is not None:
+            if self._accept_fixture_installer(dialog):
+                return
             labels = [label.text() for label in dialog.findChildren(QtWidgets.QLabel)]
             self._finish({"ok": False, "error": "Unexpected native modal dialog",
                           "dialog": {"title": dialog.windowTitle(), "text": labels[:12]}})
         elif time.monotonic() - self._start_time > (170 if os.environ.get("MODHUNTER_LIVE_DESKTOP") else 90):
             self._finish({"ok": False, "error": "Native smoke exceeded its bounded deadline"})
+
+    def _arm_fixture_installer(self, intent):
+        # Worker supplies immutable fixture identities only. All organizer and
+        # QWidget access remains in the Qt watchdog below.
+        with self._installer_probe_lock:
+            if self._installer_probe is not None:
+                raise RuntimeError("Another fixture installer probe is already active")
+            self._installer_probe = {**intent, "dialogs": [], "nameConfirmed": False}
+
+    def _disarm_fixture_installer(self):
+        with self._installer_probe_lock:
+            current, self._installer_probe = self._installer_probe, None
+        return list((current or {}).get("dialogs", []))
+
+    def _accept_fixture_installer(self, dialog):
+        with self._installer_probe_lock:
+            intent = self._installer_probe
+            if intent is None or time.monotonic() >= intent["deadline"]:
+                return False
+            fixture = Path(os.environ["MODHUNTER_NATIVE_SMOKE_INSTANCE"]).resolve()
+            if (not self._on_qt_thread() or self.server is None or self.org.profileName() != PROFILE_NAME
+                    or Path(self.org.basePath()).resolve() != fixture or Path(self.org.modsPath()).resolve() != fixture / "mods"
+                    or intent["modName"] != "Smoke Disabled" or Path(intent["modRoot"]).resolve() != fixture / "mods" / "Smoke Disabled"):
+                return False
+            with self.server.content._lock:
+                job = self.server.content._jobs.get(intent["reviewId"], {})
+                if (self.server.content._lease != intent["reviewId"] or job.get("downloadId") != intent["downloadId"]
+                        or job.get("profileId") != intent["profileId"] or job.get("modName") != intent["modName"]
+                        or job.get("state") != "installing" or not job.get("nativeStarted") or not job.get("backupId")):
+                    return False
+            target = self.org.modList().getMod("Smoke Disabled")
+            if target is None or Path(target.absolutePath()).resolve() != fixture / "mods" / "Smoke Disabled":
+                return False
+            object_name = str(dialog.objectName())
+            if object_name == "SimpleInstallDialog" and not intent["dialogs"]:
+                combo = dialog.findChild(QtWidgets.QComboBox, "nameCombo")
+                button = dialog.findChild(QtWidgets.QPushButton, "okBtn")
+                if combo is None or combo.currentText() != "Smoke Disabled" or button is None or not button.isEnabled():
+                    return False
+                intent["nameConfirmed"] = True
+                intent["dialogs"].append({"dialog": object_name, "action": "accept exact fixture name", "target": combo.currentText()})
+            elif object_name == "QueryOverwriteDialog" and intent["nameConfirmed"] and len(intent["dialogs"]) == 1:
+                button = dialog.findChild(QtWidgets.QPushButton, "mergeBtn")
+                if button is None or not button.isEnabled():
+                    return False
+                backup = dialog.findChild(QtWidgets.QCheckBox, "backupBox")
+                if backup is not None:
+                    backup.setChecked(False)  # Production Rust backup already verified this owned fixture.
+                intent["dialogs"].append({"dialog": object_name, "action": "merge exact fixture target", "target": "Smoke Disabled"})
+            elif isinstance(dialog, QtWidgets.QProgressDialog):
+                return True  # Observe progress; never accept an unknown prompt.
+            else:
+                return False
+        button.click()
+        return True
 
     def _begin(self):
         if self._begun or self._finished:
@@ -286,6 +346,8 @@ class NativeSmokePlugin(ModUpdateArsenal):
                         == Path(os.environ["MODHUNTER_NATIVE_SMOKE_INSTANCE"]).resolve())
             self._check("fixture_game_selected", self.org.managedGame().gameName() == GAME_NAME)
             self._check("fixture_profile_selected", self.org.profileName() == PROFILE_NAME)
+            self._installer_silent_before = self.org.pluginSetting("Simple Installer", "silent")
+            self.org.setPluginSetting("Simple Installer", "silent", False)
             window, view = find_mo2_view(QtWidgets)
             self._check("native_mod_view_present", window is not None and view is not None
                         and view.model() is not None and view.model().rowCount() >= len(EXPECTED_MODS))
@@ -320,10 +382,12 @@ class NativeSmokePlugin(ModUpdateArsenal):
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
         timings = {}
 
-        def api(path, data=None, authenticated=True, *, timeout=20):
+        def api(path, data=None, authenticated=True, *, timeout=20, native=False):
             headers = {"Accept": "application/json"}
             if authenticated:
                 headers["X-Arsenal-Token"] = token
+            if native:
+                headers["X-Modhunter-Native"] = "content-v1"
             body = None
             if data is not None:
                 body = json.dumps(data).encode("utf-8")
@@ -415,6 +479,9 @@ class NativeSmokePlugin(ModUpdateArsenal):
                 self._check("rust_plugin_audit", True, **audit)
                 content = exercise_content_recovery(api, _fixture_root, catalog["profileId"], by_name)
                 self._check("rust_content_recovery", True, **content)
+                installed = exercise_native_install(api, _fixture_root, catalog["profileId"], by_name,
+                    self._arm_fixture_installer, self._disarm_fixture_installer, cli_path=installed_cli)
+                self._check("native_content_install", True, **installed)
             desktop = os.environ.get("MODHUNTER_LIVE_DESKTOP")
             if desktop:
                 report_path = self._receipt_path.with_name("desktop-live.json")
@@ -428,6 +495,9 @@ class NativeSmokePlugin(ModUpdateArsenal):
                 self._check("native_desktop_live_workflow", completed.returncode == 0
                             and report.get("ok") is True, driverExitCode=completed.returncode,
                             failurePhase=report.get("phase"), error=completed.stderr[-1800:])
+            final_focus = api("/api/focus", {"id": target["id"], "profileId": catalog["profileId"]})
+            self._check("native_selection_after_content", final_focus.get("ok") is True
+                        and final_focus.get("selected") == target["name"])
             self._signals.finished.emit({"ok": True, "timingsMs": timings,
                                          "targetName": target["name"],
                                          "profileId": catalog["profileId"]})
@@ -442,11 +512,13 @@ class NativeSmokePlugin(ModUpdateArsenal):
         if self._watchdog is not None:
             self._watchdog.stop()
         try:
+            if self._installer_silent_before is not None:
+                self.org.setPluginSetting("Simple Installer", "silent", self._installer_silent_before)
             if outcome.get("ok"):
                 required_dispatches = {"refresh", "focus"}
                 if os.environ.get("MODHUNTER_NATIVE_SMOKE_RUST_CLI"):
                     required_dispatches.add("plugin-audit-input")
-                    required_dispatches.update({"content-capture", "content-lease", "content-check", "content-refresh"})
+                    required_dispatches.update({"content-capture", "content-lease", "content-check", "content-refresh", "content-install"})
                 self._check("native_dispatch_thread", self._on_qt_thread()
                             and {row["command"] for row in self._dispatches} >= required_dispatches
                             and all(row["qtThread"] for row in self._dispatches))

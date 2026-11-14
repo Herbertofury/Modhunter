@@ -13,6 +13,9 @@ $modlist = "$Output\fixture\profiles\Native QA\modlist.txt"
 Set-Content -Encoding UTF8 -Path $modlist -Value $entries
 $report = "$Output\native-smoke.json"
 $events = "$Output\native-smoke.events.jsonl"
+$checkpoint = "$Output\native-source-checkpoint.json"
+python "$PSScriptRoot/bind_native_proof.py" --executable $Executable --checkpoint $checkpoint
+if ($LASTEXITCODE -ne 0) { throw 'Native desktop source checkpoint failed.' }
 Remove-Item -ErrorAction SilentlyContinue $report, $events
 $process = Start-Process -FilePath $Executable -ArgumentList @("`"--smoke-profile=$modlist`"", "`"--smoke-output=$report`"") -RedirectStandardOutput "$Output\stdout.log" -RedirectStandardError "$Output\stderr.log" -PassThru
 try {
@@ -21,6 +24,8 @@ try {
   if (!(Test-Path $report)) { throw "Native WebView2 smoke did not produce a report. Exit=$($process.ExitCode)" }
   $data = Get-Content -Raw $report | ConvertFrom-Json
   if (!$data.ok) { throw "Native smoke failed: $(Get-Content -Raw $report)" }
+  python "$PSScriptRoot/bind_native_proof.py" --executable $Executable --checkpoint $checkpoint --report $report
+  if ($LASTEXITCODE -ne 0) { throw 'Native desktop receipt does not match unchanged source and executable.' }
   Get-Content -Raw $report
 } finally {
   $process.Refresh()

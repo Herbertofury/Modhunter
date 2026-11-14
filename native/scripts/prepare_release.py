@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import ast
 import hashlib
+import importlib.util
 import json
 import re
 import shutil
@@ -35,7 +36,7 @@ PORTABLE_EXPANDED_LIMIT = 512 * 1024 * 1024
 PRODUCTION_FILES = ("plugin.py", "version.py", "download_ids.py", "bridge.py", "gameplay.py", "model.py", "focus.py", "scanner.py", "version_evidence.py", "native_nexus.py", "qt_bridge.py", "intelligence.py",
                     "plugin_intelligence.py", "mod_health.py", "source_adapters.py",
                     "source_registry.py", "update_plan.py", "quick_update.py",
-                    "install_brief.py", "web/index.html")
+                    "install_brief.py", "content_recovery.py", "duplicate_report.py", "web/index.html")
 # Historical evidence retains its original filename and baseline. Packaging and
 # public release staging share this list so a version bump cannot silently drop
 # earlier measurements or relabel them as evidence from a newer implementation.
@@ -58,6 +59,7 @@ REQUIRED_MO2_CHECKS = {
     "native_profile_snapshot", "loopback_health", "protected_snapshot_authentication",
     "queued_refresh", "queued_focus", "native_dispatch_thread", "native_view_selection",
     "native_window_screenshot", "compact_game_response", "rust_cli_live_probe", "rust_plugin_audit",
+    "rust_content_recovery", "native_content_install",
 }
 LIVE_DESKTOP_SOURCES = ('native/scripts/verify_live_desktop.cjs', 'native/ui/shell.js', 'native/ui/shell.html', 'native/ui/native.css', 'native/crates/modhunter-desktop/src/windows.rs', 'native/crates/modhunter-desktop/src/policy.rs', 'mo2_update_arsenal/plugin.py', 'mo2_update_arsenal/bridge.py', 'mo2_update_arsenal/download_ids.py', 'mo2_update_arsenal/scanner.py', 'mo2_update_arsenal/gameplay.py', 'mo2_update_arsenal/native_nexus.py', 'mo2_update_arsenal/web/atelier.css', 'mo2_update_arsenal/web/app.js', 'mo2_update_arsenal/web/app.template.html')
 LIVE_DESKTOP_CHECKS = {"compact_workspace", "automatic_source_check", "automatic_discovery", "live_catalog_not_demo", "toolbar_refresh", "toolbar_plugin_audit", "connection_details", "content_native_ipc_denied", "manual_rediscovery", "disconnected_welcome", "setup_reconnect"}
@@ -67,7 +69,30 @@ REQUIRED_WATCHTOWER_CHECKS = {
     "authenticated_page_change", "selected_text_capture", "incomplete_capture_rejected",
     "stale_operation_rejected", "cancelled_capture_rejected", "same_session_popup",
     "public_https_end_to_end",
+    "download_requires_explicit_consent", "authenticated_direct_archive_download",
+    "authenticated_blob_archive_download", "download_rejection_prevents_bytes",
+    "download_cancel_cleans_partial", "download_html_rejected", "download_owner_close_cancels",
+    "download_stale_source_cancels", "download_receipt_survives_reopen",
+    "download_exact_file_authority",
+    "native_privacy_quick_hide_and_capture", "native_browser_cache_and_resource_policy",
 }
+ARCHIVE_SOURCES = (
+    "native/crates/modhunter-core/src/archive_review.rs", "native/crates/modhunter-core/src/acquisition/mod.rs",
+    "native/crates/modhunter-core/src/content_vault/mod.rs", "native/crates/modhunter-core/src/bin/modhunter-cli.rs",
+    "native/scripts/prepare_archive_tools.py", "native/scripts/verify_archive_review.py",
+)
+ARCHIVE_CHECKS = {
+    "zip_flat_complete_bytes", "zip_unambiguous_wrapper", "fomod_choices_remain_unknown",
+    "unknown_layout_preserves_files", "sidecars_not_silently_dropped", "seven_zip_lzma2_bytes",
+    "rar4_stored_bytes", "rar5_stored_bytes", "parent_traversal", "case_collision", "file_directory_alias",
+    "alternate_stream", "device_name", "symbolic_link_before_extract", "encrypted_requires_manual_handling",
+    "corrupt_archive_does_not_leave_stage", "changed_receipt_hash", "untrusted_helper_not_executed",
+    "selected_archive_exact_bytes_and_provenance", "selected_archive_preserves_full_requested_set",
+    "selection_empty", "selection_unknown", "selection_traversal", "selection_duplicate",
+    "fomod_cannot_be_filtered_around_native_choices", "source_files_and_helpers_stayed_unchanged",
+}
+ARCHIVE_PINS = {"7z.exe":"dc0493429fe28136fcb177a0e77c9875cbb3b0bff5f2f8eeba4df302e98cef76",
+                "7z.dll":"500db9eb17f3c21b729ba41dd02ecfe1823da05028c7e4ba129084cc74cc364e"}
 REQUIRED_WATCHTOWER_BROWSER_CHECKS = {
     "page_add_and_targeted_check", "sessions_and_reset", "observation_acknowledgment_and_restore",
     "import_preview_and_export", "preferences_and_mutes", "native_error_recovery",
@@ -78,6 +103,9 @@ WATCHTOWER_BROWSER_SOURCES = (
     "native/ui/watchtower.html", "native/ui/watchtower.css", "native/ui/watchtower.js",
     "tests/fixtures/watchtower_native_fixture.js", "tests/test_watchtower_browser.py",
 )
+NATIVE_MANAGER_SOURCES = ('native/ui/watchtower.html', 'native/ui/watchtower.css', 'native/ui/watchtower.js', 'native/ui/watchtower-review.js', 'native/ui/watchtower-maintenance.js', 'native/ui/watchtower-native.css', 'native/ui/preferences.js', 'native/ui/preferences.css', 'tests/test_watchtower_native_ui.py', 'tests/test_watchtower_browser.py', 'tests/fixtures/watchtower_native_fixture.js')
+NATIVE_MANAGER_CHECKS = {'native_substates_update_without_watchstore_revision', 'support_export_uses_the_exact_preview_identity', 'fomod_selection_is_explicitly_advisory', 'retention_requires_exact_preview_and_explicit_confirmation', 'duplicate_report_preserves_whole_mod_and_file_ownership', 'lost_acknowledgement_refreshes_submission_state', 'retained_reviews_remain_visible_without_replay', 'new_content_requires_an_explicit_new_target', 'global_preferences_preserve_unsaved_edits_and_switch_language', 'cleanup_requires_a_matching_preview_and_confirmation', 'unknown_native_outcome_remains_visible_and_cannot_be_discarded', 'application_reset_requires_exact_phrase_and_preview', 'review_preserves_complete_selection_and_exact_install_ids'}
+NATIVE_MANAGER_SCREENSHOTS = {"watchtower-file-review.png", "watchtower-support-preview.png", "watchtower-preferences-es.png", "watchtower-duplicates.png"}
 QT_FORWARD_SOURCES = (
     "mo2_update_arsenal/qt_bridge.py", "tests/test_native_qt_bridge.py",
     "native/scripts/verify_qt_forward.py", "native/qt_bridge/qt_bridge.cpp",
@@ -259,6 +287,43 @@ def validate_native_report(report: dict) -> None:
     require(report.get("gameViewNativeIpcDenied") in ("1", True), "Game-view native IPC isolation was not verified")
 
 
+def native_sources():
+    spec=importlib.util.spec_from_file_location("modhunter_native_binding",ROOT/"native/scripts/bind_native_proof.py")
+    module=importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.source_names()
+
+
+def validate_native_binding(report:dict,commit:str,executable_hash:str)->None:
+    require(report.get("nativeBindingSchema")==1 and report.get("candidateCommit")==commit
+            and report.get("sourceDirty") is False and report.get("executableSha256")==executable_hash,
+            "Native fixture receipt does not identify the clean source commit and packaged executable")
+    expected=native_sources();sources=report.get("sourceFiles")
+    require(isinstance(sources,dict) and set(sources)==set(expected)
+            and all(sources[name]==file_hash(ROOT/name) for name in expected),
+            "Native fixture source hashes do not match this release")
+
+
+def validate_archive_report(report:dict,commit:str,cli_hash:str)->None:
+    require(report.get("ok") is True and report.get("schema")==1 and report.get("kind")=="actual-archive-review"
+            and report.get("platform")=="Windows" and report.get("candidateCommit")==commit
+            and report.get("sourceDirty") is False and report.get("cliSha256")==cli_hash,
+            "Archive proof does not identify the exact clean Windows release CLI")
+    require(report.get("helperSha256")==ARCHIVE_PINS["7z.exe"] and report.get("helperDllSha256")==ARCHIVE_PINS["7z.dll"],
+            "Archive proof did not execute the pinned official helper")
+    sources=report.get("sources")
+    require(isinstance(sources,dict) and set(sources)==set(ARCHIVE_SOURCES)
+            and all(sources[name]==file_hash(ROOT/name) for name in ARCHIVE_SOURCES),
+            "Archive proof does not match the current extraction and selection source")
+    checks=report.get("checks")
+    require(isinstance(checks,list) and len(checks)==len(ARCHIVE_CHECKS)
+            and all(isinstance(row,dict) and row.get("ok") is True for row in checks)
+            and {row.get("name") for row in checks}==ARCHIVE_CHECKS,
+            "Archive proof omitted, repeated or failed a required format or safety case")
+    require(report.get("nativeMo2Claim") is False and report.get("nativeWebView2Claim") is False,
+            "Archive-only proof must not claim native UI execution")
+
+
 def validate_watchtower_report(report: dict) -> None:
     require(report.get("ok") is True and report.get("nativeWebView2") is True,
             "Native Watchtower WebView2 fixture did not pass")
@@ -301,6 +366,25 @@ def validate_watchtower_browser(report: dict, commit: str) -> None:
             "Watchtower browser proof omitted required screenshots")
 
 
+def validate_native_manager_ui(report: dict, commit: str) -> None:
+    require(report.get("schema") == 1 and report.get("kind") == "native-manager-ui"
+            and report.get("ok") is True and report.get("realChromium") is True,
+            "Native review manager requires a passing actual Chromium receipt")
+    require(report.get("candidateCommit") == commit and report.get("sourceDirty") is False,
+            "Native review manager proof does not identify the clean candidate")
+    require(report.get("testsRun") == len(NATIVE_MANAGER_CHECKS) and report.get("skipped") == 0,
+            "Native review manager proof skipped or omitted an interaction")
+    sources = report.get("sourceFiles")
+    require(isinstance(sources, dict) and set(sources) == set(NATIVE_MANAGER_SOURCES)
+            and all(sources[name] == file_hash(ROOT / name) for name in NATIVE_MANAGER_SOURCES),
+            "Native review manager proof does not match the shipped UI and fixture")
+    checks = report.get("checks")
+    require(isinstance(checks, list) and len(checks) == len(NATIVE_MANAGER_CHECKS)
+            and all(isinstance(check, dict) and check.get("passed") is True for check in checks)
+            and {check.get("name") for check in checks} == NATIVE_MANAGER_CHECKS,
+            "Native review manager proof failed, repeated or omitted a required interaction")
+
+
 def validate_mo2(result: dict, receipt: dict) -> None:
     require(result.get("ok") is True and result.get("phase") == "completed", "MO2 orchestration did not complete successfully")
     require(result.get("nativeExitCode") == 0 and not isinstance(result.get("nativeExitCode"), bool), "MO2 did not exit cleanly with code zero")
@@ -313,6 +397,17 @@ def validate_mo2(result: dict, receipt: dict) -> None:
     passing = {check.get("name") for check in checks}
     missing = REQUIRED_MO2_CHECKS - passing
     require(not missing, "MO2 receipt omitted required passing checks: " + ", ".join(sorted(missing)))
+    for name, flags in (("rust_content_recovery",("realQt","actualModBytesRestored","nativeRefreshAcknowledged","wrongTargetRejected","laterEditPreserved","lostAckDeduplicated")),
+                        ("native_content_install",("realQt","nativeInstallerOpened","nativeInstallVerified","bundledArchiveReviewVerified","actualModBytesRestored","nativeRefreshAcknowledged"))):
+        matched=[check for check in checks if check.get("name")==name]
+        require(len(matched)==1 and matched[0].get("schemaVersion")==1 and matched[0].get("state")=="complete"
+                and matched[0].get("profileId")==receipt.get("profileId") and all(matched[0].get(flag) is True for flag in flags),
+                "Native content proof is incomplete for "+name)
+        if name=="rust_content_recovery":require(matched[0].get("batchTargets")==2,"Native batch recovery did not verify two exact targets")
+        else:
+            require(matched[0].get("exactTarget")=="Smoke Disabled" and re.fullmatch(r"[0-9a-f]{64}",str(matched[0].get("archiveSha256",""))) is not None
+                    and type(matched[0].get("archiveBytes")) is int and matched[0]["archiveBytes"]>0,
+                    "Native installer proof omitted its exact fixture target and archive identity")
     audit_checks = [check for check in checks if check.get("name") == "rust_plugin_audit"]
     require(len(audit_checks) == 1, "Expected one native Rust plugin-audit receipt")
     audit = audit_checks[0]
@@ -429,7 +524,7 @@ def validate_live_desktop(report: dict, commit: str, executable_hash: str) -> No
     public_json(report)
 
 
-def portable_contents(path: Path, commit: str, run_url: str, native_report: dict, watchtower_report: dict, mo2_result: dict, qt_helper_hash: str, qt_forward_report: dict, live_report: dict) -> dict[str, bytes]:
+def portable_contents(path: Path, commit: str, run_url: str, native_report: dict, watchtower_report: dict, mo2_result: dict, qt_helper_hash: str, qt_forward_report: dict, live_report: dict, archive_report:dict) -> dict[str, bytes]:
     public: dict[str, bytes] = {}
     try:
         with ZipFile(path) as archive:
@@ -445,7 +540,7 @@ def portable_contents(path: Path, commit: str, run_url: str, native_report: dict
                 require(not stat.S_ISLNK(entry.external_attr >> 16), "Linked member in portable archive")
                 index[name] = entry
                 windows_names.add(name.casefold())
-            for name in ("BUILD_INFO.json", "Modhunter.exe", "modhunter-cli.exe", BUNDLED_HELPER, BUNDLED_QT_HELPER, "Install_MO2_Plugin.ps1", "Install_MO2_Plugin.bat", "Evidence/native-smoke.json", "Evidence/watchtower-smoke.json", "Evidence/qt-forward.json", "Evidence/desktop-live.json", "Check_MO2_Readiness.ps1", "Check_MO2_Readiness.bat", "START-HERE-MO2-253.md", "GameSync-Update-Techniques.md"):
+            for name in ("BUILD_INFO.json", "Modhunter.exe", "modhunter-cli.exe", BUNDLED_HELPER, BUNDLED_QT_HELPER, "Install_MO2_Plugin.ps1", "Install_MO2_Plugin.bat", "Evidence/native-smoke.json", "Evidence/watchtower-smoke.json", "Evidence/qt-forward.json", "Evidence/desktop-live.json", "Evidence/archive-review-proof.json", "PROJECT_NOTICE.txt", "THIRD_PARTY_NOTICES.json", "Check_MO2_Readiness.ps1", "Check_MO2_Readiness.bat", "START-HERE-MO2-253.md", "GameSync-Update-Techniques.md"):
                 require(name in index and not index[name].is_dir() and index[name].file_size > 0, f"Portable package is missing {name}")
             require(archive.testzip() is None, "Portable ZIP failed its CRC check")
             digests = portable_checksums(archive, index)
@@ -456,6 +551,27 @@ def portable_contents(path: Path, commit: str, run_url: str, native_report: dict
             embedded_live = json_object(archive.read(index["Evidence/desktop-live.json"]), "portable desktop-live.json")
             require(embedded_live == live_report, "Portable live desktop evidence differs from its native run")
             validate_live_desktop(live_report, commit, digests["Modhunter.exe"])
+            validate_native_binding(native_report,commit,digests["Modhunter.exe"])
+            validate_native_binding(watchtower_report,commit,digests["Modhunter.exe"])
+            validate_archive_report(archive_report,commit,digests["modhunter-cli.exe"])
+            require(json_object(archive.read(index["Evidence/archive-review-proof.json"]),"portable archive proof")==archive_report,
+                    "Portable archive-review proof differs from the release CLI run")
+            for prefix in ("archive-tools/","MO2/mo2_update_arsenal/bin/archive-tools/"):
+                for name,expected in ARCHIVE_PINS.items():
+                    require(digests.get(prefix+name)==expected,"Packaged archive helper is missing or differs from its pinned official bytes: "+prefix+name)
+                require(prefix+"License.txt" in index and prefix+"provenance.json" in index,"Archive helper licenses/provenance are missing")
+                provenance=json_object(archive.read(index[prefix+"provenance.json"]),"archive provenance")
+                require(provenance.get("version")=="26.06" and all(provenance.get("files",{}).get(name)==expected for name,expected in ARCHIVE_PINS.items())
+                        and provenance.get("licenseSha256")==digests[prefix+"License.txt"],"Archive helper provenance is inconsistent")
+            require(digests["PROJECT_NOTICE.txt"]==file_hash(ROOT/"native/PROJECT_NOTICE.txt"),"Project notice differs from this source")
+            require(index["THIRD_PARTY_NOTICES.json"].file_size<=16*1024*1024,"Third-party notice index is too large")
+            notices=json.loads(archive.read(index["THIRD_PARTY_NOTICES.json"]).decode("utf-8"))
+            locked=tomllib.loads((ROOT/"native/Cargo.lock").read_text("utf-8"))
+            expected_packages={(p["name"],p["version"]) for p in locked["package"] if p.get("source")}
+            packages=notices.get("packages",[])
+            require(notices.get("schema")==1 and isinstance(packages,list) and len(packages)==len(expected_packages)
+                    and {(p.get("name"),p.get("version")) for p in packages}==expected_packages,
+                    "Bundled third-party notices do not match the locked dependency set")
             embedded_native = json_object(archive.read(index["Evidence/native-smoke.json"]), "portable native-smoke.json")
             require(embedded_native == native_report, "Portable native smoke differs from the Windows job receipt")
             embedded_watchtower = json_object(archive.read(index["Evidence/watchtower-smoke.json"]), "portable watchtower-smoke.json")
@@ -499,9 +615,24 @@ The Windows desktop, MO2 profile import/cache engine, connection checks, tab lif
 
 MO2's Python/Qt plugin remains the in-process adapter for MO2's authenticated Nexus connection, native downloads, interactive FOMOD installer, focus and verified rewards. Dashboard/game presentation remains HTML/CSS/JavaScript.
 
+## 0.11.0: reviewed downloads, actual file recovery and app upkeep
+
+Watchtower now carries a chosen external archive from its exact source identity into a complete file review and MO2's native installer. Update files stay bound to the chosen profile, game/runtime and installed mod. Separate new content requires a new mod name. A different file, changed source, profile round-trip or lost acknowledgement cannot silently reuse an earlier installation decision.
+
+- **Exact source choices:** Patreon post attachments, LoversLab file choices and supported direct Drive/MEGA files keep durable file identities and explicit update/new-content choices. Creator preferences, per-site mutes and compatibility declarations persist. Unsupported shared folders remain manual review. Visible account access is reported separately from page entitlement.
+- **Complete archive review:** pinned 7-Zip helpers inspect ZIP, 7z and RAR archives with path, link, collision, encryption and size guards. Every accepted file remains in the manifest. Ordinary game-data archives produce a verified ZIP containing the complete selected set; FOMOD and uncertain layouts keep the original archive and require native installer choices. Installed-only paths never authorize deletion.
+- **Actual content recovery:** the Rust engine snapshots mod files before installation, verifies the resulting files and retains interrupted operations. Restore, batch restore and retention cleanup recheck exact content identities. Later edits stop restoration. Recovery data lives beside the MO2 mods directory in an instance-specific `Modhunter-Recovery` vault and is excluded from app reset.
+- **Duplicate review:** complete per-file and whole-mod reports include saved-profile ownership and hard-link facts. Quarantine requires an identical retained counterpart and a duplicate disabled in every saved and live profile. Undo and permanent quarantine removal use a fresh exact preview.
+- **Desktop preferences:** system/light/dark themes, common interface labels in English, Spanish, Italian and Traditional Chinese, native quick hide, Windows capture protection, private external browser choices, bounded cache cleanup, app release checks, offline licenses and preview-before-export support reports. Detailed technical messages can remain in English.
+- **Owned cleanup:** download and recovery cleanup show the exact proposed items. Removing app data requires a typed confirmation, closes the desktop and records partial or retained results. It excludes MO2, game files, external browser profiles and recovery vaults.
+
+The release gate binds Windows WebView2, archive-helper, Chromium interaction and actual MO2 install/restore receipts to the clean candidate and packaged binaries. The separate MO2 2.5.2 fixture and Qt 6.11 forward-runtime checks do not claim execution of a user's MO2 2.5.3b12 installation, accounts or 11,207-mod profile.
+
+See the [0.11.0 implementation and evidence map]({repository_url}/blob/{commit}/native/evidence/whimwatch-parity-0.11.0.md).
+
 ## 0.10.2: compact workspace, automatic checking and live repair
 
-This maintenance release fixes confirmed problems in 0.10.1 rather than treating successful isolated tests as complete real-world acceptance.
+The earlier compact-workspace and live-connection repairs remain included.
 
 - The default view is a compact installed-mod table, with small status filters and separate Updates, Downloads, History, Tools and Extras tabs. Oversized campaign cards and repeated technical summaries no longer occupy the main workflow. Details remain available on demand.
 - On live connection, one bounded source check starts per profile/execution context after saved preferences load. Recent successful Nexus metadata is reused first; missing or expired metadata is fetched. Public source adapters run independently, and completed results appear progressively. Tools contains the automatic-check switch; active checks can be cancelled without discarding completed results.
@@ -557,10 +688,13 @@ JSON, CSV and PowerShell exports are saved to Windows Downloads with unique file
 
 ## What this build actually passed
 
+- The packaged Windows release CLI with the pinned 7-Zip executable and DLL across 26 archive format, path-safety, integrity and exact-selection cases. The portable package carries these exact helpers beside both the desktop and MO2 CLI.
+- Real Chromium review-manager interactions covering complete 1,207-entry selection, explicit new targets, FOMOD advisory behavior, lost acknowledgement, retained restart evidence, exact retention/reset confirmations, support export, preferences and duplicate ownership.
+- The real MO2 native installer applying an exact generated archive to a disposable target, followed by production Rust verification and complete content restoration; separate recovery probes cover wrong targets, later edits, two-target restore and repeated acknowledgement.
 - Rust tests, formatting and Clippy, Python MO2 lifecycle/source/cache tests, frontend runtime checks, and dashboard interaction checks in real Chromium. Cancellation tests verify explicit interruption without partial success and successful reuse of the same engine.
 - The shipped plugin installer under Windows PowerShell 5.1: fresh installation, upgrade/progress preservation, rejected incomplete or mixed packages, source-tree installation, exact version output and linked-directory handling.
 - A compiled Windows application running in real WebView2: fixture-profile import, rendered dashboard, actual backup export/readback, and denial of toolbar-native commands from the game view.
-- The same compiled application running a required native Watchtower fixture: account isolation, remembered-profile close/reopen within one process, generation-selected fresh profiles, same-session popups, authenticated page capture and changed content, selected text, incomplete/stale/canceled rejection, and denied remote IPC. Account checks use internally owned loopback pages and synthetic sign-in state; the reopen check does not restart the application. A separate anonymous `https://example.com/` check runs through production WebView2 capture and durable WatchStore baseline completion. No real website account is used.
+- The same compiled application running a required native Watchtower fixture: exact authenticated direct/blob download consent, cancellation and stale-source rejection, selected-file navigation ownership, receipt persistence, native quick-hide/capture calls, browser cache/resource policy, account isolation, remembered-profile close/reopen within one process, generation-selected fresh profiles, same-session popups, authenticated page capture and changed content, selected text, incomplete/stale/canceled rejection, and denied remote IPC. Account checks use internally owned loopback pages and synthetic sign-in state; the reopen check does not restart the application. A separate anonymous `https://example.com/` check runs through production WebView2 capture and durable WatchStore baseline completion. No real website account is used.
 - The shipped Watchtower interface in real Chromium with a fixture native-command adapter, covering page/session actions, history, import preview, error recovery and responsive layout. This renderer proof is separate from native browser-profile proof.
 - The production plugin inside official **MO2 2.5.2**, using a disposable fixture game/profile: native initialization, real Qt dispatch, profile snapshot, protected loopback requests, row focus/selection, a native screenshot, and a compiled Rust CLI health probe against that running service. Its bundled Rust helper also completed the real plugin-audit endpoint, decorated both fixture mods, and verified the header and fresh SHA256 of an inert disabled plugin within a bounded background job.
 - The compiled Qt 6.7.1 helper loaded against MO2's existing Qt runtime. Synthetic metadata passed through the actual MO2-created C++ repository QObject, captured the Qt sender, and completed the raw JSON file callback while rejecting unowned and cancelled requests. This binding fixture makes no Nexus account or network requests and does not exercise authenticated downloads.
@@ -606,7 +740,9 @@ def prepare(artifacts_dir: Path, output_dir: Path, commit: str, run_url: str) ->
     qt_forward_report = read_json(windows / "qt-forward/qt-forward.json")
     validate_qt_forward(qt_forward_report, commit, file_hash(qt_helper))
     live_report = read_json(windows / "live-mo2-smoke/desktop-live.json")
-    public = portable_contents(portable, commit, run_url, native_report, watchtower_report, mo2_result, file_hash(qt_helper), qt_forward_report, live_report)
+    archive_report=read_json(windows/"archive-review-proof.json")
+    public = portable_contents(portable, commit, run_url, native_report, watchtower_report, mo2_result, file_hash(qt_helper), qt_forward_report, live_report,archive_report)
+    public["windows/archive-review-proof.json"]=public_json(archive_report)
     public["windows/desktop-live.json"] = public_json(live_report)
     public["windows/desktop-live.png"] = png_bytes(windows / "live-mo2-smoke/desktop-live.png")
     public["windows/qt-forward.json"] = public_json(qt_forward_report)
@@ -614,6 +750,11 @@ def prepare(artifacts_dir: Path, output_dir: Path, commit: str, run_url: str) ->
     watchtower_browser = read_json(browser / "watchtower-browser.json")
     validate_watchtower_browser(watchtower_browser, commit)
     public["browser/watchtower-browser.json"] = public_json(watchtower_browser)
+    manager_ui = read_json(browser / "native-manager-ui.json")
+    validate_native_manager_ui(manager_ui, commit)
+    public["browser/native-manager-ui.json"] = public_json(manager_ui)
+    for name in NATIVE_MANAGER_SCREENSHOTS:
+        public["browser/" + name] = png_bytes(browser / name)
     for name in WATCHTOWER_SCREENSHOTS:
         public["browser/" + name] = png_bytes(browser / name)
     dashboard_benchmark = browser / "dashboard-render-comparison.json"
@@ -682,8 +823,26 @@ def self_test() -> None:
                                       "sourceFiles": {name: file_hash(ROOT / name) for name in WATCHTOWER_BROWSER_SOURCES},
                                       "checks": [{"name": name, "passed": True} for name in sorted(REQUIRED_WATCHTOWER_BROWSER_CHECKS)],
                                       "screenshots": sorted(WATCHTOWER_SCREENSHOTS)}
+            self.manager_ui = {"schema":1,"kind":"native-manager-ui","ok":True,"realChromium":True,"candidateCommit":self.commit,"sourceDirty":False,
+                               "scope":"Synthetic release-validator fixture; no Chromium execution",
+                               "testsRun":len(NATIVE_MANAGER_CHECKS),"skipped":0,
+                               "sourceFiles":{name:file_hash(ROOT/name) for name in NATIVE_MANAGER_SOURCES},
+                               "checks":[{"name":name,"passed":True} for name in sorted(NATIVE_MANAGER_CHECKS)]}
+            self.write_json(self.browser / "native-manager-ui.json",self.manager_ui)
             self.cli_bytes = b"non-executable synthetic test fixture"
             self.cli_hash = hashlib.sha256(self.cli_bytes).hexdigest()
+            binding={"nativeBindingSchema":1,"candidateCommit":self.commit,"sourceDirty":False,"executableSha256":self.cli_hash,
+                     "sourceFiles":{name:file_hash(ROOT/name) for name in native_sources()}}
+            self.native.update(binding);self.watchtower.update(binding)
+            self.archive_bytes={"7z.exe":b"synthetic non-executable archive helper","7z.dll":b"synthetic non-loadable archive library"}
+            from unittest.mock import patch
+            pins=patch.dict(ARCHIVE_PINS,{name:hashlib.sha256(body).hexdigest() for name,body in self.archive_bytes.items()},clear=True)
+            pins.start();self.addCleanup(pins.stop)
+            self.archive_proof={"schema":1,"kind":"actual-archive-review","ok":True,"platform":"Windows","candidateCommit":self.commit,"sourceDirty":False,
+                "cliSha256":self.cli_hash,"helperSha256":ARCHIVE_PINS["7z.exe"],"helperDllSha256":ARCHIVE_PINS["7z.dll"],"nativeMo2Claim":False,"nativeWebView2Claim":False,
+                "sources":{name:file_hash(ROOT/name) for name in ARCHIVE_SOURCES},"checks":[{"name":name,"ok":True} for name in sorted(ARCHIVE_CHECKS)],
+                "scope":"Synthetic release-validator fixture; no native archive execution"}
+            self.write_json(self.windows/"archive-review-proof.json",self.archive_proof)
             self.live = {"schemaVersion": 1, "ok": True, "nativeDesktop": True, "nativeMO2": True, "nativeWebView2": True,
                 "candidateCommit": self.commit, "sourceDirty": False, "executableSha256": self.cli_hash,
                 "sourceFiles": {name: file_hash(ROOT / name) for name in LIVE_DESKTOP_SOURCES},
@@ -705,6 +864,11 @@ def self_test() -> None:
             self.write_json(self.windows / "qt-forward/qt-forward.json", self.qt_forward)
             self.receipt = {"ok": True, "nativeMO2": True, "profileId": "fixture-profile",
                             "checks": [{"name": name, "passed": True} for name in sorted(REQUIRED_MO2_CHECKS)]}
+            for name in ("rust_content_recovery","native_content_install"):
+                check=next(c for c in self.receipt["checks"] if c["name"]==name)
+                check.update(schemaVersion=1,profileId="fixture-profile",state="complete",realQt=True,actualModBytesRestored=True,nativeRefreshAcknowledged=True,
+                             wrongTargetRejected=True,laterEditPreserved=True,lostAckDeduplicated=True,batchTargets=2,nativeInstallerOpened=name=="native_content_install",
+                             nativeInstallVerified=True,bundledArchiveReviewVerified=True,exactTarget="Smoke Disabled",archiveSha256="f"*64,archiveBytes=100)
             self.audit = next(check for check in self.receipt["checks"] if check["name"] == "rust_plugin_audit")
             self.audit.update(schemaVersion=1, profileId="fixture-profile", state="completed", depth="records",
                 helperSha256=self.cli_hash,
@@ -732,7 +896,7 @@ def self_test() -> None:
             image = self.png()
             (self.mo2 / "mo2-fixture.png").write_bytes(image)
             (self.browser / "review.png").write_bytes(image)
-            for name in WATCHTOWER_SCREENSHOTS:
+            for name in WATCHTOWER_SCREENSHOTS | NATIVE_MANAGER_SCREENSHOTS:
                 (self.browser / name).write_bytes(image)
             (self.mo2 / "fixture-settings.ini").write_text("not public")
             (self.mo2 / "mo2.log").write_text("not public")
@@ -761,6 +925,15 @@ def self_test() -> None:
                 archive.writestr("Evidence/watchtower-smoke.json", public_json(self.watchtower))
                 archive.writestr("Evidence/qt-forward.json", public_json(self.qt_forward))
                 archive.writestr("Evidence/desktop-live.json", public_json(self.live))
+                archive.writestr("Evidence/archive-review-proof.json",public_json(self.archive_proof))
+                archive.writestr("PROJECT_NOTICE.txt",(ROOT/"native/PROJECT_NOTICE.txt").read_bytes())
+                locked=tomllib.loads((ROOT/"native/Cargo.lock").read_text("utf-8"))
+                archive.writestr("THIRD_PARTY_NOTICES.json",json.dumps({"schema":1,"packages":[{"name":p["name"],"version":p["version"],"license":"Synthetic fixture"} for p in locked["package"] if p.get("source")]}))
+                license_text=b"Synthetic archive license fixture"
+                for prefix in ("archive-tools/","MO2/mo2_update_arsenal/bin/archive-tools/"):
+                    for name,body in self.archive_bytes.items():archive.writestr(prefix+name,body)
+                    archive.writestr(prefix+"License.txt",license_text)
+                    archive.writestr(prefix+"provenance.json",json.dumps({"version":"26.06","files":ARCHIVE_PINS,"licenseSha256":hashlib.sha256(license_text).hexdigest()}))
                 for name, body in self.sources.items():
                     archive.writestr("MO2/mo2_update_arsenal/" + name, body)
             self.refresh_portable_manifest()
@@ -913,10 +1086,55 @@ def self_test() -> None:
             self.assertNotIn("release-notes.md", (self.output / "SHA256SUMS.txt").read_text())
             with ZipFile(self.output / VERIFICATION_NAME) as archive:
                 names = archive.namelist()
-                expected = {"windows/desktop-live.json", "windows/desktop-live.png", "BUILD_INFO.json", "windows/qt-forward.json", "windows/native-smoke.json", "windows/watchtower-smoke.json", "mo2/result.json", "mo2/native-receipt.json", "mo2/mo2-fixture.png", "browser/review.png", "browser/watchtower-browser.json"}
-                expected.update("browser/" + name for name in WATCHTOWER_SCREENSHOTS)
+                expected = {"windows/desktop-live.json", "windows/desktop-live.png", "BUILD_INFO.json", "windows/qt-forward.json", "windows/native-smoke.json", "windows/watchtower-smoke.json", "windows/archive-review-proof.json", "mo2/result.json", "mo2/native-receipt.json", "mo2/mo2-fixture.png", "browser/review.png", "browser/watchtower-browser.json"}
+                expected.update("browser/" + name for name in WATCHTOWER_SCREENSHOTS | NATIVE_MANAGER_SCREENSHOTS)
+                expected.add("browser/native-manager-ui.json")
                 self.assertEqual(set(names), expected)
                 self.assertTrue(all(PurePosixPath(name).suffix in (".json", ".png") for name in names))
+
+        def test_native_manager_rejects_stale_partial_or_synthetic_interaction_proof(self):
+            original=public_json(self.manager_ui)
+            for mutate in (
+                lambda r:r.update(candidateCommit="b"*40),
+                lambda r:r.update(sourceDirty=True),
+                lambda r:r.update(realChromium=False),
+                lambda r:r.update(skipped=1),
+                lambda r:r["sourceFiles"].update({NATIVE_MANAGER_SOURCES[0]:"0"*64}),
+                lambda r:r["checks"].pop(),
+                lambda r:r["checks"][0].update(passed=False),
+                lambda r:r["checks"].__setitem__(0,r["checks"][1]),
+            ):
+                report=json.loads(original);mutate(report)
+                with self.assertRaises(ReleaseError):validate_native_manager_ui(report,self.commit)
+            (self.browser/"native-manager-ui.json").unlink()
+            with self.assertRaises(ReleaseError):prepare(self.artifacts,self.output,self.commit,self.run)
+            self.assertFalse(self.output.exists())
+
+        def test_archive_gate_rejects_wrong_binary_helper_source_and_missing_case(self):
+            original=public_json(self.archive_proof)
+            for mutate in (
+                lambda r:r.update(cliSha256="0"*64),
+                lambda r:r.update(helperSha256="0"*64),
+                lambda r:r.update(helperDllSha256="0"*64),
+                lambda r:r.update(sourceDirty=True),
+                lambda r:r.update(nativeMo2Claim=True),
+                lambda r:r["sources"].update({ARCHIVE_SOURCES[0]:"0"*64}),
+                lambda r:r["checks"].pop(),
+                lambda r:r["checks"][0].update(ok=False),
+            ):
+                report=json.loads(original);mutate(report)
+                with self.assertRaises(ReleaseError):validate_archive_report(report,self.commit,self.cli_hash)
+
+        def test_native_binding_rejects_wrong_executable_commit_and_incomplete_source(self):
+            original=public_json(self.native)
+            for mutate in (
+                lambda r:r.update(executableSha256="0"*64),
+                lambda r:r.update(candidateCommit="b"*40),
+                lambda r:r.update(sourceDirty=True),
+                lambda r:r["sourceFiles"].pop(next(iter(r["sourceFiles"]))),
+            ):
+                report=json.loads(original);mutate(report)
+                with self.assertRaises(ReleaseError):validate_native_binding(report,self.commit,self.cli_hash)
 
         def test_watchtower_requires_native_complete_passing_unique_credential_free_receipt(self):
             path = self.windows / "watchtower-smoke/watchtower-smoke.json"

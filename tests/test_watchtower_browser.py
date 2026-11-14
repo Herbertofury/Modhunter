@@ -94,6 +94,8 @@ class WatchtowerBrowserTests(unittest.TestCase):
         self.errors = []
         self.page.on("pageerror", lambda error: self.errors.append(str(error)))
         allowed = {"watchtower.html": "text/html", "watchtower.js": "text/javascript", "watchtower.css": "text/css"}
+        allowed.update({name:"text/javascript" for name in ("watchtower-review.js","watchtower-maintenance.js","preferences.js")})
+        allowed.update({name:"text/css" for name in ("watchtower-native.css","preferences.css")})
 
         def route(request):
             name = request.request.url.split("/")[-1]

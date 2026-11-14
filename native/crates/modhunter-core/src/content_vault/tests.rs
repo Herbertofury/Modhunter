@@ -585,3 +585,90 @@ fn changed_displaced_copy_is_never_anonymous_cleanup_authority() {
     );
     assert_eq!(fs::read(displaced.join("mesh.nif")).unwrap(), b"user copy");
 }
+
+#[test]
+fn profile_inventory_includes_missing_targets_without_cross_profile_leaks() {
+    let mut f = Fixture::new();
+    let mods = f._d.path().join("mods");
+    fs::create_dir(&mods).unwrap();
+    let moved = mods.join("Mod");
+    fs::rename(&f.root, &moved).unwrap();
+    f.root = moved;
+    let id = f.updated();
+    fs::remove_dir_all(&f.root).unwrap();
+    let mut request = f.req("listProfile", None, None);
+    request.root = mods.clone();
+    request.mod_name = "__profile_inventory__".into();
+    let rows = execute(request, || false).unwrap();
+    assert_eq!(rows["backups"].as_array().unwrap().len(), 1);
+    assert_eq!(rows["backups"][0]["id"], id);
+    let mut other = f.req("listProfile", None, None);
+    other.root = mods;
+    other.mod_name = "__profile_inventory__".into();
+    other.profile_id = "different-profile".into();
+    assert!(
+        execute(other, || false).unwrap()["backups"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn completed_new_target_retention_is_explicit_and_preserves_current_mod() {
+    let f = Fixture::new();
+    fs::remove_dir_all(&f.root).unwrap();
+    let value = execute(f.req("prepareNew", None, Some("INSTALL")), || false).unwrap();
+    let id = value["backup"]["id"].as_str().unwrap();
+    assert!(
+        execute(
+            f.req("deleteBackup", Some(id), Some("DELETE BACKUP")),
+            || false
+        )
+        .is_err()
+    );
+    fs::create_dir(&f.root).unwrap();
+    fs::write(f.root.join("new.nif"), "native installed").unwrap();
+    execute(f.req("sealNew", Some(id), None), || false).unwrap();
+    assert!(execute(f.req("deleteBackup", Some(id), None), || false).is_err());
+    execute(
+        f.req("deleteBackup", Some(id), Some("DELETE BACKUP")),
+        || false,
+    )
+    .unwrap();
+    assert!(!f.vault.join(id).exists());
+    assert_eq!(
+        fs::read(f.root.join("new.nif")).unwrap(),
+        b"native installed"
+    );
+}
+#[test]
+fn restored_new_target_bytes_need_exact_record_before_explicit_deletion() {
+    let f = Fixture::new();
+    fs::remove_dir_all(&f.root).unwrap();
+    let profiles = profile_root(&f, false);
+    let value = execute(f.req("prepareNew", None, Some("INSTALL")), || false).unwrap();
+    let id = value["backup"]["id"].as_str().unwrap();
+    fs::create_dir(&f.root).unwrap();
+    fs::write(f.root.join("new.nif"), "native installed").unwrap();
+    execute(f.req("sealNew", Some(id), None), || false).unwrap();
+    let mut restore = f.req("restoreNew", Some(id), Some("RESTORE"));
+    restore.other = Some(profiles);
+    execute(restore, || false).unwrap();
+    fs::write(f.vault.join(id).join("unexpected.txt"), "preserve").unwrap();
+    assert!(
+        execute(
+            f.req("deleteBackup", Some(id), Some("DELETE BACKUP")),
+            || false
+        )
+        .is_err()
+    );
+    fs::remove_file(f.vault.join(id).join("unexpected.txt")).unwrap();
+    execute(
+        f.req("deleteBackup", Some(id), Some("DELETE BACKUP")),
+        || false,
+    )
+    .unwrap();
+    assert!(!f.vault.join(id).exists());
+    assert!(!f.root.exists());
+}

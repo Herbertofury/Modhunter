@@ -407,3 +407,138 @@ fn export_import_preserves_creator_groups_and_exact_file_choices_without_account
     assert!(imported.creator_offers_new_content(id));
     assert!(!imported.watch_eligible(id));
 }
+
+#[test]
+fn hidden_resource_policy_change_preserves_last_good_until_a_fresh_complete_baseline() {
+    let (_dir, store) = fresh();
+    let id = add(&store, "https://example.com/mod", "profile", "mod");
+    baseline(&store, &id, 20);
+    let original = store.watch(&id).unwrap().latest.unwrap();
+    let old = store.begin_check(&id, 30).unwrap();
+    run(
+        &store,
+        "settings",
+        json!({"filterHiddenResources":true}),
+        31,
+    );
+    assert!(!store.is_current(&old));
+    assert_eq!(store.watch(&id).unwrap().latest.unwrap(), original);
+    let failed = store.begin_check(&id, 32).unwrap();
+    assert!(failed.filtered_resources);
+    store
+        .fail_check(&failed, "incomplete", "Required resource failed", 33)
+        .unwrap();
+    assert_eq!(store.watch(&id).unwrap().latest.unwrap(), original);
+    let next = store.begin_check(&id, 34).unwrap();
+    store
+        .complete_check(
+            &next,
+            PageObservation {
+                final_url: next.url.clone(),
+                text: "A different complete filtered description".into(),
+                filtered_resources: true,
+                ..Default::default()
+            },
+            35,
+        )
+        .unwrap();
+    let watch = store.watch(&id).unwrap();
+    assert_eq!(watch.state, "baseline");
+    assert_eq!(watch.history.last().unwrap().kind, "baseline");
+    assert!(watch.latest.as_ref().unwrap().filtered_resources);
+    assert!(!has_changes(&watch));
+}
+#[test]
+fn capture_under_a_different_resource_policy_cannot_advance_the_baseline() {
+    let (_dir, store) = fresh();
+    let id = add(&store, "https://example.com/mod", "profile", "mod");
+    baseline(&store, &id, 20);
+    let old = store.latest_hash(&id);
+    let next = store.begin_check(&id, 30).unwrap();
+    store
+        .complete_check(
+            &next,
+            PageObservation {
+                final_url: next.url.clone(),
+                text: "Wrong browser policy".into(),
+                filtered_resources: true,
+                ..Default::default()
+            },
+            31,
+        )
+        .unwrap();
+    assert_eq!(store.latest_hash(&id), old);
+}
+
+#[test]
+fn a_restricted_release_does_not_advance_the_baseline_or_hold_the_account_as_signed_out() {
+    let (_dir, store) = fresh();
+    let a = add(
+        &store,
+        "https://www.patreon.com/posts/111",
+        "profile",
+        "one",
+    );
+    let b = add(
+        &store,
+        "https://www.patreon.com/posts/222",
+        "profile",
+        "two",
+    );
+    let account = session(&store, "Primary");
+    link_session(&store, &a, &account);
+    link_session(&store, &b, &account);
+    baseline(&store, &a, 40);
+    let original = store.latest_hash(&a);
+    let job = store.begin_check(&a, 50).unwrap();
+    store
+        .complete_check(
+            &job,
+            PageObservation {
+                final_url: job.url.clone(),
+                status: "accessRestricted".into(),
+                message: "Membership access is restricted".into(),
+                text: "Join to unlock".into(),
+                ..Default::default()
+            },
+            51,
+        )
+        .unwrap();
+    assert_eq!(store.latest_hash(&a), original);
+    assert_eq!(store.watch(&a).unwrap().state, "unavailable");
+    assert!(store.watch_eligible(&b));
+    assert!(
+        store.snapshot()["sourcePreferences"]["accounts"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn resource_policy_aba_establishes_a_new_context_instead_of_reusing_old_observation_ownership() {
+    let (_dir, store) = fresh();
+    let id = add(&store, "https://example.com/mod", "profile", "mod");
+    baseline(&store, &id, 20);
+    let original = store.watch(&id).unwrap().latest.unwrap().id;
+    run(
+        &store,
+        "settings",
+        json!({"filterHiddenResources":true}),
+        30,
+    );
+    run(
+        &store,
+        "settings",
+        json!({"filterHiddenResources":false}),
+        31,
+    );
+    baseline(&store, &id, 32);
+    let watch = store.watch(&id).unwrap();
+    assert_ne!(watch.latest.as_ref().unwrap().id, original);
+    assert_eq!(
+        watch.history.last().unwrap().context_generation,
+        watch.context_generation
+    );
+    assert_eq!(watch.state, "baseline");
+}

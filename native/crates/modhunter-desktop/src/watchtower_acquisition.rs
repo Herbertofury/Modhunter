@@ -62,6 +62,15 @@ pub(super) fn snapshot(app: &tauri::AppHandle) -> Value {
 fn binding(app: &tauri::AppHandle, context: &SiteContext) -> Result<Binding> {
     let state = app.state::<WatchRuntime>();
     state.writable()?;
+    if context
+        .download_scope
+        .as_ref()
+        .is_some_and(|scope| scope.lock().map_or(true, |scope| !scope.live()))
+    {
+        return Err(
+            "The selected file's browser authority expired or changed. Find files again.".into(),
+        );
+    }
     if !context.current(&state) {
         return Err("Account session changed; reopen the tracked page.".into());
     }
@@ -93,9 +102,9 @@ fn binding(app: &tauri::AppHandle, context: &SiteContext) -> Result<Binding> {
             .map(|file| file.kind.clone())
             .unwrap_or_else(|| "unclassified".into())
     } else {
-        page.as_ref()
-            .map(|page| page.content_intent.clone())
-            .unwrap_or_else(|| "unclassified".into())
+        // A release page can offer several unrelated archives. Only an exact
+        // selected file decision grants an installation relationship.
+        "unclassified".into()
     };
     let association = if content_intent == "update" {
         if !page.as_ref().is_some_and(|page| {
@@ -111,12 +120,18 @@ fn binding(app: &tauri::AppHandle, context: &SiteContext) -> Result<Binding> {
             .and_then(|file| file.association.clone())
             .or_else(|| page.as_ref().and_then(|page| page.association.clone()))
             .or_else(|| watch.association.clone());
-        if selected.is_none() || selected != watch.association {
+        if !selected
+            .as_ref()
+            .zip(watch.association.as_ref())
+            .is_some_and(|(selected, current)| {
+                selected.profile_id == current.profile_id && selected.item_id == current.item_id
+            })
+        {
             return Err(
                 "The exact update target changed; review the source association again.".into(),
             );
         }
-        selected
+        watch.association.clone()
     } else {
         None
     };
@@ -131,7 +146,7 @@ fn binding(app: &tauri::AppHandle, context: &SiteContext) -> Result<Binding> {
         content_intent,
     })
 }
-fn allowed_download(raw: &str, source: &str) -> bool {
+fn allowed_download(raw: &str, source: &str, fixture_origin: Option<&str>) -> bool {
     let Ok(url) = Url::parse(raw) else {
         return false;
     };
@@ -141,6 +156,18 @@ fn allowed_download(raw: &str, source: &str) -> bool {
             .strip_prefix("blob:")
             .and_then(|u| Url::parse(u).ok())
             .is_some_and(|u| u.origin().ascii_serialization() == source);
+    }
+    // This capability is constructed only by the private acceptance server.
+    // No manager command or website payload can request a loopback exemption.
+    if fixture_origin == Some(source)
+        && url.scheme() == "http"
+        && url.host_str().is_some_and(|host| {
+            host.parse::<std::net::IpAddr>()
+                .is_ok_and(|ip| ip.is_loopback())
+        })
+        && url.origin().ascii_serialization() == source
+    {
+        return true;
     }
     if !policy::website_navigation(&url) {
         return false;
@@ -167,78 +194,105 @@ pub(super) fn install(
     interactive: bool,
 ) -> windows_core::Result<()> {
     let view = view.cast::<ICoreWebView2_4>()?;
-    let callback = webview2_com::DownloadStartingEventHandler::create(Box::new(move |_, args| {
-        let Some(args) = args else { return Ok(()) };
-        unsafe {
-            args.SetCancel(true)?;
-            args.SetHandled(true)?;
-        }
-        if !interactive {
-            return Ok(());
-        }
-        let requested = (|| -> Result<()> {
-            let b = binding(&app, &context)?;
-            let operation = unsafe { args.DownloadOperation() }.map_err(err)?;
-            let mut uri = windows_core::PWSTR::null();
-            unsafe { operation.Uri(&mut uri) }.map_err(err)?;
-            let uri = webview2_com::take_pwstr(uri);
-            if !allowed_download(&uri, &b.source_origin) {
-                return Err("This download left the tracked site for an unsupported host.".into());
+    let callback =
+        webview2_com::DownloadStartingEventHandler::create(Box::new(move |sender, args| {
+            let Some(args) = args else { return Ok(()) };
+            unsafe {
+                args.SetCancel(true)?;
+                args.SetHandled(true)?;
             }
-            let mut name = windows_core::PWSTR::null();
-            unsafe { args.ResultFilePath(&mut name) }.map_err(err)?;
-            let name = webview2_com::take_pwstr(name);
-            let name = Path::new(&name)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .ok_or("Missing archive filename.")?;
-            let mut total = 0;
-            unsafe { operation.TotalBytesToReceive(&mut total) }.map_err(err)?;
-            let total = if total > 0 { Some(total as u64) } else { None };
-            let deferral = unsafe { args.GetDeferral() }.map_err(err)?;
-            let result =
-                app.state::<Downloads>()
-                    .store
-                    .lock()
-                    .map_err(err)?
-                    .request(name, b, total, now());
-            let row = match result {
-                Ok(r) => r,
-                Err(e) => {
-                    let _ = unsafe { deferral.Complete() };
-                    return Err(e);
+            if !interactive {
+                return Ok(());
+            }
+            let requested = (|| -> Result<()> {
+                let b = binding(&app, &context)?;
+                let operation = unsafe { args.DownloadOperation() }.map_err(err)?;
+                let mut uri = windows_core::PWSTR::null();
+                unsafe { operation.Uri(&mut uri) }.map_err(err)?;
+                let uri = webview2_com::take_pwstr(uri);
+                let mut allowed_origin = b.source_origin.clone();
+                if context.download_file_key.is_some() {
+                    let scope = context.download_scope.as_ref().ok_or(
+                        "This exact file has no live browser authority. Find files again.",
+                    )?;
+                    let mut source = windows_core::PWSTR::null();
+                    unsafe {
+                        sender
+                            .as_ref()
+                            .ok_or("The download owner disappeared.")?
+                            .Source(&mut source)
+                    }
+                    .map_err(err)?;
+                    let source = Url::parse(&webview2_com::take_pwstr(source))
+                        .map_err(|_| "The browser did not expose an exact current page.")?;
+                    scope
+                        .lock()
+                        .map_err(err)?
+                        .claim(&Url::parse(&uri).map_err(err)?, &source)?;
+                    if matches!(source.scheme(), "https" | "http") {
+                        allowed_origin = source.origin().ascii_serialization();
+                    }
                 }
-            };
-            HANDLES.with(|h| {
-                h.borrow_mut().insert(
-                    row.id,
-                    Held {
-                        operation,
-                        args: args.clone(),
-                        deferral: Some(deferral),
-                        context: context.clone(),
-                        label: label.clone(),
-                        created: Instant::now(),
-                        active: false,
-                    },
-                )
-            });
-            notify(&app);
-            if let Some(manager) = app.get_webview_window("watchtower") {
-                let _ = manager.show();
-                let _ = manager.set_focus();
+                if !allowed_download(&uri, &allowed_origin, context.fixture_origin.as_deref()) {
+                    return Err(
+                        "This download left the tracked site for an unsupported host.".into(),
+                    );
+                }
+                let mut name = windows_core::PWSTR::null();
+                unsafe { args.ResultFilePath(&mut name) }.map_err(err)?;
+                let name = webview2_com::take_pwstr(name);
+                let name = Path::new(&name)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .ok_or("Missing archive filename.")?;
+                let mut total = 0;
+                unsafe { operation.TotalBytesToReceive(&mut total) }.map_err(err)?;
+                let total = if total > 0 { Some(total as u64) } else { None };
+                let deferral = unsafe { args.GetDeferral() }.map_err(err)?;
+                let result = app.state::<Downloads>().store.lock().map_err(err)?.request(
+                    name,
+                    b,
+                    total,
+                    now(),
+                );
+                let row = match result {
+                    Ok(r) => r,
+                    Err(e) => {
+                        let _ = unsafe { deferral.Complete() };
+                        return Err(e);
+                    }
+                };
+                HANDLES.with(|h| {
+                    h.borrow_mut().insert(
+                        row.id,
+                        Held {
+                            operation,
+                            args: args.clone(),
+                            deferral: Some(deferral),
+                            context: context.clone(),
+                            label: label.clone(),
+                            created: Instant::now(),
+                            active: false,
+                        },
+                    )
+                });
+                notify(&app);
+                if let Some(manager) = app.get_webview_window("watchtower")
+                    && let Some(window) = app.get_window(manager.label())
+                {
+                    let _ = super::privacy::guarded_show(&app, &window, true);
+                }
+                Ok(())
+            })();
+            if let Err(message) = requested {
+                let _ = app.emit_to(
+                    "watchtower",
+                    "watchtower-download-error",
+                    json!({"message":message}),
+                );
             }
             Ok(())
-        })();
-        if let Err(message) = requested {
-            let _ = app.emit_to(
-                "watchtower",
-                "watchtower-download-error",
-                json!({"message":message}),
-            );
-        }
-        Ok(())
-    }));
+        }));
     let mut token = 0;
     unsafe { view.add_DownloadStarting(&callback, &mut token) }?;
     Ok(())
@@ -372,6 +426,24 @@ fn tick(app: &tauri::AppHandle) {
             drop(store);
             notify(&a);
         });
+    }
+    // WebView2 can release a cancelled file after its callback returns. Retry
+    // only the exact payload.part of durable terminal rows; ready archives are
+    // never eligible for this cleanup path.
+    {
+        let downloads = app.state::<Downloads>();
+        let store = downloads.store.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(rows) = store.snapshot()["jobs"].as_array() {
+            for row in rows {
+                if row["state"]
+                    .as_str()
+                    .is_some_and(|s| matches!(s, "cancelled" | "failed" | "interrupted"))
+                    && let Some(id) = row["id"].as_str()
+                {
+                    let _ = store.cleanup_part(id);
+                }
+            }
+        }
     }
     if changed {
         notify(app)
@@ -539,6 +611,7 @@ pub(super) fn source_current(app: &tauri::AppHandle, saved: &Binding) -> Result<
         lease: None,
         download_watch: Some((watch.id, saved.watch_generation)),
         download_file_key: saved.source_file_key.clone(),
+        download_scope: None, // durable review never recreates network authority
         cancellation: None,
     };
     if binding(app, &context)? != *saved {

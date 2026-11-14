@@ -11,9 +11,9 @@ mod commands;
 #[cfg(test)]
 #[path = "store/recovery_tests.rs"]
 mod recovery_tests;
-mod sources;
 #[cfg(test)]
 mod source_tests;
+mod sources;
 #[cfg(test)]
 mod tests;
 
@@ -371,6 +371,7 @@ impl WatchStore {
                 ignore_selectors: watch.ignore_selectors.clone(),
                 session_id: watch.session_id.clone(),
                 session_storage_generation: session.as_ref().map_or(0, |s| s.storage_generation),
+                filtered_resources: doc.settings.filter_hidden_resources,
                 session,
             })
         })
@@ -388,6 +389,9 @@ impl WatchStore {
         now_ms: u64,
     ) -> Result<bool, String> {
         let now_ms = now_ms.max(job.started_at);
+        if observed.filtered_resources != job.filtered_resources {
+            return self.fail_check(job,"incomplete","The browser resource policy changed during capture. The previous complete observation is retained.",now_ms);
+        }
         if !self.is_current(job) {
             return Ok(false);
         }
@@ -436,7 +440,15 @@ impl WatchStore {
                     .iter_mut()
                     .find(|w| w.id == job.watch_id)
                     .ok_or("Missing watch")?;
-                let previous = watch.latest.as_ref();
+                let current_context = watch.latest.as_ref().is_some_and(|latest| {
+                    watch.history.iter().any(|entry| {
+                        entry.observation_id == latest.id
+                            && entry.context_generation == watch.context_generation
+                    })
+                });
+                let previous = watch.latest.as_ref().filter(|p| {
+                    current_context && p.filtered_resources == observed.filtered_resources
+                });
                 let changed = previous.is_some_and(|p| p.hash != hash);
                 let id = previous
                     .filter(|p| p.hash == hash)
@@ -452,6 +464,7 @@ impl WatchStore {
                     text_bytes: normalized.len(),
                     text_preview: bounded_text(&normalized, MAX_PREVIEW_BYTES),
                     preview_truncated: normalized.len() > MAX_PREVIEW_BYTES,
+                    filtered_resources: observed.filtered_resources,
                 };
                 if previous.is_none() || changed {
                     let entry = change_entry(previous, &observation, watch.context_generation);
@@ -502,6 +515,7 @@ impl WatchStore {
         }
         let status = match status {
             "loginRequired" => "signInRequired",
+            "accessRestricted" => "unavailable",
             "verificationRequired" => "challenge",
             "incomplete" => "tooLarge",
             "empty" => "selectorMissing",
@@ -1009,6 +1023,7 @@ fn current(doc: &Document, job: &CheckJob) -> bool {
             w.state == "checking"
                 && w.operation_id == job.operation_id
                 && w.generation == job.generation
+                && job.filtered_resources == doc.settings.filter_hidden_resources
                 && w.added_at <= job.started_at
                 && w.url == job.url
                 && w.session_id == job.session_id

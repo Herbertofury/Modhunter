@@ -12,8 +12,8 @@ function documentFixture({title='Release',links=[],passwords=[],content='A compl
  return {title,body:{innerText:body||content},querySelectorAll:selector=>selector==='input[type=password]'?passwords:selector==='a[href]'?links:selector==='a[href],button,[role=menuitem]'?[...links,...controls]:selector==='main,article,[role=main]'?[{innerText:content,getClientRects:()=>[{}]}]:[]};
 }
 const parser=class {parseFromString(html){const links=[...html.matchAll(/href=["']([^"']+)["']/g)].map(match=>link(match[1].replaceAll('&amp;','&')));return documentFixture({links});}};
-async function discover({url='https://www.patreon.com/posts/release-111',source=url,docs={},document=documentFixture(),includeNewContent=false}={}){
- const requests=[];const sandbox={window:{},cfg:{key:'result',source,includeNewContent},location:new URL(url),document,URL,Set,Map,DOMParser:parser,getComputedStyle:()=>({visibility:'visible'}),AbortSignal,TextDecoder,Uint8Array,fetch:async target=>{requests.push(target);const id=/\/api\/posts\/(\d+)/.exec(target)?.[1];if(!docs[id])throw Error('Unexpected fixture request '+id);return new Response(JSON.stringify(docs[id]),{status:200});}};
+async function discover({url='https://www.patreon.com/posts/release-111',source=url,docs={},responses={},document=documentFixture(),includeNewContent=false}={}){
+ const requests=[];const sandbox={window:{},cfg:{key:'result',source,includeNewContent},location:new URL(url),document,URL,Set,Map,DOMParser:parser,getComputedStyle:()=>({visibility:'visible'}),AbortSignal,TextDecoder,Uint8Array,fetch:async(target,options)=>{requests.push(target);assert.equal(options.credentials,'include');assert.equal(options.redirect,'error');if(responses[target]){const {body,status=200,headers={}}=responses[target];return new Response(body,{status,headers});}const id=/\/api\/posts\/(\d+)/.exec(target)?.[1];if(!docs[id])throw Error('Unexpected fixture request '+target);return new Response(JSON.stringify(docs[id]),{status:200});}};
  vm.runInNewContext(resolver,sandbox,{timeout:1000});
  for(let i=0;i<100&&sandbox.window.result?.state==='pending';i++)await new Promise(setImmediate);
  assert.notEqual(sandbox.window.result?.state,'pending','resolver did not settle');return {result:JSON.parse(JSON.stringify(sandbox.window.result)),requests};
@@ -59,9 +59,26 @@ test('a page over the full link inspection limit does not claim a complete empty
  const links=Array.from({length:10001},()=>link('https://mods.example.com/other'));
  const {result}=await discover({url:'https://mods.example.com/release',document:documentFixture({links})});assert.equal(result.state,'error');assert.match(result.message,/too many links/);
 });
-test('LoversLab choices retain exact file and attachment identities and ignore other file pages',async()=>{
+test('LoversLab inspects the complete chooser even when the page already exposes one attachment',async()=>{
+ const url='https://www.loverslab.com/files/file/111-mod/';
  const links=[link('?do=download&r=77&csrfKey=secret','Version A'),link('?do=download','Chooser'),link('/files/file/222-other/?do=download&r=88','Wrong mod')];
- const {result}=await discover({url:'https://www.loverslab.com/files/file/111-mod/',document:documentFixture({links})});assert.equal(result.state,'ready');assert.deepEqual(result.files.map(row=>row.identity),['loverslab:file:111:attachment:77','loverslab:file:111:chooser']);assert.equal(result.files[1].kind,'chooser');assert(!JSON.stringify(result.files.map(row=>row.identity)).includes('secret'));
+ const responses={[url+'?do=download']:{body:'<a href="?do=download&amp;r=77&amp;csrfKey=secret">A</a><a href="?do=download&amp;r=78&amp;csrfKey=other">B</a>',headers:{'content-type':'text/html'}}};
+ const {result,requests}=await discover({url,document:documentFixture({links}),responses});assert.equal(result.state,'ready');assert.deepEqual(result.files.map(row=>row.identity),['loverslab:file:111:attachment:77','loverslab:file:111:attachment:78']);assert(result.files.every(row=>row.kind==='attachment'));assert.equal(requests.length,1);assert(!JSON.stringify(result.files.map(row=>row.identity)).includes('secret'));
+});
+test('LoversLab resolves direct archive response headers without accepting a chooser as a file',async()=>{
+ const url='https://www.loverslab.com/files/file/111-mod/';const links=[link('?do=download','Download')];
+ const responses={[url+'?do=download']:{body:'archive body is cancelled',headers:{'content-disposition':'attachment; filename="exact-release.zip"','content-type':'application/zip'}}};
+ const {result}=await discover({url,document:documentFixture({links}),responses});assert.equal(result.state,'ready');assert.equal(result.files.length,1);assert.equal(result.files[0].identity,'loverslab:file:111:direct');assert.equal(result.files[0].name,'exact-release.zip');assert.equal(result.files[0].kind,'attachment');
+});
+test('LoversLab refuses an unresolved or restricted chooser without returning a guessed attachment',async()=>{
+ const url='https://www.loverslab.com/files/file/111-mod/';const links=[link('?do=download','Download')];
+ for(const response of [{body:'<main>Sign in to view this attachment</main>',headers:{'content-type':'text/html'}},{body:'Access restricted',status:403}]){
+  const {result}=await discover({url,document:documentFixture({links}),responses:{[url+'?do=download']:response}});assert.equal(result.state,'error');assert.equal(result.files,undefined);
+ }
+});
+test('shared Drive and MEGA folders remain visibly distinct from direct files',async()=>{
+ const links=[link('https://drive.google.com/drive/folders/abc12345?resourcekey=secret','Drive folder'),link('https://mega.nz/folder/xyz12345#private-key','MEGA folder'),link('https://mega.nz/#F!old12345!private-key','Legacy folder')];
+ const {result}=await discover({url:'https://mods.example.com/release',document:documentFixture({links})});assert.equal(result.state,'ready');assert.deepEqual(result.files.map(row=>row.kind),['folder','folder','folder']);assert.deepEqual(result.files.map(row=>row.identity),['drive:folder:abc12345','mega:folder:xyz12345','mega:folder:old12345']);
 });
 test('LoversLab redirect to a different mod never supplies choices for the original source',async()=>{
  const {result}=await discover({url:'https://www.loverslab.com/files/file/222-other/',source:'https://www.loverslab.com/files/file/111-mod/'});assert.equal(result.state,'error');assert.match(result.message,/exact LoversLab/);
@@ -87,4 +104,13 @@ test('an OAuth provider success page cannot assert login at the owning website',
 });
 test('observations return only categorical facts, never page content or identifiers',()=>{
  const result=observe({document:documentFixture({body:'user@example.com secret page content',controls:[link('/logout','Log out')]})});assert.deepEqual(Object.keys(result).sort(),['guidance','loginState','origin','status']);assert(!JSON.stringify(result).includes('user@example.com'));assert(!JSON.stringify(result).includes('secret'));
+});
+
+test('visible Patreon membership restrictions cannot become a new page baseline',()=>{
+ const policy=fs.readFileSync(path.join(root,'native/crates/modhunter-desktop/src/watchtower_policy.rs'),'utf8');
+ const body=/const CAPTURE_BODY: &str = r#"([\s\S]*?)"#;/.exec(policy)[1];
+ const location=new URL('https://www.patreon.com/posts/release-111');
+ const document=documentFixture({body:'Join to unlock this post'});document.readyState='complete';document.documentURI=location.href;
+ const result=vm.runInNewContext('(()=>{'+body+'})()',{cfg:{url:location.href,selector:'',ignore:[]},location,document,URL,getComputedStyle:()=>({visibility:'visible',display:'block'})});
+ assert.equal(result.status,'accessRestricted');assert.equal(result.text,'');
 });

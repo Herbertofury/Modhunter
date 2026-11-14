@@ -108,16 +108,24 @@ pub(super) fn snapshot(app: &tauri::AppHandle) -> Value {
     let Some(state) = app.try_state::<Maintenance>() else {
         return json!({"settings":Settings::default()});
     };
-    let document = state
+    let mut document = state
         .document
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clone();
+    let watch = app.state::<WatchRuntime>().store.settings();
+    if (document.settings.privacy_preset == "standard"
+        && (watch.hide_titles || watch.privacy_screen || watch.notifications))
+        || (document.settings.privacy_preset == "discreet"
+            && (!watch.hide_titles || !watch.privacy_screen || watch.notifications))
+    {
+        document.settings.privacy_preset = "custom".into();
+    }
     let visible = document.last_release.as_ref().is_some_and(|r| {
         r["newer"] == true
             && r["availableVersion"].as_str() != document.dismissed_version.as_deref()
     });
-    json!({"settings":document.settings,"release":document.last_release,"lastChecked":document.last_checked,"lastAttempt":document.last_attempt,"releaseError":document.release_error,"dismissedVersion":document.dismissed_version,"updateVisible":visible,"checking":state.checking.load(Ordering::Acquire),"privacy":super::privacy::snapshot(app)})
+    json!({"settings":document.settings,"release":document.last_release,"lastChecked":document.last_checked,"lastAttempt":document.last_attempt,"releaseError":document.release_error,"dismissedVersion":document.dismissed_version,"updateVisible":visible,"checking":state.checking.load(Ordering::Acquire),"privacy":super::privacy::snapshot(app),"reset":super::reset_status(app)})
 }
 pub(super) fn tick(app: &tauri::AppHandle) {
     let Some(state) = app.try_state::<Maintenance>() else {
@@ -191,10 +199,15 @@ pub(super) fn apply_appearance(app: &tauri::AppHandle) -> Result<()> {
         }
     }
     let _ = app.emit("modhunter-preferences", payload);
+    crate::windows::apply_content_preferences(
+        app,
+        &json!({"theme":settings.theme,"locale":settings.locale}),
+    )?;
     Ok(())
 }
 fn save_settings(app: &tauri::AppHandle, value: &Value) -> Result<Value> {
     let mut next: Settings = serde_json::from_value(value.clone()).map_err(err)?;
+    let requested_preset = next.privacy_preset.clone();
     if !matches!(next.theme.as_str(), "system" | "light" | "dark")
         || !matches!(next.locale.as_str(), "en" | "es" | "it" | "zh-TW")
         || !matches!(
@@ -237,8 +250,37 @@ fn save_settings(app: &tauri::AppHandle, value: &Value) -> Result<Value> {
     let mut doc = state.document.lock().map_err(err)?.clone();
     let previous = doc.settings.clone();
     super::privacy::configure(app, next.quick_hide, next.capture_protection)?;
+    let watch = app.state::<WatchRuntime>();
+    let previous_watch = watch.store.settings();
+    let mut next_watch = previous_watch.clone();
+    if (standard && requested_preset == "standard") || (discreet && requested_preset == "discreet")
+    {
+        next_watch.hide_titles = discreet;
+        next_watch.privacy_screen = discreet;
+        next_watch.notifications = false;
+    }
+    if (standard
+        && (next_watch.hide_titles || next_watch.privacy_screen || next_watch.notifications))
+        || (discreet
+            && (!next_watch.hide_titles || !next_watch.privacy_screen || next_watch.notifications))
+    {
+        next.privacy_preset = "custom".into();
+    }
+    if let Err(error) = watch.store.command(
+        "settings",
+        &serde_json::to_value(&next_watch).map_err(err)?,
+        now(),
+    ) {
+        let _ = super::privacy::configure(app, previous.quick_hide, previous.capture_protection);
+        return Err(error);
+    }
     doc.settings = next;
     if let Err(error) = persist(&state, doc) {
+        let _ = watch.store.command(
+            "settings",
+            &serde_json::to_value(previous_watch).map_err(err)?,
+            now(),
+        );
         let _ = super::privacy::configure(app, previous.quick_hide, previous.capture_protection);
         return Err(error);
     }
@@ -554,13 +596,19 @@ pub(super) fn execute(app: &tauri::AppHandle, kind: &str, value: &Value) -> Resu
         "browserChoices" => Ok(
             json!({"browsers":browsers().into_iter().map(|(id,label,_)|json!({"id":id,"label":label})).collect::<Vec<_>>()}),
         ),
-        "openPrivate" => {
+        "openPrivate" | "copySourceLink" => {
             let watch = app
                 .state::<WatchRuntime>()
                 .store
                 .watch(id(value)?)
                 .ok_or("Source no longer exists.")?;
-            open_external(app, &watch.url, true)
+            if kind == "copySourceLink" {
+                let url = canonical_page_url(&watch.url)?;
+                app.clipboard().write_text(url.to_string()).map_err(err)?;
+                Ok(json!({"message":"Source link copied."}))
+            } else {
+                open_external(app, &watch.url, true)
+            }
         }
         "licenses" => Ok(
             json!({"licenses":[{"name":"Modhunter","text":include_str!("../../../PROJECT_NOTICE.txt")},{"name":"Third-party components","text":include_str!("../../../resources/THIRD_PARTY_NOTICES.json")},{"name":"7-Zip 26.06","text":include_str!("../../../resources/archive-tools/License.txt")}]}),

@@ -662,8 +662,18 @@ fn invalidate_session_watches(
     now: u64,
     removed: bool,
 ) -> Result<(), String> {
-    let generation=doc.sessions.iter().find(|session|session.id==id).map(|session|session.storage_generation);
-    if removed || doc.source_preferences.accounts.iter().any(|account|account.session_id==id && Some(account.storage_generation)!=generation) { sources::forget_account(doc,id); }
+    let generation = doc
+        .sessions
+        .iter()
+        .find(|session| session.id == id)
+        .map(|session| session.storage_generation);
+    if removed
+        || doc.source_preferences.accounts.iter().any(|account| {
+            account.session_id == id && Some(account.storage_generation) != generation
+        })
+    {
+        sources::forget_account(doc, id);
+    }
     for watch in doc
         .watches
         .iter_mut()
@@ -771,6 +781,11 @@ fn save_settings(doc: &mut Document, payload: &Value, now: u64) -> Result<Value,
     settings.notifications = boolean(payload, "notifications", settings.notifications)?;
     settings.hide_titles = boolean(payload, "hideTitles", settings.hide_titles)?;
     settings.privacy_screen = boolean(payload, "privacyScreen", settings.privacy_screen)?;
+    settings.filter_hidden_resources = boolean(
+        payload,
+        "filterHiddenResources",
+        settings.filter_hidden_resources,
+    )?;
     settings.default_interval_minutes = interval(
         payload,
         "defaultIntervalMinutes",
@@ -792,6 +807,23 @@ fn save_settings(doc: &mut Document, payload: &Value, now: u64) -> Result<Value,
     settings.muted_folders = strings(payload, "mutedFolders", &settings.muted_folders, 1000, 200)?;
     validate_settings(&settings)?;
     for watch in &mut doc.watches {
+        if settings.filter_hidden_resources != old.filter_hidden_resources {
+            watch.generation = watch
+                .generation
+                .checked_add(1)
+                .ok_or("Page generation limit reached.")?;
+            watch.context_generation = watch
+                .context_generation
+                .checked_add(1)
+                .ok_or("Page context generation limit reached.")?;
+            watch.fresh_check_required = true;
+            watch.updated_at = now;
+            watch.retry_at = 0;
+            watch.next_check_at = 0;
+            if watch.state == "checking" {
+                watch.state = "cancelled".into();
+            }
+        }
         if muted(watch, &settings) && !muted(watch, &old) {
             watch.generation = watch
                 .generation
@@ -905,8 +937,8 @@ fn import_config(doc: &Document, value: &Value) -> Result<Watch, String> {
     if requires {
         clean["enabled"] = json!(false);
     }
-    let watch=config(doc, &clean, None, 0)?;
-    sources::validate_import_choices(&watch,value)?;
+    let watch = config(doc, &clean, None, 0)?;
+    sources::validate_import_choices(&watch, value)?;
     Ok(watch)
 }
 pub(super) fn import_preview(doc: &Document, payload: &Value) -> Result<Value, String> {
@@ -968,7 +1000,7 @@ fn commit_import(doc: &mut Document, payload: &Value, now: u64) -> Result<Value,
     let mut restored = 0;
     let mut skipped = 0;
     let mut ids = Vec::new();
-    let mut imported_creators=sources::ImportedCreators::new();
+    let mut imported_creators = sources::ImportedCreators::new();
     for value in values {
         let mut watch = import_config(doc, value)?;
         if let Some(index) = doc.watches.iter().position(|w| same_page(w, &watch)) {
@@ -987,9 +1019,9 @@ fn commit_import(doc: &mut Document, payload: &Value, now: u64) -> Result<Value,
         watch.updated_at = now;
         watch.state = idle_state(&watch);
         ids.push(watch.id.clone());
-        let watch_id=watch.id.clone();
+        let watch_id = watch.id.clone();
         doc.watches.push(watch);
-        sources::import_choices(doc,&watch_id,value,&mut imported_creators)?;
+        sources::import_choices(doc, &watch_id, value, &mut imported_creators)?;
         added += 1;
     }
     Ok(

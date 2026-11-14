@@ -5,7 +5,8 @@ Run the real Modhunter plugin inside the official portable MO2 2.5.2 release.
 .DESCRIPTION
 Creates a new, isolated fixture instance with a synthetic BasicGame and two
 mods, including an inert TES4 header in the disabled mod for Rust analysis.
-No owned game, account, download ticket or installer is used.
+No owned game or account is used. An isolated, owned fixture ZIP exercises the
+real native installer and guarded actual-byte restoration.
 The test-only plugins live under native/scripts and are never packaged for users.
 Any missing native receipt, failed assertion or unexpected process exit fails.
 #>
@@ -107,6 +108,34 @@ try {
             required = $true
             sha256 = (Get-FileHash -LiteralPath $RustCliPath -Algorithm SHA256).Hash.ToLowerInvariant()
         }
+        $ArchiveToolsSource = Join-Path (Split-Path -Parent $RustCliPath) 'archive-tools'
+        $ArchiveToolPins = [ordered]@{
+            '7z.exe' = 'dc0493429fe28136fcb177a0e77c9875cbb3b0bff5f2f8eeba4df302e98cef76'
+            '7z.dll' = '500db9eb17f3c21b729ba41dd02ecfe1823da05028c7e4ba129084cc74cc364e'
+        }
+        foreach ($Name in @('7z.exe', '7z.dll', 'License.txt', 'provenance.json')) {
+            $Tool = Join-Path $ArchiveToolsSource $Name
+            if (!(Test-Path -LiteralPath $Tool -PathType Leaf) -or
+                ((Get-Item -LiteralPath $Tool).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                throw "Pinned archive helper asset missing or linked: $Name. Run prepare_archive_tools.py before this native smoke."
+            }
+        }
+        if ((Get-Item -LiteralPath (Join-Path $ArchiveToolsSource 'provenance.json')).Length -gt 65536) {
+            throw 'Pinned archive helper provenance exceeds its fixture bound.'
+        }
+        $ArchiveProvenance = ConvertFrom-ReceiptJson (Get-Content -LiteralPath (Join-Path $ArchiveToolsSource 'provenance.json') -Raw)
+        if ($ArchiveProvenance.version -ne '26.06' -or
+            $ArchiveProvenance.licenseSha256 -cne (Get-FileHash -LiteralPath (Join-Path $ArchiveToolsSource 'License.txt') -Algorithm SHA256).Hash.ToLowerInvariant()) {
+            throw 'Pinned archive helper version or license provenance differs.'
+        }
+        foreach ($Name in $ArchiveToolPins.Keys) {
+            $Expected = $ArchiveToolPins[$Name]
+            if ((Get-FileHash -LiteralPath (Join-Path $ArchiveToolsSource $Name) -Algorithm SHA256).Hash.ToLowerInvariant() -cne $Expected -or
+                $ArchiveProvenance.files.$Name -cne $Expected) {
+                throw "Archive helper does not match the pinned official build: $Name"
+            }
+        }
+        $Summary['archiveTools'] = @{ version = '26.06'; files = $ArchiveToolPins; installedBesideCli = $false }
     }
     if (!$QtBridgePath) { throw 'Supply the matching compiled Qt bridge with -QtBridgePath; native Nexus binding proof is mandatory.' }
     $QtBridgePath = [IO.Path]::GetFullPath($QtBridgePath)
@@ -255,6 +284,16 @@ log_level=0
         $HelperDirectory = Join-Path $PluginDestination 'bin'
         New-Item -ItemType Directory -Path $HelperDirectory -Force | Out-Null
         Copy-Item -LiteralPath $RustCliPath -Destination (Join-Path $HelperDirectory 'modhunter-cli.exe')
+        $InstalledArchiveTools = Join-Path $HelperDirectory 'archive-tools'
+        New-Item -ItemType Directory -Path $InstalledArchiveTools -Force | Out-Null
+        foreach ($Name in @('7z.exe', '7z.dll', 'License.txt', 'provenance.json')) {
+            Copy-Item -LiteralPath (Join-Path $ArchiveToolsSource $Name) -Destination (Join-Path $InstalledArchiveTools $Name)
+            if ((Get-FileHash -LiteralPath (Join-Path $InstalledArchiveTools $Name) -Algorithm SHA256).Hash -cne
+                (Get-FileHash -LiteralPath (Join-Path $ArchiveToolsSource $Name) -Algorithm SHA256).Hash) {
+                throw "Copied archive helper asset changed: $Name"
+            }
+        }
+        $Summary.archiveTools.installedBesideCli = $true
     }
     $HelperDirectory = Join-Path $PluginDestination 'bin'
     New-Item -ItemType Directory -Path $HelperDirectory -Force | Out-Null
@@ -285,6 +324,7 @@ log_level=0
     $StartInfo.Environment['PYTHONNOUSERSITE'] = '1'
     $StartInfo.Environment.Remove('PYTHONHOME') | Out-Null
     $StartInfo.Environment.Remove('PYTHONPATH') | Out-Null
+    $StartInfo.Environment.Remove('MODHUNTER_ARCHIVE_HELPER') | Out-Null
     foreach ($QtVariable in @('QT_PLUGIN_PATH', 'QML2_IMPORT_PATH', 'QML_IMPORT_PATH', 'QT_QPA_PLATFORM_PLUGIN_PATH', 'QTWEBENGINEPROCESS_PATH')) {
         $StartInfo.Environment.Remove($QtVariable) | Out-Null
     }

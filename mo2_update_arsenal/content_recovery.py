@@ -114,7 +114,7 @@ def owned_recovery_root(mods_root, profiles_root):
             directory.mkdir()
         except FileExistsError:
             real_path(directory, directory=True)
-            if read_json(directory / name, 16384) != marker:
+            if not (directory / name).is_file() or read_json(directory / name, 16384) != marker:
                 raise ValueError("Existing recovery directory has a different owner; no files were changed")
         else:
             with (directory / name).open("xb") as stream:
@@ -124,7 +124,7 @@ def owned_recovery_root(mods_root, profiles_root):
         return real_path(directory, directory=True)
 
     root = owned(root, "modhunter-recovery-owner.json", {"schema": 1, "owner": "Modhunter-MO2-Recovery"})
-    key = str(mods).casefold() if os.name == "nt" else str(mods)
+    key = os.path.normcase(str(mods))
     identifier = hashlib.sha256(key.encode("utf-8")).hexdigest()[:32]
     return owned(root / ("instance-" + identifier), "modhunter-instance-owner.json",
                  {"schema": 1, "owner": "Modhunter-MO2-Recovery-Instance", "modsRoot": key})
@@ -382,6 +382,43 @@ def running_game_processes(context):
     return found
 
 
+def previous_owner_stopped(job):
+    """Positive process-exit proof; a different service nonce alone is insufficient."""
+    process_id = job.get("serviceProcessId")
+    if type(process_id) is not int or not 0 < process_id < 2 ** 32 or process_id == os.getpid():
+        return False
+    if os.name != "nt":
+        try:
+            os.kill(process_id, 0)
+        except ProcessLookupError:
+            return True
+        except (OSError, OverflowError):
+            return False
+        return False
+    from ctypes import wintypes
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    handle = kernel.OpenProcess(0x1000, False, process_id)
+    if not handle:
+        return ctypes.get_last_error() == 87  # ERROR_INVALID_PARAMETER: no such PID.
+    try:
+        code = wintypes.DWORD()
+        return bool(kernel.GetExitCodeProcess(handle, ctypes.byref(code))) and code.value != 259
+    finally:
+        kernel.CloseHandle(handle)
+
+
+def archive_inputs_independent(job):
+    """No native mutation began, or its original bytes live in the separate vault."""
+    if not job.get("nativeStarted") and not job.get("mutationStarted"):
+        return True
+    return (job.get("backupVerified") is True and job.get("includesModFiles") is True
+            and bool(BACKUP_ID.fullmatch(str(job.get("backupId", "")))))
+
+
 class ContentRecovery:
     def __init__(self, service, ledger, *, runner=None):
         self.service = service
@@ -395,6 +432,7 @@ class ContentRecovery:
         self._lease = None
         self._launched = set()
         self._native_generation = 0
+        self._native_session = secrets.token_hex(16)
         self.native_enabled = False
         self.launch_guard_available = False
         self._load()
@@ -406,14 +444,30 @@ class ContentRecovery:
             doc = read_json(self.ledger, MAX_LEDGER)
             if doc.get("schema") != 1 or not isinstance(doc.get("jobs"), list) or len(doc["jobs"]) > MAX_JOBS:
                 raise ValueError("Unsupported content job journal")
+            newly_released = []
+            all_previous_workers_stopped = True
             for job in doc["jobs"]:
                 if not isinstance(job, dict) or not REVIEW_ID.fullmatch(str(job.get("reviewId", ""))) or job.get("jobId") != job["reviewId"]:
                     raise ValueError("Invalid content job identity")
                 if job["jobId"] in self._jobs:
                     raise ValueError("Duplicate content job identity")
                 if job.get("state") not in TERMINAL:
+                    owner_stopped = previous_owner_stopped(job)
+                    all_previous_workers_stopped = all_previous_workers_stopped and owner_stopped
                     job.update(state="interrupted", ok=False, error="MO2 closed before the operation was acknowledged. Inspect the retained backup; this job will not replay.")
+                    job["stageReleaseAllowed"] = False
+                if (job.get("action") in {"install", "nativeInstall"} and job.get("state") in {"unknown", "interrupted"}
+                        and not job.get("stageReleaseAllowed") and previous_owner_stopped(job) and archive_inputs_independent(job)):
+                    job["stageReleaseAllowed"] = True
+                    job["stageReleaseReason"] = "Original native process exited; archive inputs are independent of retained recovery data"
+                    newly_released.append(job)
                 self._jobs[job["jobId"]] = job
+            if newly_released:
+                if all_previous_workers_stopped:
+                    self._persist()
+                else:
+                    for job in newly_released:
+                        job["stageReleaseAllowed"] = False
         except Exception as exc:
             # A malformed ledger cannot erase the deduplication boundary.
             self._ledger_error = "Content journal requires inspection before new work: " + str(exc)
@@ -438,7 +492,11 @@ class ContentRecovery:
     def jobs(self):
         with self._lock:
             profile = self.service.profile_id()
-            return {"ok": True, "jobs": deepcopy([j for j in self._jobs.values() if j.get("profileId") == profile]),
+            rows = deepcopy([j for j in self._jobs.values() if j.get("profileId") == profile])
+            if getattr(self, "_ledger_error", ""):
+                for row in rows:
+                    row["stageReleaseAllowed"] = False
+            return {"ok": True, "jobs": rows,
                     "nativeAvailable": self.native_enabled, "helperAvailable": self.runner.available,
                     "error": getattr(self, "_ledger_error", "")}
 
@@ -490,6 +548,9 @@ class ContentRecovery:
             context = result["context"]
             context_id = "context-" + secrets.token_hex(16)
             with self._lock:
+                if (context.get("nativeLease") != self._native_session
+                        or context.get("nativeGeneration") != self._native_generation):
+                    raise ValueError("Native MO2 state changed during context capture; capture a fresh target")
                 if len(self._contexts) >= 128:
                     active = {j.get("contextId") for j in self._jobs.values() if j.get("state") not in TERMINAL}
                     for old in list(self._contexts):
@@ -498,9 +559,8 @@ class ContentRecovery:
                             break
                     else:
                         raise RuntimeError("Too many active content reviews")
-                context["nativeGeneration"] = self._native_generation
                 self._contexts[context_id] = deepcopy(context)
-            public = {k: context.get(k) for k in ("profileId", "profileName", "game", "gameRuntime", "executionEpoch", "itemId", "modName", "installedVersion", "newTarget", "missingTarget", "gameRunning")}
+            public = {k: context.get(k) for k in ("profileId", "profileName", "game", "gameRuntime", "executionEpoch", "nativeLease", "nativeGeneration", "itemId", "modName", "installedVersion", "newTarget", "missingTarget", "gameRunning")}
             public.update(ok=True, contextId=context_id, target={"itemId": context.get("itemId", ""), "modName": context.get("modName", ""), "version": context.get("installedVersion", "?"), "exists": bool(context.get("modRoot")) and not context.get("newTarget") and not context.get("missingTarget")})
             if native:
                 public["nativeContext"] = {k: context.get(k, "") for k in ("modRoot", "vaultRoot", "modsRoot", "profilesRoot")}
@@ -516,7 +576,7 @@ class ContentRecovery:
         current = self.service.selection_snapshot([])
         if any(value.get(k) != current.get(k) for k in ("profileId", "profileName", "game", "gameRuntime", "executionEpoch")):
             raise ValueError("MO2 profile or execution context changed; review the operation again")
-        if value.get("nativeGeneration") != self._native_generation:
+        if value.get("nativeLease") != self._native_session or value.get("nativeGeneration") != self._native_generation:
             raise ValueError("Native MO2 state changed after review; capture a fresh target")
         return value
 
@@ -540,6 +600,7 @@ class ContentRecovery:
             context = context or self._context(str(data.get("contextId") or ""))
             job = {"jobId": review, "reviewId": review, "downloadId": str(data.get("downloadId") or ""),
                    "contextId": str(data.get("contextId") or ""), "action": action, "state": "queued", "ok": True,
+                   "nativeLease": self._native_session, "serviceProcessId": os.getpid(), "stageReleaseAllowed": False,
                    "intentDigest": hashlib.sha256(canonical_json(data)).hexdigest(),
                    "profileId": context["profileId"], "itemId": context.get("itemId", ""), "modName": context.get("modName", ""),
                    "createdAt": int(time.time() * 1000), "updatedAt": int(time.time() * 1000)}
@@ -597,6 +658,17 @@ class ContentRecovery:
     def invalidate(self):
         with self._lock:
             self._native_generation += 1
+            # Stop superseded reads/copies promptly, before the debounced MO2
+            # snapshot catches up. An already-running native installer or
+            # atomic restore must retain ownership until its real outcome.
+            for ident, event in self._cancel.items():
+                job = self._jobs.get(ident, {})
+                if job.get("state") in {"queued", "preparing", "verifying", "scanning"} or (job.get("state") == "installing" and not job.get("nativeStarted")):
+                    event.set()
+                    job["superseded"] = True
+                    request = self._requests.get(ident)
+                    if request is not None:
+                        request.cancel_if_pending()
 
     def shutdown(self):
         with self._lock:
@@ -632,16 +704,9 @@ class ContentRecovery:
             if not lease.get("ok"):
                 raise RuntimeError(lease.get("error", "Native mutation lease was rejected"))
             result = operation(job, data, context, cancel)
-            self._update(job, **result)
-            return result
         except Exception as exc:
             state = "unknown" if job.get("nativeStarted") or job.get("mutationStarted") else "cancelled" if cancel.is_set() else "failed"
             result = {"ok": False, "state": state, "error": str(exc), "backupRetained": bool(job.get("backupId"))}
-            try:
-                self._update(job, **result)
-            except Exception:
-                job.update(result)
-            return result
         finally:
             with self._lock:
                 if self._lease == job["jobId"]:
@@ -649,6 +714,36 @@ class ContentRecovery:
                 self._cancel.pop(job["jobId"], None)
             if locked and not lock_held:
                 self.service._install_lock.release()
+        # A terminal acknowledgement must not race the next reviewed command
+        # against a lease that this completed worker still owns.
+        related = []
+        try:
+            with self._lock:
+                inactive = job["jobId"] not in self._cancel and job["jobId"] not in self._requests and self._lease != job["jobId"]
+                if inactive and job.get("action") in {"install", "nativeInstall"} and archive_inputs_independent(job):
+                    result["stageReleaseAllowed"] = True
+                    result["stageReleaseReason"] = "Native worker stopped; archive inputs are independent of retained recovery data"
+                recovered = result.get("ok") is True or (result.get("filesRestored") and (result.get("result") or {}).get("ok") is True)
+                if (inactive and recovered and data.get("backupId") and data.get("action") in
+                        {"seal", "sealNew", "restore", "restoreNew", "recover", "recoverNew", "drop", "deleteBackup", "deleteNewBackup", "cleanupDisplaced"}):
+                    for prior in self._jobs.values():
+                        if (prior.get("action") in {"install", "nativeInstall"} and prior.get("state") in {"unknown", "interrupted"}
+                                and prior.get("backupId") == data["backupId"] and prior.get("profileId") == job["profileId"]
+                                and not prior.get("stageReleaseAllowed") and prior["jobId"] not in self._cancel
+                                and prior["jobId"] not in self._requests and self._lease != prior["jobId"]):
+                            related.append(prior)
+                            prior.update(stageReleaseAllowed=True, stageReleaseRecoveryJobId=job["jobId"],
+                                         stageReleaseReason="Exact retained backup was explicitly reconciled")
+                self._update(job, **result)
+        except Exception as exc:
+            with self._lock:
+                for prior in related:
+                    prior["stageReleaseAllowed"] = False
+                    prior.pop("stageReleaseRecoveryJobId", None)
+                self._ledger_error = "Content acknowledgement could not be saved; inspect the retained journal before new work: " + str(exc)
+                result.update(ok=False, state="unknown" if job.get("nativeStarted") or job.get("mutationStarted") else "failed", error=self._ledger_error, stageReleaseAllowed=False)
+                job.update(result)
+        return result
 
     @staticmethod
     def _request(context, action, **extra):
@@ -670,7 +765,7 @@ class ContentRecovery:
         if review.get("stage"):
             verification = ArchiveRunner(self.runner.executable).run({"action": "verify", "archive": original["path"],
                 "stage": review["stage"], "expectedSha256": original["sha256"], "expectedBytes": original["bytes"], "selected": []}, cancel_event=cancel)
-            if (verification.get("manifestDigest") != review.get("manifestDigest")
+            if (verification.get("ok") is not True or verification.get("manifestDigest") != review.get("manifestDigest")
                     or verification.get("incomingRoot") != review.get("incomingRoot")
                     or verification.get("requiresInstaller") != review.get("requiresInstaller")):
                 raise ValueError("Native archive review changed before content installation")
@@ -690,7 +785,7 @@ class ContentRecovery:
                 raise ValueError("Content comparison's original archive manifest changed")
             compared = {"other": str(incoming), "expectedDigest": comparison}
             result = self.runner.run(self._request(context, "compare", other=str(incoming)), cancel_event=cancel)
-            if result.get("digest") != comparison:
+            if result.get("ok") is not True or result.get("digest") != comparison:
                 raise ValueError("Installed or incoming files changed after the content review")
         profile_backup = self._ui("content-profile-backup", {"jobId": job["jobId"], "context": context}, cancel)
         if not profile_backup.get("ok"):
@@ -698,7 +793,7 @@ class ContentRecovery:
         action = "prepareNew" if context.get("newTarget") else "snapshot"
         prepared = self.runner.run(self._request(context, action, confirm="INSTALL" if context.get("newTarget") else "BACKUP"), cancel_event=cancel)
         backup = prepared.get("backup") or {}
-        if not BACKUP_ID.fullmatch(str(backup.get("id", ""))):
+        if prepared.get("ok") is not True or not BACKUP_ID.fullmatch(str(backup.get("id", ""))):
             raise RuntimeError("Content helper returned no exact backup identity")
         self._update(job, state="verifying", backupId=backup["id"], backup=backup, includesModFiles=True,
                      profileBackup={"ok": True, "files": (profile_backup.get("backup") or {}).get("files", []), "includesModFiles": False})
@@ -707,10 +802,12 @@ class ContentRecovery:
         # actual target/profile/game lease before opening any installer dialog.
         if file_identity(installer["path"], cancel) != installer:
             raise ValueError("Installer archive changed after preparation")
-        self.runner.run(self._request(context, "verifyPrepared", id=backup["id"], **compared), cancel_event=cancel)
+        verified_backup = self.runner.run(self._request(context, "verifyPrepared", id=backup["id"], **compared), cancel_event=cancel)
+        if verified_backup.get("ok") is not True:
+            raise RuntimeError(verified_backup.get("error", "Prepared backup verification was refused; native installation was not opened"))
         if cancel.is_set():
             raise RuntimeError("Install cancelled before opening MO2's installer; backup retained")
-        self._update(job, state="installing")
+        self._update(job, state="installing", backupVerified=True)
         stamp = Path(installer["path"]).stat()
         result = self._ui("content-install", {"jobId": job["jobId"], "context": context,
                     "archive": installer["path"], "archiveIdentity": installer, "archiveStamp": [stamp.st_size, stamp.st_mtime_ns, stamp.st_ino],
@@ -721,6 +818,13 @@ class ContentRecovery:
             return {"ok": False, "state": "unknown" if result.get("nativeStarted") else "cancelled" if cancel.is_set() else "failed", "backupRetained": True,
                     "installedName": result.get("installedName", ""), "error": result.get("error", "MO2 did not confirm the exact reviewed target; original bytes remain in the prepared backup")}
         sealed = self.runner.run(self._request(context, "sealNew" if context.get("newTarget") else "seal", id=backup["id"]))
+        sealed_backup = sealed.get("backup") or {}
+        if (sealed.get("ok") is not True or sealed_backup.get("id") != backup["id"]
+                or sealed_backup.get("state") != ("sealedNew" if context.get("newTarget") else "sealed")
+                or sealed_backup.get("undoAvailable") is not True):
+            return {"ok": False, "state": "unknown", "installedName": result["installedName"], "filesInstalled": True,
+                    "refreshRequired": True, "backupRetained": True,
+                    "error": sealed.get("error", "Native files were installed, but the exact undo checkpoint could not be sealed. The prepared backup remains retained for recovery review.")}
         self._update(job, state="refreshing", backup=sealed.get("backup", backup), installedName=result["installedName"])
         refreshed = self._ui("content-refresh", {"jobId": job["jobId"], "context": context}, timeout=75)
         if not refreshed.get("ok"):
@@ -741,7 +845,7 @@ class ContentRecovery:
     def start_recovery(self, data):
         try:
             action = str(data.get("action") or "")
-            allowed = {"previewRestore": None, "previewRestoreNew": None, "restore": "RESTORE", "restoreNew": "RESTORE", "recover": "RECOVER", "recoverNew": "RECOVER", "drop": "DROP", "deleteBackup": "DELETE BACKUP", "seal": "SEAL", "sealNew": "SEAL", "snapshot": "BACKUP", "retentionPreview": None, "retentionApply": "DELETE BACKUPS"}
+            allowed = {"previewRestore": None, "previewRestoreNew": None, "restore": "RESTORE", "restoreNew": "RESTORE", "recover": "RECOVER", "recoverNew": "RECOVER", "drop": "DROP", "deleteBackup": "DELETE BACKUP", "deleteNewBackup": "DELETE BACKUP", "cleanupDisplaced": "CLEANUP", "seal": "SEAL", "sealNew": "SEAL", "snapshot": "BACKUP", "retentionPreview": None, "retentionApply": "DELETE BACKUPS"}
             if action not in allowed or (allowed[action] and data.get("confirm") != allowed[action]):
                 raise ValueError("Confirm the exact requested recovery action")
             if action not in {"snapshot", "retentionPreview", "retentionApply"} and not BACKUP_ID.fullmatch(str(data.get("backupId", ""))):
@@ -774,8 +878,10 @@ class ContentRecovery:
             if not check.get("ok"):
                 raise ValueError(check.get("error", "New mod ownership changed; retain its backup"))
         if action in {"restore", "restoreNew"}:
-            self.runner.run(self._request(context, "previewRestoreNew" if action == "restoreNew" else "previewRestore", id=data["backupId"],
+            preview = self.runner.run(self._request(context, "previewRestoreNew" if action == "restoreNew" else "previewRestore", id=data["backupId"],
                 **({"other": context["profilesRoot"]} if action == "restoreNew" else {})), cancel_event=cancel)
+            if preview.get("ok") is not True or preview.get("canRestore") is not True:
+                raise ValueError(preview.get("error", "The exact retained backup did not pass restore preflight"))
         recheck = self._ui("content-check", {"jobId": job["jobId"], "context": context}, cancel)
         if not recheck.get("ok") or cancel.is_set():
             raise RuntimeError(recheck.get("error", "Recovery was cancelled before native mutation"))
@@ -796,7 +902,7 @@ class ContentRecovery:
             arguments["other"] = context["profilesRoot"]
         # Do not kill an in-flight rename transaction on user cancellation.
         # The Rust transaction owns crash recovery and its final acknowledgement.
-        result = self.runner.run(self._request(context, action, **arguments), cancel_event=None if mutates or action in {"deleteBackup", "retentionApply"} else cancel)
+        result = self.runner.run(self._request(context, action, **arguments), cancel_event=None if mutates or action in {"deleteBackup", "deleteNewBackup", "cleanupDisplaced", "retentionApply"} else cancel)
         if result.get("ok") is not True:
             return {"ok": False, "state": "cancelled" if result.get("state") == "cancelled" else "failed",
                     "result": result, "partial": bool(result.get("partial") or result.get("deleted")),
@@ -814,7 +920,17 @@ class ContentRecovery:
     def backup_list(self, context_id):
         try:
             context = self._context(str(context_id))
-            return self.runner.run(self._request(context, "list"))
+            if context.get("modRoot"):
+                result = self.runner.run(self._request(context, "list"))
+            else:
+                result = self.runner.run({"action": "listProfile", "root": context["modsRoot"], "vault": context["vaultRoot"],
+                    "profileId": context["profileId"], "game": context["game"], "modName": "__profile_inventory__"})
+            if result.get("ok"):
+                rows = {r["mo2InternalName"]: r for r in self.service.native_snapshot().get("items", [])}
+                for backup in result.get("backups", []):
+                    row = rows.get(backup.get("modName"), {})
+                    backup["itemId"] = str(row.get("id") or "")
+            return result
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
@@ -828,6 +944,8 @@ class ContentRecovery:
                 if (not isinstance(row, dict) or not isinstance(row.get("itemId"), str) or not row["itemId"]
                         or not BACKUP_ID.fullmatch(str(row.get("backupId", ""))) or row["itemId"] in seen):
                     raise ValueError("Batch restore requires one exact retained backup per distinct mod")
+                if row.get("action", "restore") not in {"restore", "restoreNew"}:
+                    raise ValueError("Batch restore actions must be exact existing-mod or new-target undo operations")
                 seen.add(row["itemId"])
             job, duplicate = self._new_job(data, "batchRestore")
             if not duplicate:
@@ -848,7 +966,15 @@ class ContentRecovery:
             context = self._context(captured["contextId"])
             if any(context.get(k) != initial_context.get(k) for k in ("profileId", "game", "gameRuntime")):
                 raise ValueError("Batch spans a different native profile or game")
-            self.runner.run(self._request(context, "previewRestore", id=row["backupId"]), cancel_event=cancel)
+            is_new = row.get("action") == "restoreNew"
+            if is_new:
+                ownership = self._ui("content-new-ownership", {"jobId": job["jobId"], "context": context}, cancel)
+                if not ownership.get("ok"):
+                    raise ValueError(ownership.get("error", "New target is still owned by an enabled profile"))
+            preview = self.runner.run(self._request(context, "previewRestoreNew" if is_new else "previewRestore", id=row["backupId"],
+                **({"other": context["profilesRoot"]} if is_new else {})), cancel_event=cancel)
+            if preview.get("ok") is not True or preview.get("canRestore") is not True:
+                raise ValueError(preview.get("error", "Every batch target must pass restore preflight before any files change"))
             prepared.append((row, context))
         completed, failures = [], []
         for index, (row, original) in enumerate(prepared):
@@ -862,7 +988,7 @@ class ContentRecovery:
                 context = self._context(captured["contextId"])
                 if any(context.get(k) != original.get(k) for k in ("profileId", "game", "gameRuntime", "modName", "modRoot", "installedVersion")):
                     raise ValueError("A batch target changed before its transaction")
-                result = self._recovery_work(job, {"action": "restore", "backupId": row["backupId"], "confirm": "RESTORE"}, context, cancel)
+                result = self._recovery_work(job, {"action": row.get("action", "restore"), "backupId": row["backupId"], "confirm": "RESTORE"}, context, cancel)
                 if result.get("filesRestored"):
                     completed.append({**row, "refreshRequired": result.get("refreshRequired", False)})
                 if not result.get("ok"):
@@ -913,11 +1039,32 @@ class NativeContent:
     def content(self):
         return self.service.content
 
+    def _game_identity(self):
+        game = self.plugin.org.managedGame()
+        name = (call_str(game, "gameNexusName", "") or call_str(game, "gameShortName", "")).lower().replace(" ", "")
+        if not name or not name.replace("-", "").replace("_", "").isalnum():
+            raise ValueError("Actual native game identity is unavailable")
+        runtime = str(getattr(self.plugin, "_runtime", "unknown") or "unknown")
+        if runtime == "unknown":
+            runtime = call_str(game, "gameVersion", "unknown")
+        if name == "skyrimspecialedition" and runtime == "1.5.97.0":
+            runtime = "1.5.97"
+        return name, runtime, call_str(game, "binaryName", "")
+
     def capture(self, payload):
         org = self.plugin.org
+        # These identities belong to the same Qt capture as the native roots
+        # and target. Assigning a newer generation after the queued result
+        # returns would silently renew an already-invalid review.
+        with self.content._lock:
+            native_session = self.content._native_session
+            native_generation = self.content._native_generation
         snapshot = self.service.selection_snapshot([])
         if str(org.profileName()) != snapshot.get("profileName"):
             raise ValueError("Native MO2 profile changed before context capture")
+        game_name, runtime, binary = self._game_identity()
+        if (game_name, runtime) != (snapshot.get("game"), snapshot.get("gameRuntime")):
+            raise ValueError("Actual native game or runtime changed before context capture; refresh MO2")
         root = real_path(str(org.modsPath()), directory=True)
         profile_path = real_path(str(org.profilePath()), directory=True)
         vault = owned_recovery_root(root, profile_path.parent) / "content-vault"
@@ -925,8 +1072,9 @@ class NativeContent:
         recovery_name = str(payload.get("recoveryTargetName") or "")
         item_id = str(payload.get("itemId") or "")
         context = {k: snapshot.get(k) for k in ("profileId", "profileName", "game", "gameRuntime", "executionEpoch")}
+        context.update(nativeLease=native_session, nativeGeneration=native_generation)
         context.update(modsRoot=str(root), profilesRoot=str(profile_path.parent), profilePath=str(profile_path),
-                       vaultRoot=str(vault), modRoot="", modName="", itemId=item_id, installedVersion="?", newTarget=bool(target_name))
+                       vaultRoot=str(vault), modRoot="", modName="", itemId=item_id, installedVersion="?", newTarget=bool(target_name), nativeGameBinary=binary)
         if recovery_name:
             recovery_name = valid_target_name(recovery_name)
             mod = org.modList().getMod(recovery_name)
@@ -977,6 +1125,9 @@ class NativeContent:
             pass
         context["gameExecutables"] = sorted(binaries)
         context["gameRunning"] = bool(self.content._launched or running_game_processes(context))
+        with self.content._lock:
+            if native_session != self.content._native_session or native_generation != self.content._native_generation:
+                raise ValueError("Native MO2 state changed during Qt context capture")
         return context
 
     def check(self, context, *, post_install=False, allow_missing=False, read_only=False):
@@ -988,6 +1139,10 @@ class NativeContent:
                 raise ValueError("MO2 profile or game changed before content execution")
         if str(org.profileName()) != context["profileName"]:
             raise ValueError("Native MO2 profile changed before content execution")
+        if self._game_identity() != (context["game"], context["gameRuntime"], context["nativeGameBinary"]):
+            raise ValueError("Actual native game, runtime or executable changed after review")
+        if context.get("nativeLease") != self.content._native_session:
+            raise ValueError("The native MO2 service changed after content review")
         if not post_install and (context.get("executionEpoch") != live.get("executionEpoch") or context.get("nativeGeneration") != self.content._native_generation):
             raise ValueError("MO2 execution lease changed after content review")
         if str(real_path(org.modsPath(), directory=True)) != context["modsRoot"] or str(real_path(org.profilePath(), directory=True)) != context["profilePath"]:
@@ -1153,6 +1308,8 @@ class NativeContent:
             try:
                 if str(self.plugin.org.profileName()) != context["profileName"]:
                     raise ValueError("MO2 profile changed while content refresh was running")
+                if self._game_identity() != (context["game"], context["gameRuntime"], context["nativeGameBinary"]):
+                    raise ValueError("Native game changed while content refresh was running")
                 result = self.plugin._refresh_snapshot(force_metadata=True)
                 request.finish(result)
             except Exception as exc:

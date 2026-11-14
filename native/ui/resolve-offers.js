@@ -24,6 +24,8 @@ window[cfg.key] = {state:'pending'};
   if (['mega.nz','mega.io'].includes(url.hostname)) {
    const match = /^\/(file|folder)\/([\w-]+)/.exec(url.pathname);
    const legacy = /^#!?([\w-]+)!/.exec(url.hash);
+   const folder = /^#F!([\w-]+)!/.exec(url.hash);
+   if (folder) return 'mega:folder:' + folder[1];
    if (match) return 'mega:' + match[1] + ':' + match[2];
    if (legacy) return 'mega:file:' + legacy[1];
   }
@@ -55,7 +57,7 @@ window[cfg.key] = {state:'pending'};
   if (label.length > 240) fail('A source filename is too long to identify safely. Review the release page.');
   const row = {url:url.href, name:label || 'Review download', identity, related:!!metadata.related,
    sourcePostId:metadata.sourcePostId || '', publishedAt:metadata.publishedAt || '',
-   kind:metadata.kind || (externalIdentity(url) ? 'external' : 'attachment')};
+   kind:metadata.kind || (/^(?:drive|mega):folder:/.test(externalIdentity(url)) ? 'folder' : externalIdentity(url) ? 'external' : 'attachment')};
   identities.set(identity,row); files.push(row);
  }
  async function json(url) {
@@ -136,15 +138,46 @@ window[cfg.key] = {state:'pending'};
  } else if (/(^|\.)loverslab\.com$/.test(here.hostname)) {
   const id = /\/files\/file\/(\d+)/.exec(source.pathname)?.[1];
   if (!id || /\/files\/file\/(\d+)/.exec(here.pathname)?.[1] !== id) fail('Use the exact LoversLab file page, not an unrelated topic or file.');
-  for (const link of boundedNodes(document,'a[href]',10000)) {
-   let url; try { url = new URL(link.getAttribute('href'),here); } catch { continue; }
-   if (url.origin !== here.origin || /\/files\/file\/(\d+)/.exec(url.pathname)?.[1] !== id || url.searchParams.get('do') !== 'download') continue;
-   const row = link.closest('li,tr,.ipsDataItem');
-   const name = row?.querySelector('.ipsDataItem_title')?.textContent?.trim() || link.getAttribute('download') || link.textContent.trim() || 'Open file chooser';
-   const file = url.searchParams.get('r');
-   if (file && !/^\d+$/.test(file)) fail('The file chooser returned an invalid attachment identity.');
-   add(url.href,name,{identity:'loverslab:file:' + id + (file ? ':attachment:' + file : ':chooser'),kind:file ? 'attachment' : 'chooser'});
+  function choices(root) {
+   const rows=[];
+   for (const link of boundedNodes(root,'a[href]',10000)) {
+    let url; try { url = new URL(link.getAttribute('href'),here); } catch { continue; }
+    if (url.origin !== here.origin || /\/files\/file\/(\d+)/.exec(url.pathname)?.[1] !== id || url.searchParams.get('do') !== 'download') continue;
+    const row=link.closest('li,tr,.ipsDataItem');
+    const name=row?.querySelector('.ipsDataItem_title')?.textContent?.trim() || link.getAttribute('download') || link.textContent.trim() || 'Release archive';
+    const file=url.searchParams.get('r');
+    if (file && !/^\d+$/.test(file)) fail('The file chooser returned an invalid attachment identity.');
+    rows.push({url,name,file});
+   }
+   return rows;
   }
+  function attachment(row) { add(row.url.href,row.name,{identity:'loverslab:file:' + id + ':attachment:' + row.file,kind:'attachment'}); }
+  const listed=choices(document),exact=listed.filter(row=>row.file);
+  for (const row of exact) attachment(row);
+  {
+   const choosers=[...new Map(listed.filter(row=>!row.file).map(row=>[row.url.href,row])).values()];
+   if (choosers.length>8) fail('The release has too many different file choosers. Select one exact release page.');
+   for (const row of choosers) {
+    const response=await fetch(row.url.href,{credentials:'include',redirect:'error',signal:AbortSignal.timeout(12000)});
+    if (!response.ok) fail('The release file chooser is not accessible (' + response.status + '). Open it to verify your access.');
+    const disposition=response.headers.get('content-disposition') || '',type=response.headers.get('content-type') || '';
+    let filename=/filename\*?=(?:UTF-8''|")?([^";]+)/i.exec(disposition)?.[1]?.trim();
+    if (filename) { try { filename=decodeURIComponent(filename); } catch { fail('The attachment filename is invalid.'); } }
+    if (/attachment/i.test(disposition) && (archive.test(filename || '') || /application\/(?:zip|x-7z-compressed|x-rar-compressed|vnd.rar|octet-stream)/i.test(type))) {
+     if (response.body) await response.body.cancel();
+     add(row.url.href,filename || row.name,{identity:'loverslab:file:' + id + ':direct',kind:'attachment'});continue;
+    }
+    if (!response.body) fail('The file chooser returned no readable content.');
+    const reader=response.body.getReader(),chunks=[];let size=0;
+    try { for (;;) { const part=await reader.read();if(part.done)break;size+=part.value.byteLength;if(size>2000000){await reader.cancel();fail('The complete file chooser is too large. Select a narrower release.');}chunks.push(part.value); } } finally { reader.releaseLock(); }
+    const bytes=new Uint8Array(size);let at=0;for(const chunk of chunks){bytes.set(chunk,at);at+=chunk.byteLength;}
+    const parsed=new DOMParser().parseFromString(new TextDecoder().decode(bytes),'text/html');
+    const resolved=choices(parsed).filter(choice=>choice.file);
+    if (!resolved.length) fail('This chooser did not expose exact attachment identities. Open the release page to review its current files; no guessed update file was accepted.');
+    for (const choice of resolved) attachment(choice);
+   }
+  }
+
  } else {
   for (const link of boundedNodes(document,'a[href]',10000)) {
    let url; try { url = new URL(link.getAttribute('href'),here); } catch { continue; }

@@ -1,8 +1,21 @@
-# Modhunter 0.10.2 — Rust desktop
+# Modhunter 0.11.0 — Rust desktop
 
 The Windows desktop, profile import/cache engine, connection probing, tab lifecycle and native file dialogs run in Rust. Microsoft Edge WebView2 renders the existing Modhunter dashboard, Questbound, AetherFX, Shiverfell, Siege and Atlas. The shipped desktop does not require Node or Electron.
 
 MO2's Python/Qt plugin remains the supported in-process adapter for MO2's authenticated Nexus bridge, native downloads, FOMOD installer, focus and verified rewards. A small Qt Core C++ helper bridges the protected callback-sender binding needed by MO2 2.5.2's public file-list integration. The dashboard/game presentation remains HTML/CSS/JavaScript. Public site adapters, import/cache and plugin analysis run in Rust.
+
+## 0.11.0: reviewed downloads, actual file recovery and app upkeep
+
+Watchtower now carries a chosen external archive from its exact source identity into a complete file review and MO2's native installer. Update files stay bound to the chosen profile, game/runtime and installed mod. Separate new content requires a new mod name. A different file, changed source, profile round-trip or lost acknowledgement cannot silently reuse an earlier installation decision.
+
+- **Exact source choices:** Patreon post attachments, LoversLab file choices and supported direct Drive/MEGA files keep durable file identities and explicit update/new-content choices. Creator preferences, per-site mutes and compatibility declarations persist. Unsupported shared folders remain manual review. Visible account access is reported separately from page entitlement.
+- **Complete archive review:** pinned 7-Zip helpers inspect ZIP, 7z and RAR archives with path, link, collision, encryption and size guards. Every accepted file remains in the manifest. Ordinary game-data archives produce a verified ZIP containing the complete selected set; FOMOD and uncertain layouts keep the original archive and require native installer choices. Installed-only paths never authorize deletion.
+- **Actual content recovery:** the Rust engine snapshots mod files before installation, verifies the resulting files and retains interrupted operations. Restore, batch restore and retention cleanup recheck exact content identities. Later edits stop restoration. Recovery data lives beside the MO2 mods directory in an instance-specific `Modhunter-Recovery` vault and is excluded from app reset.
+- **Duplicate review:** complete per-file and whole-mod reports include saved-profile ownership and hard-link facts. Quarantine requires an identical retained counterpart and a duplicate disabled in every saved and live profile. Undo and permanent quarantine removal use a fresh exact preview.
+- **Desktop preferences:** system/light/dark themes, common interface labels in English, Spanish, Italian and Traditional Chinese, native quick hide, Windows capture protection, private external browser choices, bounded cache cleanup, app release checks, offline licenses and preview-before-export support reports. Detailed technical messages can remain in English.
+- **Owned cleanup:** download and recovery cleanup show the exact proposed items. Removing app data requires a typed confirmation, closes the desktop and records partial or retained results. It excludes MO2, game files, external browser profiles and recovery vaults.
+
+The release gate binds Windows WebView2, archive-helper, Chromium interaction and actual MO2 install/restore receipts to the clean candidate and packaged binaries. The separate MO2 2.5.2 fixture and Qt 6.11 forward-runtime checks do not claim execution of a user's MO2 2.5.3b12 installation, accounts or 11,207-mod profile.
 
 ## MO2 2.5.3b12 / Skyrim SE setup
 
@@ -47,6 +60,8 @@ The toolchain is pinned in `rust-toolchain.toml`; dependencies are pinned in `Ca
 ```powershell
 python native/scripts/prepare_release.py --print-version
 python native/scripts/prepare_assets.py
+python native/scripts/prepare_archive_tools.py
+python native/scripts/prepare_notices.py
 cd native
 cargo test --workspace --locked
 cargo build --release --locked -p modhunter-core
@@ -66,9 +81,10 @@ cmake -E env "PATH=$qtSdk\bin;$env:PATH" ctest --test-dir native/target/qt-bridg
 New-Item -ItemType Directory -Force mo2_update_arsenal/bin
 Copy-Item native/target/release/modhunter-cli.exe mo2_update_arsenal/bin/
 Copy-Item native/target/qt-bridge/Release/modhunter-qt-bridge.dll mo2_update_arsenal/bin/
+Copy-Item native/resources/archive-tools mo2_update_arsenal/bin/archive-tools -Recurse -Force
 ```
 
-Copy these two matching helpers before running `native/Install_MO2_Plugin.ps1` from a source tree. CI performs the same assembly for released packages. The helper dynamically uses **MO2's own Qt Core**; do not copy SDK Qt DLLs into MO2. Runtime ABI/version and GUI-thread checks reject an incompatible helper. The standalone Rust app does not need the Qt SDK.
+Copy these matching helpers and the pinned archive-tools directory before running `native/Install_MO2_Plugin.ps1` from a source tree. CI performs the same assembly for released packages. The helper dynamically uses **MO2's own Qt Core**; do not copy SDK Qt DLLs into MO2. Runtime ABI/version and GUI-thread checks reject an incompatible helper. The standalone Rust app does not need the Qt SDK.
 
 The real portable-MO2 fixture takes both binaries explicitly:
 
@@ -76,7 +92,7 @@ The real portable-MO2 fixture takes both binaries explicitly:
 ./native/scripts/mo2_native_smoke.ps1 -RustCliPath "$PWD/native/target/release/modhunter-cli.exe" -QtBridgePath "$PWD/native/target/qt-bridge/Release/modhunter-qt-bridge.dll" -EvidenceDirectory "$PWD/native/target/mo2-proof"
 ```
 
-Use a new, empty evidence directory for each run. This fixture checks the actual MO2-created QObject and raw QVariant binding using owned synthetic callbacks; it performs no login, authenticated Nexus request or mod download. See [`qt_bridge/README.md`](qt_bridge/README.md) for the narrow helper contract and compiled binding tests.
+Use a new, empty evidence directory for each run. This fixture checks the actual MO2-created QObject and raw QVariant binding using owned synthetic callbacks. It also installs a generated archive through the real native installer into a disposable mod, verifies the bytes, and restores the original complete mod tree through the production Rust recovery engine. It performs no login, authenticated Nexus request or public mod download. See [`qt_bridge/README.md`](qt_bridge/README.md) for the narrow helper contract and compiled binding tests.
 
 Windows builds need the Rust MSVC toolchain and Visual Studio C++ build tools. The resulting executable is `native/target/release/Modhunter.exe`; installer output is under `native/target/release/bundle/nsis`. Node is used only to run the build-time Tauri CLI. `cargo install tauri-cli --locked --version '^2'` and `cargo tauri build` can replace that build-time step.
 
@@ -100,11 +116,11 @@ Published release assets remain immutable. A new version is required to distribu
 
 ## Evidence and release boundaries
 
-The [0.10.0 reference and acceptance evidence](evidence/whimwatch-parity-0.10.0.md) records the exact WhimWatch 0.4.2 artifact/tag, all first-party source modules, transfer decisions and new Watchtower gates. The [0.9.2 readiness evidence](evidence/readiness-0.9.2.md) remains the historical record of complete-catalog response reuse, row-markup reuse, source-edit synchronization, cancellation and package-integrity measurements. Each benchmark retains its original baseline and scope. `prepare_release.py --benchmark-files` prints the unchanged historical evidence allowlist shared by the Windows package and release verification ZIP.
+The [0.11.0 implementation and evidence map](evidence/whimwatch-parity-0.11.0.md) covers the reviewed download, file recovery, source/account and maintenance workflows. The [0.10.0 reference and acceptance evidence](evidence/whimwatch-parity-0.10.0.md) records the exact WhimWatch 0.4.2 artifact/tag, all first-party source modules, transfer decisions and new Watchtower gates. The [0.9.2 readiness evidence](evidence/readiness-0.9.2.md) remains the historical record of complete-catalog response reuse, row-markup reuse, source-edit synchronization, cancellation and package-integrity measurements. Each benchmark retains its original baseline and scope. `prepare_release.py --benchmark-files` prints the unchanged historical evidence allowlist shared by the Windows package and release verification ZIP.
 
 The `Rust desktop and MO2 readiness` workflow builds the Windows executable and installer, runs Rust tests on Linux and Windows, exercises the compiled dashboard in Chromium, and starts the real Windows executable. Its WebView2 smoke test imports a fixture profile, checks rendered rows, saves and reads an actual exported backup, and verifies that the game view cannot invoke the toolbar's native commands. A separate Windows job loads the production plugin in an official MO2 2.5.2 installation with a disposable fixture game/profile. Workflow artifacts include the app, plugin, installer and native JSON receipts.
 
-An additional required `watchtower_smoke.ps1` run launches the same compiled executable against its own loopback pages. It checks actual WebView2 session isolation, closing/reopening a remembered profile within one process, generation-selected fresh profiles, same-session popups, authenticated observations and changed content, selected-region capture, incomplete/stale/canceled rejection and denied remote IPC. Its reopen check does not restart Modhunter. A separate anonymous `https://example.com/` check uses production page capture and durable WatchStore baseline completion. The wrapper requires all thirteen checks and a clean process exit within 120 seconds. `prepare_release.py` requires its complete passing receipt to match `Evidence/watchtower-smoke.json` inside the portable ZIP and includes it in the public verification ZIP. Real Chromium tests separately exercise the shipped Watchtower interface using a fixture command adapter; they do not substitute for native session tests.
+An additional required `watchtower_smoke.ps1` run launches the same compiled executable against its own loopback pages. It checks actual WebView2 session isolation, closing/reopening a remembered profile within one process, generation-selected fresh profiles, same-session popups, authenticated observations and changed content, selected-region capture, incomplete/stale/canceled rejection and denied remote IPC. Its reopen check does not restart Modhunter. A separate anonymous `https://example.com/` check uses production page capture and durable WatchStore baseline completion. The wrapper requires its full account, exact-download, privacy and browser-data checks and a clean process exit within 240 seconds. `prepare_release.py` requires its complete passing receipt to match `Evidence/watchtower-smoke.json` inside the portable ZIP and includes it in the public verification ZIP. Real Chromium tests separately exercise the shipped Watchtower interface using a fixture command adapter; they do not substitute for native session tests.
 
 Run the additional native fixture from the repository root after building:
 

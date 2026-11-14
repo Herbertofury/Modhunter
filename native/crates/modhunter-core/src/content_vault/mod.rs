@@ -133,7 +133,7 @@ fn inventory(root: &Path, cancel: &impl Fn() -> bool) -> Result<BTreeMap<String,
                 .ok_or("Non-UTF-8 path needs manual review.")?
                 .replace('\\', "/");
             crate::archive_review::safe_name(&name)?;
-            if !names.insert(name.to_lowercase()) {
+            if !names.insert(name.to_uppercase()) {
                 return Err("Case-colliding content needs manual review.".into());
             }
             let meta = child.metadata().map_err(err)?;
@@ -453,7 +453,7 @@ fn record_material(dir: &Path, record: &Record, cancel: &impl Fn() -> bool) -> R
     Ok(bytes)
 }
 fn public(r: &Record) -> Value {
-    json!({"id":r.id,"state":r.state,"profileId":r.profile_id,"game":r.game,"modName":r.mod_name,"createdAt":r.created_at,"files":r.before.len(),"bytes":r.before.values().map(|e|e.bytes).sum::<u64>(),"includesModFiles":true,"undoAvailable":matches!(r.state.as_str(),"sealed"|"sealedNew"),"newTarget":r.new_target,"canRemoveNewTarget":r.new_target && r.state=="sealedNew"})
+    json!({"id":r.id,"state":r.state,"profileId":r.profile_id,"game":r.game,"modName":r.mod_name,"createdAt":r.created_at,"files":r.before.len(),"bytes":r.before.values().map(|e|e.bytes).sum::<u64>(),"includesModFiles":true,"undoAvailable":matches!(r.state.as_str(),"sealed"|"sealedNew"),"newTarget":r.new_target,"canRemoveNewTarget":r.new_target && r.state=="sealedNew","canDeleteBackup":matches!(r.state.as_str(),"sealed"|"restored"|"sealedNew"|"restoredNew")})
 }
 
 pub fn execute(request: Request, cancel: impl Fn() -> bool) -> Result<Value> {
@@ -467,6 +467,7 @@ pub fn execute(request: Request, cancel: impl Fn() -> bool) -> Result<Value> {
             | "list"
             | "storage"
             | "deleteBackup"
+            | "deleteNewBackup"
     ) && !request.root.exists()
     {
         let parent = checked_root(request.root.parent().ok_or("Missing target parent.")?)?;
@@ -525,7 +526,7 @@ pub fn execute(request: Request, cancel: impl Fn() -> bool) -> Result<Value> {
     ) {
         return retention(&request, &root, &vault, &cancel);
     }
-    if request.action == "list" || request.action == "storage" {
+    if matches!(request.action.as_str(), "list" | "listProfile" | "storage") {
         let mut rows = Vec::new();
         let mut warnings = 0;
         for child in fs::read_dir(&vault).map_err(err)? {
@@ -536,7 +537,9 @@ pub fn execute(request: Request, cancel: impl Fn() -> bool) -> Result<Value> {
             }
             match load(&vault, &id) {
                 Ok((_, r))
-                    if r.root == root
+                    if (r.root == root
+                        || (request.action == "listProfile"
+                            && r.root.parent() == Some(root.as_path())))
                         && r.profile_id == request.profile_id
                         && r.game == request.game =>
                 {
@@ -632,12 +635,12 @@ pub fn execute(request: Request, cancel: impl Fn() -> bool) -> Result<Value> {
         let installed_index: BTreeMap<_, _> = installed
             .iter()
             .filter(|(n, _)| !n.eq_ignore_ascii_case("meta.ini"))
-            .map(|(n, e)| (n.to_lowercase(), (n, e)))
+            .map(|(n, e)| (n.to_uppercase(), (n, e)))
             .collect();
         let incoming_index: BTreeMap<_, _> = incoming
             .iter()
             .filter(|(n, _)| !n.eq_ignore_ascii_case("meta.ini"))
-            .map(|(n, e)| (n.to_lowercase(), (n, e)))
+            .map(|(n, e)| (n.to_uppercase(), (n, e)))
             .collect();
         let absent: Vec<_> = installed_index
             .iter()
@@ -649,7 +652,7 @@ pub fn execute(request: Request, cancel: impl Fn() -> bool) -> Result<Value> {
             .iter()
             .filter(|(n, _)| !n.eq_ignore_ascii_case("meta.ini"))
         {
-            let old = installed_index.get(&name.to_lowercase());
+            let old = installed_index.get(&name.to_uppercase());
             let state = match old {
                 None => "add",
                 Some((_, old)) if *old == e => "unchanged",
@@ -680,7 +683,7 @@ pub fn execute(request: Request, cancel: impl Fn() -> bool) -> Result<Value> {
                 .iter()
                 .all(|(name, (_, e))| installed_index.get(name).is_some_and(|(_, old)| old == e));
         return Ok(
-            json!({"ok":true,"identical":identical,"entries":entries,"digest":review_digest(&request,&installed,&incoming)?,"requiresInstaller":incoming.keys().any(|n|n.to_lowercase().ends_with("fomod/moduleconfig.xml")),"scope":"Complete unpacked trees. Missing paths and equal-content rename hints do not authorize deletion; FOMOD-selected paths require native installer choices."}),
+            json!({"ok":true,"identical":identical,"entries":entries,"digest":review_digest(&request,&installed,&incoming)?,"requiresInstaller":incoming.keys().any(|n|n.to_uppercase().ends_with("FOMOD/MODULECONFIG.XML")),"scope":"Complete unpacked trees. Missing paths and equal-content rename hints do not authorize deletion; FOMOD-selected paths require native installer choices."}),
         );
     }
 
@@ -829,7 +832,7 @@ pub fn execute(request: Request, cancel: impl Fn() -> bool) -> Result<Value> {
             let incoming = tree(&other, &cancel)?;
             if incoming
                 .keys()
-                .any(|n| n.to_lowercase().ends_with("fomod/moduleconfig.xml"))
+                .any(|n| n.to_uppercase().ends_with("FOMOD/MODULECONFIG.XML"))
             {
                 return Err("This archive requires interactive installer choices. Use MO2's installer instead.".into());
             }
@@ -861,7 +864,7 @@ pub fn execute(request: Request, cancel: impl Fn() -> bool) -> Result<Value> {
                 if !installed.contains_key(name)
                     || selected
                         .keys()
-                        .any(|selected| selected.to_lowercase() == name.to_lowercase())
+                        .any(|selected| selected.to_uppercase() == name.to_uppercase())
                     || !removals.insert(name)
                     || name.eq_ignore_ascii_case("meta.ini")
                 {
@@ -877,11 +880,11 @@ pub fn execute(request: Request, cancel: impl Fn() -> bool) -> Result<Value> {
                 .tempdir_in(parent)
                 .map_err(err)?;
             let selected_identities: HashSet<_> =
-                selected.keys().map(|n| n.to_lowercase()).collect();
+                selected.keys().map(|n| n.to_uppercase()).collect();
             let retained: Tree = installed
                 .iter()
                 .filter(|(n, _)| {
-                    !selected_identities.contains(&n.to_lowercase()) && !removals.contains(n)
+                    !selected_identities.contains(&n.to_uppercase()) && !removals.contains(n)
                 })
                 .map(|(n, e)| (n.clone(), e.clone()))
                 .collect();
@@ -896,7 +899,7 @@ pub fn execute(request: Request, cancel: impl Fn() -> bool) -> Result<Value> {
                         part.push('/');
                     }
                     part.push_str(component);
-                    parent_names.insert(part.to_lowercase(), part.clone());
+                    parent_names.insert(part.to_uppercase(), part.clone());
                 }
             }
             let mut selected_destinations = Tree::new();
@@ -911,7 +914,7 @@ pub fn execute(request: Request, cancel: impl Fn() -> bool) -> Result<Value> {
                     raw.push_str(component);
                     if index + 1 < count {
                         let chosen = parent_names
-                            .entry(raw.to_lowercase())
+                            .entry(raw.to_uppercase())
                             .or_insert_with(|| {
                                 let mut path = spelling.join("/");
                                 if !path.is_empty() {
@@ -931,11 +934,11 @@ pub fn execute(request: Request, cancel: impl Fn() -> bool) -> Result<Value> {
             copy_selected(&root, stage.path(), &retained, &cancel)?;
             let destinations: BTreeMap<_, _> = selected_destinations
                 .keys()
-                .map(|n| (n.to_lowercase(), n))
+                .map(|n| (n.to_uppercase(), n))
                 .collect();
             for (source, entry) in &selected {
                 let destination = destinations
-                    .get(&source.to_lowercase())
+                    .get(&source.to_uppercase())
                     .ok_or("Missing selected destination.")?;
                 copy_one(
                     &other.join(source),
@@ -1152,15 +1155,68 @@ pub fn execute(request: Request, cancel: impl Fn() -> bool) -> Result<Value> {
             tidy_record(&dir, &root, &mut record)?;
             Ok(json!({"ok":true,"backup":public(&record),"originalAndRecoveryBytesPreserved":true}))
         }
-        "deleteBackup" => {
+        "deleteBackup" | "deleteNewBackup" => {
             if request.confirm.as_deref() != Some("DELETE BACKUP")
-                || !matches!(record.state.as_str(), "sealed" | "restored")
+                || !matches!(
+                    record.state.as_str(),
+                    "sealed" | "restored" | "sealedNew" | "restoredNew"
+                )
             {
                 return Err("Confirm DELETE BACKUP for a completed record. Incomplete recovery records are retained.".into());
             }
-            record_material(&dir, &record, &cancel)?;
+            if request.action == "deleteNewBackup" && !record.new_target {
+                return Err("This is not a new-target recovery record.".into());
+            }
+            if record.new_target {
+                let after = record
+                    .after
+                    .as_ref()
+                    .ok_or("Missing final new-target identity.")?;
+                if !record.before.is_empty() || !tree(&dir.join("files"), &cancel)?.is_empty() {
+                    return Err("Unexpected new-target backup material was preserved.".into());
+                }
+                let expected = if record.state == "sealedNew" {
+                    if tree(&root, &cancel)? != *after {
+                        return Err(
+                            "New target changed since installation; preserve its recovery record."
+                                .into(),
+                        );
+                    }
+                    BTreeSet::from(["files".to_owned(), "receipt.json".to_owned()])
+                } else if record.state == "restoredNew" {
+                    let saved = dir.join("new-target-files");
+                    if record.displaced.as_ref() != Some(&saved) || tree(&saved, &cancel)? != *after
+                    {
+                        return Err(
+                            "Retained new-target content changed; no deletion was authorized."
+                                .into(),
+                        );
+                    }
+                    BTreeSet::from([
+                        "files".to_owned(),
+                        "receipt.json".to_owned(),
+                        "new-target-files".to_owned(),
+                    ])
+                } else {
+                    return Err("New-target transaction is incomplete; keep every copy.".into());
+                };
+                let actual: BTreeSet<_> = fs::read_dir(&dir)
+                    .map_err(err)?
+                    .map(|r| {
+                        r.map(|e| e.file_name().to_string_lossy().into_owned())
+                            .map_err(err)
+                    })
+                    .collect::<Result<_>>()?;
+                if actual != expected {
+                    return Err("Unexpected owned-record contents were preserved.".into());
+                }
+            } else {
+                record_material(&dir, &record, &cancel)?;
+            }
             fs::remove_dir_all(&dir).map_err(err)?;
-            Ok(json!({"ok":true,"deleted":record.id,"undoAvailable":false}))
+            Ok(
+                json!({"ok":true,"deleted":record.id,"undoAvailable":false,"retainedBackupBytesDeleted":true}),
+            )
         }
         _ => Err("Unknown content-vault operation.".into()),
     }

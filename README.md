@@ -6,7 +6,7 @@
 
 **Repair your load order. Hunt your unfinished mods. Build a legend.**
 
-[![Edition](https://img.shields.io/badge/Edition-Rust%200.10.1-cfa76d?style=for-the-badge&labelColor=182b30)](wiki/Rust-Desktop.md)
+[![Edition](https://img.shields.io/badge/Edition-Rust%200.11.0-cfa76d?style=for-the-badge&labelColor=182b30)](wiki/Rust-Desktop.md)
 [![MO2](https://img.shields.io/badge/MO2-Optional%20Live%20Link-78cfab?style=for-the-badge&labelColor=182b30)](wiki/MO2-Plugin.md)
 [![Modes](https://img.shields.io/badge/Modes-Siege%20%7C%20Survival%20%7C%20Atlas-9bb8f0?style=for-the-badge&labelColor=182b30)](wiki/Game-Modes.md)
 
@@ -14,7 +14,7 @@
 
 ---
 
-## Rust desktop 0.10.1
+## Rust desktop 0.11.0
 
 The new Windows app runs its desktop shell, profile import/cache engine, connection discovery and native file operations in **Rust**, with WebView2 displaying the complete existing dashboard and games. Running the compiled app requires no Node or Electron. The Python plugin remains MO2's in-process adapter for authenticated Nexus requests and its native download/installer API.
 
@@ -24,6 +24,21 @@ The new Windows app runs its desktop shell, profile import/cache engine, connect
 - Parallel, cached imports support portable and split-path MO2 configurations. In reproducible Linux fixtures, importing 2,500 mods took a median **70.78 ms** in Rust versus **477.03 ms** in the previous Node importer; 10,000 mods took **330.42 ms** versus **1,629.28 ms**. These include fresh metadata-content verification and root plugin inventory on generated fixtures without ESP payloads; they are not deep-audit, Windows GUI startup or Nexus download timings. [Raw measurements and method](native/evidence/import-comparison.json).
 - Profile changes invalidate stale scans and delayed UI replies. Expired queued commands cannot execute later. Requests share exact file lookups, metadata caches and connection resources, while search and background polling avoid redundant work.
 - Windows CI builds the executable and installer and launches the actual WebView2 app; separate browser and MO2 fixture checks enforce their own contracts. Real account downloads, FOMOD decisions and a user's game setup remain environment-specific acceptance checks.
+
+### 0.11.0: reviewed downloads, actual file recovery and app upkeep
+
+Watchtower now carries a chosen external archive from its exact source identity into a complete file review and MO2's native installer. Update files stay bound to the chosen profile, game/runtime and installed mod. Separate new content requires a new mod name. A different file, changed source, profile round-trip or lost acknowledgement cannot silently reuse an earlier installation decision.
+
+- **Exact source choices:** Patreon post attachments, LoversLab file choices and supported direct Drive/MEGA files keep durable file identities and explicit update/new-content choices. Creator preferences, per-site mutes and compatibility declarations persist. Unsupported shared folders remain manual review. Visible account access is reported separately from page entitlement.
+- **Complete archive review:** pinned 7-Zip helpers inspect ZIP, 7z and RAR archives with path, link, collision, encryption and size guards. Every accepted file remains in the manifest. Ordinary game-data archives produce a verified ZIP containing the complete selected set; FOMOD and uncertain layouts keep the original archive and require native installer choices. Installed-only paths never authorize deletion.
+- **Actual content recovery:** the Rust engine snapshots mod files before installation, verifies the resulting files and retains interrupted operations. Restore, batch restore and retention cleanup recheck exact content identities. Later edits stop restoration. Recovery data lives beside the MO2 mods directory in an instance-specific `Modhunter-Recovery` vault and is excluded from app reset.
+- **Duplicate review:** complete per-file and whole-mod reports include saved-profile ownership and hard-link facts. Quarantine requires an identical retained counterpart and a duplicate disabled in every saved and live profile. Undo and permanent quarantine removal use a fresh exact preview.
+- **Desktop preferences:** system/light/dark themes, common interface labels in English, Spanish, Italian and Traditional Chinese, native quick hide, Windows capture protection, private external browser choices, bounded cache cleanup, app release checks, offline licenses and preview-before-export support reports. Detailed technical messages can remain in English.
+- **Owned cleanup:** download and recovery cleanup show the exact proposed items. Removing app data requires a typed confirmation, closes the desktop and records partial or retained results. It excludes MO2, game files, external browser profiles and recovery vaults.
+
+The release gate binds Windows WebView2, archive-helper, Chromium interaction and actual MO2 install/restore receipts to the clean candidate and packaged binaries. The separate MO2 2.5.2 fixture and Qt 6.11 forward-runtime checks do not claim execution of a user's MO2 2.5.3b12 installation, accounts or 11,207-mod profile.
+
+[0.11.0 implementation and evidence map](native/evidence/whimwatch-parity-0.11.0.md) · [Watchtower workflow](wiki/Watchtower.md)
 
 ### 0.10.1 MO2 development-runtime readiness and GameSync techniques
 
@@ -105,7 +120,7 @@ All **36 authentic files across v0.1–v0.8** are preserved unchanged in the **[
 
 1. **Just play:** download [`web/Modhunter.html`](web/Modhunter.html), open it, and click **Modhunter Siege** or **Survival Realm**. This always works in offline practice.
 2. **Use the Rust desktop:** download **Modhunter-Rust-Windows.zip** from [Windows releases](https://github.com/Herbertofury/Modhunter/releases), extract it and run `Modhunter.exe`, or use the NSIS installer. Click **Import MO2** and select `profiles/<name>/modlist.txt` for a read-only local snapshot. **Instance INI** and **Mods path** support custom layouts.
-3. **Connect live MO2:** close MO2, run the portable package's `Install_MO2_Plugin.bat`, and select the directory containing `ModOrganizer.exe`. Restart MO2, open **Tools → Update Arsenal - Quest Board**, then click **Find MO2** in Modhunter. The prior plugin is backed up outside MO2's plugin search directory.
+3. **Connect live MO2:** close MO2, run the portable package's `Install_MO2_Plugin.bat`, and select the directory containing `ModOrganizer.exe`. Restart MO2, wait for its profile to load, then click **Find MO2** in Modhunter. The bridge starts automatically; the legacy Quest Board tool remains optional. The prior plugin is backed up outside MO2's plugin search directory.
 
 > **Evidence:** see [Rust Desktop](wiki/Rust-Desktop.md) for the exact native, browser, lifecycle and performance gates. The content catalogue describes 480 campaign clear conditions, not 80 hours of independently playtested authored content. An automated fixture does not prove account-specific Nexus downloads or compatibility of a particular mod list.
 

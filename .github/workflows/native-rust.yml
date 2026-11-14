@@ -37,6 +37,8 @@ jobs:
           python3 native/scripts/prepare_notices.py
           cargo fmt --manifest-path native/Cargo.toml --all -- --check
           cargo test --manifest-path native/Cargo.toml --workspace --locked
+          cargo build --manifest-path native/Cargo.toml --locked -p modhunter-core --bin modhunter-cli
+          MODHUNTER_CONTENT_CLI="$PWD/native/target/debug/modhunter-cli" python3 -m unittest discover -s tests -p test_content_recovery.py -v
           python3 native/scripts/verify_archive_review.py --cli native/target/debug/modhunter-cli --output native/target/archive-review-proof.json
           python3 native/scripts/verify_plugin_bridge.py --cli native/target/debug/modhunter-cli --output native/target/plugin-bridge-protocol.json
           python3 native/scripts/verify_source_bridge.py --cli native/target/debug/modhunter-cli --output native/target/source-bridge-protocol.json
@@ -44,6 +46,10 @@ jobs:
           python3 -m unittest discover -s tests -p 'test_*.py' -q
           node --check native/ui/shell.js
           node --check native/ui/watchtower.js
+          node --check native/ui/watchtower-review.js
+          node --check native/ui/watchtower-maintenance.js
+          node --check native/ui/preferences.js
+          node --test tests/watchtower_source_scripts.test.cjs
           node --check tests/fixtures/watchtower_native_fixture.js
           node --test native/crates/modhunter-desktop/tests/shell_runtime.test.cjs
           node --test tests/mod_insights.test.cjs
@@ -63,6 +69,8 @@ jobs:
           PYTHONPATH=. /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_frontend_responsiveness.py' -v
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_compact_workspace.py' -v
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/test_watchtower_browser.py
+          PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p test_watchtower_sources_ui.py -v
+          PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/test_watchtower_native_ui.py
           PYTHONPATH=. /tmp/modhunter-qa/bin/python scripts/benchmark_dashboard_render.py --baseline-ref 63e5df3e3ef218ae72ce58b5e4502165c40ca604 --output /tmp/modhunter-proof/dashboard-render-comparison.json
       - name: Upload browser proof
         if: always()
@@ -168,6 +176,8 @@ jobs:
         run: npx --yes @tauri-apps/cli@2 build
       - name: Build portable Rust diagnostic CLI
         run: cargo build --manifest-path native/Cargo.toml --release --locked -p modhunter-core
+      - name: Verify the exact release CLI and packaged archive helper
+        run: python native/scripts/verify_archive_review.py --cli native/target/release/modhunter-cli.exe --output native/target/archive-review-proof.json
       - name: Launch actual Windows WebView2 and import a fixture profile
         shell: pwsh
         run: ./native/scripts/windows_smoke.ps1 -Executable "$PWD/native/target/release/Modhunter.exe" -Output "$PWD/native/target/native-smoke"
@@ -314,11 +324,13 @@ jobs:
           cmake --build native/target/qt-bridge --config Release --parallel 2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ctest --test-dir native/target/qt-bridge -C Release --output-on-failure
-      - name: Prepare the production dashboard
+      - name: Prepare the production dashboard and pinned archive tools
         run: |
           python native/scripts/prepare_release.py --print-version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python native/scripts/prepare_assets.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python native/scripts/prepare_archive_tools.py
       - name: Build the real Rust connection client
         run: cargo build --manifest-path native/Cargo.toml --release --locked -p modhunter-core
       - name: Exercise the production plugin inside real MO2 2.5.2

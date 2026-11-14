@@ -218,6 +218,8 @@ def main():
             if prepared['sha256'] != sha(path) or prepared['originalSha256'] != sha(archive): raise AssertionError('Source/derived provenance mismatch')
             receipt = json.loads((Path(base['stage']) / ('selected-' + prepared['selectionDigest'] + '.json')).read_bytes())
             if receipt != prepared: raise AssertionError('Durable selected receipt differs')
+            repeated = call({**base_req, 'action': 'prepareSelected', 'selected': ['meshes/test.nif']})
+            if repeated['preparedArchive'] != prepared: raise AssertionError('Repeated exact selection changed verified bytes')
         check('selected_archive_exact_bytes_and_provenance', selection)
         def complete_selection():
             paths = ['meshes/test.nif', 'textures/test.dds', 'readme.txt']

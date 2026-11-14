@@ -37,7 +37,7 @@ pub(super) fn snapshot(app: &tauri::AppHandle) -> Value {
             "sourceFileKey":o.source_file_key,"related":o.related,"publishedAt":o.published_at,
             "supported":o.supported,"current":current,"ignored":decision.as_ref().is_some_and(|d|d.ignored),
             "classification":decision.as_ref().map_or("unclassified",|d|d.kind.as_str()),"explicitDecision":decision.is_some(),
-            "association":decision.as_ref().and_then(|d|d.association.as_ref()),"canUpdate":watch.as_ref().is_some_and(|w|w.association.is_some()),
+            "association":decision.as_ref().and_then(|d|d.association.as_ref()),"canUpdate":!matches!(o.kind.as_str(),"folder"|"chooser")&&watch.as_ref().is_some_and(|w|w.association.is_some()),
             "newContentOptIn":runtime.store.creator_offers_new_content(watch_id)})
     }).collect();
     json!({"revision":state.revision.load(Ordering::Acquire),"offers":offers})
@@ -151,6 +151,7 @@ pub(super) fn resolve_files(app: &tauri::AppHandle, value: &Value) -> Result<Val
             .as_str()
             .filter(|s| !s.is_empty() && s.len() <= 8192 && !s.chars().any(char::is_control))
             .ok_or("Source returned no stable file identity.")?;
+        let identity = policy::download_scope::stable_identity(&url, &target, identity)?;
         let source_file_key = format!(
             "{:x}",
             Sha256::digest(format!("{}\0{}", watch.url, identity).as_bytes())
@@ -161,9 +162,9 @@ pub(super) fn resolve_files(app: &tauri::AppHandle, value: &Value) -> Result<Val
                     .into(),
             );
         }
-        let kind = row["kind"]
+        let mut kind = row["kind"]
             .as_str()
-            .filter(|s| matches!(*s, "attachment" | "external" | "chooser"))
+            .filter(|s| matches!(*s, "attachment" | "external" | "chooser" | "folder"))
             .ok_or("Source returned an unknown file kind.")?
             .to_owned();
         let published_at = row["publishedAt"]
@@ -171,7 +172,11 @@ pub(super) fn resolve_files(app: &tauri::AppHandle, value: &Value) -> Result<Val
             .filter(|s| s.len() <= 100 && !s.chars().any(char::is_control))
             .unwrap_or("")
             .to_owned();
-        let supported = allowed_download(raw, &context.origin);
+        if policy::download_scope::is_folder(&target) {
+            kind = "folder".into();
+        }
+        let supported = !matches!(kind.as_str(), "folder" | "chooser")
+            && allowed_download(raw, &context.origin, context.fixture_origin.as_deref());
         let id = format!("offer-{}", runtime.sequence.fetch_add(1, Ordering::AcqRel));
         collected.push(Offer {
             id,
@@ -224,6 +229,15 @@ fn current_offer(app: &tauri::AppHandle, value: &Value) -> Result<Offer> {
 /// The renderer supplies an opaque offer ID, never a source URL or file key.
 pub(super) fn decide_offer(app: &tauri::AppHandle, value: &Value, clear: bool) -> Result<Value> {
     let offer = current_offer(app, value)?;
+    if !clear
+        && matches!(offer.kind.as_str(), "chooser" | "folder")
+        && value
+            .get("kind")
+            .and_then(Value::as_str)
+            .is_some_and(|kind| kind != "unclassified")
+    {
+        return Err("Choose an exact attachment or a direct external file link before assigning an installation relationship.".into());
+    }
     let (watch_id, generation) = offer
         .context
         .download_watch
@@ -275,12 +289,18 @@ pub(super) fn open_offer(app: &tauri::AppHandle, value: &Value) -> Result<Value>
     if decision.as_ref().is_some_and(|d| d.ignored) {
         return Err("This exact file is ignored. Restore its choice before opening it.".into());
     }
-    if decision.is_none() && offer.kind != "chooser" {
+    if decision
+        .as_ref()
+        .is_none_or(|decision| !matches!(decision.kind.as_str(), "update" | "newContent"))
+    {
         return Err("Classify this exact file as an installed update or separate content before opening it.".into());
     }
     let url = Url::parse(&offer.url).map_err(err)?;
     let mut context = offer.context;
     context.download_file_key = Some(offer.source_file_key);
+    context.download_scope = Some(Arc::new(Mutex::new(
+        policy::download_scope::SelectedDownloadScope::new(url.clone())?,
+    )));
     if url.origin().ascii_serialization() != context.origin {
         // Never lend a creator account's browser profile to an external host.
         context.origin = url.origin().ascii_serialization();

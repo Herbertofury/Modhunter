@@ -262,7 +262,7 @@ fn listing(text: &str, archive_bytes: u64) -> Result<Listed> {
             return Err("Directory entry has unexpected payload bytes.".into());
         }
         if identities
-            .insert(name.to_lowercase(), (name.clone(), folder))
+            .insert(name.to_uppercase(), (name.clone(), folder))
             .is_some()
         {
             return Err("Archive contains duplicate or case-colliding entries.".into());
@@ -295,7 +295,7 @@ fn listing(text: &str, archive_bytes: u64) -> Result<Listed> {
                 .to_str()
                 .ok_or("Unreadable archive directory.")?
                 .replace('\\', "/");
-            if let Some((existing, folder)) = identities.get(&p.to_lowercase())
+            if let Some((existing, folder)) = identities.get(&p.to_uppercase())
                 && (!folder || existing != &p)
             {
                 return Err("Archive file/directory or case aliases overlap.".into());
@@ -307,7 +307,7 @@ fn listing(text: &str, archive_bytes: u64) -> Result<Listed> {
     // records were stored in the container.
     let mut seen = BTreeMap::new();
     for name in &directories {
-        if seen.insert(name.to_lowercase(), name).is_some() {
+        if seen.insert(name.to_uppercase(), name).is_some() {
             return Err("Archive contains aliased parent directory spellings.".into());
         }
         if files.keys().any(|f| f.eq_ignore_ascii_case(name)) {
@@ -732,10 +732,43 @@ fn prepare_selected(request: &Request, cancel: &impl Fn() -> bool) -> Result<Val
     }
     let selection_digest=format!("{:x}",Sha256::digest(serde_json::to_vec(&json!({"originalSha256":marker.archive_sha256,"manifestDigest":manifest_digest(&marker)?,"selected":selected})).map_err(err)?));
     let destination = stage.join(format!("selected-{selection_digest}.zip"));
-    if destination.exists() {
-        return Err("This selection already has prepared bytes; discard its retained review before preparing again.".into());
-    }
     let helper = helper(cancel)?;
+    if destination.exists() {
+        let receipt_path = stage.join(format!("selected-{selection_digest}.json"));
+        reject_link(&receipt_path)?;
+        if fs::metadata(&receipt_path).map_err(err)?.len() > MAX_LIST {
+            return Err("Selected receipt exceeds its bound.".into());
+        }
+        let receipt: Value =
+            serde_json::from_slice(&fs::read(&receipt_path).map_err(err)?).map_err(err)?;
+        let (bytes, sha256, kind) = archive_identity(&destination, cancel)?;
+        let expected = json!({"path":destination,"bytes":bytes,"sha256":sha256,"originalSha256":marker.archive_sha256,"selectionDigest":selection_digest,"entries":selected.iter().map(|(path,e)|json!({"path":path,"bytes":e.bytes,"sha256":e.sha256})).collect::<Vec<_>>()});
+        if receipt != expected {
+            return Err(
+                "Existing selected bytes or their receipt changed; preserve for review.".into(),
+            );
+        }
+        let complete = list(&helper, &destination, kind, bytes, cancel)?;
+        let temp = tempfile::Builder::new()
+            .prefix("selection-recheck-")
+            .tempdir_in(&stage)
+            .map_err(err)?;
+        let extracted_root = temp.path().join("files");
+        extract(&helper, &destination, kind, &extracted_root, cancel)?;
+        if extracted(&extracted_root, &complete, cancel)? != selected {
+            return Err(
+                "Existing prepared archive no longer contains exactly the selected files.".into(),
+            );
+        }
+        checked_marker(request, cancel)?;
+        return selected_result(
+            &stage,
+            &marker,
+            receipt,
+            &selection_digest,
+            &request.selected,
+        );
+    }
     let temp = tempfile::Builder::new()
         .prefix("selection-")
         .tempdir_in(&stage)
@@ -808,12 +841,27 @@ fn prepare_selected(request: &Request, cancel: &impl Fn() -> bool) -> Result<Val
         &stage.join(format!("selected-{selection_digest}.json")),
         &prepared,
     )?;
-    let mut value = output(&stage, &marker)?;
+    selected_result(
+        &stage,
+        &marker,
+        prepared,
+        &selection_digest,
+        &request.selected,
+    )
+}
+fn selected_result(
+    stage: &Path,
+    marker: &Marker,
+    prepared: Value,
+    selection_digest: &str,
+    selected: &[String],
+) -> Result<Value> {
+    let mut value = output(stage, marker)?;
     value["selectionEnforced"] = json!(true);
     value["selectedArchive"] = prepared.clone();
     value["preparedArchive"] = prepared;
     value["selectionDigest"] = json!(selection_digest);
-    value["selectedPaths"] = json!(request.selected);
+    value["selectedPaths"] = json!(selected);
     Ok(value)
 }
 
@@ -845,6 +893,7 @@ mod tests {
         assert!(listing(&(block("A/x.dds") + &block("a/y.dds")), 100).is_err());
         assert!(listing(&(block("a") + &block("a/b")), 100).is_err());
         assert!(listing(&(block("a") + &block("a")), 100).is_err());
+        assert!(listing(&(block("mesh/σ.nif") + &block("mesh/ς.nif")), 100).is_err());
         assert!(listing("Path = a\nFolder = -\nSize = 3\nEncrypted = +\n\n", 100).is_err());
         assert!(
             listing(

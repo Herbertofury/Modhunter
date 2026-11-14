@@ -41,11 +41,18 @@ mod review;
 #[path = "watchtower_access.rs"]
 mod access;
 
+#[path = "watchtower_browser_data.rs"]
+mod browser_data;
+
 #[path = "watchtower_privacy.rs"]
 pub(crate) mod privacy;
 
 #[path = "watchtower_maintenance.rs"]
 mod maintenance;
+
+#[path = "watchtower_reset.rs"]
+mod reset;
+pub(crate) use reset::dispatch_helper as dispatch_reset_helper;
 
 #[path = "watchtower_smoke.rs"]
 mod smoke;
@@ -98,6 +105,7 @@ struct SiteContext {
     lease: Option<CheckJob>,
     download_watch: Option<(String, u64)>,
     download_file_key: Option<String>,
+    download_scope: Option<Arc<Mutex<policy::download_scope::SelectedDownloadScope>>>,
     cancellation: Option<Arc<AtomicBool>>,
 }
 impl SiteContext {
@@ -116,6 +124,7 @@ impl SiteContext {
             lease: None,
             download_watch: None,
             download_file_key: None,
+            download_scope: None,
             cancellation: None,
         })
     }
@@ -146,11 +155,14 @@ impl SiteContext {
 struct Load {
     navigation: Mutex<policy::NavigationProgress>,
     native_error: Mutex<Option<String>>,
+    filtered_resources: AtomicBool,
+    blocked_resources: AtomicU64,
 }
 pub struct WatchRuntime {
     store: WatchStore,
     work: Mutex<Work>,
     windows: Mutex<BTreeMap<String, SiteWindow>>,
+    anonymous_origins: Mutex<std::collections::BTreeSet<String>>,
     prefill: Mutex<Option<Value>>,
     profiles: PathBuf,
     ephemeral: tempfile::TempDir,
@@ -230,6 +242,12 @@ impl WatchRuntime {
                 .join(format!("{:x}", Sha256::digest(origin.as_bytes()))),
         };
         std::fs::create_dir_all(&directory).map_err(err)?;
+        if session.is_none() {
+            self.anonymous_origins
+                .lock()
+                .map_err(err)?
+                .insert(origin.to_owned());
+        }
         // An owned marker distinguishes our retired browser generations from arbitrary directories.
         let marker = directory.join("modhunter-profile-owner.json");
         if !marker.exists() {
@@ -246,6 +264,14 @@ impl WatchRuntime {
 pub fn setup(app: &tauri::AppHandle) -> Result<()> {
     let config = app.path().app_config_dir().map_err(err)?;
     let data = app.path().app_data_dir().map_err(err)?;
+    reset::setup(
+        app,
+        modhunter_core::app_reset::AppPaths {
+            config: config.clone(),
+            data: data.clone(),
+            local_data: app.path().app_local_data_dir().map_err(err)?,
+        },
+    )?;
     setup_paths(app, config, data, true)
 }
 
@@ -294,6 +320,7 @@ fn setup_paths(
         store,
         work: Mutex::new(Work::default()),
         windows: Mutex::new(BTreeMap::new()),
+        anonymous_origins: Mutex::new(std::collections::BTreeSet::new()),
         prefill: Mutex::new(None),
         profiles,
         ephemeral,
@@ -893,9 +920,14 @@ fn site_window(
             if count >= 4 {
                 return NewWindowResponse::Deny;
             }
+            // A new browsing surface cannot inherit a selected attachment's
+            // file authority. It may still save an unclassified manual archive.
+            let mut child_context = popup_context.clone();
+            child_context.download_file_key = None;
+            child_context.download_scope = None;
             match site_window(
                 &popup_app,
-                popup_context.clone(),
+                child_context,
                 Url::parse("about:blank").expect("literal"),
                 true,
                 Some(features),
@@ -918,13 +950,22 @@ fn site_window(
     let download_app = app.clone();
     let download_context = context.clone();
     let download_label = label.clone();
+    let filter_resources = !interactive
+        && context.lease.as_ref().map_or_else(
+            || state.store.settings().filter_hidden_resources,
+            |job| job.filtered_resources,
+        );
     window
         .with_webview(move |platform| {
             let starting_load = native_load.clone();
             let completed_load = native_load.clone();
+            let starting_scope = download_context.download_scope.clone();
+            let completed_scope = download_context.download_scope.clone();
+            let changed_scope = download_context.download_scope.clone();
             let result = (|| -> windows_core::Result<()> {
                 unsafe {
                     let webview = platform.controller().CoreWebView2()?;
+                    browser_data::install_filter(&webview,platform.environment(),native_load.clone(),filter_resources)?;
                     acquisition::install(download_app.clone(), &webview, download_context.clone(), download_label.clone(), interactive)?;
                     let starting = webview2_com::NavigationStartingEventHandler::create(Box::new(
                         move |_, args| {
@@ -933,7 +974,14 @@ fn site_window(
                                 args.NavigationId(&mut id)?;
                                 let mut uri = windows_core::PWSTR::null();
                                 args.Uri(&mut uri)?;
-                                let website = webview2_com::take_pwstr(uri) != "about:blank";
+                                let raw = webview2_com::take_pwstr(uri);
+                                let website = raw != "about:blank";
+                                if let Some(scope) = &starting_scope && let Ok(mut scope) = scope.lock() {
+                                    let mut redirected = windows_core::BOOL(0);
+                                    if args.IsRedirected(&mut redirected).is_ok() && let Ok(url) = Url::parse(&raw) {
+                                        scope.navigation_started(id, &url, redirected.as_bool());
+                                    } else { scope.invalidate(); }
+                                }
                                 if let Ok(mut progress) = starting_load.navigation.lock() {
                                     progress.started(id, website);
                                 }
@@ -943,13 +991,31 @@ fn site_window(
                     ));
                     let mut token = 0;
                     webview.add_NavigationStarting(&starting, &mut token)?;
+                    let changed = webview2_com::SourceChangedEventHandler::create(Box::new(move |sender, _| {
+                        if let Some(scope) = &changed_scope && let Ok(mut scope) = scope.lock() {
+                            let mut raw = windows_core::PWSTR::null();
+                            if let Some(sender) = sender && sender.Source(&mut raw).is_ok() {
+                                if let Ok(url) = Url::parse(&webview2_com::take_pwstr(raw)) { scope.source_changed(&url); }
+                                else { scope.invalidate(); }
+                            } else { scope.invalidate(); }
+                        }
+                        Ok(())
+                    }));
+                    webview.add_SourceChanged(&changed, &mut token)?;
                     let completed = webview2_com::NavigationCompletedEventHandler::create(Box::new(
-                        move |_, args| {
+                        move |sender, args| {
                             if let Some(args) = args {
                                 let mut id = 0;
                                 args.NavigationId(&mut id)?;
                                 let mut success = windows_core::BOOL(0);
                                 let valid = args.IsSuccess(&mut success).is_ok();
+                                if let Some(scope) = &completed_scope && let Ok(mut scope) = scope.lock() {
+                                    let mut raw = windows_core::PWSTR::null();
+                                    if let Some(sender) = sender && sender.Source(&mut raw).is_ok() {
+                                        if let Ok(url) = Url::parse(&webview2_com::take_pwstr(raw)) { scope.navigation_completed(id, valid && success.as_bool(), &url); }
+                                        else { scope.invalidate(); }
+                                    } else { scope.invalidate(); }
+                                }
                                 let mut status = 0;
                                 let mut web_error = Default::default();
                                 let _ = args.WebErrorStatus(&mut web_error);
@@ -1120,6 +1186,14 @@ fn capture(
     let mut result: PageObservation = serde_json::from_value(value)
         .map_err(|_| "The page capture was incomplete. Try a smaller page region.".to_string())?;
     result.http_status = Some(navigation.http_status).filter(|status| *status > 0);
+    result.filtered_resources = load.filtered_resources.load(Ordering::Acquire);
+    if result.filtered_resources && load.blocked_resources.load(Ordering::Acquire) > 0 {
+        let failed=eval_json(window,"(()=>{const visible=e=>e.getClientRects().length&&getComputedStyle(e).visibility!=='hidden';return [...document.querySelectorAll('[role=alert],[data-error]')].some(e=>visible(e)&&/failed to load|unable to load|required (?:image|media|resource)|could not load/i.test(e.innerText||''))||performance.getEntriesByType('resource').some(e=>['script','fetch','xmlhttprequest'].includes(e.initiatorType)&&Number(e.responseStatus)>=400)})()".into(),cancel,deadline)?;
+        if failed == true {
+            result.status = "incomplete".into();
+            result.message="This page reported a required resource failure while hidden media filtering was enabled. Disable the option and recheck; the previous complete observation is retained.".into();
+        }
+    }
     let mut after = window.url().map_err(err)?;
     after.set_fragment(None);
     if *load.navigation.lock().map_err(err)? != navigation
@@ -1519,11 +1593,17 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
         }
         return Ok(json!({"ok":true}));
     }
+    if reset::pending(app) {
+        return Err("Modhunter is closing for an approved application reset.".into());
+    }
     if !matches!(kind, "detail" | "export" | "exportFile") {
         state.writable()?;
     }
     let mut result = json!({});
     match kind {
+        "previewAppReset" | "applyAppReset" => {
+            result = reset::execute(app, kind, &value)?;
+        }
         "maintenance"
         | "globalSettings"
         | "checkAppRelease"
@@ -1537,6 +1617,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
         | "diagnosticsSave"
         | "browserChoices"
         | "openPrivate"
+        | "copySourceLink"
         | "licenses" => {
             result = maintenance::execute(app, kind, &value)?;
         }
@@ -1547,6 +1628,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
         | "cancelReview"
         | "discardReview"
         | "contentJobs"
+        | "cancelContentJob"
         | "contentBackups"
         | "contentRecovery"
         | "contentBatchRestore"
@@ -1588,6 +1670,45 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
             cancel_selected(app, Some(&selected), true)?;
         }
         "cancelAll" => cancel(app, None)?,
+        "clearSessionCache" => {
+            result = browser_data::clear_session_cache(app, id(&value)?)?;
+        }
+        "clearAllCaches" => {
+            if value["confirm"] != "CLEAR CACHE" {
+                return Err("Confirm CLEAR CACHE in the trusted manager.".into());
+            }
+            result = browser_data::clear_all_caches(app)?;
+            if !maintenance::settings(app).retain_sign_ins {
+                let sessions: Vec<Session> =
+                    serde_json::from_value(state.store.snapshot()["sessions"].clone())
+                        .map_err(err)?;
+                let mut cleared = 0usize;
+                let mut failures = Vec::new();
+                for session in sessions {
+                    match state
+                        .store
+                        .command("resetSession", &json!({"id":session.id}), now())
+                    {
+                        Ok(_) => {
+                            cleared += 1;
+                            session_changed(app, Some(session));
+                        }
+                        Err(error) => failures.push(error),
+                    }
+                }
+                result["sessionsReset"] = json!(cleared);
+                if !failures.is_empty() {
+                    return Err(format!(
+                        "Browser caches cleared; {cleared} named sessions reset, but {} session resets failed: {}",
+                        failures.len(),
+                        failures.join("; ")
+                    ));
+                }
+                result["message"] = json!(format!(
+                    "Browser caches and history cleared. {cleared} named sessions reset; their old sign-in data is queued for removal when browser handles close."
+                ));
+            }
+        }
         "openSession" => {
             open_session(app, id(&value)?, None)?;
             result["message"] = json!(
@@ -1746,9 +1867,26 @@ pub async fn watchtower_command(
     if !policy::trusted_manager(webview.label(), &webview.url().map_err(err)?) {
         return Err("Watchtower commands belong only to the bundled manager.".into());
     }
-    tauri::async_runtime::spawn_blocking(move || execute(&app, &kind, value.unwrap_or(Value::Null)))
-        .await
-        .map_err(err)?
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = execute(&app, &kind, value.unwrap_or(Value::Null));
+        if result.is_err() {
+            notify(&app);
+        }
+        result
+    })
+    .await
+    .map_err(err)?
+}
+
+pub(crate) fn apply_global_appearance(app: &tauri::AppHandle) -> Result<()> {
+    maintenance::apply_appearance(app)
+}
+
+pub(crate) fn reset_pending(app: &tauri::AppHandle) -> bool {
+    reset::pending(app)
+}
+pub(crate) fn reset_status(app: &tauri::AppHandle) -> Value {
+    reset::status(app)
 }
 
 pub fn shutdown(app: &tauri::AppHandle) {
@@ -1757,6 +1895,26 @@ pub fn shutdown(app: &tauri::AppHandle) {
         return;
     };
     acquisition::cancel_all(app);
+    let preferences = maintenance::settings(app);
+    if preferences.clear_cache_on_exit && !state.stopping.load(Ordering::Acquire) {
+        if let Err(error) = browser_data::clear_all_caches(app) {
+            record_runtime_warning(&state, error);
+        }
+        if !preferences.retain_sign_ins {
+            let sessions: Vec<Session> =
+                serde_json::from_value(state.store.snapshot()["sessions"].clone())
+                    .unwrap_or_default();
+            for session in sessions {
+                match state
+                    .store
+                    .command("resetSession", &json!({"id":session.id}), now())
+                {
+                    Ok(_) => session_changed(app, Some(session)),
+                    Err(error) => record_runtime_warning(&state, error),
+                }
+            }
+        }
+    }
     if state.stopping.swap(true, Ordering::AcqRel) {
         return;
     }

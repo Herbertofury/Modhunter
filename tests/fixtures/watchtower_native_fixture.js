@@ -38,6 +38,9 @@
     }
     return value;
   };
+  // Extension fixtures use the same ordered delivery revision as native replies.
+  // A review/maintenance update does not mutate the persisted WatchStore.
+  f.snapshot = snapshot;
   f.publish = value => {
     const payload = value ? clone(value) : snapshot();
     for (const listener of listeners) listener({payload});

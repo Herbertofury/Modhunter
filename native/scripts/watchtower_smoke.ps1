@@ -12,6 +12,9 @@ $Executable = (Resolve-Path -LiteralPath $Executable).Path
 $Output = (Resolve-Path -LiteralPath $Output).Path
 $report = Join-Path $Output 'watchtower-smoke.json'
 $events = Join-Path $Output 'watchtower-smoke.events.jsonl'
+$checkpoint = Join-Path $Output 'native-source-checkpoint.json'
+python "$PSScriptRoot/bind_native_proof.py" --executable $Executable --checkpoint $checkpoint
+if ($LASTEXITCODE -ne 0) { throw 'Native Watchtower source checkpoint failed.' }
 Remove-Item -LiteralPath $report, $events -ErrorAction SilentlyContinue
 $required = @(
   'trusted_manager_ipc',
@@ -26,11 +29,23 @@ $required = @(
   'stale_operation_rejected',
   'cancelled_capture_rejected',
   'same_session_popup'
-  'public_https_end_to_end'
+  'public_https_end_to_end',
+  'download_requires_explicit_consent',
+  'authenticated_direct_archive_download',
+  'authenticated_blob_archive_download',
+  'download_rejection_prevents_bytes',
+  'download_cancel_cleans_partial',
+  'download_html_rejected',
+  'download_owner_close_cancels',
+  'download_stale_source_cancels',
+  'download_receipt_survives_reopen',
+  'download_exact_file_authority',
+  'native_privacy_quick_hide_and_capture',
+  'native_browser_cache_and_resource_policy'
 )
 $process = Start-Process -FilePath $Executable -ArgumentList @("`"--watchtower-smoke-output=$report`"") -RedirectStandardOutput (Join-Path $Output 'stdout.log') -RedirectStandardError (Join-Path $Output 'stderr.log') -PassThru
 try {
-  $deadline = [DateTime]::UtcNow.AddSeconds(120)
+  $deadline = [DateTime]::UtcNow.AddSeconds(240)
   while (!(Test-Path -LiteralPath $report) -and !$process.HasExited -and [DateTime]::UtcNow -lt $deadline) {
     Start-Sleep -Milliseconds 250
     $process.Refresh()
@@ -53,9 +68,11 @@ try {
     Start-Sleep -Milliseconds 250
     $process.Refresh()
   }
-  if (!$process.HasExited) { throw 'Native Watchtower process did not exit cleanly within 120 seconds.' }
+  if (!$process.HasExited) { throw 'Native Watchtower process did not exit cleanly within 240 seconds.' }
   $process.WaitForExit()
   if ($process.ExitCode -ne 0) { throw "Native Watchtower process exited with code $($process.ExitCode)." }
+  python "$PSScriptRoot/bind_native_proof.py" --executable $Executable --checkpoint $checkpoint --report $report
+  if ($LASTEXITCODE -ne 0) { throw 'Native Watchtower proof does not match unchanged source and executable.' }
   Get-Content -LiteralPath $report -Raw
 } finally {
   $process.Refresh()

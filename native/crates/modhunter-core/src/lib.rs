@@ -1,6 +1,7 @@
 //! Native Modhunter work engine. Imports and audits are read-only. Explicit content-vault restores are separately confirmed mutations.
 pub mod acquisition;
 pub mod app_maintenance;
+pub mod app_reset;
 pub mod archive_review;
 pub mod bridge;
 pub mod content_vault;

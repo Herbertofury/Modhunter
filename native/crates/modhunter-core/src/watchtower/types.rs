@@ -19,6 +19,7 @@ pub struct WatchSettings {
     pub muted_folders: Vec<String>,
     pub hide_titles: bool,
     pub privacy_screen: bool,
+    pub filter_hidden_resources: bool,
 }
 impl Default for WatchSettings {
     fn default() -> Self {
@@ -32,6 +33,7 @@ impl Default for WatchSettings {
             muted_folders: Vec::new(),
             hide_titles: false,
             privacy_screen: false,
+            filter_hidden_resources: false,
         }
     }
 }
@@ -76,6 +78,8 @@ pub struct Observation {
     /// A bounded preview; the digest always covers the complete accepted capture.
     pub text_preview: String,
     pub preview_truncated: bool,
+    #[serde(default)]
+    pub filtered_resources: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -165,6 +169,7 @@ pub struct CheckJob {
     pub ignore_selectors: Vec<String>,
     pub session_id: Option<String>,
     pub session_storage_generation: u64,
+    pub filtered_resources: bool,
     pub session: Option<Session>,
 }
 
@@ -180,6 +185,7 @@ pub struct PageObservation {
     pub http_status: Option<u16>,
     /// Incomplete browser captures must not advance the successful baseline.
     pub truncated: bool,
+    pub filtered_resources: bool,
 }
 impl Default for PageObservation {
     fn default() -> Self {
@@ -191,6 +197,7 @@ impl Default for PageObservation {
             message: String::new(),
             http_status: None,
             truncated: false,
+            filtered_resources: false,
         }
     }
 }

@@ -587,6 +587,37 @@ fn inject_watchtower_capability(app: &tauri::AppHandle, view: &Webview) {
     }
 }
 
+pub(crate) fn apply_content_preferences(app: &tauri::AppHandle, value: &Value) -> Result<()> {
+    let Some(runtime) = app.try_state::<Runtime>() else {
+        return Ok(());
+    };
+    let (labels, endpoint) = {
+        let model = runtime.model.lock().map_err(err)?;
+        (
+            model
+                .tabs
+                .iter()
+                .map(|tab| tab.label.clone())
+                .collect::<Vec<_>>(),
+            model.endpoint.clone(),
+        )
+    };
+    let script = format!(
+        "if(!window.ModhunterI18n){{ {} }}window.dispatchEvent(new CustomEvent('modhunter-preferences',{{detail:{value}}}));",
+        include_str!("../../../ui/preferences.js")
+    );
+    for label in labels {
+        if let Some(view) = app.get_webview(&label)
+            && view
+                .url()
+                .is_ok_and(|url| policy::owned_page(&url, endpoint.as_deref()))
+        {
+            view.eval(&script).map_err(err)?;
+        }
+    }
+    Ok(())
+}
+
 fn invalidate_analysis(model: &mut Model) {
     if let Some(catalog) = model.catalog.as_mut() {
         let catalog = Arc::make_mut(catalog);
@@ -855,6 +886,7 @@ fn open_tab(app: &tauri::AppHandle, mode: Mode) -> Result<u64> {
             }
             if done {
                 inject_watchtower_capability(&load_app, &view);
+                let _ = crate::watchtower_windows::apply_global_appearance(&load_app);
                 if let Err(error) = inject_catalog(&load_app, view.label()) {
                     smoke_event(
                         &load_app,
@@ -1189,6 +1221,9 @@ fn live_dashboard_action(app: &tauri::AppHandle, action: &str) -> Result<Value> 
 }
 
 fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
+    if kind != "state" && crate::watchtower_windows::reset_pending(app) {
+        return Err("Modhunter is closing for an approved application reset.".into());
+    }
     let state = app.state::<Runtime>();
     match kind {
         "state" => return Ok(json!({"ok": true, "state": state.snapshot()})),
@@ -1581,7 +1616,13 @@ pub fn run() {
                     resize(&handle);
                 }
             });
+            let appearance_app = app.handle().clone();
             let chrome = WebviewBuilder::new("chrome", WebviewUrl::App("shell.html".into()))
+                .on_page_load(move |_, payload| {
+                    if payload.event() == PageLoadEvent::Finished {
+                        let _ = crate::watchtower_windows::apply_global_appearance(&appearance_app);
+                    }
+                })
                 .on_navigation(|u| policy::local_asset(u, "/shell.html"))
                 .on_new_window(|_, _| NewWindowResponse::Deny);
             window.add_child(

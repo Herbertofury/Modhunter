@@ -39,12 +39,36 @@ There are no content records or masters. The synthetic game is unsupported for
 ESL eligibility; this check makes no conversion-safety claim. Helper hashes must
 match the supplied CLI before and after the audit.
 
-When `-RustCliPath` is supplied, both `rust_cli_live_probe` and
-`rust_plugin_audit` are required for the run to pass. Release preparation also
-requires those checks, the three intelligence modules' tested source hashes,
+When `-RustCliPath` is supplied, `rust_cli_live_probe`, `rust_plugin_audit`,
+`rust_content_recovery` and `native_content_install` are required for the run to
+pass. Release preparation also requires those checks, the intelligence and
+content modules' tested source hashes,
 and a packaged MO2 helper matching the portable package's CLI. The separate
 native MO2 and portable build jobs may produce different executable hashes;
 each installed/copied helper must match its own job's compiled CLI.
+
+The content recovery probe calls the production authenticated HTTP routes and
+shipped Rust helper. It prepares actual-byte snapshots for both marked mods,
+changes only their recognized fixture text, and explicitly seals those changes.
+It checks that a receipt for another target is rejected and that an unrelated
+later edit blocks restoration. A two-target batch then restores both original
+byte sequences and waits for MO2's real `onNextRefresh` callbacks. Repeating the
+same accepted request must return its existing job without replaying the change.
+This probe records `nativeInstallerOpened: false` because its fixture edits do
+not use an installer.
+
+The separate native installation probe creates a small owned ZIP containing an
+inert plugin, a fixture text replacement and a texture-directory marker. The
+production content service verifies the acquisition receipt, makes the actual
+mod backup, checks it again, and calls `organizer.installMod` for `Smoke Disabled`.
+The Qt watchdog can click only the exact `SimpleInstallDialog` with that name,
+followed by the `QueryOverwriteDialog` merge button, while the same native job
+owns a verified backup and mutation lease. The fixture temporarily sets the
+Simple Installer's `silent` preference to false so the name dialog is observed.
+It restores the previous preference at completion. Unknown dialogs, different
+targets, expired ownership or a missing backup fail the run. After installation,
+the probe verifies archive bytes on disk, uses production guarded restore, and
+checks that the complete original mod tree returned after a real native refresh.
 
 The script creates a new temporary working directory, downloads the pinned
 [official MO2 2.5.2 portable archive](https://github.com/ModOrganizer2/modorganizer/releases/tag/v2.5.2),
@@ -120,6 +144,10 @@ Required observations include:
 - The production plugin-audit request and Qt inventory capture, a completed
   deep Rust job, both decorated fixture rows, and an exact inert-plugin header
   and fresh SHA256, when the CLI path is supplied.
+- Actual mod-byte snapshots, cross-target and later-edit refusals, a complete
+  two-target batch restore, native refresh acknowledgements and replay rejection.
+- The production native `installMod` call, exact fixture name and merge dialogs,
+  verified installed archive bytes, and complete original-tree restoration.
 - A complete passing receipt and a clean zero exit code from MO2 itself.
 
 An unexpected modal dialog, failed assertion, missing callback, missing native
@@ -173,10 +201,23 @@ The pinned MO2 source establishes the remaining startup contract:
   reads `nxmhandler.ini` and honors `noregister=true` for the normal `reg` command.
 - [Qt's URL handler API](https://doc.qt.io/qt-6/qdesktopservices.html#setUrlHandler):
   a registered QObject slot receives URLs instead of the desktop browser.
+- [The quick installer's shipped-era implementation](https://github.com/ModOrganizer2/modorganizer-installer_quick/blob/4b30cfb8a268d8c0472b148943dd588114916182/src/installerquick.cpp)
+  shows the native name dialog unless its `silent` setting is enabled.
+- [The overwrite dialog at v2.5.2](https://github.com/ModOrganizer2/modorganizer/blob/v2.5.2/src/queryoverwritedialog.ui)
+  supplies the exact merge control; the harness also requires the previously
+  observed fixture name because this dialog does not display the target name.
 
 A passing run validates this specific native connection and dispatch path. It
 does not validate Nexus sign-in, remote scan results, downloading a mod archive,
-installer/FOMOD dialogs, a real game's runtime or launching a game. Those require
+FOMOD/manual installer choices, a real game's runtime or launching a game. The
+native installer acceptance covers only the owned simple-ZIP fixture merge.
+Those additional workflows require
 separate authorized integration tests. Local Python compilation of these test
 files is not evidence that the Windows native smoke passed; use the CI receipt
 and process exit for that conclusion.
+
+The portable tests in `tests/test_content_recovery.py` run these same HTTP and
+Rust protocols with a substituted organizer and synthetic dialog events.
+`tests/test_native_content_smoke.py` checks the exact dialog gate logic. Neither
+portable test creates release evidence or establishes that real Windows MO2
+opened or accepted an installer.

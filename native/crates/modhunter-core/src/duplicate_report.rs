@@ -103,7 +103,7 @@ fn directories(root: &Path, max: usize) -> Result<BTreeMap<String, PathBuf>> {
             .into_string()
             .map_err(|_| "Non-UTF-8 directory requires manual review.")?;
         valid_leaf(&name)?;
-        if !aliases.insert(name.to_lowercase()) {
+        if !aliases.insert(name.to_uppercase()) {
             return Err("Managed directories have case-colliding identities.".into());
         }
         out.insert(name, checked_root(&path)?);
@@ -159,7 +159,7 @@ fn profiles(root: &Path, cancel: &impl Fn() -> bool) -> Result<Profiles> {
                 enabled: mark == "+",
                 priority: priority as i64,
             };
-            if mods.insert(name.to_lowercase(), value).is_some() {
+            if mods.insert(name.to_uppercase(), value).is_some() {
                 return Err("Profile contains repeated or case-colliding mod names.".into());
             }
         }
@@ -190,7 +190,7 @@ pub(crate) fn disabled_profile_proof(
     let all = profiles(&checked_root(root)?, cancel)?;
     if all
         .values()
-        .any(|p| p.mods.get(&name.to_lowercase()).is_some_and(|m| m.enabled))
+        .any(|p| p.mods.get(&name.to_uppercase()).is_some_and(|m| m.enabled))
     {
         return Err(
             "This mod is enabled in a saved profile; reversible removal is blocked.".into(),
@@ -309,7 +309,7 @@ fn content(files: &Tree) -> Tree {
     files
         .iter()
         .filter(|(n, _)| !n.eq_ignore_ascii_case("meta.ini"))
-        .map(|(n, e)| (n.to_lowercase(), e.clone()))
+        .map(|(n, e)| (n.to_uppercase(), e.clone()))
         .collect()
 }
 fn snapshot(request: &Request, cancel: &impl Fn() -> bool) -> Result<Snapshot> {
@@ -355,7 +355,7 @@ fn snapshot(request: &Request, cancel: &impl Fn() -> bool) -> Result<Snapshot> {
         }
         let mut owners = Vec::new();
         for (id, profile) in &saved {
-            let row = profile.mods.get(&claim.name.to_lowercase());
+            let row = profile.mods.get(&claim.name.to_uppercase());
             let enabled = row.is_some_and(|m| m.enabled);
             let claim = claims
                 .get(id)
@@ -495,7 +495,7 @@ struct Record {
     created_at: i64,
 }
 fn public(r: &Record) -> Value {
-    json!({"id":r.id,"state":r.state,"modName":r.mod_name,"retainedModName":r.retained_mod_name,"profileId":r.profile_id,"game":r.game,"createdAt":r.created_at,"files":r.files.len(),"bytes":r.files.values().map(|e|e.bytes).sum::<u64>(),"canRestore":r.state=="quarantined","retainedBytes":true})
+    json!({"id":r.id,"state":r.state,"modName":r.mod_name,"retainedModName":r.retained_mod_name,"profileId":r.profile_id,"game":r.game,"createdAt":r.created_at,"files":r.files.len(),"bytes":r.files.values().map(|e|e.bytes).sum::<u64>(),"canRestore":r.state=="quarantined","canDelete":matches!(r.state.as_str(),"quarantined"|"restored"),"retainedBytes":r.state=="quarantined"})
 }
 fn vault(request: &Request) -> Result<(PathBuf, fs::File)> {
     let mods = checked_root(&request.mods_root)?;
@@ -703,7 +703,7 @@ pub fn execute(request: Request, cancel: impl Fn() -> bool) -> Result<Value> {
     }
     if !matches!(
         request.action.as_str(),
-        "previewRestore" | "restore" | "recover"
+        "previewRestore" | "restore" | "recover" | "previewDrop" | "drop"
     ) {
         return Err("Unknown duplicate-report operation.".into());
     }
@@ -721,6 +721,65 @@ pub fn execute(request: Request, cancel: impl Fn() -> bool) -> Result<Value> {
         || r.game != request.game
     {
         return Err("Quarantine belongs to another native context.".into());
+    }
+    if matches!(request.action.as_str(), "previewDrop" | "drop") {
+        if !matches!(r.state.as_str(), "quarantined" | "restored") {
+            return Err("Incomplete quarantine records retain every copy.".into());
+        }
+        let expected = if r.state == "quarantined" {
+            if s.mods.keys().any(|n| n.eq_ignore_ascii_case(&r.mod_name))
+                || tree(&dir.join("files"), &cancel)? != r.files
+            {
+                return Err(
+                    "Quarantined bytes or original ownership changed; deletion blocked.".into(),
+                );
+            }
+            let counterpart = s
+                .mods
+                .get(&r.retained_mod_name)
+                .ok_or("Retained counterpart is missing.")?;
+            if counterpart.files != r.retained_files {
+                return Err(
+                    "Retained counterpart changed; quarantined bytes remain protected.".into(),
+                );
+            }
+            disabled_profile_proof(&s.profiles_root, &r.mod_name, &cancel)?;
+            BTreeSet::from(["files".to_owned(), "receipt.json".to_owned()])
+        } else {
+            BTreeSet::from(["receipt.json".to_owned()])
+        };
+        let mut actual = BTreeSet::new();
+        for child in fs::read_dir(&dir).map_err(err)? {
+            let child = child.map_err(err)?;
+            reject_link(&child.path())?;
+            actual.insert(child.file_name().to_string_lossy().into_owned());
+        }
+        if actual != expected {
+            return Err("Unexpected quarantine material was preserved.".into());
+        }
+        let token = digest(&json!({"snapshot":s,"record":r}))?;
+        if request.action == "previewDrop" {
+            return Ok(
+                json!({"ok":true,"canDelete":true,"digest":token,"record":public(&r),"undoWillBeLost":true}),
+            );
+        }
+        if request.confirm.as_deref() != Some("DELETE QUARANTINE")
+            || request.expected_digest.as_deref() != Some(&token)
+        {
+            return Err("Confirm DELETE QUARANTINE for the exact current deletion preview.".into());
+        }
+        if digest(&snapshot(&request, &cancel)?)? != digest(&s)? {
+            return Err("Ownership changed before deleting quarantine bytes.".into());
+        }
+        if r.state == "quarantined" && tree(&dir.join("files"), &cancel)? != r.files {
+            return Err("Quarantined content changed before removal.".into());
+        }
+        r.state = "deleting".into();
+        atomic_json(&dir.join("receipt.json"), &r)?;
+        fs::remove_dir_all(&dir).map_err(err)?;
+        return Ok(
+            json!({"ok":true,"deleted":r.id,"undoAvailable":false,"retainedCounterpartPreserved":true}),
+        );
     }
     if request.action == "recover" {
         if request.confirm.as_deref() != Some("RECOVER")
@@ -834,8 +893,8 @@ mod tests {
                     .iter()
                     .map(|(id, p)| ProfileOwner {
                         id: id.clone(),
-                        enabled: p.mods.get(&name.to_lowercase()).is_some_and(|r| r.enabled),
-                        priority: p.mods.get(&name.to_lowercase()).map(|r| r.priority),
+                        enabled: p.mods.get(&name.to_uppercase()).is_some_and(|r| r.enabled),
+                        priority: p.mods.get(&name.to_uppercase()).map(|r| r.priority),
                     })
                     .collect();
                 mods.push(ModOwner {
@@ -1057,5 +1116,46 @@ mod tests {
         fs::remove_dir_all(f.mods.join("A")).unwrap();
         std::os::unix::fs::symlink(f.mods.join("B"), f.mods.join("A")).unwrap();
         assert!(execute(r, || false).is_err());
+    }
+    #[test]
+    fn completed_quarantine_deletion_requires_unchanged_preview_and_retained_counterpart() {
+        let f = Fixture::new();
+        let id = f.quarantine();
+        let mut p = f.request("previewDrop");
+        p.id = Some(id.clone());
+        let preview = execute(p, || false).unwrap();
+        let mut r = f.request("drop");
+        r.id = Some(id.clone());
+        r.confirm = Some("DELETE QUARANTINE".into());
+        r.expected_digest = Some("stale".into());
+        assert!(execute(r, || false).is_err());
+        let mut r = f.request("drop");
+        r.id = Some(id.clone());
+        r.confirm = Some("DELETE QUARANTINE".into());
+        r.expected_digest = preview["digest"].as_str().map(str::to_owned);
+        execute(r, || false).unwrap();
+        assert!(!f.vault.join(id).exists());
+        assert_eq!(
+            fs::read(f.mods.join("B/asset.nif")).unwrap(),
+            b"shared bytes"
+        );
+    }
+    #[test]
+    fn quarantine_deletion_preserves_changed_counterpart_and_unknown_material() {
+        let f = Fixture::new();
+        let id = f.quarantine();
+        fs::write(f.vault.join(&id).join("notes.txt"), "preserve").unwrap();
+        let mut p = f.request("previewDrop");
+        p.id = Some(id.clone());
+        assert!(execute(p, || false).is_err());
+        fs::remove_file(f.vault.join(&id).join("notes.txt")).unwrap();
+        fs::write(f.mods.join("B/asset.nif"), "different").unwrap();
+        let mut p = f.request("previewDrop");
+        p.id = Some(id.clone());
+        assert!(execute(p, || false).is_err());
+        assert_eq!(
+            fs::read(f.vault.join(id).join("files/asset.nif")).unwrap(),
+            b"shared bytes"
+        );
     }
 }

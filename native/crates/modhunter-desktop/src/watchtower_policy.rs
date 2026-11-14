@@ -5,6 +5,9 @@ use url::Url;
 
 pub const MAX_RESULT_BYTES: usize = 1_200_000;
 
+#[path = "watchtower_download_scope.rs"]
+pub mod download_scope;
+
 /// Readiness belongs to one top-level WebView2 navigation. In particular, the
 /// cancelled initial about:blank must never complete a newer website request.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -116,6 +119,7 @@ if(document.readyState==='loading')return fail('loading','The page is still load
 const visible=e=>{if(!e)return false;const s=getComputedStyle(e);return s.display!=='none'&&s.visibility!=='hidden'&&s.contentVisibility!=='hidden'&&e.getClientRects().length>0};
 if([...document.querySelectorAll('input[type="password"]')].slice(0,100).some(visible))return fail('signInRequired','Sign in in this site session, then check the page again.');
 const title=result.title.toLowerCase();
+if(/(^|\.)patreon\.com$/.test(here.hostname)&&/\/posts\//.test(here.pathname)&&/unlock this post|join to unlock|become a member to unlock/i.test(String(document.body?.innerText||'').slice(0,32768)))return fail('accessRestricted','This release is not readable by the selected account. Sign-in and release access are separate; the previous complete observation is retained.');
 if(/just a moment|checking your browser|verify you are human|security verification|attention required/.test(title)||[...document.querySelectorAll('#challenge-running,#challenge-stage,[data-cf-beacon]~#challenge-form')].some(visible))return fail('challenge','This site needs an interactive check. Open its session to complete it.');
 if(/access denied|403 forbidden|429 too many requests|this site can.t be reached|can.t reach this page/.test(title)||document.documentURI.startsWith('chrome-error:'))return fail('unavailable','The site declined or could not complete this request. Review it in the site session and retry later.');
 let root;try{root=cfg.selector?document.querySelector(cfg.selector):(document.querySelector('main,article,[role="main"]')||document.body)}catch{return fail('selectorMissing','The CSS selector is invalid. Edit this watched page.');}

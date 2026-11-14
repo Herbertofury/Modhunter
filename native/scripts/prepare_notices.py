@@ -7,7 +7,7 @@ import subprocess
 
 ROOT=Path(__file__).resolve().parents[2]
 def main():
-    meta=json.loads(subprocess.check_output(['cargo','metadata','--manifest-path',str(ROOT/'native/Cargo.toml'),'--locked','--format-version','1'],text=True))
+    meta=json.loads(subprocess.check_output(['cargo','metadata','--manifest-path',str(ROOT/'native/Cargo.toml'),'--locked','--format-version','1'],encoding='utf-8'))
     packages=[]
     for package in sorted(meta['packages'],key=lambda p:(p['name'],p['version'])):
         if package['id'] in meta['workspace_members']:

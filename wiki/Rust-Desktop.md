@@ -1,4 +1,4 @@
-# Rust Desktop 0.10.0
+# Rust Desktop 0.11.0
 
 [Home](Home.md) / [Windows releases](https://github.com/Herbertofury/Modhunter/releases) / [Native build results](https://github.com/Herbertofury/Modhunter/actions/workflows/native-rust.yml)
 
@@ -14,7 +14,7 @@ The presentation remains HTML/CSS/JavaScript. The Python/Qt plugin remains insid
 2. For local inspection, click **Import MO2** and select the profile's `modlist.txt`. Portable instances are inferred. For separate configuration/data directories, first select **Instance INI**; **Mods path** provides an explicit override. **Auto paths** clears those overrides.
 3. Click **Refresh** after changing files. The toolbar reports measured import duration, metadata cache hits and warnings. **CANCEL** interrupts a native import/refresh or plugin audit; **CANCELING…** remains visible until its workers settle. The last complete catalog stays available and another refresh/audit can then run. Importing never changes the MO2 profile or installed mod files.
 4. To enable live updating, close MO2 and run **Install_MO2_Plugin.bat** from the portable package. Select the directory containing `ModOrganizer.exe`. The previous plugin is preserved in `ModhunterBackups`, outside MO2's plugin directory, and a failed replacement is rolled back.
-5. Start MO2 and open **Tools → Update Arsenal – Quest Board**. In the Rust app, click **Find MO2**. A single validated session connects; multiple sessions are offered for selection. Manual loopback URLs still work.
+5. Start MO2 and wait for the profile to load; the bridge starts automatically. In the Rust app, click **Find MO2**. Opening **Tools → Update Arsenal – Quest Board** remains optional. A single validated session connects; multiple sessions are offered for selection. Manual loopback URLs still work.
 6. Use the existing **Update now**, **Choose file**, background queue and **Install all ready** controls. MO2 supplies Nexus sign-in and its real FOMOD/replace dialogs. Network and disk analysis run in background workers. Native installer calls cross MO2's Qt queue; the dashboard stays responsive while MO2 owns its installer prompts.
 
 The MO2 plugin and Rust executable should come from the same release. The plugin installer validates the released package’s SHA-256 manifest and exact build/plugin version before replacing anything; keep `SHA256SUMS.txt`, `BUILD_INFO.json` and the `MO2` directory together when extracting the ZIP. An incomplete or mixed package leaves the active plugin and its progress untouched. Old plugins without protocol-1 health support receive an upgrade error. Session descriptors contain the local address/profile identity and process ID, never an API key or HTTP session secret. Discovery validates every candidate with the actual running service.
@@ -27,6 +27,18 @@ Passwords stay in the website's own sign-in flow. Remembered WebView2 profiles p
 
 See [Watchtower](Watchtower.md) for controls, privacy and troubleshooting, and the [WhimWatch 0.4.2 audit](../native/evidence/whimwatch-parity-0.10.0.md) for the exact reference, independent adaptation and excluded Sims-specific behavior.
 
+## Review external archives and recover actual files
+
+In Watchtower, resolve an exact file from a supported source, choose whether it updates the linked mod or adds separate content, then approve its download. Direct file choices stay bound to their provider identity and navigation. Other links cannot inherit the original update target. New content requires an explicit new mod name.
+
+Open **Page downloads → Review files** to inspect the complete incoming manifest and compare it with the installed mod. Search and pagination preserve the complete selection. Standard game-data archives produce a new ZIP containing exactly the selected incoming files. FOMOD and uncertain layouts keep their original archive and mark checkboxes as advisory; MO2 owns the final choices. A source, account, profile, game/runtime, target or content change requires a fresh review. Lost acknowledgements retain the operation identity and prevent replay.
+
+**Recovery snapshots** stores actual mod-file backups in an instance-specific vault beside the native mods directory. It supports verified restore, interrupted-operation recovery, batch restore and explicit retention previews. Later edits block automatic restoration. App cleanup does not delete this vault. **Find duplicates** reports equal files, whole-mod matches, hard-link facts and ownership in all saved and live profiles; only an entirely disabled duplicate with a verified retained counterpart can be quarantined.
+
+**Preferences** includes common-label localization, themes, native quick hide, Windows capture protection, private external browser selection, bounded browser-data cleanup, stable app release checks, offline notices and an exact support-report preview. App reset shows its owned folders, requires a typed phrase, closes the application and preserves a completion report including retained or locked data.
+
+Read the [0.11.0 implementation and evidence map](../native/evidence/whimwatch-parity-0.11.0.md) for provider scope and the distinction between fixture proof and personal-installation acceptance.
+
 ## Plugin and source intelligence
 
 Use **Plugin audit** in the native toolbar for an imported offline profile, or **Analyze plugins** in the live dashboard. **ESLIFIER DATA** connects the converter's real data folder for offline checks; live MO2 recognizes ESLifier's official setting or offers **Connect ESLifier records** in the inspector. The matching MO2 package includes `bin/modhunter-cli.exe`; no Node process is needed for plugin analysis.
@@ -37,7 +49,7 @@ Use **Plugin audit** in the native toolbar for an imported offline profile, or *
 
 Read-only profile identifiers preserve the old Windows import identity scheme, so compatible exported progress still maps to the same profile and rows. WebView2 has its own browser storage; it does not automatically read Electron's private storage database. Export your backup in the earlier edition and import it in the new dashboard when moving runtimes. The live MO2 Chronicle remains plugin-owned.
 
-JSON backups, CSV reports and PowerShell exports save to Windows **Downloads** with unique filenames. The toolbar shows the full saved path. Downloads are limited to exports created by the current Modhunter page; ordinary source links open in the system browser.
+JSON backups, CSV reports and PowerShell exports save to Windows **Downloads** with unique filenames. The toolbar shows the full saved path. Dashboard exports remain limited to the current owned Modhunter page. Watchtower has a separate explicitly approved archive-download workflow; ordinary source links use the configured external browser or their isolated site window.
 
 ## Responsiveness and update reliability
 
@@ -76,10 +88,11 @@ The [Rust desktop and MO2 readiness workflow](https://github.com/Herbertofury/Mo
 | Rust format, tests and Clippy | Parser/cache correctness, explicit cancellation and retry, shared catalog encoding, split paths and encodings, bridge validation, discovery and navigation/export policies |
 | Python and Node regressions | MO2 command/download/install lifecycle, response-cache invalidation, scan/source epochs, delayed Chronicle hydration, frontend polling/rendering/focus and preserved legacy importer |
 | Actual Chromium | Built dashboard interactions, update actions, search responsiveness, profile changes, connection recovery and existing update workshop flows |
-| Actual Chromium Watchtower | Shipped manager forms, session actions, watch/history controls, import preview, error recovery and responsive layout with a fixture native-command adapter |
+| Actual Chromium Watchtower | Shipped manager forms, session/source choices, complete file selection, new targets, FOMOD scope, retained reviews, lost acknowledgement, exact retention/reset approvals, support export, preferences and responsive layout with a fixture native-command adapter |
+| Actual Windows archive CLI | ZIP/7z/RAR bytes, path/link/collision/encryption guards and exact selected-archive provenance with the pinned official helper |
 | Actual Windows WebView2 | Compiled application launch, native toolbar IPC, three-mod profile import into the real dashboard, actual JSON backup download and rejection of native IPC from game content |
-| Actual Windows Watchtower | Account isolation, remembered-profile close/reopen within one process, generation-selected fresh profiles, same-session popups, authenticated page capture/change, selected-region capture, incomplete/stale/canceled rejection and denied website IPC against internally owned loopback pages; an anonymous `https://example.com/` production check must also complete a durable baseline. No application restart is performed |
-| Actual MO2 2.5.2 fixture | Production plugin loading in official Windows MO2, actual C++ QObject/raw QVariant binding with synthetic callbacks, real loopback API and Qt focus, and a completed Rust plugin/hash audit of a disposable fixture |
+| Actual Windows Watchtower | Account isolation, remembered-profile close/reopen within one process, generation-selected fresh profiles, same-session popups, authenticated page capture/change, selected-region capture, incomplete/stale/canceled rejection and denied website IPC against internally owned loopback pages; an anonymous `https://example.com/` production check must also complete a durable baseline. Exact direct/blob download consent, selected-file navigation ownership, cancellation, stale-source rejection, native privacy calls and browser cache/resource policy are also checked. No application restart is performed |
+| Actual MO2 2.5.2 fixture | Production plugin loading in official Windows MO2, actual C++ QObject/raw QVariant binding with synthetic callbacks, real loopback API and Qt focus, a completed Rust plugin/hash audit, actual native installation of a generated archive, complete content restore, wrong-target/later-edit guards and repeated-acknowledgement handling in a disposable fixture |
 | Windows PowerShell 5.1 installer | Fresh install, upgrade/progress preservation, rejected incomplete/damaged/mixed packages, source-tree installation and linked-directory handling |
 
 CI uploads JSON receipts and browser proof alongside the portable app and NSIS installer. Inspect the linked run for the exact commit and outcome; a workflow definition is not proof that a particular run passed.

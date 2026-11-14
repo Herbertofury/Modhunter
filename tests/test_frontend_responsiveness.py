@@ -83,7 +83,7 @@ window.fetch=async(url,options={})=>{
    items:c.items.map(m=>({...m,lane:'candidate',latestVersion:'2.0',risks:[]}))};
   else if(path==='progress')result={ok:true,profileId:c.profileId,progress:{rows:{},prefs:{}}};
   else if(path==='game?compact=1')result={ok:true,profileId:c.profileId,score:x.gameScore,feed:[],updates:0};
-  else if(path==='downloads')result={ok:true,profileId:c.profileId,downloads:x.downloads||{}};
+  else if(path==='downloads')result={ok:true,profileId:c.profileId,downloads:structuredClone(x.downloads||{})};
   else if(path==='activity')result={ok:true,profileId:c.profileId,records:[]};
   else if(path==='scan'){
    if(method==='POST'){x.scan={state:'running',mode:body.mode,checked:0,total:c.items.length};result={ok:true,state:'running',profileId:c.profileId};}
@@ -309,6 +309,29 @@ class FrontendResponsivenessTests(unittest.TestCase):
         }""")
         self.assertEqual(self.page.locator("#modList .mod-row").count(), 12)
         self.assertIn("active", self.page.locator("#row-item-11 .favorite-btn").get_attribute("class"))
+
+    def test_joined_download_refresh_waits_for_fresh_render_and_remains_single_flight(self):
+        self.open_live(); self.connected()
+        self.page.locator('.workspace-tabs [data-workspace="downloads"]').click()
+        self.page.evaluate("document.getElementById('workshopRefreshDownloads').onclick()")
+        self.page.evaluate("""()=>{
+          __RESP__.defer.downloads=true;
+          window.firstDownloadRead=document.getElementById('workshopRefreshDownloads').onclick();
+        }""")
+        self.page.wait_for_function("__RESP__.pending.some(p=>p.path==='downloads')")
+        self.page.evaluate("""()=>{
+          __RESP__.downloads={'0':{itemId:'item-0',status:'complete',installedVersion:'1.0'}};
+          window.joinedDownloadSettled=false;
+          window.joinedDownloadRead=document.getElementById('workshopRefreshDownloads').onclick()
+            .then(()=>{window.joinedDownloadSettled=true;});
+        }""")
+        self.assertFalse(self.page.evaluate("joinedDownloadSettled"))
+        self.assertEqual(self.page.evaluate("__RESP__.active['GET downloads']"), 1)
+        self.page.evaluate("__RESP__.release('downloads')")
+        self.page.evaluate("Promise.all([firstDownloadRead,joinedDownloadRead])")
+        self.assertTrue(self.page.evaluate("joinedDownloadSettled"))
+        self.assertEqual(self.page.locator('[data-download-id="0"]').count(), 1)
+        self.assertEqual(self.page.evaluate("__RESP__.max['GET downloads']"), 1)
 
     def test_download_controls_keep_focus_through_status_reordering_and_replacement(self):
         self.open_live(); self.connected()

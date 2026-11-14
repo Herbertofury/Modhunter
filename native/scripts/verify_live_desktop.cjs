@@ -13,7 +13,7 @@ const root=path.resolve(__dirname,'../..');
 const hash=f=>crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
 const options=Object.fromEntries(process.argv.slice(2).map(s=>{const at=s.indexOf('=');return[s.slice(0,at),s.slice(at+1)];}));
 const exe=options['--exe'],output=options['--output'],endpoint=options['--endpoint'];
-const checks=[],timings={};let phase='preflight',child,browser;
+const checks=[],timings={};let phase='preflight',child,browser,launchError='',attachError='',childOutput='';
 function check(name,value){checks.push({name,passed:!!value});if(!value)throw Error('Failed: '+name);}
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(fn,ms=20000){const end=Date.now()+ms;while(Date.now()<end){const value=await fn();if(value)return value;await pause(100);}throw Error('Deadline at '+phase);}
@@ -26,11 +26,22 @@ async function main(){
  const reservation=net.createServer();await new Promise(resolve=>reservation.listen(0,'127.0.0.1',resolve));
  const port=reservation.address().port;await new Promise(resolve=>reservation.close(resolve));
  const started=Date.now();
- child=spawn(exe,[],{cwd:path.dirname(exe),windowsHide:false,stdio:'ignore',env:{...process.env,
+ // A previous smoke's still-exiting browser must not own this test's user
+ // data directory or suppress its new loopback debugging arguments. This
+ // override is scoped to this disposable child, never the shipped launcher.
+ const browserProfile=fs.mkdtempSync(path.join(path.dirname(output),'desktop-profile-'));
+ child=spawn(exe,[],{cwd:path.dirname(exe),windowsHide:false,stdio:['ignore','pipe','pipe'],env:{...process.env,
+  WEBVIEW2_USER_DATA_FOLDER:browserProfile,
   WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${port} --remote-debugging-address=127.0.0.1`}});
- child.on('error',()=>{});
+ child.on('error',error=>{launchError=error.message;});
+ for(const stream of [child.stdout,child.stderr])stream.on('data',data=>{childOutput=(childOutput+data.toString()).slice(-8000);});
  phase='attach-real-webview2';
- await until(async()=>{try{browser=await chromium.connectOverCDP(`http://127.0.0.1:${port}`,{timeout:1500});return true;}catch{return false;}},30000);
+ await until(async()=>{
+  if(launchError)throw Error('Desktop could not start: '+launchError);
+  if(child.exitCode!==null)throw Error('Desktop exited before attachment: '+child.exitCode);
+  try{browser=await chromium.connectOverCDP(`http://127.0.0.1:${port}`,{timeout:1500});return true;}
+  catch(error){attachError=error.message.slice(0,2000);return false;}
+ },30000);
  const pages=()=>browser.contexts().flatMap(c=>c.pages());
  const shell=await until(()=>pages().find(p=>p.url().endsWith('/shell.html')));
  shell.setDefaultTimeout(15000);
@@ -102,7 +113,7 @@ async function main(){
  fs.writeFileSync(output,JSON.stringify(report,null,2));
  console.log(JSON.stringify({ok:true,checks:checks.length,timingsMs:timings}));
 }
-main().catch(error=>{if(output)fs.writeFileSync(output,JSON.stringify({schemaVersion:1,ok:false,phase,error:String(error.message),checks},null,2));console.error('Live desktop validation failed at '+phase+': '+error.message);process.exitCode=1;}).finally(async()=>{
+main().catch(error=>{if(output)fs.writeFileSync(output,JSON.stringify({schemaVersion:1,ok:false,phase,error:String(error.message),checks,childExitCode:child?.exitCode??null,launchError,attachError,childOutput},null,2));console.error('Live desktop validation failed at '+phase+': '+error.message);process.exitCode=1;}).finally(async()=>{
  if(browser)try{await browser.close();}catch{}
  if(child&&child.exitCode===null)child.kill();
 });

@@ -1734,7 +1734,7 @@ let LIVE_SCAN=null,LIVE_CATALOG=null,SCAN_TIMER=null,FILE_PICKER_MOD=null,LIVE_G
 let WORKSHOP_PLAN=null,WORKSHOP_CHOICES=new Map(),WORKSHOP_BUSY=false,WORKSHOP_REVIEW_ID=null,FAST_PICKER_ID=null;
 let QUICK_RUNNING=false,QUICK_POLL=null,QUICK_SKIPPED=new Map();
 let QUEUE_PENDING=null,INSTALL_PREVIEW_ID=null,INSTALL_PREVIEW_PROFILE='',PREVIEW_RETURN_FOCUS=null;
-let WORKSHOP_TICKETS={},WORKSHOP_TICKET_SIGNATURE='',DOWNLOAD_REFRESH_BUSY=false,DOWNLOAD_REFRESH_AGAIN=false;
+let WORKSHOP_TICKETS={},WORKSHOP_TICKET_SIGNATURE='',DOWNLOAD_REFRESH_PROMISE=null,DOWNLOAD_REFRESH_AGAIN=false;
 let ACTIVITY_RECORDS=[],ACTIVITY_GENERATION=0,ACTIVITY_WARNING='';
 // Requests may finish after MO2 switches profiles, including A -> B -> A.
 // An epoch, rather than the profile name alone, keeps those responses isolated.
@@ -2763,7 +2763,7 @@ function reviewNextWorkshopCandidate(){
  reviewWorkshopFile(row.id).catch(ex=>workshopSetStatus('Review failed: '+ex.message));
 }
 $('workshopReviewNext').onclick=reviewNextWorkshopCandidate;
-$('workshopRefreshDownloads').onclick=async()=>{await refreshDownloads();workshopSetStatus('MO2 download tickets refreshed.');};
+$('workshopRefreshDownloads').onclick=async()=>{const context=profileContext(),ok=await refreshDownloads();if(contextIsCurrent(context))workshopSetStatus(ok?'MO2 download tickets refreshed.':'Download status could not be refreshed. See the connection status.');};
 $('workshopRefresh').onclick=()=>refreshWorkshop().catch(e=>workshopSetStatus('Plan failed: '+e.message));
 $('workshopExport').onclick=exportWorkshop;
 $('workshopQueue').onclick=queueWorkshop;
@@ -2977,14 +2977,30 @@ $('pulseReviewFailures').onclick=()=>{
 };
 
 async function refreshDownloads(){
- if(!BRIDGE.active||!LIVE_CATALOG)return;
- if(DOWNLOAD_REFRESH_BUSY){DOWNLOAD_REFRESH_AGAIN=true;return;}
- DOWNLOAD_REFRESH_BUSY=true;
+ if(!BRIDGE.active||!LIVE_CATALOG)return false;
+ // A caller joining an existing refresh must await the updated DOM too.
+ // Drain one coalesced follow-up after the current response: it may have been
+ // captured before a queue/install action or a profile change took place.
+ if(DOWNLOAD_REFRESH_PROMISE){DOWNLOAD_REFRESH_AGAIN=true;return DOWNLOAD_REFRESH_PROMISE;}
+ const pending=Promise.resolve().then(async()=>{
+  let refreshed=false;
+  do{
+   DOWNLOAD_REFRESH_AGAIN=false;
+   refreshed=await refreshDownloadSnapshot();
+  }while(DOWNLOAD_REFRESH_AGAIN&&BRIDGE.active&&LIVE_CATALOG);
+  return refreshed;
+ });
+ DOWNLOAD_REFRESH_PROMISE=pending;
+ try{return await pending;}
+ finally{if(DOWNLOAD_REFRESH_PROMISE===pending)DOWNLOAD_REFRESH_PROMISE=null;}
+}
+async function refreshDownloadSnapshot(){
+ const context=profileContext(),profile=context.profile;
  try{
-  const context=profileContext(),profile=context.profile,r=await bridgeRequest('GET','downloads');
+  const r=await bridgeRequest('GET','downloads');
   if(!contextIsCurrent(context)||(r.profileId&&r.profileId!==profile))return;
   const next=r.downloads||{},signature=JSON.stringify(next);
-  if(signature===WORKSHOP_TICKET_SIGNATURE)return; // Preserve buttons/focus when no state changed.
+  if(signature===WORKSHOP_TICKET_SIGNATURE)return true; // Preserve buttons/focus when no state changed.
   WORKSHOP_TICKET_SIGNATURE=signature;WORKSHOP_TICKETS=next;
   const box=$('liveDownloadList'),order={complete:0,installing:1,downloading:2,paused:3,failed:4,removed:5,installed:6};
   const tickets=Object.entries(next).sort(([a,x],[b,y])=>(order[x.status]??8)-(order[y.status]??8)||Number(b)-Number(a));
@@ -3001,10 +3017,10 @@ async function refreshDownloads(){
   setRows(box,entries,'',true);
   renderWorkshop();
   await refreshActivity();
- }catch(ex){SET('liveSync','Download status unavailable: '+ex.message)}
- finally{
-  DOWNLOAD_REFRESH_BUSY=false;
-  if(DOWNLOAD_REFRESH_AGAIN){DOWNLOAD_REFRESH_AGAIN=false;void refreshDownloads();}
+  return contextIsCurrent(context);
+ }catch(ex){
+  if(contextIsCurrent(context))SET('liveSync','Download status unavailable: '+ex.message);
+  return false;
  }
 }
 function filterFilePicker(){

@@ -121,3 +121,29 @@ test('notes links cannot replace known Nexus identity or verify a dependency as 
  assert.equal(c.build.verifiedLinks,2);
  assert.equal(c.build.unresolvedLinks,1);
 });
+
+test('MO2 custom URL enablement is respected without losing legacy metadata sources',async t=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'modhunter-m2-custom-'));
+ t.after(()=>fs.rm(root,{recursive:true,force:true}));
+ const profile=path.join(root,'profiles','Custom'),mods=path.join(root,'mods');
+ await fs.mkdir(profile,{recursive:true});
+ const entries=[
+  ['Disabled','hasCustomURL=false\nurl=https://github.com/stale/source\nmodid=77\n'],
+  ['Zero','hasCustomURL=0\nurl=https://github.com/stale/source\n'],
+  ['Enabled','hasCustomURL=true\ncustomURL=https://github.com/current/source\nmodid=88\n'],
+  ['Legacy','url=https://github.com/legacy/source\n']
+ ];
+ for(const [name,meta] of entries){
+  await fs.mkdir(path.join(mods,name),{recursive:true});
+  await fs.writeFile(path.join(mods,name,'meta.ini'),'[General]\n'+meta);
+ }
+ await fs.writeFile(path.join(root,'ModOrganizer.ini'),'[General]\ngameName=Skyrim Special Edition\n');
+ await fs.writeFile(path.join(profile,'modlist.txt'),entries.map(([name])=>'+'+name).join('\n'));
+ const c=await readMo2Profile(path.join(profile,'modlist.txt'));
+ assert.equal(c.items[0].source.url,'https://www.nexusmods.com/skyrimspecialedition/mods/77?tab=files');
+ assert.equal(c.items[1].source.verified,false);
+ assert.equal(c.items[1].source.url,'');
+ assert.equal(c.items[2].source.url,'https://github.com/current/source');
+ assert.equal(c.items[3].source.url,'https://github.com/legacy/source');
+ assert.equal(c.items[3].source.verified,true);
+});

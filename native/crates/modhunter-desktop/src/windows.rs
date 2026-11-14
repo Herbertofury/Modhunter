@@ -78,6 +78,7 @@ struct Runtime {
     catalog_cache: crate::catalog::CatalogCache,
     smoke_output: Option<PathBuf>,
     smoke_sent: AtomicBool,
+    smoke_finishing: AtomicBool,
     smoke_ui: Mutex<Option<Value>>,
     smoke_export: Mutex<Option<PathBuf>>,
 }
@@ -507,6 +508,9 @@ fn finish_smoke(app: &tauri::AppHandle) {
         smoke_event(app, "waiting-for-dashboard-or-export", json!({}));
         return;
     };
+    if state.smoke_finishing.swap(true, Ordering::AcqRel) {
+        return;
+    }
     let exported = std::fs::read(&export)
         .ok()
         .and_then(|b| serde_json::from_slice::<Value>(&b).ok());
@@ -526,7 +530,39 @@ fn finish_smoke(app: &tauri::AppHandle) {
         "report-written",
         json!({"passed": pass, "written": written}),
     );
-    app.exit(if pass && written { 0 } else { 1 });
+    if !pass || !written {
+        app.exit(1);
+        return;
+    }
+    // Keep the actual rendered window alive until the launcher has captured it.
+    // Previously the launcher photographed the runner desktop after this exit.
+    // This bounded handshake exists only for the explicit native smoke mode.
+    let acknowledgement = path.with_extension("capture-complete");
+    let handle = app.clone();
+    if let Some(window) = app.get_window("main") {
+        let _ = window.set_focus();
+    }
+    std::thread::spawn(move || {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        let process_id = std::process::id().to_string();
+        let captured = loop {
+            if std::fs::read_to_string(&acknowledgement)
+                .is_ok_and(|value| value.trim() == process_id)
+            {
+                break true;
+            }
+            if std::time::Instant::now() >= deadline {
+                break false;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        };
+        smoke_event(
+            &handle,
+            "desktop-capture-acknowledged",
+            json!({"captured": captured}),
+        );
+        handle.exit(if captured { 0 } else { 1 });
+    });
 }
 
 fn inject_catalog(app: &tauri::AppHandle, label: &str) -> Result<()> {
@@ -1659,6 +1695,7 @@ pub fn run() {
                 catalog_cache: crate::catalog::CatalogCache::default(),
                 smoke_output,
                 smoke_sent: AtomicBool::new(false),
+                smoke_finishing: AtomicBool::new(false),
                 smoke_ui: Mutex::new(None),
                 smoke_export: Mutex::new(None),
             });

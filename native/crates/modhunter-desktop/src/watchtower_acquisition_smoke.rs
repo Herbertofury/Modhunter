@@ -146,6 +146,25 @@ fn context(app: &tauri::AppHandle, server: &FixtureServer, suffix: &str) -> Resu
     context.download_watch = Some((watch.id, watch.generation));
     Ok(context)
 }
+fn exact_account(store: &WatchStore, watch_id: &str, source: &str) -> Result<Session> {
+    // The transport still uses the private loopback fixture capability. The
+    // durable receipt needs an actual saved account for the public-shaped
+    // source identity, just as production source_current requires.
+    let saved = store.command(
+        "saveSession",
+        &json!({"origin":page_origin(source)?,"label":"Owned exact-file acceptance account","remember":true}),
+        now(),
+    )?;
+    let session = store
+        .session(
+            saved["sessionId"]
+                .as_str()
+                .ok_or("Missing saved fixture account.")?,
+        )
+        .ok_or("The exact-file fixture account was not persisted.")?;
+    store.command("saveWatch", &json!({"id":watch_id,"sessionId":session.id,"association":{"profileId":"native-fixture-profile","itemId":"exact-update-fixture","name":"Exact fixture update","sourceUrl":source}}), now())?;
+    Ok(session)
+}
 fn exact_context(
     app: &tauri::AppHandle,
     server: &FixtureServer,
@@ -161,7 +180,7 @@ fn exact_context(
         .0
         .clone();
     let source = store.watch(&id).ok_or("Missing fixture source.")?.url;
-    store.command("saveWatch", &json!({"id":id,"association":{"profileId":"native-fixture-profile","itemId":"exact-update-fixture","name":"Exact fixture update","sourceUrl":source}}), now())?;
+    context.session = Some(exact_account(store, &id, &source)?);
     let generation = store
         .watch(&id)
         .ok_or("Missing fixture source.")?
@@ -198,6 +217,20 @@ fn exact_authority_check(
     output: &Path,
 ) -> Result<()> {
     let exact = exact_context(app, server, "scoped-redirect", "/redirect-download.zip")?;
+    let mut sign_in = exact.clone();
+    sign_in.download_watch = None;
+    sign_in.download_file_key = None;
+    sign_in.download_scope = None;
+    // The saved fixture account has its own browser profile. Authenticate that
+    // profile through the real HTTP response before testing selected downloads.
+    let (login, _) = fixture_view(app, sign_in, server.url("/login"), true)?;
+    until(
+        &login.0,
+        "document.body.innerText.includes('Fixture sign-in completed.')",
+        Instant::now() + Duration::from_secs(8),
+        |value| value == true,
+    )?;
+    drop(login);
     let watch_id = exact
         .download_watch
         .as_ref()
@@ -286,15 +319,31 @@ fn exact_authority_check(
     let no_receipt = jobs(app).len() == before;
     drop(other);
     let folder_proof = mega_fixture::check(app, manager, server)?;
+    let session_id = saved
+        .session_id
+        .as_deref()
+        .ok_or("The exact receipt omitted its saved source account.")?;
+    app.state::<WatchRuntime>()
+        .store
+        .command("removeSession", &json!({"id":session_id}), now())?;
+    if acquisition::source_current(app, &saved).is_ok() {
+        return Err(
+            "A durable receipt retained source authority after its saved account was removed."
+                .into(),
+        );
+    }
     record(
         checks,
         output,
         "download_exact_file_authority",
         no_receipt,
-        "An actual WebView2 redirect from the exact selected file retains its file decision and durable update target; a same-host unrelated download invalidates the native scope and creates no receipt. The owned MEGA-shaped folder fixture additionally proves exact node/blob async validation and rejection of ambiguous, wrong-child and wrong-blob transfers. No live MEGA account/decryption is claimed. Durable review validates the saved decision without recreating network authority.",
+        "An actual WebView2 redirect from the exact selected file retains its file decision, saved account and durable update target; a same-host unrelated download invalidates the native scope and creates no receipt. The owned MEGA-shaped folder fixture additionally proves exact node/blob async validation and rejection of ambiguous, wrong-child and wrong-blob transfers. No live MEGA account/decryption is claimed. Durable review validates the saved decision without recreating network authority and rejects removal of that saved account.",
     )?;
     if let Some(check) = checks.last_mut() {
         check["folderProof"] = folder_proof;
+        check["savedSourceAccount"] = json!(true);
+        check["durableSourceValidation"] = json!(true);
+        check["removedSourceAccountRejected"] = json!(true);
     }
     Ok(())
 }
@@ -535,4 +584,46 @@ pub(super) fn check(
         "Reopening the actual durable receipt store preserves both original byte identities; cancellation and error cleanup did not remove either verified archive.",
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exact_fixture_account_is_durable_shared_and_linked_to_its_source() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("watchtower.json");
+        let store = WatchStore::open(&path);
+        let mut watches = Vec::new();
+        let mut sessions = Vec::new();
+        for suffix in ["redirect", "folder"] {
+            let source = format!("https://mods.example.com/owned-exact-{suffix}");
+            let result = store
+                .command("saveWatch", &json!({"url":source,"enabled":true}), now())
+                .unwrap();
+            let id = result["watchId"].as_str().unwrap().to_string();
+            let session = exact_account(&store, &id, &source).unwrap();
+            assert_eq!(session.origin, "https://mods.example.com");
+            let watch = store.watch(&id).unwrap();
+            assert_eq!(watch.session_id.as_deref(), Some(session.id.as_str()));
+            assert_eq!(watch.association.unwrap().item_id, "exact-update-fixture");
+            watches.push(id);
+            sessions.push(session.id);
+        }
+        assert_eq!(sessions[0], sessions[1]);
+        drop(store);
+        let reopened = WatchStore::open(&path);
+        assert!(reopened.session(&sessions[0]).is_some());
+        reopened
+            .command("removeSession", &json!({"id":sessions[0]}), now())
+            .unwrap();
+        assert!(reopened.session(&sessions[0]).is_none());
+        for id in watches {
+            let watch = reopened.watch(&id).unwrap();
+            assert!(watch.session_id.is_none());
+            assert!(watch.requires_session);
+            assert!(!watch.enabled);
+        }
+    }
 }

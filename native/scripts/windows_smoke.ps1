@@ -13,10 +13,21 @@ $modlist = "$Output\fixture\profiles\Native QA\modlist.txt"
 Set-Content -Encoding UTF8 -Path $modlist -Value $entries
 $report = "$Output\native-smoke.json"
 $events = "$Output\native-smoke.events.jsonl"
+$capture = "$Output\fixture-desktop.png"
+$captureAcknowledgement = [IO.Path]::ChangeExtension($report, 'capture-complete')
 $checkpoint = "$Output\native-source-checkpoint.json"
 python "$PSScriptRoot/bind_native_proof.py" --executable $Executable --checkpoint $checkpoint
 if ($LASTEXITCODE -ne 0) { throw 'Native desktop source checkpoint failed.' }
-Remove-Item -ErrorAction SilentlyContinue $report, $events
+Remove-Item -ErrorAction SilentlyContinue $report, $events, $capture, $captureAcknowledgement
+Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class ModhunterSmokeWindow {
+    [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+}
+'@
 $process = Start-Process -FilePath $Executable -ArgumentList @("`"--smoke-profile=$modlist`"", "`"--smoke-output=$report`"") -RedirectStandardOutput "$Output\stdout.log" -RedirectStandardError "$Output\stderr.log" -PassThru
 try {
   $deadline = (Get-Date).AddSeconds(75)
@@ -24,6 +35,32 @@ try {
   if (!(Test-Path $report)) { throw "Native WebView2 smoke did not produce a report. Exit=$($process.ExitCode)" }
   $data = Get-Content -Raw $report | ConvertFrom-Json
   if (!$data.ok) { throw "Native smoke failed: $(Get-Content -Raw $report)" }
+  # The app keeps its real rendered window alive until this exact process's
+  # screenshot is saved. Never accept a picture of the runner after app exit.
+  $activation = New-Object -ComObject WScript.Shell
+  try {
+    $focusDeadline = (Get-Date).AddSeconds(3)
+    $focused = $false
+    do {
+      $process.Refresh()
+      if ($process.HasExited) { throw 'Native app exited before desktop capture.' }
+      $null = $activation.AppActivate($process.Id)
+      Start-Sleep -Milliseconds 100
+      [uint32]$foregroundOwner = 0
+      $null = [ModhunterSmokeWindow]::GetWindowThreadProcessId([ModhunterSmokeWindow]::GetForegroundWindow(), [ref]$foregroundOwner)
+      $focused = $foregroundOwner -eq $process.Id
+    } while (!$focused -and (Get-Date) -lt $focusDeadline)
+    if (!$focused) { throw 'The actual native app could not own foreground desktop capture.' }
+    $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+    $image = [System.Drawing.Bitmap]::new($bounds.Width, $bounds.Height)
+    $graphics = [System.Drawing.Graphics]::FromImage($image)
+    try { $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size); $image.Save($capture, [System.Drawing.Imaging.ImageFormat]::Png) }
+    finally { $graphics.Dispose(); $image.Dispose() }
+    if ((Get-Item -LiteralPath $capture).Length -eq 0) { throw 'Native desktop capture is empty.' }
+    Set-Content -LiteralPath $captureAcknowledgement -Encoding ascii -NoNewline -Value $process.Id
+  } finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($activation) }
+  if (!$process.WaitForExit(5000)) { throw 'Native app did not acknowledge completed desktop capture.' }
+  if ($process.ExitCode -ne 0) { throw "Native app rejected desktop capture. Exit=$($process.ExitCode)" }
   python "$PSScriptRoot/bind_native_proof.py" --executable $Executable --checkpoint $checkpoint --report $report
   if ($LASTEXITCODE -ne 0) { throw 'Native desktop receipt does not match unchanged source and executable.' }
   Get-Content -Raw $report
@@ -33,13 +70,5 @@ try {
   foreach ($log in @($events, "$Output\stdout.log", "$Output\stderr.log")) {
     if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log -Tail 80 }
   }
-  try {
-    Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-    $bounds = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-    $image = [System.Drawing.Bitmap]::new($bounds.Width, $bounds.Height)
-    $graphics = [System.Drawing.Graphics]::FromImage($image)
-    try { $graphics.CopyFromScreen($bounds.Location, [System.Drawing.Point]::Empty, $bounds.Size); $image.Save("$Output\fixture-desktop.png", [System.Drawing.Imaging.ImageFormat]::Png) }
-    finally { $graphics.Dispose(); $image.Dispose() }
-  } catch { Write-Warning "Could not capture the native fixture desktop: $_" }
   if (!$process.HasExited) { Stop-Process -Id $process.Id -ErrorAction SilentlyContinue }
 }

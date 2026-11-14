@@ -691,6 +691,9 @@ pub fn inspect(request: &Request, cancel: &impl Fn() -> bool) -> Result<Value> {
         )
         .map_err(err)?;
     marker_file.sync_all().map_err(err)?;
+    // The placeholder must be durable, then closed before atomic_json replaces
+    // it. Windows may refuse replacement while the original writer is open.
+    drop(marker_file);
     let result = (|| {
         extract(&helper, &request.archive, kind, &stage.join("raw"), cancel)?;
         let files = extracted(&stage.join("raw"), &complete, cancel)?;
@@ -819,6 +822,8 @@ fn prepare_selected(request: &Request, cancel: &impl Fn() -> bool) -> Result<Val
             output.write_all(&buffer[..n]).map_err(err)?;
         }
         output.sync_all().map_err(err)?;
+        drop(output);
+        drop(input);
         if file_hash(&dest, cancel)? != (entry.bytes, entry.sha256.clone()) {
             return Err("Selected content changed while preparing its ZIP.".into());
         }

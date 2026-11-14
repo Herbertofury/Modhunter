@@ -54,7 +54,9 @@ jobs:
                   name=Path('/tmp')/f'modhunter-check-{n}.js'
                   name.write_text(script,encoding='utf-8')
                   subprocess.run(['node','--check',str(name)],check=True)
-          assert 'The Update <em>Workshop</em>' in page
+          assert '<h3 id="workshopTitle">Available <em>updates</em></h3>' in page
+          assert 'data-workspace="mods"' in page and 'id="workbench"' in page
+          assert 'id="workspaceCheckStatus"' in page and 'id="autoCheckOnLaunch"' in page
           assert 'function queueWorkshop(){' in page and 'async function performQueuedWorkshop' in page
           print('Verified',len(scripts),'scripts and standalone workshop')
           PY
@@ -67,6 +69,7 @@ jobs:
           /tmp/modhunter-browser-qa/bin/pip install -q --disable-pip-version-check playwright==1.57.0
           /tmp/modhunter-browser-qa/bin/python -m playwright install --with-deps chromium
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-browser-proof /tmp/modhunter-browser-qa/bin/python tests/updater_sss_browser_qa.py
+          PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-browser-proof /tmp/modhunter-browser-qa/bin/python -m unittest discover -s tests -p 'test_compact_workspace.py' -v
       - name: Preserve Chromium interaction proof
         if: always()
         uses: actions/upload-artifact@v4

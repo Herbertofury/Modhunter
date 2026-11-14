@@ -43,15 +43,16 @@ fn folder_view(
     window.0.eval(setup).map_err(err)?;
     let cfg = json!({"source":url.as_str(),"expected":file,"key":KEY,"mode":"arm","fixtureOrigin":context.fixture_origin});
     let script = format!(
-        "(()=>{{const cfg={cfg};return ({});}})()",
+        "(()=>{{const cfg={cfg};return JSON.stringify(({}));}})()",
         include_str!("../../../ui/mega-folder.js")
     );
-    let result = eval_json(
+    let encoded = eval_json(
         &window.0,
         script,
         &AtomicBool::new(false),
         Instant::now() + Duration::from_secs(8),
     )?;
+    let result: Value = policy::download_scope::decode_folder_json(&encoded)?;
     if result["state"] != "ready" {
         return Err(format!(
             "The owned folder observer did not arm: {}",

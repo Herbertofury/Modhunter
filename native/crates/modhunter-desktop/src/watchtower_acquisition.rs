@@ -387,7 +387,7 @@ fn validate_folder_download(
     let a = app.clone();
     let token = id.clone();
     let script = format!(
-        "window[{}]?.proof||null",
+        "(()=>JSON.stringify(window[{}]?.proof??null))()",
         serde_json::to_string(key).map_err(err)?
     );
     let result=window.eval_with_callback(script,move|data|{
@@ -396,7 +396,10 @@ fn validate_folder_download(
             let outcome=(||{
                 if held.created.elapsed()>Duration::from_secs(15)||gui.get_webview_window(&held.label).is_none(){return Err("Folder download verification expired or its browser closed.".into())}
                 if data.len()>8192{return Err("The folder download returned oversized verification metadata.".into())}
-                let proof:policy::download_scope::MegaBlobProof=serde_json::from_str(&data).map_err(|_|"The provider did not confirm this exact file-to-blob download. Use the selected archive's normal browser download.".to_owned())?;
+                let proof=policy::download_scope::decode_mega_blob_result(&data).map_err(|detail|{
+                    let message="The provider did not confirm this exact file-to-blob download. Use the selected archive's normal browser download.";
+                    if held.context.fixture_origin.is_some(){format!("{message} Owned fixture decode: {detail}")}else{message.to_owned()}
+                })?;
                 request_download(&gui,&held.view,&held.args,&held.deferral,&held.context,&held.label,Some(&proof))
             })();
             if let Err(error)=outcome{

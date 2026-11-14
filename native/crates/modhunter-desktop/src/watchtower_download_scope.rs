@@ -1,6 +1,8 @@
 //! Transient file authority. Only the native offer picker constructs this lease;
 //! no raw address, access token, redirect chain, or browser credential is saved.
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::time::{Duration, Instant};
 use url::Url;
 
@@ -24,6 +26,66 @@ pub struct MegaBlobProof {
     pub file: MegaFolderFile,
     pub blob_url: String,
     pub observed_at: u64,
+}
+
+const MAX_FOLDER_JSON_BYTES: usize = 8192;
+
+fn json_kind(value: Option<&Value>) -> &'static str {
+    match value {
+        None => "missing",
+        Some(Value::Null) => "null",
+        Some(Value::Bool(_)) => "boolean",
+        Some(Value::String(_)) => "string",
+        Some(Value::Array(_)) => "array",
+        Some(Value::Object(_)) => "object",
+        Some(Value::Number(number)) if number.is_u64() => "unsigned integer",
+        Some(Value::Number(number)) if number.is_i64() => "signed integer",
+        Some(Value::Number(_)) => "floating point",
+    }
+}
+
+fn decode_diagnostic(stage: &str, error: &serde_json::Error, raw: &str) -> String {
+    // Diagnostics describe only JSON structure and fixed field types. Never
+    // include a page address, blob URL, file name, share key or raw payload.
+    let value = serde_json::from_str::<Value>(raw).ok();
+    let file = value.as_ref().and_then(|value| value.get("file"));
+    format!(
+        "{stage}: {:?} at line {}, column {}; result={}, file={}, bytes={}, modifiedAt={}, observedAt={}",
+        error.classify(),
+        error.line(),
+        error.column(),
+        json_kind(value.as_ref()),
+        json_kind(file),
+        json_kind(file.and_then(|file| file.get("bytes"))),
+        json_kind(file.and_then(|file| file.get("modifiedAt"))),
+        json_kind(value.as_ref().and_then(|value| value.get("observedAt"))),
+    )
+}
+
+/// MEGA's folder-only browser boundary returns JSON.stringify(...) as a string.
+/// The browser's outer JSON encoding must contain that string exactly; numbers
+/// inside it retain JavaScript's JSON integer representation without depending
+/// on how the WebView2 result API serializes native numeric values.
+pub fn decode_folder_json<T: DeserializeOwned>(encoded: &Value) -> Result<T, String> {
+    let raw = encoded.as_str().ok_or_else(|| {
+        format!(
+            "Folder metadata requires a JSON string; received {}.",
+            json_kind(Some(encoded))
+        )
+    })?;
+    if raw.len() > MAX_FOLDER_JSON_BYTES {
+        return Err("Folder JSON exceeds the complete 8192-byte limit.".into());
+    }
+    serde_json::from_str(raw).map_err(|error| decode_diagnostic("folder JSON", &error, raw))
+}
+
+pub fn decode_mega_blob_result(raw: &str) -> Result<MegaBlobProof, String> {
+    if raw.len() > MAX_FOLDER_JSON_BYTES {
+        return Err("Browser proof exceeds the complete 8192-byte limit.".into());
+    }
+    let encoded = serde_json::from_str::<Value>(raw)
+        .map_err(|error| decode_diagnostic("browser result", &error, raw))?;
+    decode_folder_json(&encoded)
 }
 
 fn mega_folder_location(url: &Url) -> Option<(String, Option<(String, String)>)> {
@@ -616,6 +678,89 @@ mod tests {
         scope.navigation_completed(9, true, &current);
         (scope, current)
     }
+
+    fn proof_json(bytes: u64) -> Value {
+        serde_json::json!({
+            "file":{"publicId":"pub12345","rootId":"root1234","fileId":"file1234","parentId":"root1234",
+                "name":"Release.zip","bytes":bytes,"modifiedAt":3_000_000_001_u64},
+            "blobUrl":"blob:https://mega.nz/owned-exact-blob","observedAt":1_794_695_548_512_u64
+        })
+    }
+    fn encoded_proof(value: &Value) -> String {
+        serde_json::to_string(&value.to_string()).unwrap()
+    }
+    #[test]
+    fn explicit_folder_json_preserves_multi_gib_bytes_and_large_browser_timestamps() {
+        let bytes = 3 * 1024 * 1024 * 1024 + 17_u64;
+        let proof = proof_json(bytes);
+        let decoded = decode_mega_blob_result(&encoded_proof(&proof)).unwrap();
+        assert_eq!(decoded.file.bytes, bytes);
+        assert_eq!(decoded.file.modified_at, 3_000_000_001);
+        assert_eq!(decoded.observed_at, 1_794_695_548_512);
+        assert_eq!(decoded.blob_url, proof["blobUrl"].as_str().unwrap());
+
+        // Discovery uses eval_json for the outer JSON string, then the same
+        // strict inner decoder before MegaFolderFile is accepted by resolve.
+        let inspection = serde_json::json!({"state":"ready","file":proof["file"],"nodeCount":2,
+            "totalBytes":bytes,"url":"https://mega.nz/folder/pub12345#abcdefghijklmnopqrstuv/file/file1234"});
+        let outer: Value = serde_json::from_str(&encoded_proof(&inspection)).unwrap();
+        let metadata: Value = decode_folder_json(&outer).unwrap();
+        let file: MegaFolderFile = serde_json::from_value(metadata["file"].clone()).unwrap();
+        assert_eq!(file.bytes, bytes);
+        assert_eq!(metadata["totalBytes"].as_u64(), Some(bytes));
+    }
+
+    #[test]
+    fn folder_json_rejects_implicit_objects_null_and_permissive_numeric_coercion() {
+        let proof = proof_json(167);
+        assert!(decode_mega_blob_result(&proof.to_string()).is_err());
+        for raw in ["null", "true", "167", "", "\"null\"", "\"{}\""] {
+            assert!(decode_mega_blob_result(raw).is_err(), "accepted {raw}");
+        }
+        for (field, invalid) in [
+            ("bytes", serde_json::json!(167.0)),
+            ("bytes", serde_json::json!(-1)),
+            ("bytes", serde_json::json!("167")),
+            ("modifiedAt", serde_json::json!(3_000_000_001.0)),
+        ] {
+            let mut changed = proof.clone();
+            changed["file"][field] = invalid;
+            assert!(decode_mega_blob_result(&encoded_proof(&changed)).is_err());
+        }
+        let mut changed = proof;
+        changed["observedAt"] = serde_json::json!(1_794_695_548_512.0);
+        let error = decode_mega_blob_result(&encoded_proof(&changed))
+            .err()
+            .unwrap();
+        assert!(error.contains("observedAt=floating point"));
+    }
+
+    #[test]
+    fn folder_json_rejects_extra_fields_oversize_and_redacts_browser_payloads() {
+        let proof = proof_json(167);
+        let mut extra = proof.clone();
+        extra["unexpected"] = serde_json::json!(true);
+        assert!(decode_mega_blob_result(&encoded_proof(&extra)).is_err());
+        let mut extra_file = proof.clone();
+        extra_file["file"]["unexpected"] = serde_json::json!(true);
+        assert!(decode_mega_blob_result(&encoded_proof(&extra_file)).is_err());
+        let oversized = serde_json::to_string(&"x".repeat(MAX_FOLDER_JSON_BYTES)).unwrap();
+        assert!(decode_mega_blob_result(&oversized).is_err());
+        assert!(
+            decode_folder_json::<Value>(&Value::String("x".repeat(MAX_FOLDER_JSON_BYTES + 1)))
+                .is_err()
+        );
+
+        let mut wrong_type = proof;
+        wrong_type["observedAt"] =
+            serde_json::json!("https://example.invalid/private-share-secret");
+        let error = decode_mega_blob_result(&encoded_proof(&wrong_type))
+            .err()
+            .unwrap();
+        assert!(error.contains("Data") && error.contains("observedAt=string"));
+        assert!(!error.contains("private-share-secret") && !error.contains("https://"));
+    }
+
     #[test]
     fn a_folder_child_url_still_requires_complete_native_selection_and_exact_blob_proof() {
         let selected = url("https://mega.nz/folder/pub12345#abcdefghijklmnopqrstuv/file/file1234");

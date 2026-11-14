@@ -35,12 +35,14 @@ fn inspect(
                     .into(),
             );
         }
-        let result = eval_json(
+        let encoded = eval_json(
             window,
-            format!("(()=>{{const cfg={cfg};return ({SCRIPT});}})()"),
+            format!("(()=>{{const cfg={cfg};return JSON.stringify(({SCRIPT}));}})()"),
             cancel,
             deadline,
         )?;
+        let result: Value = policy::download_scope::decode_folder_json(&encoded)
+            .map_err(|_| "The MEGA folder returned invalid or oversized metadata.")?;
         match result["state"].as_str() {
             Some("ready") => {
                 binding(app, context)?;

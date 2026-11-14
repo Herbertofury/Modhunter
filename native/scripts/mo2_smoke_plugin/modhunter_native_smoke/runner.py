@@ -37,6 +37,7 @@ from mo2_update_arsenal.focus import find_mo2_view, name_column
 from mo2_update_arsenal.plugin import ModUpdateArsenal
 
 from .audit_probe import exercise_plugin_audit
+from .content_probe import exercise_content_recovery
 
 
 GAME_NAME = "Modhunter CI Fixture"
@@ -412,6 +413,8 @@ class NativeSmokePlugin(ModUpdateArsenal):
                 audit = exercise_plugin_audit(api, catalog["profileId"], by_name,
                                               installed_cli, Path(rust_cli).resolve())
                 self._check("rust_plugin_audit", True, **audit)
+                content = exercise_content_recovery(api, _fixture_root, catalog["profileId"], by_name)
+                self._check("rust_content_recovery", True, **content)
             desktop = os.environ.get("MODHUNTER_LIVE_DESKTOP")
             if desktop:
                 report_path = self._receipt_path.with_name("desktop-live.json")
@@ -443,6 +446,7 @@ class NativeSmokePlugin(ModUpdateArsenal):
                 required_dispatches = {"refresh", "focus"}
                 if os.environ.get("MODHUNTER_NATIVE_SMOKE_RUST_CLI"):
                     required_dispatches.add("plugin-audit-input")
+                    required_dispatches.update({"content-capture", "content-lease", "content-check", "content-refresh"})
                 self._check("native_dispatch_thread", self._on_qt_thread()
                             and {row["command"] for row in self._dispatches} >= required_dispatches
                             and all(row["qtThread"] for row in self._dispatches))

@@ -7,6 +7,8 @@ fn binding() -> Binding {
         session_generation: 1,
         source_origin: "https://mods.example.com".into(),
         association: None,
+        source_file_key: None,
+        content_intent: "unclassified".into(),
     }
 }
 fn start() -> (tempfile::TempDir, Store, Receipt) {
@@ -145,4 +147,33 @@ fn symlink_archive_rejected() {
     std::os::unix::fs::symlink(other, p).unwrap();
     s.begin_validation(&r.id, &binding()).unwrap();
     assert!(s.validate(&r.id, || false).is_err());
+}
+
+#[test]
+fn terminal_partial_cleanup_never_removes_ready_or_other_files() {
+    let (_d, mut s, r) = start();
+    let part = s.approve(&r.id, &binding(), "DOWNLOAD", 2).unwrap();
+    fs::write(&part, b"partial bytes").unwrap();
+    let side = part.with_file_name("user.txt");
+    fs::write(&side, b"preserve").unwrap();
+    s.finish_error(&r.id, "cancelled", "Cancelled").unwrap();
+    assert!(!part.exists());
+    assert_eq!(fs::read(side).unwrap(), b"preserve");
+    let other = s.request("other.zip", binding(), None, 3).unwrap();
+    ready(&mut s, &other);
+    let path = s.verify(&other.id, || false).unwrap();
+    assert!(s.cleanup_part(&other.id).is_err());
+    assert!(path.exists());
+}
+#[cfg(unix)]
+#[test]
+fn partial_cleanup_rejects_linked_foreign_content() {
+    let (d, mut s, r) = start();
+    let part = s.approve(&r.id, &binding(), "DOWNLOAD", 2).unwrap();
+    let outside = d.path().join("important.txt");
+    fs::write(&outside, b"preserve").unwrap();
+    std::os::unix::fs::symlink(&outside, &part).unwrap();
+    assert!(s.finish_error(&r.id, "cancelled", "cancelled").is_err());
+    assert_eq!(s.row(&r.id).unwrap().state, "cancelled");
+    assert_eq!(fs::read(outside).unwrap(), b"preserve");
 }

@@ -35,6 +35,18 @@ const CHECK_DEADLINE: Duration = Duration::from_secs(45);
 #[path = "watchtower_acquisition.rs"]
 mod acquisition;
 
+#[path = "watchtower_review.rs"]
+mod review;
+
+#[path = "watchtower_access.rs"]
+mod access;
+
+#[path = "watchtower_privacy.rs"]
+pub(crate) mod privacy;
+
+#[path = "watchtower_maintenance.rs"]
+mod maintenance;
+
 #[path = "watchtower_smoke.rs"]
 mod smoke;
 pub use smoke::start as start_smoke;
@@ -85,6 +97,7 @@ struct SiteContext {
     fixture_origin: Option<String>,
     lease: Option<CheckJob>,
     download_watch: Option<(String, u64)>,
+    download_file_key: Option<String>,
     cancellation: Option<Arc<AtomicBool>>,
 }
 impl SiteContext {
@@ -102,6 +115,7 @@ impl SiteContext {
             fixture_origin: None,
             lease: None,
             download_watch: None,
+            download_file_key: None,
             cancellation: None,
         })
     }
@@ -115,6 +129,11 @@ impl SiteContext {
                 .lease
                 .as_ref()
                 .is_none_or(|job| state.store.is_current(job))
+            && self.download_watch.as_ref().is_none_or(|(id, generation)| {
+                state.store.watch(id).is_some_and(|watch| {
+                    watch.generation == *generation && watch.removed_at.is_none()
+                })
+            })
             && (self.fixture_origin.is_some()
                 || self.session.as_ref().is_none_or(|session| {
                     state.store.session(&session.id).is_some_and(|current| {
@@ -290,7 +309,10 @@ fn setup_paths(
         retired: Mutex::new(Vec::new()),
         runtime_warning: Mutex::new(String::new()),
     });
+    privacy::setup(app)?;
     acquisition::setup(app, data.join("watchtower-acquisitions"));
+    review::setup(app, data.join("watchtower-prepared"))?;
+    maintenance::setup(app, config, data)?;
     recover_retired(&app.state::<WatchRuntime>());
     if !scheduler {
         return Ok(());
@@ -315,6 +337,7 @@ fn setup_paths(
                     scanned = Instant::now();
                 }
                 pump(&handle);
+                maintenance::tick(&handle);
                 cleanup_retired(&state);
             }
             first = false;
@@ -327,6 +350,8 @@ fn setup_paths(
 fn notify(app: &tauri::AppHandle) {
     let mut snapshot = app.state::<WatchRuntime>().snapshot();
     snapshot["acquisitions"] = acquisition::snapshot(app);
+    snapshot["reviews"] = review::snapshot(app);
+    snapshot["maintenance"] = maintenance::snapshot(app);
     let _ = app.emit_to("watchtower", "watchtower-state", snapshot);
 }
 
@@ -340,19 +365,34 @@ pub fn open(app: &tauri::AppHandle, prefill: Option<Value>) -> Result<()> {
         *app.state::<WatchRuntime>().prefill.lock().map_err(err)? = Some(value);
     }
     if let Some(window) = app.get_webview_window("watchtower") {
-        window.show().map_err(err)?;
-        window.set_focus().map_err(err)?;
+        let native = app
+            .get_window(window.label())
+            .ok_or("This native window closed.")?;
+        privacy::guarded_show(app, &native, true)?;
         notify(app);
         return Ok(());
     }
-    WebviewWindowBuilder::new(app, "watchtower", WebviewUrl::App("watchtower.html".into()))
-        .title("Modhunter · Watchtower")
-        .inner_size(1280.0, 880.0)
-        .min_inner_size(760.0, 560.0)
-        .on_navigation(|url| crate::policy::local_asset(url, "/watchtower.html"))
-        .on_new_window(|_, _| NewWindowResponse::Deny)
-        .build()
-        .map_err(err)?;
+    let window =
+        WebviewWindowBuilder::new(app, "watchtower", WebviewUrl::App("watchtower.html".into()))
+            .visible(false)
+            .focused(false)
+            .title("Modhunter · Watchtower")
+            .inner_size(1280.0, 880.0)
+            .min_inner_size(760.0, 560.0)
+            .on_navigation(|url| crate::policy::local_asset(url, "/watchtower.html"))
+            .on_new_window(|_, _| NewWindowResponse::Deny)
+            .build()
+            .map_err(err)?;
+    let handle = app.clone();
+    window.on_window_event(move |event| {
+        if matches!(event, tauri::WindowEvent::Destroyed) {
+            privacy::forget_window(&handle, "watchtower");
+        }
+    });
+    let native = app
+        .get_window("watchtower")
+        .ok_or("The manager window closed.")?;
+    privacy::guarded_show(app, &native, true)?;
     Ok(())
 }
 
@@ -784,6 +824,8 @@ fn site_window(
     let nav_context = context.clone();
     let popup_app = app.clone();
     let popup_context = context.clone();
+    let observe_app = app.clone();
+    let observe_context = context.clone();
     let initial = Url::parse("about:blank").expect("literal");
     let popup = features.is_some();
     let mut builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(initial))
@@ -794,8 +836,8 @@ fn site_window(
         })
         .inner_size(1050.0, 790.0)
         .min_inner_size(500.0, 500.0)
-        .visible(interactive)
-        .focused(interactive)
+        .visible(false)
+        .focused(false)
         .data_directory(directory.clone())
         .on_permission_request(|_, _| PermissionResponse::Deny)
         .on_navigation(move |url| {
@@ -814,6 +856,14 @@ fn site_window(
                     "Modhunter · {}",
                     event.url().origin().ascii_serialization()
                 ));
+            }
+            if interactive && event.event() == tauri::webview::PageLoadEvent::Finished {
+                access::page_loaded(
+                    observe_app.clone(),
+                    view.label().to_owned(),
+                    observe_context.clone(),
+                    event.url().clone(),
+                );
             }
         })
         .on_new_window(move |target, features| {
@@ -858,7 +908,12 @@ fn site_window(
     if let Some(features) = features {
         builder = builder.window_features(features);
     }
-    let window = builder.build().map_err(err)?;
+    let window = builder.visible(false).focused(false).build().map_err(err)?;
+    let native = app.get_window(&label).ok_or("The website window closed.")?;
+    if let Err(error) = privacy::apply_window(app, &native) {
+        let _ = window.close();
+        return Err(error);
+    }
     let native_load = load.clone();
     let download_app = app.clone();
     let download_context = context.clone();
@@ -936,6 +991,7 @@ fn site_window(
     let close_label = label.clone();
     window.on_window_event(move |event| {
         if matches!(event, tauri::WindowEvent::Destroyed) {
+            privacy::forget_window(&close_app, &close_label);
             if let Ok(mut windows) = close_app.state::<WatchRuntime>().windows.lock() {
                 windows.remove(&close_label);
             }
@@ -951,6 +1007,9 @@ fn site_window(
             let _ = window.close();
             err(error)
         })?;
+    }
+    if interactive {
+        privacy::guarded_show(app, &native, true)?;
     }
     Ok(window)
 }
@@ -1387,8 +1446,10 @@ fn open_session(app: &tauri::AppHandle, session_id: &str, page: Option<&str>) ->
             .iter()
             .find_map(|label| app.get_webview_window(label))
     {
-        window.show().map_err(err)?;
-        window.set_focus().map_err(err)?;
+        let native = app
+            .get_window(window.label())
+            .ok_or("This native window closed.")?;
+        privacy::guarded_show(app, &native, true)?;
         return Ok(());
     }
     let url = Url::parse(page.unwrap_or(&session.origin)).map_err(err)?;
@@ -1448,6 +1509,8 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
     if kind == "state" {
         let mut snapshot = state.snapshot();
         snapshot["acquisitions"] = acquisition::snapshot(app);
+        snapshot["reviews"] = review::snapshot(app);
+        snapshot["maintenance"] = maintenance::snapshot(app);
         return Ok(json!({"ok":true,"state":snapshot}));
     }
     if kind == "close" {
@@ -1461,9 +1524,45 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
     }
     let mut result = json!({});
     match kind {
+        "maintenance"
+        | "globalSettings"
+        | "checkAppRelease"
+        | "dismissAppRelease"
+        | "openAppRelease"
+        | "storage"
+        | "previewDownloadCleanup"
+        | "applyDownloadCleanup"
+        | "diagnosticsPreview"
+        | "diagnosticsCopy"
+        | "diagnosticsSave"
+        | "browserChoices"
+        | "openPrivate"
+        | "licenses" => {
+            result = maintenance::execute(app, kind, &value)?;
+        }
+        "prepareReview"
+        | "openReview"
+        | "saveReviewSelection"
+        | "installReview"
+        | "cancelReview"
+        | "discardReview"
+        | "contentJobs"
+        | "contentBackups"
+        | "contentRecovery"
+        | "contentBatchRestore"
+        | "duplicateScan"
+        | "duplicateRecovery" => {
+            result = review::execute(app, kind, &value)?;
+        }
         "approveDownload" | "rejectDownload" | "cancelDownload" | "removeDownload"
-        | "verifyDownload" | "showDownload" | "resolveFiles" | "openOffer" => {
+        | "verifyDownload" | "showDownload" | "resolveFiles" | "openOffer" | "decideOffer"
+        | "clearOfferDecision" => {
             result = acquisition::execute(app, kind, &value)?;
+            if matches!(kind, "decideOffer" | "clearOfferDecision")
+                && let Some(id) = result["watchId"].as_str()
+            {
+                cancel_selected(app, Some(&[id.to_string()]), false)?;
+            }
         }
         "check" => {
             let selected = ids(&value)?;
@@ -1503,10 +1602,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
                 .ok_or("This watched page no longer exists.")?;
             let url = canonical_page_url(&watch.url)?;
             if kind == "openExternal" {
-                app.opener().open_url(url, None::<&str>).map_err(err)?;
-                result["message"] = json!(
-                    "Opened in your regular browser. Its sign-in stays separate from Modhunter's site session."
-                );
+                result = maintenance::open_external(app, &url, false)?;
             } else {
                 let session = watch
                     .session_id
@@ -1560,7 +1656,8 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
         }
         "saveWatch" | "removeWatch" | "restoreWatch" | "pauseWatch" | "markSeen" | "undoSeen"
         | "saveSession" | "resetSession" | "removeSession" | "confirmSession" | "settings"
-        | "import" | "export" | "detail" | "recover" => {
+        | "import" | "export" | "detail" | "recover" | "saveCreator" | "saveSourceBinding"
+        | "clearFileDecision" => {
             // Validate before the durable mutation. Cancellation itself happens
             // only after success, so an invalid edit cannot stop an owned check.
             let selected = if matches!(kind, "saveWatch" | "removeWatch" | "pauseWatch")
@@ -1579,6 +1676,26 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
                 None
             };
             result = state.store.command(kind, &value, now())?;
+            if matches!(
+                kind,
+                "saveCreator" | "saveSourceBinding" | "clearFileDecision"
+            ) {
+                let mut affected = result["watchIds"]
+                    .as_array()
+                    .map(|ids| {
+                        ids.iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_owned)
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                if let Some(id) = result["watchId"].as_str() {
+                    affected.push(id.to_owned());
+                }
+                if !affected.is_empty() {
+                    cancel_selected(app, Some(&affected), false)?;
+                }
+            }
             if let Some(selected) = selected {
                 cancel_selected(app, Some(&selected), false)?;
             }
@@ -1613,6 +1730,8 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
     result["ok"] = json!(true);
     result["state"] = state.snapshot();
     result["state"]["acquisitions"] = acquisition::snapshot(app);
+    result["state"]["reviews"] = review::snapshot(app);
+    result["state"]["maintenance"] = maintenance::snapshot(app);
     notify(app);
     Ok(result)
 }
@@ -1633,6 +1752,7 @@ pub async fn watchtower_command(
 }
 
 pub fn shutdown(app: &tauri::AppHandle) {
+    privacy::shutdown(app);
     let Some(state) = app.try_state::<WatchRuntime>() else {
         return;
     };

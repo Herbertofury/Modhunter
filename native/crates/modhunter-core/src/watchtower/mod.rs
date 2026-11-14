@@ -8,6 +8,7 @@ mod url_policy;
 
 pub use store::WatchStore;
 pub use types::{
-    CheckJob, MAX_CAPTURE_BYTES, ModAssociation, PageObservation, Session, Watch, WatchSettings,
+    CheckJob, CreatorPreferences, MAX_CAPTURE_BYTES, ModAssociation, PageObservation, Session,
+    SessionAccess, SourceBinding, SourceFileDecision, SourcePreferences, Watch, WatchSettings,
 };
 pub use url_policy::{canonical_page_url, is_public_ip, page_origin};

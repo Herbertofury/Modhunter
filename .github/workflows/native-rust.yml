@@ -33,8 +33,11 @@ jobs:
         run: |
           python3 native/scripts/prepare_release.py --print-version
           python3 native/scripts/prepare_assets.py
+          python3 native/scripts/prepare_archive_tools.py
+          python3 native/scripts/prepare_notices.py
           cargo fmt --manifest-path native/Cargo.toml --all -- --check
           cargo test --manifest-path native/Cargo.toml --workspace --locked
+          python3 native/scripts/verify_archive_review.py --cli native/target/debug/modhunter-cli --output native/target/archive-review-proof.json
           python3 native/scripts/verify_plugin_bridge.py --cli native/target/debug/modhunter-cli --output native/target/plugin-bridge-protocol.json
           python3 native/scripts/verify_source_bridge.py --cli native/target/debug/modhunter-cli --output native/target/source-bridge-protocol.json
           cargo clippy --manifest-path native/Cargo.toml --workspace --all-targets --locked -- -D warnings
@@ -89,6 +92,10 @@ jobs:
           python native/scripts/prepare_release.py --print-version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python native/scripts/prepare_assets.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python native/scripts/prepare_archive_tools.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python native/scripts/prepare_notices.py
       - name: Install the Qt SDK matching MO2 2.5.2
         id: qt
         uses: jurplel/install-qt-action@v4
@@ -153,6 +160,8 @@ jobs:
         run: |
           cargo test --manifest-path native/Cargo.toml --workspace --locked
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python native/scripts/verify_archive_review.py --cli native/target/debug/modhunter-cli.exe --output native/target/archive-review-proof.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo clippy --manifest-path native/Cargo.toml --workspace --all-targets --locked -- -D warnings
       - name: Build Rust executable and Windows installer
         working-directory: native/crates/modhunter-desktop
@@ -182,9 +191,12 @@ jobs:
           if (Test-Path native/target/portable) { Remove-Item -Recurse -Force native/target/portable }
           New-Item -ItemType Directory -Force native/target/portable/MO2 | Out-Null
           Copy-Item native/target/release/Modhunter.exe native/target/portable/
+          Copy-Item -Recurse native/resources/archive-tools native/target/portable/archive-tools
           Copy-Item -Recurse mo2_update_arsenal native/target/portable/MO2/
           Get-ChildItem -Recurse native/target/portable -Directory -Filter __pycache__ | Remove-Item -Recurse -Force
           Copy-Item native/README.md native/target/portable/README.md
+          Copy-Item native/PROJECT_NOTICE.txt native/target/portable/PROJECT_NOTICE.txt
+          Copy-Item native/resources/THIRD_PARTY_NOTICES.json native/target/portable/THIRD_PARTY_NOTICES.json
           Copy-Item native/Install_MO2_Plugin.ps1 native/target/portable/
           Copy-Item native/Install_MO2_Plugin.bat native/target/portable/
           Copy-Item native/Check_MO2_Readiness.ps1 native/target/portable/
@@ -194,10 +206,12 @@ jobs:
           Copy-Item native/target/release/modhunter-cli.exe native/target/portable/
           New-Item -ItemType Directory -Force native/target/portable/MO2/mo2_update_arsenal/bin | Out-Null
           Copy-Item native/target/release/modhunter-cli.exe native/target/portable/MO2/mo2_update_arsenal/bin/modhunter-cli.exe
+          Copy-Item -Recurse native/resources/archive-tools native/target/portable/MO2/mo2_update_arsenal/bin/archive-tools
           Copy-Item native/target/qt-bridge/Release/modhunter-qt-bridge.dll native/target/portable/MO2/mo2_update_arsenal/bin/modhunter-qt-bridge.dll
           New-Item -ItemType Directory -Force native/target/portable/Evidence | Out-Null
           Copy-Item native/target/native-smoke/native-smoke.json native/target/portable/Evidence/
           Copy-Item native/target/watchtower-smoke/watchtower-smoke.json native/target/portable/Evidence/
+          Copy-Item native/target/archive-review-proof.json native/target/portable/Evidence/
           Copy-Item native/target/qt-forward/qt-forward.json native/target/portable/Evidence/
           Copy-Item native/target/live-mo2-smoke/desktop-live.json native/target/portable/Evidence/
           $BenchmarkFiles = @(python native/scripts/prepare_release.py --benchmark-files)
@@ -230,6 +244,7 @@ jobs:
             native/target/watchtower-smoke/*.json
             native/target/watchtower-smoke/*.jsonl
             native/target/watchtower-smoke/*.log
+            native/target/archive-review-proof.json
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [contracts, windows, mo2]

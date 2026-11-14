@@ -82,6 +82,34 @@ struct Runtime {
     smoke_export: Mutex<Option<PathBuf>>,
 }
 
+/// A host-owned connection lease; remote content and the Watchtower renderer
+/// never choose an endpoint or receive the native authentication token.
+pub(crate) fn mo2_connection(app: &tauri::AppHandle) -> Result<(BridgeClient, String, u64)> {
+    let runtime = app.state::<Runtime>();
+    let model = runtime.model.lock().map_err(err)?;
+    if !model.connected {
+        return Err("Connect Modhunter to MO2 before reviewing an installation.".into());
+    }
+    let endpoint = model
+        .endpoint
+        .clone()
+        .ok_or("The MO2 connection has no address.")?;
+    Ok((
+        runtime.client.clone(),
+        endpoint,
+        runtime.epoch.load(Ordering::Acquire),
+    ))
+}
+
+pub(crate) fn mo2_connection_current(app: &tauri::AppHandle, endpoint: &str, epoch: u64) -> bool {
+    let runtime = app.state::<Runtime>();
+    runtime.epoch.load(Ordering::Acquire) == epoch
+        && runtime
+            .model
+            .lock()
+            .is_ok_and(|model| model.connected && model.endpoint.as_deref() == Some(endpoint))
+}
+
 impl Runtime {
     fn snapshot(&self) -> Value {
         let m = self.model.lock().unwrap_or_else(|e| e.into_inner());
@@ -346,7 +374,9 @@ fn activate(app: &tauri::AppHandle, id: u64) -> Result<()> {
         if let Some(view) = app.get_webview(&label) {
             if label == active {
                 view.show().map_err(err)?;
-                view.set_focus().map_err(err)?;
+                if !crate::watchtower_windows::privacy::is_hidden(app) {
+                    view.set_focus().map_err(err)?;
+                }
             } else {
                 view.hide().map_err(err)?;
             }
@@ -1519,9 +1549,13 @@ pub fn run() {
             smoke_event(app.handle(), "runtime-created", json!({}));
             let window = WindowBuilder::new(app, "main")
                 .title("Modhunter · Rust")
+                .visible(false)
+                .focused(false)
                 .inner_size(1480.0, 960.0)
                 .min_inner_size(760.0, 550.0)
                 .build()?;
+            crate::watchtower_windows::privacy::apply_window(app.handle(), &window)
+                .map_err(std::io::Error::other)?;
             let handle = app.handle().clone();
             let closing = Arc::new(AtomicBool::new(false));
             window.on_window_event(move |event| {
@@ -1558,6 +1592,8 @@ pub fn run() {
             smoke_event(app.handle(), "chrome-created", json!({}));
             open_tab(app.handle(), Mode::Dashboard).map_err(std::io::Error::other)?;
             smoke_event(app.handle(), "dashboard-created", json!({}));
+            crate::watchtower_windows::privacy::guarded_show(app.handle(), &window, true)
+                .map_err(std::io::Error::other)?;
             Ok(())
         })
         .run(tauri::generate_context!())

@@ -102,6 +102,49 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             }
             println!("{output}");
         }
+        Some("archive-review") => {
+            let path =
+                value(&args, "--request")?.ok_or("archive-review requires --request PATH|-")?;
+            let mut bytes = Vec::new();
+            if path == "-" {
+                std::io::stdin()
+                    .take(32 * 1024 * 1024 + 1)
+                    .read_to_end(&mut bytes)?;
+            } else {
+                fs::File::open(path)?
+                    .take(32 * 1024 * 1024 + 1)
+                    .read_to_end(&mut bytes)?;
+            }
+            if bytes.len() > 32 * 1024 * 1024 {
+                return Err("Archive request exceeds 32 MiB".into());
+            }
+            let request: modhunter_core::archive_review::Request = serde_json::from_slice(&bytes)?;
+            let result = modhunter_core::archive_review::inspect(&request, &|| false)
+                .map_err(std::io::Error::other)?;
+            println!("{}", serde_json::to_string(&result)?);
+        }
+        Some("duplicate-report") => {
+            let path =
+                value(&args, "--request")?.ok_or("duplicate-report requires --request PATH|-")?;
+            let mut bytes = Vec::new();
+            if path == "-" {
+                std::io::stdin()
+                    .take(32 * 1024 * 1024 + 1)
+                    .read_to_end(&mut bytes)?;
+            } else {
+                fs::File::open(path)?
+                    .take(32 * 1024 * 1024 + 1)
+                    .read_to_end(&mut bytes)?;
+            }
+            if bytes.len() > 32 * 1024 * 1024 {
+                return Err("Duplicate request exceeds 32 MiB".into());
+            }
+            let request: modhunter_core::duplicate_report::Request =
+                serde_json::from_slice(&bytes)?;
+            let result = modhunter_core::duplicate_report::execute(request, || false)
+                .map_err(std::io::Error::other)?;
+            println!("{}", serde_json::to_string(&result)?);
+        }
         Some("content-vault") => {
             let path =
                 value(&args, "--request")?.ok_or("content-vault requires --request PATH|-")?;
@@ -126,7 +169,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         Some("benchmark") => benchmark(&args)?,
         Some("--version") => println!("Modhunter Rust engine {}", env!("CARGO_PKG_VERSION")),
         None | Some("--help") | Some("help") => println!(
-            "Modhunter Rust engine\n\nimport --modlist PATH [--ini PATH] [--mods PATH] [--workers 1..32]\nprobe --endpoint http://127.0.0.1:PORT/\naudit-plugins --request PATH|-\nscan-sources --request PATH|-\ncontent-vault --request PATH|- (explicit scoped backup/restore)\nbenchmark [--mods 2500] [--rounds 5] [--workers 8]\n\nImport and plugin audits are read-only. ESL eligibility is conditional; save, dependent-mod, asset and external-reference safety is not certified. The live MO2 plugin remains responsible for downloads and FOMOD installation. Benchmark uses a generated fixture, not a user's MO2 installation."
+            "Modhunter Rust engine\n\nimport --modlist PATH [--ini PATH] [--mods PATH] [--workers 1..32]\nprobe --endpoint http://127.0.0.1:PORT/\naudit-plugins --request PATH|-\nscan-sources --request PATH|-\narchive-review --request PATH|- (bounded original-byte review)\nduplicate-report --request PATH|- (complete ownership and reversible quarantine)\ncontent-vault --request PATH|- (explicit scoped backup/restore)\nbenchmark [--mods 2500] [--rounds 5] [--workers 8]\n\nImport and plugin audits are read-only. ESL eligibility is conditional; save, dependent-mod, asset and external-reference safety is not certified. The live MO2 plugin remains responsible for downloads and FOMOD installation. Benchmark uses a generated fixture, not a user's MO2 installation."
         ),
         Some(command) => {
             return Err(format!("Unknown command: {command}. Run modhunter-cli --help").into());

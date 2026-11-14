@@ -11,6 +11,7 @@ use webview2_com::Microsoft::Web::WebView2::Win32::{
 
 struct Downloads {
     store: Mutex<Store>,
+    root: PathBuf,
 }
 struct Held {
     operation: ICoreWebView2DownloadOperation,
@@ -25,7 +26,8 @@ thread_local! { static HANDLES:RefCell<HashMap<String,Held>>=RefCell::new(HashMa
 
 pub(super) fn setup(app: &tauri::AppHandle, path: PathBuf) {
     app.manage(Downloads {
-        store: Mutex::new(Store::open(path)),
+        store: Mutex::new(Store::open(path.clone())),
+        root: path,
     });
     offers::setup(app);
     let a = app.clone();
@@ -74,13 +76,59 @@ fn binding(app: &tauri::AppHandle, context: &SiteContext) -> Result<Binding> {
     if watch.generation != *generation || watch.removed_at.is_some() {
         return Err("Tracked source changed; reopen it before downloading.".into());
     }
+    let page = state.store.source_binding(id);
+    let decision = context
+        .download_file_key
+        .as_ref()
+        .and_then(|key| state.store.source_file_decision(id, key));
+    if decision.as_ref().is_some_and(|file| file.ignored) {
+        return Err(
+            "This exact file is marked not interested. Change its decision before downloading."
+                .into(),
+        );
+    }
+    let content_intent = if context.download_file_key.is_some() {
+        decision
+            .as_ref()
+            .map(|file| file.kind.clone())
+            .unwrap_or_else(|| "unclassified".into())
+    } else {
+        page.as_ref()
+            .map(|page| page.content_intent.clone())
+            .unwrap_or_else(|| "unclassified".into())
+    };
+    let association = if content_intent == "update" {
+        if !page.as_ref().is_some_and(|page| {
+            page.compatibility_confirmed && !page.game.is_empty() && page.content_intent == "update"
+        }) {
+            return Err(
+                "Confirm this source's game, runtime and exact update target before downloading."
+                    .into(),
+            );
+        }
+        let selected = decision
+            .as_ref()
+            .and_then(|file| file.association.clone())
+            .or_else(|| page.as_ref().and_then(|page| page.association.clone()))
+            .or_else(|| watch.association.clone());
+        if selected.is_none() || selected != watch.association {
+            return Err(
+                "The exact update target changed; review the source association again.".into(),
+            );
+        }
+        selected
+    } else {
+        None
+    };
     Ok(Binding {
         watch_id: id.clone(),
         watch_generation: *generation,
         session_id: context.session.as_ref().map(|s| s.id.clone()),
         session_generation: context.session.as_ref().map_or(0, |s| s.storage_generation),
         source_origin: context.origin.clone(),
-        association: watch.association,
+        association,
+        source_file_key: context.download_file_key.clone(),
+        content_intent,
     })
 }
 fn allowed_download(raw: &str, source: &str) -> bool {
@@ -267,10 +315,10 @@ fn tick(app: &tauri::AppHandle) {
                 let b = b.unwrap();
                 let downloads = app.state::<Downloads>();
                 let mut store = downloads.store.lock().unwrap_or_else(|e| e.into_inner());
-                if store.begin_validation(id, &b).is_ok() {
-                    if let Ok(path) = store.staging(id) {
-                        validations.push((id.clone(), b, h.context.clone(), path));
-                    }
+                if store.begin_validation(id, &b).is_ok()
+                    && let Ok(path) = store.staging(id)
+                {
+                    validations.push((id.clone(), b, h.context.clone(), path));
                 }
                 remove.push(id.clone());
                 changed = true;
@@ -360,6 +408,9 @@ pub(super) fn execute(app: &tauri::AppHandle, kind: &str, value: &Value) -> Resu
     if kind == "openOffer" {
         return open_offer(app, value);
     }
+    if matches!(kind, "decideOffer" | "clearOfferDecision") {
+        return offers::decide_offer(app, value, kind == "clearOfferDecision");
+    }
     let id = id(value)?.to_string();
     match kind {
         "approveDownload" => {
@@ -395,6 +446,7 @@ pub(super) fn execute(app: &tauri::AppHandle, kind: &str, value: &Value) -> Resu
             })
         }
         "removeDownload" => {
+            super::review::ensure_removable(app, &id)?;
             app.state::<Downloads>().store.lock().map_err(err)?.remove(
                 &id,
                 value.get("confirm").and_then(Value::as_str).unwrap_or(""),
@@ -427,6 +479,75 @@ pub(super) fn execute(app: &tauri::AppHandle, kind: &str, value: &Value) -> Resu
         }
         _ => Err("Unsupported acquisition command.".into()),
     }
+}
+
+/// Resolve host-owned bytes without holding the receipt mutex during hashing.
+pub(super) fn verified(
+    app: &tauri::AppHandle,
+    id: &str,
+    cancel: &impl Fn() -> bool,
+) -> Result<(modhunter_core::acquisition::Receipt, PathBuf, PathBuf)> {
+    let (row, path, root) = {
+        let downloads = app.state::<Downloads>();
+        let store = downloads.store.lock().map_err(err)?;
+        let row = store.row(id)?;
+        let extension = row
+            .extension
+            .as_deref()
+            .filter(|ext| matches!(*ext, "zip" | "7z" | "rar"))
+            .ok_or("Download is not a verified archive.")?;
+        let path = store
+            .staging(id)?
+            .with_file_name(format!("archive.{extension}"));
+        (row, path, downloads.root.clone())
+    };
+    source_current(app, &row.binding)?;
+    let (bytes, hash, _) = archive_identity(&path, cancel)?;
+    if row.state != "ready" || row.bytes != bytes || row.sha256.as_deref() != Some(&hash) {
+        return Err("Archive bytes changed. Download and review the file again.".into());
+    }
+    let current = app
+        .state::<Downloads>()
+        .store
+        .lock()
+        .map_err(err)?
+        .row(id)?;
+    if current.state != row.state
+        || current.binding != row.binding
+        || current.sha256 != row.sha256
+        || current.bytes != row.bytes
+    {
+        return Err("The download changed during verification.".into());
+    }
+    Ok((row, path, root))
+}
+
+pub(super) fn source_current(app: &tauri::AppHandle, saved: &Binding) -> Result<()> {
+    let state = app.state::<WatchRuntime>();
+    let watch = state
+        .store
+        .watch(&saved.watch_id)
+        .ok_or("Tracked source was removed.")?;
+    let context = SiteContext {
+        session: saved
+            .session_id
+            .as_ref()
+            .map(|id| state.store.session(id).ok_or("Source account was removed."))
+            .transpose()?,
+        origin: saved.source_origin.clone(),
+        fixture_origin: None,
+        lease: None,
+        download_watch: Some((watch.id, saved.watch_generation)),
+        download_file_key: saved.source_file_key.clone(),
+        cancellation: None,
+    };
+    if binding(app, &context)? != *saved {
+        return Err(
+            "Source, file decision or account changed. Download and review the current file again."
+                .into(),
+        );
+    }
+    Ok(())
 }
 pub(super) fn cancel_all(app: &tauri::AppHandle) {
     let a = app.clone();

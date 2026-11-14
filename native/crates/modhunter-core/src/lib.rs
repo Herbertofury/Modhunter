@@ -1,7 +1,10 @@
 //! Native Modhunter work engine. Imports and audits are read-only. Explicit content-vault restores are separately confirmed mutations.
 pub mod acquisition;
+pub mod app_maintenance;
+pub mod archive_review;
 pub mod bridge;
 pub mod content_vault;
+pub mod duplicate_report;
 pub mod importer;
 pub mod ini;
 pub mod plugin_analysis;
@@ -18,6 +21,8 @@ pub use source_adapters::{SourceScanRequest, SourceScanResult, scan_sources};
 
 #[derive(Debug, thiserror::Error)]
 pub enum CoreError {
+    #[error("MO2 rejected the operation: {0}")]
+    NativeRejected(String),
     #[error("Operation canceled; the last complete profile remains available.")]
     Cancelled,
     #[error("{0}")]

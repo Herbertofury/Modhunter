@@ -72,7 +72,7 @@ $Process = $null
 $Failure = $null
 $StartedAt = [DateTime]::UtcNow
 $CriticalProductionFiles = @('plugin.py', 'version.py', 'download_ids.py', 'bridge.py', 'model.py', 'focus.py', 'scanner.py', 'version_evidence.py', 'gameplay.py', 'native_nexus.py', 'qt_bridge.py',
-    'intelligence.py', 'plugin_intelligence.py', 'mod_health.py',
+    'intelligence.py', 'plugin_intelligence.py', 'mod_health.py', 'content_recovery.py', 'duplicate_report.py',
     'source_adapters.py', 'source_registry.py', 'update_plan.py', 'quick_update.py',
     'install_brief.py', 'web/index.html')
 $Summary = [ordered]@{
@@ -263,7 +263,7 @@ log_level=0
     Copy-Item -LiteralPath (Join-Path $HarnessSource 'game_modhunter_smoke.py') -Destination (Join-Path $BasicGames 'games/game_modhunter_smoke.py')
     $TestPlugin = Join-Path $PortableRoot 'plugins/modhunter_native_smoke'
     New-Item -ItemType Directory -Path $TestPlugin | Out-Null
-    foreach ($Name in @('__init__.py', 'runner.py', 'audit_probe.py')) {
+    foreach ($Name in @('__init__.py', 'runner.py', 'audit_probe.py', 'content_probe.py')) {
         Copy-Item -LiteralPath (Join-Path $HarnessSource "modhunter_native_smoke/$Name") -Destination (Join-Path $TestPlugin $Name)
     }
 

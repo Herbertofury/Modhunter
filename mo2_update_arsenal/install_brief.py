@@ -24,7 +24,7 @@ def _positive_int(value: Any) -> int:
     return n if n > 0 else 0
 
 
-def build_install_brief(snapshot: dict, ticket: dict | None, download_id: Any) -> dict:
+def build_install_brief(snapshot: dict, ticket: dict | None, download_id: Any, *, content_backup_available=False) -> dict:
     """Return an evidence-based briefing and precise reasons to block an install.
 
     Scope this to an active profile, its game/runtime, a specific MO2 mod row,
@@ -100,9 +100,9 @@ def build_install_brief(snapshot: dict, ticket: dict | None, download_id: Any) -
         "profileName": str(snapshot.get("profileName") or ""),
         "game": str(snapshot.get("game") or ""),
         "gameRuntime": str(snapshot.get("gameRuntime") or "unknown"),
-        "backup": {"kind": "Profile load-order files only", "files": PROFILE_BACKUP_FILES,
-                   "includesModFiles": False},
-        "steps": ["Revalidate active MO2 profile and exact archive", "Back up MO2 profile text files",
+        "backup": {"kind": "Complete target mod files and profile load-order files" if content_backup_available else "Profile load-order files only", "files": PROFILE_BACKUP_FILES,
+                   "includesModFiles": bool(content_backup_available)},
+        "steps": ["Revalidate active MO2 profile and exact archive", "Back up complete target mod bytes and MO2 profile text files" if content_backup_available else "Back up MO2 profile text files",
                   "Open MO2 interactive installer", "Inspect FOMOD, dependencies and overwrites",
                   "Refresh the profile and verify the installed version"],
     }

@@ -1,3 +1,5 @@
+//! Browser-owned file URLs stay transient. Durable choices contain only exact
+//! source identity hashes and user-confirmed associations.
 use super::*;
 #[derive(Clone)]
 struct Offer {
@@ -5,6 +7,10 @@ struct Offer {
     name: String,
     url: String,
     kind: String,
+    source_file_key: String,
+    related: bool,
+    published_at: String,
+    supported: bool,
     context: SiteContext,
     created: Instant,
 }
@@ -21,7 +27,20 @@ pub(super) fn setup(app: &tauri::AppHandle) {
 pub(super) fn snapshot(app: &tauri::AppHandle) -> Value {
     let state = app.state::<Offers>();
     let rows = state.rows.lock().unwrap_or_else(|e| e.into_inner());
-    json!({"revision":state.revision.load(Ordering::Acquire),"offers":rows.values().filter(|o|o.created.elapsed()<Duration::from_secs(300)).map(|o|json!({"id":o.id,"name":o.name,"kind":o.kind,"origin":o.context.origin,"watchId":o.context.download_watch.as_ref().map(|w|&w.0)})).collect::<Vec<_>>()})
+    let runtime = app.state::<WatchRuntime>();
+    let offers: Vec<_> = rows.values().filter(|o| o.created.elapsed() < Duration::from_secs(300)).map(|o| {
+        let watch_id = o.context.download_watch.as_ref().map(|w| w.0.as_str()).unwrap_or("");
+        let watch = runtime.store.watch(watch_id);
+        let decision = runtime.store.source_file_decision(watch_id, &o.source_file_key);
+        let current = watch.as_ref().is_some_and(|w| w.removed_at.is_none() && o.context.download_watch.as_ref().is_some_and(|(_,generation)| w.generation == *generation)) && o.context.current(&runtime);
+        json!({"id":o.id,"name":o.name,"kind":o.kind,"origin":o.context.origin,"watchId":watch_id,
+            "sourceFileKey":o.source_file_key,"related":o.related,"publishedAt":o.published_at,
+            "supported":o.supported,"current":current,"ignored":decision.as_ref().is_some_and(|d|d.ignored),
+            "classification":decision.as_ref().map_or("unclassified",|d|d.kind.as_str()),"explicitDecision":decision.is_some(),
+            "association":decision.as_ref().and_then(|d|d.association.as_ref()),"canUpdate":watch.as_ref().is_some_and(|w|w.association.is_some()),
+            "newContentOptIn":runtime.store.creator_offers_new_content(watch_id)})
+    }).collect();
+    json!({"revision":state.revision.load(Ordering::Acquire),"offers":offers})
 }
 pub(super) fn resolve_files(app: &tauri::AppHandle, value: &Value) -> Result<Value> {
     let runtime = app.state::<WatchRuntime>();
@@ -31,6 +50,9 @@ pub(super) fn resolve_files(app: &tauri::AppHandle, value: &Value) -> Result<Val
         .ok_or("Watched source no longer exists.")?;
     if watch.removed_at.is_some() {
         return Err("Restore the tracked source first.".into());
+    }
+    if !runtime.store.watch_eligible(&watch.id) {
+        return Err("This source is paused, muted, or waiting for account verification. Resume it before finding files.".into());
     }
     let session = watch
         .session_id
@@ -58,7 +80,7 @@ pub(super) fn resolve_files(app: &tauri::AppHandle, value: &Value) -> Result<Val
         "__modhunterOffers{}",
         runtime.sequence.fetch_add(1, Ordering::AcqRel)
     );
-    let cfg = json!({"key":key,"source":url.as_str()});
+    let cfg = json!({"key":key,"source":url.as_str(),"includeNewContent":runtime.store.creator_offers_new_content(&watch.id)});
     view.0
         .eval(format!(
             "(()=>{{const cfg={cfg};{}}})()",
@@ -67,6 +89,9 @@ pub(super) fn resolve_files(app: &tauri::AppHandle, value: &Value) -> Result<Val
         .map_err(err)?;
     let reply = loop {
         binding(app, &context)?;
+        if !runtime.store.watch_eligible(&watch.id) {
+            return Err("Source checks were paused or account verification is required. The previous complete files remain available.".into());
+        }
         let reply = eval_json(
             &view.0,
             format!(
@@ -98,10 +123,72 @@ pub(super) fn resolve_files(app: &tauri::AppHandle, value: &Value) -> Result<Val
     }
     let rows = reply["files"]
         .as_array()
-        .ok_or("Source did not return a file list.")?;
+        .ok_or("Source did not return a complete file list.")?;
     if rows.len() > 200 {
-        return Err("Source returned too many files. Select a narrower source page.".into());
+        return Err("Source returned too many files. Select a narrower source page; the previous complete result is retained.".into());
     }
+    let mut collected = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for row in rows {
+        let raw = row["url"]
+            .as_str()
+            .ok_or("Source returned an invalid file address; no partial result was accepted.")?;
+        let target = Url::parse(raw).map_err(
+            |_| "Source returned an invalid file address; no partial result was accepted.",
+        )?;
+        if !policy::website_navigation(&target) {
+            return Err(
+                "Source returned an unsupported file address; no partial result was accepted."
+                    .into(),
+            );
+        }
+        let name = row["name"]
+            .as_str()
+            .filter(|s| !s.is_empty() && s.len() <= 960 && !s.chars().any(char::is_control))
+            .ok_or("Source returned an invalid file name.")?
+            .to_owned();
+        let identity = row["identity"]
+            .as_str()
+            .filter(|s| !s.is_empty() && s.len() <= 8192 && !s.chars().any(char::is_control))
+            .ok_or("Source returned no stable file identity.")?;
+        let source_file_key = format!(
+            "{:x}",
+            Sha256::digest(format!("{}\0{}", watch.url, identity).as_bytes())
+        );
+        if !seen.insert(source_file_key.clone()) {
+            return Err(
+                "Source returned duplicate file identities; refresh it before choosing a file."
+                    .into(),
+            );
+        }
+        let kind = row["kind"]
+            .as_str()
+            .filter(|s| matches!(*s, "attachment" | "external" | "chooser"))
+            .ok_or("Source returned an unknown file kind.")?
+            .to_owned();
+        let published_at = row["publishedAt"]
+            .as_str()
+            .filter(|s| s.len() <= 100 && !s.chars().any(char::is_control))
+            .unwrap_or("")
+            .to_owned();
+        let supported = allowed_download(raw, &context.origin);
+        let id = format!("offer-{}", runtime.sequence.fetch_add(1, Ordering::AcqRel));
+        collected.push(Offer {
+            id,
+            name,
+            url: raw.into(),
+            kind,
+            source_file_key,
+            related: row["related"].as_bool().unwrap_or(false),
+            published_at,
+            supported,
+            context: context.clone(),
+            created: Instant::now(),
+        });
+    }
+    // Commit only after every returned row is validated. A failed resolver never
+    // replaces a complete result with a shortened or partially accepted list.
+    let accepted = collected.len();
     let registry = app.state::<Offers>();
     let mut offers = registry.rows.lock().map_err(err)?;
     offers.retain(|_, o| {
@@ -111,58 +198,15 @@ pub(super) fn resolve_files(app: &tauri::AppHandle, value: &Value) -> Result<Val
                 .as_ref()
                 .is_none_or(|w| w.0 != watch.id)
     });
-    let mut accepted = 0;
-    for row in rows {
-        let Some(raw) = row["url"].as_str() else {
-            continue;
-        };
-        let Ok(target) = Url::parse(raw) else {
-            continue;
-        };
-        if !policy::website_navigation(&target) {
-            continue;
-        }
-        let name = row["name"]
-            .as_str()
-            .unwrap_or("Open source file chooser")
-            .chars()
-            .filter(|c| !c.is_control())
-            .take(240)
-            .collect::<String>();
-        if !allowed_download(raw, &context.origin)
-            && !matches!(
-                target.host_str(),
-                Some("drive.google.com" | "mega.nz" | "mega.io")
-            )
-        {
-            continue;
-        }
-        let id = format!("offer-{}", runtime.sequence.fetch_add(1, Ordering::AcqRel));
-        let kind = if target.origin() != url.origin() {
-            "external"
-        } else {
-            "attachment"
-        };
-        offers.insert(
-            id.clone(),
-            Offer {
-                id,
-                name,
-                url: raw.into(),
-                kind: kind.into(),
-                context: context.clone(),
-                created: Instant::now(),
-            },
-        );
-        accepted += 1;
+    for offer in collected {
+        offers.insert(offer.id.clone(), offer);
     }
     registry.revision.fetch_add(1, Ordering::AcqRel);
-    drop(offers);
     Ok(
-        json!({"message":if accepted>0{format!("Found {accepted} accessible file links. Choose one to review; nothing downloaded yet.")}else{"No accessible archive links found. Open the source page to choose a file or finish sign-in.".into()}}),
+        json!({"message":if accepted>0{format!("Found {accepted} file choices. Classify exact files before opening them; ignored and separate-content choices are retained.")}else{"No accessible archive links found. Open the source page to choose a file or finish sign-in.".into()}}),
     )
 }
-pub(super) fn open_offer(app: &tauri::AppHandle, value: &Value) -> Result<Value> {
+fn current_offer(app: &tauri::AppHandle, value: &Value) -> Result<Offer> {
     let registry = app.state::<Offers>();
     let offer = registry
         .rows
@@ -175,8 +219,68 @@ pub(super) fn open_offer(app: &tauri::AppHandle, value: &Value) -> Result<Value>
         return Err("File offer expired; find files again.".into());
     }
     binding(app, &offer.context)?;
+    Ok(offer)
+}
+/// The renderer supplies an opaque offer ID, never a source URL or file key.
+pub(super) fn decide_offer(app: &tauri::AppHandle, value: &Value, clear: bool) -> Result<Value> {
+    let offer = current_offer(app, value)?;
+    let (watch_id, generation) = offer
+        .context
+        .download_watch
+        .as_ref()
+        .ok_or("Missing exact source identity.")?;
+    let runtime = app.state::<WatchRuntime>();
+    let result = runtime.store.command(if clear {"clearFileDecision"} else {"saveFileDecision"}, &json!({
+        "watchId":watch_id,"generation":generation,"sourceFileKey":offer.source_file_key,"name":offer.name,
+        "kind":value.get("kind").and_then(Value::as_str).unwrap_or("unclassified"),"ignored":value.get("ignored").and_then(Value::as_bool).unwrap_or(false)
+    }),now())?;
+    // Existing offers can remain visible, but only refreshed source decisions
+    // can acquire an archive. Keep the clicked row usable for a follow-up choice.
+    let next = runtime
+        .store
+        .watch(watch_id)
+        .ok_or("Source disappeared after saving its choice.")?
+        .generation;
+    let registry = app.state::<Offers>();
+    let mut rows = registry.rows.lock().map_err(err)?;
+    for row in rows.values_mut() {
+        if row
+            .context
+            .download_watch
+            .as_ref()
+            .is_some_and(|(id, g)| id == watch_id && *g == *generation)
+        {
+            row.context.download_watch = Some((watch_id.clone(), next));
+        }
+    }
+    registry.revision.fetch_add(1, Ordering::AcqRel);
+    Ok(result)
+}
+pub(super) fn open_offer(app: &tauri::AppHandle, value: &Value) -> Result<Value> {
+    let offer = current_offer(app, value)?;
+    if !offer.supported {
+        return Err("This host is not supported for managed downloads. Open the tracked source to review its download instructions.".into());
+    }
+    let runtime = app.state::<WatchRuntime>();
+    let watch_id = offer
+        .context
+        .download_watch
+        .as_ref()
+        .ok_or("Missing source identity.")?
+        .0
+        .as_str();
+    let decision = runtime
+        .store
+        .source_file_decision(watch_id, &offer.source_file_key);
+    if decision.as_ref().is_some_and(|d| d.ignored) {
+        return Err("This exact file is ignored. Restore its choice before opening it.".into());
+    }
+    if decision.is_none() && offer.kind != "chooser" {
+        return Err("Classify this exact file as an installed update or separate content before opening it.".into());
+    }
     let url = Url::parse(&offer.url).map_err(err)?;
     let mut context = offer.context;
+    context.download_file_key = Some(offer.source_file_key);
     if url.origin().ascii_serialization() != context.origin {
         // Never lend a creator account's browser profile to an external host.
         context.origin = url.origin().ascii_serialization();
@@ -184,6 +288,6 @@ pub(super) fn open_offer(app: &tauri::AppHandle, value: &Value) -> Result<Value>
     }
     site_window(app, context, url, true, None, Arc::new(Load::default()))?;
     Ok(
-        json!({"message":"Opened the selected offer. Approve any resulting archive in Page downloads; installation is separate."}),
+        json!({"message":"Opened the selected file. Approve any resulting archive in Page downloads; installation requires a separate exact target review."}),
     )
 }

@@ -21,6 +21,7 @@ from .native_nexus import NativeNexusGateway
 from .plugin_intelligence import attach_native_plugin_state, build_audit_request
 from .version import VERSION
 from .download_ids import download_id as parse_download_id
+from .content_recovery import NativeContent
 
 LOG = logging.getLogger(__name__)
 
@@ -53,6 +54,8 @@ class ModUpdateArsenal(mobase.IPluginTool):
         self._callbacks = []
         self._snapshot_error = ""
         self._snapshot_ms = 0.0
+        self._content_native = NativeContent(self)
+        self._content_launch_guard = False
 
     def name(self) -> str:
         return "MO2 Update Arsenal"
@@ -96,6 +99,8 @@ class ModUpdateArsenal(mobase.IPluginTool):
         # Keep independent subscriptions independent. A missing optional callback
         # must not silently disable all download completion/failure notifications.
         self._subscribe(organizer, "onProfileChanged", self._on_profile_changed)
+        self._content_launch_guard = self._subscribe(organizer, "onAboutToRun", self._on_about_to_run)
+        self._subscribe(organizer, "onFinishedRun", self._on_finished_run)
         for factory, hooks in (
             (organizer.modList, (("onModInstalled", self._on_mod_installed),
                                 ("onModRemoved", self._on_mod_removed),
@@ -127,28 +132,51 @@ class ModUpdateArsenal(mobase.IPluginTool):
             if getattr(owner, name)(callback) is False:
                 raise RuntimeError("callback registration declined")
             self._callbacks.append(callback)
+            return True
         except Exception as exc:
             self._subscription_errors.append(name + ": " + type(exc).__name__)
             LOG.warning("Modhunter callback %s unavailable (%s)", name, type(exc).__name__)
+            return False
+
+    def _on_about_to_run(self, binary, working_directory, arguments):
+        if self.server is not None and not self.server.content.about_to_run(binary):
+            QtWidgets.QMessageBox.information(None, "Modhunter content operation",
+                "Finish the active mod installation or recovery before launching the game or an MO2 tool.")
+            return False
+        return True
+
+    def _on_finished_run(self, binary, exit_code):
+        if self.server is not None:
+            self.server.content.finished_run(binary)
 
     # Exact arities select MO2's current map-based overload, unlike *args which
     # matches the deprecated per-item overload first and storms large profiles.
     def _on_mod_states_changed(self, changes):
+        if self.server is not None:
+            self.server.content.invalidate()
         self._schedule_refresh()
 
     def _on_plugin_states_changed(self, changes):
         self._schedule_refresh()
 
     def _on_profile_changed(self, previous, current):
+        if self.server is not None:
+            self.server.content.invalidate()
         self._schedule_refresh()
 
     def _on_mod_installed(self, mod):
+        if self.server is not None:
+            self.server.content.invalidate()
         self._schedule_refresh()
 
     def _on_mod_removed(self, name):
+        if self.server is not None:
+            self.server.content.invalidate()
         self._schedule_refresh()
 
     def _on_mod_moved(self, name, old_priority, new_priority):
+        if self.server is not None:
+            self.server.content.invalidate()
         self._schedule_refresh()
 
     def _on_plugins_refreshed(self):
@@ -211,6 +239,8 @@ class ModUpdateArsenal(mobase.IPluginTool):
         service.native_nexus_files_available = bool(self._native_nexus and self._native_nexus.files_available)
         service.native_nexus_files_error = self._native_nexus.files_error if self._native_nexus else self._native_nexus_error
         self.server = service
+        service.content.native_enabled = True
+        service.content.launch_guard_available = bool(self._content_launch_guard)
         try:
             address = service.start()
         except Exception:
@@ -485,6 +515,11 @@ class ModUpdateArsenal(mobase.IPluginTool):
         if not request.begin():
             return  # Expired/cancelled Qt events can never execute later.
         try:
+            if request.cmd.startswith("content-"):
+                if self.server is None:
+                    raise RuntimeError("Native content service is not active")
+                self._content_native.handle(request, QtCore.QTimer)
+                return
             if request.cmd in ("plugin-audit-input", "eslifier-data"):
                 if not self.server or request.payload.get("profileId") != self.server.profile_id():
                     request.finish({"ok": False, "error": "MO2 profile changed before plugin analysis"})

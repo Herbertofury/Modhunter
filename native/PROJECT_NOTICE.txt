@@ -1,0 +1,16 @@
+Modhunter
+
+The project manifests identify Modhunter's own code as LicenseRef-Proprietary.
+No additional redistribution or reuse permission is granted by this notice.
+Consult the repository owner for the applicable project terms.
+
+Third-party components retain their own licenses. The bundled component index
+contains the declared license and available license texts from the exact Cargo
+dependency sources used for this build. The archive helper carries the official
+7-Zip license and pinned distribution provenance separately.
+
+Microsoft WebView2 and the user's installed Mod Organizer 2, Qt and game runtimes
+are external runtime dependencies. Their own installers and distributions supply
+their applicable terms; Modhunter does not relicense those runtimes.
+
+Project and support: https://github.com/Herbertofury/Modhunter

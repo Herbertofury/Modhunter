@@ -25,6 +25,10 @@ pub struct Binding {
     pub session_generation: u64,
     pub source_origin: String,
     pub association: Option<ModAssociation>,
+    #[serde(default)]
+    pub source_file_key: Option<String>,
+    #[serde(default)]
+    pub content_intent: String,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -328,13 +332,41 @@ impl Store {
         if !matches!(state, "cancelled" | "failed" | "interrupted") {
             return Err("Invalid terminal state.".into());
         }
-        if self.row(id)?.state == "ready" {
+        let previous = self.row(id)?.state;
+        if previous == "ready" {
             return Err("Verified archive cannot be replaced by a late error.".into());
+        }
+        if matches!(previous.as_str(), "cancelled" | "failed" | "interrupted") && previous != state
+        {
+            // Cancellation, transport callbacks and shutdown can race. Preserve
+            // the first durable outcome instead of changing its meaning later.
+            return Ok(());
         }
         self.change(id, |r| {
             r.state = state.into();
             r.message = message.chars().take(500).collect();
-        })
+        })?;
+        self.cleanup_part(id)
+    }
+    /// Delete only the unfinished file owned by a terminal receipt. Browser
+    /// cancellation may release its file handle later; callers may retry.
+    pub fn cleanup_part(&self, id: &str) -> Result<()> {
+        let row = self.row(id)?;
+        if !matches!(row.state.as_str(), "cancelled" | "failed" | "interrupted") {
+            return Err("Only a terminal unfinished download permits partial-file cleanup.".into());
+        }
+        let path = self.directory(id)?.join("payload.part");
+        match fs::symlink_metadata(&path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(error(e)),
+            Ok(metadata) => {
+                reject_link(&path)?;
+                if !metadata.is_file() {
+                    return Err("Unexpected partial-download content was preserved.".into());
+                }
+                fs::remove_file(path).map_err(error)
+            }
+        }
     }
     pub fn remove(&mut self, id: &str, confirm: &str) -> Result<()> {
         self.writable()?;
@@ -414,6 +446,12 @@ fn valid_id(id: &str) -> Result<()> {
     }
 }
 pub fn valid_filename(name: &str) -> bool {
+    valid_component(name)
+        && [".zip", ".7z", ".rar"]
+            .iter()
+            .any(|ext| name.to_ascii_lowercase().ends_with(ext))
+}
+pub fn valid_component(name: &str) -> bool {
     if name.is_empty()
         || name.len() > 240
         || name
@@ -432,9 +470,7 @@ pub fn valid_filename(name: &str) -> bool {
     {
         return false;
     }
-    [".zip", ".7z", ".rar"]
-        .iter()
-        .any(|ext| lower.ends_with(ext))
+    true
 }
 pub fn reject_link(path: &Path) -> Result<()> {
     let m = fs::symlink_metadata(path).map_err(error)?;

@@ -27,6 +27,9 @@ impl Fixture {
             selected: Vec::new(),
             remove: Vec::new(),
             expected_digest: None,
+            retention_days: None,
+            retention_count: None,
+            retention_bytes: None,
         }
     }
     fn backup(&self) -> String {
@@ -71,11 +74,15 @@ fn restore_real_files() {
     execute(f.req("restore", Some(&id), Some("RESTORE")), || false).unwrap();
     assert_eq!(fs::read(f.root.join("mesh.nif")).unwrap(), b"original");
     assert!(!f.root.join("texture.dds").exists());
+    assert_eq!(
+        fs::read(f.vault.join(&id).join("post-update-files/texture.dds")).unwrap(),
+        b"new texture"
+    );
     assert!(
-        f.root
+        !f.root
             .parent()
             .unwrap()
-            .join(format!(".modhunter-displaced-{id}/texture.dds"))
+            .join(format!(".modhunter-displaced-{id}"))
             .exists()
     );
 }
@@ -315,4 +322,266 @@ fn recovery_requires_separate_explicit_consent() {
     assert!(execute(f.req("recover", Some(&id), None), || false).is_err());
     assert!(stage.exists());
     assert!(!f.root.exists());
+}
+
+fn incoming_files(f: &Fixture, files: &[(&str, &[u8])]) -> PathBuf {
+    let path = f._d.path().join("incoming");
+    fs::create_dir(&path).unwrap();
+    for (name, data) in files {
+        let dest = path.join(name);
+        fs::create_dir_all(dest.parent().unwrap()).unwrap();
+        fs::write(dest, data).unwrap();
+    }
+    path
+}
+fn profile_root(f: &Fixture, enabled: bool) -> PathBuf {
+    let root = f._d.path().join("profiles");
+    fs::create_dir_all(root.join("Saved")).unwrap();
+    fs::write(
+        root.join("Saved/modlist.txt"),
+        if enabled { "+Mod\n" } else { "-Mod\n" },
+    )
+    .unwrap();
+    root
+}
+#[test]
+fn compare_returns_every_file_and_preserves_explicit_nonremoval() {
+    let f = Fixture::new();
+    let dir = incoming_files(&f, &[]);
+    for n in 0..300 {
+        fs::write(dir.join(format!("{n:04}.nif")), format!("file {n}")).unwrap();
+    }
+    let mut req = f.req("compare", None, None);
+    req.other = Some(dir);
+    let reply = execute(req, || false).unwrap();
+    assert_eq!(reply["entries"].as_array().unwrap().len(), 301);
+    let absent = reply["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["path"] == "mesh.nif")
+        .unwrap();
+    assert_eq!(absent["state"], "notInArchive");
+    assert_eq!(absent["removalAuthorized"], false);
+}
+#[test]
+fn equality_ignores_metadata_and_case_but_approval_digest_keeps_exact_spelling() {
+    let f = Fixture::new();
+    fs::write(f.root.join("meta.ini"), "installed native metadata").unwrap();
+    let dir = incoming_files(
+        &f,
+        &[("MESH.NIF", b"original"), ("meta.ini", b"archive metadata")],
+    );
+    let mut req = f.req("compare", None, None);
+    req.other = Some(dir.clone());
+    let first = execute(req, || false).unwrap();
+    assert_eq!(first["identical"], true);
+    fs::rename(dir.join("MESH.NIF"), dir.join("different.nif")).unwrap();
+    let mut req = f.req("compare", None, None);
+    req.other = Some(dir);
+    let next = execute(req, || false).unwrap();
+    assert_ne!(first["digest"], next["digest"]);
+    assert_eq!(next["entries"][0]["renameHints"], json!(["mesh.nif"]));
+}
+#[test]
+fn optional_document_defaults_do_not_hide_files() {
+    let f = Fixture::new();
+    let dir = incoming_files(
+        &f,
+        &[("meshes/changed.nif", b"new"), ("readme.txt", b"docs")],
+    );
+    let mut r = f.req("compare", None, None);
+    r.other = Some(dir);
+    let reply = execute(r, || false).unwrap();
+    let doc = reply["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["path"] == "readme.txt")
+        .unwrap();
+    assert_eq!(doc["optional"], true);
+    assert_eq!(doc["selectedDefault"], false);
+    assert_eq!(doc["selectable"], true);
+}
+#[test]
+fn verify_prepared_detects_target_backup_and_incoming_changes() {
+    let f = Fixture::new();
+    let dir = incoming_files(&f, &[("mesh.nif", b"new")]);
+    let mut c = f.req("compare", None, None);
+    c.other = Some(dir.clone());
+    let digest = execute(c, || false).unwrap()["digest"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let id = f.backup();
+    let mut r = f.req("verifyPrepared", Some(&id), None);
+    r.other = Some(dir.clone());
+    r.expected_digest = Some(digest.clone());
+    assert!(execute(r, || false).is_ok());
+    fs::write(dir.join("mesh.nif"), "changed").unwrap();
+    let mut r = f.req("verifyPrepared", Some(&id), None);
+    r.other = Some(dir);
+    r.expected_digest = Some(digest);
+    assert!(execute(r, || false).is_err());
+    fs::write(f.root.join("mesh.nif"), "later edit").unwrap();
+    assert!(execute(f.req("verifyPrepared", Some(&id), None), || false).is_err());
+}
+#[test]
+fn case_changed_files_replace_identity_and_share_retained_parent_spelling() {
+    let f = Fixture::new();
+    fs::create_dir(f.root.join("Meshes")).unwrap();
+    fs::write(f.root.join("Meshes/A.nif"), "old").unwrap();
+    fs::write(f.root.join("Meshes/keep.nif"), "keep").unwrap();
+    let dir = incoming_files(
+        &f,
+        &[("meshes/a.NIF", b"new"), ("meshes/new.nif", b"addition")],
+    );
+    let mut c = f.req("compare", None, None);
+    c.other = Some(dir.clone());
+    let digest = execute(c, || false).unwrap()["digest"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let id = f.backup();
+    let mut r = f.req("apply", Some(&id), Some("INSTALL"));
+    r.other = Some(dir);
+    r.expected_digest = Some(digest);
+    r.selected = vec!["meshes/a.NIF".into(), "meshes/new.nif".into()];
+    let reply = execute(r, || false).unwrap();
+    assert!(reply["cleanupWarning"].is_null());
+    assert_eq!(fs::read(f.root.join("Meshes/a.NIF")).unwrap(), b"new");
+    assert_eq!(fs::read(f.root.join("Meshes/keep.nif")).unwrap(), b"keep");
+    assert_eq!(
+        tree(&f.root, &|| false)
+            .unwrap()
+            .keys()
+            .filter(|n| n.to_lowercase() == "meshes/a.nif")
+            .count(),
+        1
+    );
+    assert!(
+        !f.root
+            .parent()
+            .unwrap()
+            .join(format!(".modhunter-applied-{id}"))
+            .exists()
+    );
+}
+#[test]
+fn new_target_is_absent_until_native_install_then_undo_retains_every_byte() {
+    let f = Fixture::new();
+    fs::remove_dir_all(&f.root).unwrap();
+    let profiles = profile_root(&f, false);
+    let prepare = execute(f.req("prepareNew", None, Some("INSTALL")), || false).unwrap();
+    let id = prepare["backup"]["id"].as_str().unwrap();
+    assert!(!f.root.exists());
+    assert_eq!(prepare["backup"]["newTarget"], true);
+    execute(f.req("verifyPrepared", Some(id), None), || false).unwrap();
+    fs::create_dir(&f.root).unwrap();
+    fs::write(f.root.join("new.nif"), "native installed bytes").unwrap();
+    execute(f.req("sealNew", Some(id), None), || false).unwrap();
+    let mut preview = f.req("previewRestoreNew", Some(id), None);
+    preview.other = Some(profiles.clone());
+    execute(preview, || false).unwrap();
+    let mut undo = f.req("restoreNew", Some(id), Some("RESTORE"));
+    undo.other = Some(profiles);
+    let reply = execute(undo, || false).unwrap();
+    assert_eq!(reply["retainedCreatedFiles"], true);
+    assert!(!f.root.exists());
+    assert_eq!(
+        fs::read(f.vault.join(id).join("new-target-files/new.nif")).unwrap(),
+        b"native installed bytes"
+    );
+    execute(f.req("list", None, None), || false).unwrap();
+}
+#[test]
+fn new_target_undo_requires_complete_disabled_profile_ownership() {
+    let f = Fixture::new();
+    fs::remove_dir_all(&f.root).unwrap();
+    let profiles = profile_root(&f, true);
+    let prep = execute(f.req("prepareNew", None, Some("INSTALL")), || false).unwrap();
+    let id = prep["backup"]["id"].as_str().unwrap();
+    fs::create_dir(&f.root).unwrap();
+    fs::write(f.root.join("mesh.nif"), "new").unwrap();
+    execute(f.req("sealNew", Some(id), None), || false).unwrap();
+    assert!(execute(f.req("restoreNew", Some(id), Some("RESTORE")), || false).is_err());
+    let mut undo = f.req("restoreNew", Some(id), Some("RESTORE"));
+    undo.other = Some(profiles);
+    assert!(execute(undo, || false).is_err());
+    assert!(f.root.exists());
+}
+#[test]
+fn new_target_later_edit_blocks_undo() {
+    let f = Fixture::new();
+    fs::remove_dir_all(&f.root).unwrap();
+    let profiles = profile_root(&f, false);
+    let prep = execute(f.req("prepareNew", None, Some("INSTALL")), || false).unwrap();
+    let id = prep["backup"]["id"].as_str().unwrap();
+    fs::create_dir(&f.root).unwrap();
+    fs::write(f.root.join("mesh.nif"), "new").unwrap();
+    execute(f.req("sealNew", Some(id), None), || false).unwrap();
+    fs::write(f.root.join("mesh.nif"), "user edit").unwrap();
+    let mut undo = f.req("restoreNew", Some(id), Some("RESTORE"));
+    undo.other = Some(profiles);
+    assert!(execute(undo, || false).is_err());
+    assert_eq!(fs::read(f.root.join("mesh.nif")).unwrap(), b"user edit");
+}
+#[test]
+fn retention_preserves_newest_and_incomplete_records_and_needs_exact_digest() {
+    let f = Fixture::new();
+    let first = f.backup();
+    execute(f.req("seal", Some(&first), None), || false).unwrap();
+    let second = f.backup();
+    execute(f.req("seal", Some(&second), None), || false).unwrap();
+    let pending = f.backup();
+    let (_, mut old) = load(&f.vault, &first).unwrap();
+    old.created_at = 1;
+    atomic_json(&f.vault.join(&first).join("receipt.json"), &old).unwrap();
+    let mut req = f.req("retentionPreview", None, None);
+    req.retention_count = Some(1);
+    let preview = execute(req, || false).unwrap();
+    assert_eq!(preview["eligible"].as_array().unwrap().len(), 1);
+    assert_eq!(preview["eligible"][0]["id"], first);
+    let mut stale = f.req("retentionApply", None, Some("DELETE BACKUPS"));
+    stale.retention_count = Some(1);
+    stale.expected_digest = Some("stale".into());
+    assert!(execute(stale, || false).is_err());
+    assert!(f.vault.join(&first).exists());
+    let mut apply = f.req("retentionApply", None, Some("DELETE BACKUPS"));
+    apply.retention_count = Some(1);
+    apply.expected_digest = preview["digest"].as_str().map(str::to_owned);
+    execute(apply, || false).unwrap();
+    assert!(!f.vault.join(first).exists());
+    assert!(f.vault.join(second).exists());
+    assert!(f.vault.join(pending).exists());
+}
+#[test]
+fn retention_refuses_unexpected_backup_material() {
+    let f = Fixture::new();
+    let id = f.updated();
+    fs::write(f.vault.join(id).join("unowned.txt"), "preserve").unwrap();
+    let mut r = f.req("retentionPreview", None, None);
+    r.retention_count = Some(1);
+    assert!(execute(r, || false).is_err());
+}
+#[test]
+fn changed_displaced_copy_is_never_anonymous_cleanup_authority() {
+    let f = Fixture::new();
+    let (id, _stage, displaced) = interrupted_apply(&f, 2);
+    let reply = execute(f.req("recover", Some(&id), Some("RECOVER")), || false).unwrap();
+    assert!(reply["cleanupWarning"].is_null());
+    assert!(!displaced.exists());
+    let (dir, mut record) = load(&f.vault, &id).unwrap();
+    fs::create_dir(&displaced).unwrap();
+    fs::write(displaced.join("mesh.nif"), "user copy").unwrap();
+    record.displaced = Some(displaced.clone());
+    atomic_json(&dir.join("receipt.json"), &record).unwrap();
+    assert!(
+        execute(
+            f.req("cleanupDisplaced", Some(&id), Some("CLEANUP")),
+            || false
+        )
+        .is_err()
+    );
+    assert_eq!(fs::read(displaced.join("mesh.nif")).unwrap(), b"user copy");
 }

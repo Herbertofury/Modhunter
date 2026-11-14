@@ -28,6 +28,8 @@ from .quick_update import choose_nexus_file, choose_release_asset
 from .operation_journal import OperationJournal
 from .session_discovery import SessionDiscovery
 from .intelligence import ModIntelligence
+from .content_recovery import ContentRecovery
+from .duplicate_report import DuplicateReports
 from .source_adapters import compact_source_update, PUBLIC_API_PROVIDERS
 from .version import VERSION
 
@@ -35,6 +37,7 @@ MAX_REQUEST = 16_384
 MAX_PROGRESS_REQUEST = 8_000_000
 MAX_REALM_REQUEST = 800_000
 MAX_CACHED_SNAPSHOT = 32 * 1024 * 1024
+MAX_CONTENT_REQUEST = 1024 * 1024
 
 
 class UIRequest:
@@ -155,6 +158,8 @@ class ArsenalService:
         self._pending_ui: set[UIRequest] = set()
         self._discovery = SessionDiscovery(discovery_directory)
         self.intelligence = ModIntelligence(self, cache_path.with_name("mod-intelligence.json"))
+        self.content = ContentRecovery(self, cache_path.with_name("content-operations.json"))
+        self.duplicates = DuplicateReports(self, cache_path.with_name("duplicate-reports"))
 
     def _publish_discovery(self) -> None:
         # Serialize with stop/profile replacement so an older profile cannot
@@ -1338,7 +1343,8 @@ class ArsenalService:
         """The browser sees only an immutable, profile-scoped advisory briefing."""
         with self._guard:
             ticket = deepcopy(self._downloads.get(download_id))
-        return build_install_brief(self.selection_snapshot([str((ticket or {}).get("itemId") or "")]), ticket, download_id)
+        return build_install_brief(self.selection_snapshot([str((ticket or {}).get("itemId") or "")]), ticket, download_id,
+                                   content_backup_available=self.content.native_enabled and self.content.runner.available)
 
     def install_reviewed_download(self, download_id: int) -> dict:
         """Start one interactive MO2 installer without blocking the browser.
@@ -1382,15 +1388,18 @@ class ArsenalService:
     def _complete_native_install(self, download_id: int, ticket: dict, execution_epoch: int) -> None:
         """Wait on a daemon worker, never the HTTP thread or MO2 GUI thread."""
         try:
-            request = UIRequest("install", {"downloadId": download_id,
+            if self.content.native_enabled:
+                result = self.content.install_native_download(download_id, ticket, execution_epoch)
+            else:
+                request = UIRequest("install", {"downloadId": download_id,
                                 "executionEpoch": execution_epoch,
                                 "profileId": ticket.get("profileId"),
                                 "gameRuntime": ticket.get("gameRuntime"),
                                 "itemId": ticket.get("itemId", ""),
                                 "installedVersion": ticket.get("installedVersion", "")})
-            self._submit_ui(request)  # Qt signal delivers the request to MO2's GUI.
-            request.event.wait()  # No deadline while the real FOMOD dialog is open.
-            result = request.result
+                self._submit_ui(request)  # Qt signal delivers the request to MO2's GUI.
+                request.event.wait()  # No deadline while the real FOMOD dialog is open.
+                result = request.result
         except Exception as exc:
             result = {"ok": False, "error": "MO2 installer dispatch failed: " + type(exc).__name__}
         try:
@@ -1408,6 +1417,12 @@ class ArsenalService:
                         # A canceled FOMOD can still have created the profile
                         # text backup. Keep the evidence, never its path in history.
                         ticket["backupPath"] = str((result.get("backup") or {}).get("backupPath") or ticket.get("backupPath") or "")
+                        if result.get("state") in ("unknown", "interrupted"):
+                            ticket["status"] = "needs-review"
+                            ticket["autoInstallRequested"] = False
+                    if result.get("contentJobId"):
+                        ticket["contentJobId"] = result["contentJobId"]
+                        ticket["contentBackup"] = result.get("backup") or {}
                     self.journal.record(ticket, download_id)
         finally:
             self._install_lock.release()
@@ -1443,6 +1458,7 @@ class ArsenalService:
                 request.cancel()
             else:
                 request.cancel_if_pending()
+        self.content.shutdown()
         if self._server:
             self._server.shutdown()
             self._server.server_close()
@@ -1504,6 +1520,10 @@ class ArsenalService:
                     return False
                 return True
 
+            def _native_client(self):
+                return (self.headers.get("X-Modhunter-Native") == "content-v1"
+                        and not self.headers.get("Sec-Fetch-Site"))
+
             def do_GET(self):
                 if not self._valid_host():
                     return self._reply({"ok": False, "error": "Bad host"}, 403)
@@ -1512,6 +1532,10 @@ class ArsenalService:
                     # Native Rust clients probe a tiny identity document, not
                     # the multi-megabyte HTML. No auth tokens/paths are exposed.
                     return self._reply(service.health())
+                if uri.path == "/api/native-session":
+                    if not self._native_client() or self.headers.get("Origin"):
+                        return self._reply({"ok": False, "error": "Native loopback session required"}, 403)
+                    return self._reply({"ok": True, "protocol": 1, "token": service.token})
                 if uri.path == "/":
                     boot = json.dumps({"active": True, "token": service.token}, ensure_ascii=False).replace("<", "\\u003c")
                     html = service.html.replace("<!--__MO2_BOOT__-->", f"<script>window.__MO2_BRIDGE_BOOT__={boot}</script>")
@@ -1520,6 +1544,27 @@ class ArsenalService:
                     return self.wfile.write(output)
                 if not self._authorize():
                     return
+                if uri.path == "/api/content-context":
+                    query = urllib.parse.parse_qs(uri.query)
+                    return self._reply(service.content.capture(query.get("itemId", [""])[0], query.get("targetName", [""])[0], native=self._native_client(), backup_id=query.get("backupId", [""])[0]))
+                if uri.path == "/api/content-jobs":
+                    return self._reply(service.content.jobs())
+                if uri.path == "/api/duplicates":
+                    query = urllib.parse.parse_qs(uri.query)
+                    if query.get("contextId") and query.get("reviewId"):
+                        return self._reply(service.duplicates.start({"action": "scan", "contextId": query["contextId"][0], "reviewId": query["reviewId"][0]}))
+                    return self._reply(service.duplicates.state())
+                if uri.path == "/api/content-backups":
+                    query = urllib.parse.parse_qs(uri.query)
+                    context_id = query.get("contextId", [""])[0]
+                    if not context_id:
+                        captured = service.content.capture(query.get("itemId", [""])[0])
+                        if not captured.get("ok"):
+                            return self._reply(captured)
+                        context_id = captured["contextId"]
+                    result = service.content.backup_list(context_id)
+                    result["contextId"] = context_id
+                    return self._reply(result)
                 if uri.path == "/api/snapshot":
                     return self._reply(service.snapshot_response_bytes())
                 if uri.path == "/api/revision":
@@ -1589,7 +1634,7 @@ class ArsenalService:
                     return
                 try:
                     length = int(self.headers.get("Content-Length", "0"))
-                    if length <= 0 or length > (MAX_PROGRESS_REQUEST if self.path.split("?", 1)[0] in ("/api/progress", "/api/update-queue") else MAX_REALM_REQUEST if self.path.split("?", 1)[0] in ("/api/realm/world", "/api/siege/state") else MAX_REQUEST):
+                    if length <= 0 or length > (MAX_CONTENT_REQUEST if self.path.split("?", 1)[0].startswith("/api/content-") and self._native_client() else MAX_PROGRESS_REQUEST if self.path.split("?", 1)[0] in ("/api/progress", "/api/update-queue") else MAX_REALM_REQUEST if self.path.split("?", 1)[0] in ("/api/realm/world", "/api/siege/state") else MAX_REQUEST):
                         return self._reply({"ok": False, "error": "Request size rejected"}, 413)
                     data = json.loads(self.rfile.read(length))
                     if not isinstance(data, dict):
@@ -1597,6 +1642,18 @@ class ArsenalService:
                 except (ValueError, json.JSONDecodeError):
                     return self._reply({"ok": False, "error": "Invalid JSON"}, 400)
                 uri = urllib.parse.urlsplit(self.path)
+                if uri.path == "/api/content-install":
+                    if not self._native_client():
+                        return self._reply({"ok": False, "error": "Archive installation requires the owned native review"}, 403)
+                    return self._reply(service.content.start_install(data))
+                if uri.path == "/api/content-cancel":
+                    return self._reply(service.content.cancel(data))
+                if uri.path == "/api/content-recovery":
+                    return self._reply(service.content.start_recovery(data))
+                if uri.path == "/api/content-batch-restore":
+                    return self._reply(service.content.start_batch_restore(data))
+                if uri.path == "/api/duplicate-recovery":
+                    return self._reply(service.duplicates.start(data))
                 if uri.path == "/api/plugin-audit":
                     return self._reply(service.intelligence.start_audit(
                         str(data.get("profileId") or ""), deep=data.get("deep", True) is True))

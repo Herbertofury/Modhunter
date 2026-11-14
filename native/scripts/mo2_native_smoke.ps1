@@ -1,4 +1,4 @@
-#requires -Version 7.2
+#requires -Version 7.5
 <#
 .SYNOPSIS
 Run the real Modhunter plugin inside the official portable MO2 2.5.2 release.
@@ -22,6 +22,28 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if (!$IsWindows) { throw 'The native MO2 smoke requires Windows; it cannot pass through a mock on another OS.' }
+
+function ConvertFrom-ReceiptJson([string]$Content) {
+    # Dates are evidence strings, not values to convert to the local timezone
+    # or reformat with fewer fractional digits. The release validator requires
+    # exact structured equality with the original native JSON document.
+    ConvertFrom-Json -InputObject $Content -DateKind String
+}
+
+# Deterministically exercise the same parser used for the actual native receipt.
+# A random runtime timestamp only exposed the old bug when it ended in zero.
+$ReceiptTimestampCases = @('2026-11-13T23:59:00.437220+00:00', '2026-11-13T23:59:00.000000Z', '2026-11-13T17:29:00.120000-06:30')
+foreach ($Timestamp in $ReceiptTimestampCases) {
+    $ProbeJson = @{ nested = @{ startedAt = $Timestamp }; ok = $true; count = 1 } | ConvertTo-Json -Depth 5
+    $Probe = ConvertFrom-ReceiptJson $ProbeJson
+    $RoundTrip = ConvertFrom-ReceiptJson ($Probe | ConvertTo-Json -Depth 5)
+    if ($RoundTrip.nested.startedAt -isnot [string] -or
+        $RoundTrip.nested.startedAt -cne $Timestamp -or
+        $RoundTrip.ok -isnot [bool] -or !$RoundTrip.ok -or $RoundTrip.count -ne 1) {
+        throw 'Native receipt JSON serialization changed a timestamp or value type.'
+    }
+}
+
 $RepositoryRoot = [IO.Path]::GetFullPath($RepositoryRoot)
 if (!$EvidenceDirectory) { $EvidenceDirectory = Join-Path $RepositoryRoot 'native/evidence/windows-mo2-smoke' }
 $EvidenceDirectory = [IO.Path]::GetFullPath($EvidenceDirectory)
@@ -269,7 +291,7 @@ log_level=0
         $ExitDescription = if ($Process.HasExited) { "exit code $($Process.ExitCode)" } else { 'deadline reached while MO2 was still running' }
         throw "The real MO2 plugin did not produce a native receipt: $ExitDescription. Inspect the captured MO2 logs."
     }
-    $Receipt = Get-Content -LiteralPath $ReceiptPath -Raw | ConvertFrom-Json
+    $Receipt = ConvertFrom-ReceiptJson (Get-Content -LiteralPath $ReceiptPath -Raw)
     if (!$Receipt.ok -or !$Receipt.nativeMO2) { throw "Native MO2 checks failed: $($Receipt.error)" }
     $RequiredChecks = @('native_plugin_initialized', 'native_nexus_gateway_created', 'native_nexus_qt_binding', 'native_ui_initialized',
         'native_profile_snapshot', 'loopback_health', 'protected_snapshot_authentication', 'queued_refresh',

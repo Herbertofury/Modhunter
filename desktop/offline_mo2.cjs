@@ -132,7 +132,10 @@ async function readMo2Profile(modlistPath){
   }
   const modPath=path.join(modDir,'SKSE','Plugins');
   let flags=[];
-  try{const children=await fs.readdir(modPath,{withFileTypes:true});
+  // Apply the same real-directory boundary as metadata reads. A listed
+  // symlink is retained as an unresolved item, not traversed for DLL flags.
+  try{const children=allowed.has(entry.name.toLowerCase())
+      ?await fs.readdir(modPath,{withFileTypes:true}):[];
       if(children.some(x=>x.isFile()&&x.name.toLowerCase().endsWith('.dll')))flags=['DLL'];
   }catch{}
   return {id:'live-'+h(profileId+'|'+entry.name),mo2InternalName:entry.name,

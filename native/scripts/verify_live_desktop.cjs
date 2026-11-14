@@ -140,7 +140,19 @@ async function main(){
  fs.writeFileSync(output,JSON.stringify(report,null,2));
  console.log(JSON.stringify({ok:true,checks:checks.length,timingsMs:timings}));
 }
-main().catch(error=>{if(output)fs.writeFileSync(output,JSON.stringify({schemaVersion:1,ok:false,phase,error:String(error.message),checks,childExitCode:child?.exitCode??null,launchError,attachError,childOutput},null,2));console.error('Live desktop validation failed at '+phase+': '+error.message);process.exitCode=1;}).finally(async()=>{
+main().catch(async error=>{
+ const failureViews=[];
+ if(browser)for(const page of browser.contexts().flatMap(c=>c.pages())){
+  try{
+   const url=new URL(page.url());
+   const state=await page.evaluate(()=>({title:document.title,source:document.getElementById('sourceText')?.textContent,message:document.getElementById('message')?.textContent,sessionChoices:document.querySelectorAll('#mo2Sessions option').length}));
+   failureViews.push({path:url.pathname,...state});
+   if(url.pathname.endsWith('/shell.html'))await page.screenshot({path:path.join(path.dirname(output),'desktop-failure.png')});
+  }catch{}
+ }
+ if(output)fs.writeFileSync(output,JSON.stringify({schemaVersion:1,ok:false,phase,error:String(error.message),checks,childExitCode:child?.exitCode??null,launchError,attachError,childOutput,failureViews},null,2));
+ console.error('Live desktop validation failed at '+phase+': '+error.message);process.exitCode=1;
+}).finally(async()=>{
  if(browser)try{await browser.close();}catch{}
  if(child&&child.exitCode===null)child.kill();
  try{clearCiPolicies();}catch(error){

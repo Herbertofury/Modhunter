@@ -21,6 +21,17 @@ from pathlib import Path
 
 from PyQt6 import QtCore, QtGui, QtWidgets, sip
 
+# This fixture observes the unchanged production class once, not twice. The
+# package lives outside MO2's plugin auto-loader so its createPlugin() cannot
+# create a second independent loopback service beside this subclass.
+_fixture_root = Path(os.environ.get("MODHUNTER_NATIVE_SMOKE_INSTANCE", ""))
+_fixture_libraries = Path(__file__).resolve().parents[2] / "modhunter-fixture-libs"
+if (os.environ.get("MODHUNTER_NATIVE_SMOKE") != "1"
+        or not (_fixture_root / "modhunter-smoke-fixture.json").is_file()
+        or not (_fixture_libraries / "mo2_update_arsenal" / "plugin.py").is_file()):
+    raise ImportError("Native acceptance requires its isolated production library")
+sys.path.insert(0, str(_fixture_libraries))
+
 from mo2_update_arsenal.bridge import UIRequest
 from mo2_update_arsenal.focus import find_mo2_view, name_column
 from mo2_update_arsenal.plugin import ModUpdateArsenal

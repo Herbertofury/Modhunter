@@ -236,7 +236,10 @@ log_level=0
     Write-Utf8File (Join-Path $PortableRoot 'ModOrganizer.ini') $Settings
     Write-Utf8File (Join-Path $RunEvidence 'fixture-settings.ini') $Settings
 
-    $PluginDestination = Join-Path $PortableRoot 'plugins/mo2_update_arsenal'
+    # Load the unchanged production package through the observer harness only.
+    # Leaving a second createPlugin() under plugins would autostart a duplicate
+    # bridge and correctly force the desktop into multiple-session selection.
+    $PluginDestination = Join-Path $PortableRoot 'modhunter-fixture-libs/mo2_update_arsenal'
     $SourceHashes = [ordered]@{}
     foreach ($File in (Get-ChildItem -LiteralPath $ProductionSource -File -Recurse)) {
         $Relative = [IO.Path]::GetRelativePath($ProductionSource, $File.FullName)

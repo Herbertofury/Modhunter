@@ -150,7 +150,7 @@ try {
     }
     Write-Host "Installed Modhunter $pluginVersion plugin to $destination"
     if ($movedOld) { Write-Host "Previous plugin preserved at $backup" }
-    Write-Host 'Start MO2, open Tools > Update Arsenal - Quest Board, then click Find MO2 in Modhunter.'
+    Write-Host 'Start MO2 and let its profile load, then launch Modhunter. The bridge starts automatically; Find MO2 reconnects on demand.'
 } finally {
     if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
 }

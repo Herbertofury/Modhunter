@@ -118,7 +118,7 @@ try {
     else {
         Write-Host 'Modhunter 0.10.2 - MO2 readiness check'
         foreach ($Check in $Checks) { $Prefix = if ($Check.passed) { 'PASS' } else { 'REVIEW' }; Write-Host ($Prefix + ' ' + $Check.name + ': ' + $Check.detail) }
-        Write-Host 'After installation: start MO2, open Tools > Update Arsenal - Quest Board, then Find MO2 in Modhunter. Check the active Skyrim profile before scanning.'
+        Write-Host 'After installation: start MO2 and let the profile load, then launch Modhunter. The bridge starts automatically; Find MO2 reconnects on demand. Check the active Skyrim profile before reviewing updates.'
         Write-Host 'Exact beta-12 execution and your real account/mod setup still require your connection test. No mod updates were executed.'
     }
     if (!$Ready) { exit 2 }

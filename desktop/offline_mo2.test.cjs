@@ -147,3 +147,17 @@ test('MO2 custom URL enablement is respected without losing legacy metadata sour
  assert.equal(c.items[3].source.url,'https://github.com/legacy/source');
  assert.equal(c.items[3].source.verified,true);
 });
+
+test('source query identities survive while credentials and tracking are removed',()=>{
+ const cases=[
+  ['https://www.loverslab.com/index.php?/topic/123-mod/&id=4&%74oken=secret&API_KEY=secret&X-Amz-Signature=secret&utm_source=mo2#post',
+   'https://www.loverslab.com/index.php?/topic/123-mod/&id=4'],
+  ['https://steamcommunity.com/sharedfiles/filedetails/?id=12345&sessionid=secret',
+   'https://steamcommunity.com/sharedfiles/filedetails/?id=12345'],
+  ['https://example.com/index.php?route=%2Ftopic%2F123&name=some+mod&x-goog-credential=secret&__cf_chl_tk=secret',
+   'https://example.com/index.php?route=%2Ftopic%2F123&name=some+mod'],
+  ['https://github.com/owner/repo?access_token=secret&refresh_token=secret&password=secret',
+   'https://github.com/owner/repo']
+ ];
+ for(const [input,expected] of cases)assert.equal(sourceFor(input,0,'unknown').url,expected);
+});

@@ -12,11 +12,24 @@ const crypto=require('node:crypto');
 
 const h=(value)=>crypto.createHash('sha256').update(String(value)).digest('hex').slice(0,16);
 const safeName=(v)=>typeof v==='string'&&v.length>0&&v.length<260&&v!=='.'&&v!=='..'&&!/[\/\\\u0000-\u001f]/u.test(v);
+// Match the public-query policy used by the native/Python source adapters.
+// Preserve raw surviving components: forum routing keys must not be re-encoded.
+const privateQueryKeys=new Set([
+ 'token','access_token','refresh_token','id_token','apikey','api_key','api-key','key',
+ 'auth','auth_token','private_token','oauth_token','download_key','authorization',
+ 'password','passwd','secret','client_secret','session','sessionid','session_id','sid',
+ 'signature','sig','fbclid','gclid','dclid','msclkid','igshid','ref_src','ref_url'
+]);
+const publicQuery=(query)=>query.split('&').filter(part=>{
+ const key=(new URLSearchParams(part).keys().next().value||'').toLowerCase();
+ return !privateQueryKeys.has(key)&&!['utm_','x-amz-','x-goog-','__cf_chl_'].some(prefix=>key.startsWith(prefix));
+}).join('&');
 const urlOf=(v)=>{
   try{
     const u=new URL(String(v||'').trim());
     if(u.protocol!=='https:'||!u.hostname||u.username||u.password||u.port||u.hostname.toLowerCase()==='localhost')return '';
-    return 'https://'+u.hostname.toLowerCase()+(u.pathname||'/');
+    const query=publicQuery(u.search.slice(1));
+    return 'https://'+u.hostname.toLowerCase()+(u.pathname||'/')+(query?'?'+query:'');
   }catch{return ''}
 };
 const provider=(u)=>{

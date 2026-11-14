@@ -135,6 +135,7 @@ class FrontendResponsivenessTests(unittest.TestCase):
         self.context = self.browser.new_context(viewport={"width":1440,"height":900},
                                                 reduced_motion="reduce")
         self.page = self.context.new_page()
+        self.page.set_default_timeout(15000)
         self.errors = []
         self.page.on("pageerror", lambda error: self.errors.append(str(error)))
 
@@ -214,6 +215,7 @@ class FrontendResponsivenessTests(unittest.TestCase):
     def test_quick_polling_does_not_overlap_and_profile_switch_stops_old_job(self):
         self.open_live(); self.connected()
         self.page.evaluate("__RESP__.defer['quick-state']=true")
+        self.page.locator('.workspace-tabs [data-workspace="updates"]').click()
         self.page.locator("#workshopQuickAll").click()
         self.page.wait_for_function("__RESP__.pending.some(p=>p.path==='quick-state')")
         self.page.wait_for_timeout(400)
@@ -268,6 +270,7 @@ class FrontendResponsivenessTests(unittest.TestCase):
 
     def test_one_download_update_preserves_unrelated_workshop_controls(self):
         self.open_live(); self.connected()
+        self.page.locator('.workspace-tabs [data-workspace="updates"]').click()
         self.page.wait_for_function("document.querySelectorAll('#workshopResults .workshop-item').length===3")
         self.page.evaluate("""async()=>{
           window.unchangedWorkshop=document.querySelector('[data-workshop-id="item-1"]');
@@ -309,6 +312,8 @@ class FrontendResponsivenessTests(unittest.TestCase):
 
     def test_download_controls_keep_focus_through_status_reordering_and_replacement(self):
         self.open_live(); self.connected()
+        self.page.locator('.workspace-tabs [data-workspace="downloads"]').click()
+        self.page.wait_for_function("!__RESP__.active['GET downloads']")
         self.page.evaluate("""async()=>{
           __RESP__.downloads={
             '10':{itemId:'item-0',status:'complete',installedVersion:'1.0'},
@@ -356,6 +361,7 @@ class FrontendResponsivenessTests(unittest.TestCase):
         self.assertEqual(self.page.evaluate("__ARSENAL_QA__.getCatalog().items.length"), 2500)
         self.page.locator("#clearSearch").click()
         self.assertEqual(self.page.locator("#modList .mod-row").count(), 2500)
+        self.page.locator('.workspace-tabs [data-workspace="updates"]').click()
         self.page.evaluate("""()=>{window.workshopSearchMutations=0;
           new MutationObserver(rs=>workshopSearchMutations+=rs.length).observe(document.getElementById('workshopResults'),{childList:true});
           const input=document.getElementById('workshopSearch');

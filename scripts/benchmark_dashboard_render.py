@@ -32,6 +32,7 @@ window.__RENDER_BENCHMARK__={ticket:(itemId,status)=>{
 }};
 """
 WORKLOAD = r"""({kind,itemId,status})=>{
+ document.body.dataset.workspace=kind==='favorite'?'mods':'updates';
  const host=document.getElementById(kind==='favorite'?'modList':'workshopResults');
  const selector=kind==='favorite'?'.mod-row':'.workshop-item';
  const before=[...host.querySelectorAll(selector)],identities=new Set(before);

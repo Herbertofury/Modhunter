@@ -180,6 +180,7 @@ class ScanOwnershipTests(unittest.TestCase):
     def test_native_nexus_deep_scan_reaches_actual_scanner_with_authenticated_callback(self):
         changed = copy.deepcopy(PROFILE)
         changed["items"][0]["nexusId"] = 7
+        changed["items"][0]["source"] = {"type":"nexus", "verified":True, "url":"https://www.nexusmods.com/skyrimspecialedition/mods/7"}
         self.service.set_snapshot(changed)
         self.service.native_nexus_available = True
         calls = []

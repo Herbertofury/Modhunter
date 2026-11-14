@@ -38,6 +38,22 @@ class ProfileBackupDurabilityTests(unittest.TestCase):
                                 pluginDataPath=lambda: str(self.root / "data"), profileName=lambda: "Fixture"),
             server=SimpleNamespace(profile_id=lambda: "fixture"))
 
+    def test_missing_profile_does_not_create_a_successful_empty_backup(self):
+        shutil.rmtree(self.profile)
+        with self.assertRaises(OSError):
+            actual_backup()(self.plugin)
+
+    def test_empty_profile_path_does_not_fall_back_to_working_directory(self):
+        self.plugin.org.profilePath = lambda: ""
+        with self.assertRaises(OSError):
+            actual_backup()(self.plugin)
+
+    def test_empty_profile_cannot_be_reported_as_a_safety_snapshot(self):
+        for name in self.names:
+            (self.profile / name).unlink()
+        with self.assertRaises(OSError):
+            actual_backup()(self.plugin)
+
     def test_receipt_requires_synced_copies_and_manifest_without_changing_originals(self):
         synced = []
         fsync = os.fsync
@@ -76,6 +92,11 @@ class ProfileBackupDurabilityTests(unittest.TestCase):
         self.assertIn("persistence failure", result["error"])
         self.assertEqual(installed, [])
         self.assertTrue(archive.exists())
+        shutil.rmtree(self.profile)
+        result = actual_backup("_install")(self.plugin, 7)
+        self.assertFalse(result["ok"])
+        self.assertIn("profile directory is unavailable", result["error"])
+        self.assertEqual(installed, [])
 
     def test_failed_file_or_manifest_sync_never_returns_success(self):
         for failure_at in (1, 6):

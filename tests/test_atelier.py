@@ -24,9 +24,9 @@ class AtelierQualityTests(unittest.TestCase):
         for id_ in ("updateWorkshop", "workshopResults", "workshopQueue", "unifiedScan",
                     "unifiedReview", "liveProfile", "liveScanProgress", "workbench"):
             self.assertIn('id="' + id_ + '"', document)
-        self.assertIn('class="skip-link" href="#updateWorkshop"', document)
+        self.assertIn('class="skip-link" href="#workbench"', document)
         self.assertIn('Nothing changes without your approval.', document)
-        self.assertIn('The Update <em>Workshop</em>', document)
+        self.assertIn('id="workshopTitle"', document)
         self.assertNotIn("GLORIOUSLY CLEARED", document)
 
     def test_desktop_tabs_have_two_accessible_controls(self):

@@ -44,6 +44,7 @@ class RepairBrowserTests(unittest.TestCase):
         # Opening Workshop asks the production renderer to load current tickets.
         self.page.locator('#unifiedReview').click()
         self.page.locator('#workshopRefreshDownloads').click()
+        self.page.locator('#workspaceDownloads').click()
         self.page.locator('button[data-download-details="0"]').wait_for()
         self.page.locator('button[data-download-details="0"]').click()
         self.page.locator('#installPreviewConfirm').wait_for()

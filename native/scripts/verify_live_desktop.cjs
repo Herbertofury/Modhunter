@@ -7,6 +7,7 @@ const sourceFiles=['native/scripts/verify_live_desktop.cjs','native/ui/shell.js'
  'native/ui/shell.html','native/ui/native.css','native/crates/modhunter-desktop/src/windows.rs',
  'native/crates/modhunter-desktop/src/policy.rs','mo2_update_arsenal/plugin.py',
  'mo2_update_arsenal/bridge.py','mo2_update_arsenal/download_ids.py',
+ 'mo2_update_arsenal/scanner.py','mo2_update_arsenal/gameplay.py','mo2_update_arsenal/native_nexus.py','mo2_update_arsenal/web/atelier.css',
  'mo2_update_arsenal/web/app.js','mo2_update_arsenal/web/app.template.html'];
 const root=path.resolve(__dirname,'../..');
 const hash=f=>crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
@@ -42,6 +43,19 @@ async function main(){
  await dashboard.waitForFunction(()=>window.__ARSENAL_QA__?.getCatalog()?.profileName==='Modhunter Smoke'&&document.getElementById('livePill')?.classList.contains('connected'));
  const facts=await dashboard.evaluate(()=>({names:window.__ARSENAL_QA__.getCatalog().items.map(m=>m.name),welcomeHidden:document.getElementById('nativeWelcome').hidden}));
  check('live_catalog_not_demo',facts.welcomeHidden&&facts.names.includes('Smoke Enabled')&&facts.names.includes('Smoke Disabled')&&facts.names.length<10);
+ phase='compact-workspace';
+ const compact=await dashboard.evaluate(()=>({workspace:document.body.dataset.workspace,
+  rows:document.querySelectorAll('.mod-row').length,
+  visible:document.getElementById('workbench').getBoundingClientRect().height>0,
+  legacy:document.getElementById('unifiedCommand').getBoundingClientRect().height,
+  header:document.querySelector('.workspace-header').getBoundingClientRect().height}));
+ check('compact_workspace',compact.workspace==='mods'&&compact.rows>=2&&compact.visible&&compact.legacy===0&&compact.header<110);
+ phase='automatic-source-check';
+ const scan=await until(async()=>dashboard.evaluate(async()=>{
+   const reply=await fetch('/api/scan',{headers:{'X-Arsenal-Token':window.__MO2_BRIDGE_BOOT__.token}});
+   const value=await reply.json();return value.ok&&value.scan?.mode==='startup'&&value.scan.state!=='running'?value.scan:null;
+ }),30000);
+ check('automatic_source_check',scan.mode==='startup'&&['completed','partial'].includes(scan.state));
  phase='toolbar-refresh';let tick=Date.now();
  const refreshing=dashboard.waitForResponse(r=>r.url()===endpoint+'api/refresh'&&r.request().method()==='POST');
  await shell.locator('#refreshProfile').click();

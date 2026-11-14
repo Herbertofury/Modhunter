@@ -1173,13 +1173,13 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
                 m.shell_ready = true;
                 (m.prefs.endpoint.clone(), m.prefs.profile.is_some())
             };
-            if let Some(endpoint) = restore.0 {
-                if let Ok(result) = connect(app, &endpoint) {
-                    return Ok(result);
-                }
-                // MO2 assigns a fresh local port after restart. A stale saved
-                // address must not prevent discovery of the new live session.
+            if let Some(endpoint) = restore.0
+                && let Ok(result) = connect(app, &endpoint)
+            {
+                return Ok(result);
             }
+            // MO2 assigns a fresh local port after restart. A stale saved
+            // address must not prevent discovery of the new live session.
             if state.smoke_output.is_none()
                 && let Ok(result) = execute(app, "discover", Value::Null)
             {

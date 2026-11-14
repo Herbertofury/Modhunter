@@ -14,11 +14,13 @@ The helper accepts only the explicitly covered Qt 6.7 and 6.11 minor lines, refu
 2. Run **Check_MO2_Readiness.bat** and select the folder containing **ModOrganizer.exe**, not the Skyrim folder or the `mods` folder. It checks the executable's version/64-bit header, Qt in the installation root or `dlls` subfolder, and key package checksums. It saves a small JSON report beside the script without credentials, profile names or personal paths. An absent/older Modhunter plugin is expected before installation. The check does not launch MO2 or read game/mod contents.
 3. Run **Install_MO2_Plugin.bat** and select that same MO2 folder. This is an **MO2 application plugin**, not an archive to install in the left-hand Skyrim mod list. The installer verifies the package, preserves the prior plugin under `ModhunterBackups`, carries forward its regular fallback `data` folder, and rolls back a failed replacement. It does not alter your mod archives, load order or saves.
 4. Start your **MO2 2.5.3b12** installation. Check **Help > About** for the beta suffix because Windows file-version resources can omit it. Select the intended **Skyrim Special Edition** instance/profile. The Modhunter bridge starts automatically once the profile is ready; opening the Quest Board tool is optional. Keep Nexus sign-in in MO2. Start **Modhunter.exe**, use automatic discovery or select **Find MO2**, and choose the correct session when more than one instance is running.
-5. Confirm the game, profile, mod count and runtime shown by the live connection before checking updates. An offline import is read-only and is not proof of an authenticated live connection. Rerun the readiness check after installation to confirm the installed plugin is 0.10.2.
+5. Confirm the game, profile, mod count and runtime shown by the live connection. A read-only automatic source check begins after your saved preferences load; no update installs automatically from this check. Disable it under Tools when needed. An offline import is read-only and is not proof of an authenticated live connection. Rerun the readiness check after installation to confirm the installed plugin is 0.10.2.
 
 **Details** in the desktop toolbar shows the connected plugin version, Qt runtime, callback status and native/helper readiness without credentials. **Refresh** and **Plugin audit** now operate on the live dashboard when connected.
 
 The compiled desktop uses WebView2. The separate Windows installer can bootstrap WebView2 when missing; it does not replace the MO2 plugin installation step. There is no need to install Node, Rust, Qt SDKs or Python packages to use the release ZIP.
+
+See [Compact workspace and launch checking](Compact-Workspace.md) for detected status meanings and cache behavior.
 
 ## Verify your connection and updates
 

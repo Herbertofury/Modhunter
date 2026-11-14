@@ -59,8 +59,8 @@ REQUIRED_MO2_CHECKS = {
     "queued_refresh", "queued_focus", "native_dispatch_thread", "native_view_selection",
     "native_window_screenshot", "compact_game_response", "rust_cli_live_probe", "rust_plugin_audit",
 }
-LIVE_DESKTOP_SOURCES = ('native/scripts/verify_live_desktop.cjs', 'native/ui/shell.js', 'native/ui/shell.html', 'native/ui/native.css', 'native/crates/modhunter-desktop/src/windows.rs', 'native/crates/modhunter-desktop/src/policy.rs', 'mo2_update_arsenal/plugin.py', 'mo2_update_arsenal/bridge.py', 'mo2_update_arsenal/download_ids.py', 'mo2_update_arsenal/web/app.js', 'mo2_update_arsenal/web/app.template.html')
-LIVE_DESKTOP_CHECKS = {"automatic_discovery", "live_catalog_not_demo", "toolbar_refresh", "toolbar_plugin_audit", "connection_details", "content_native_ipc_denied", "manual_rediscovery", "disconnected_welcome", "setup_reconnect"}
+LIVE_DESKTOP_SOURCES = ('native/scripts/verify_live_desktop.cjs', 'native/ui/shell.js', 'native/ui/shell.html', 'native/ui/native.css', 'native/crates/modhunter-desktop/src/windows.rs', 'native/crates/modhunter-desktop/src/policy.rs', 'mo2_update_arsenal/plugin.py', 'mo2_update_arsenal/bridge.py', 'mo2_update_arsenal/download_ids.py', 'mo2_update_arsenal/scanner.py', 'mo2_update_arsenal/gameplay.py', 'mo2_update_arsenal/native_nexus.py', 'mo2_update_arsenal/web/atelier.css', 'mo2_update_arsenal/web/app.js', 'mo2_update_arsenal/web/app.template.html')
+LIVE_DESKTOP_CHECKS = {"compact_workspace", "automatic_source_check", "automatic_discovery", "live_catalog_not_demo", "toolbar_refresh", "toolbar_plugin_audit", "connection_details", "content_native_ipc_denied", "manual_rediscovery", "disconnected_welcome", "setup_reconnect"}
 REQUIRED_WATCHTOWER_CHECKS = {
     "trusted_manager_ipc", "remote_ipc_denied", "session_persistent_reopen",
     "session_account_isolation", "session_reset_generation", "authenticated_page_capture",
@@ -499,10 +499,13 @@ The Windows desktop, MO2 profile import/cache engine, connection checks, tab lif
 
 MO2's Python/Qt plugin remains the in-process adapter for MO2's authenticated Nexus connection, native downloads, interactive FOMOD installer, focus and verified rewards. Dashboard/game presentation remains HTML/CSS/JavaScript.
 
-## 0.10.2: live connection and first-download repair
+## 0.10.2: compact workspace, automatic checking and live repair
 
 This maintenance release fixes confirmed problems in 0.10.1 rather than treating successful isolated tests as complete real-world acceptance.
 
+- The default view is a compact installed-mod table, with small status filters and separate Updates, Downloads, History, Tools and Extras tabs. Oversized campaign cards and repeated technical summaries no longer occupy the main workflow. Details remain available on demand.
+- On live connection, one bounded source check starts per profile/execution context after saved preferences load. Recent successful Nexus metadata is reused first; missing or expired metadata is fetched. Public source adapters run independently, and completed results appear progressively. Tools contains the automatic-check switch; active checks can be cancelled without discarding completed results.
+- Detected update and maintenance status is separate from your manual checklist notes. Entries resolve to Update available, Up to date, Maintenance, Sign-in required, Page review or another explicit evidence state. Unknown, failed or unsupported checks never become a successful current result. Source reads and plugin analysis do not queue, download, install or convert anything.
 - The MO2 bridge starts after MO2 finishes initializing its interface, without opening the legacy Quest Board tool or a browser. Callback registration uses current dictionary signatures, isolates optional-hook failures, coalesces refreshes and shuts down cleanly.
 - Native download handle **0** is valid throughout reviewed queueing, early completion, retry, installation preview, installation and history. Missing or malformed IDs cannot accidentally select handle 0. Nexus project/file IDs remain strictly positive.
 - Desktop **Refresh** and **Plugin audit** use the active live dashboard instead of disabled or offline-only paths. Startup rediscovers MO2 after its local port changes. **Details** shows credential-free plugin/runtime/helper status.

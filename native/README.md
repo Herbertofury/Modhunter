@@ -12,6 +12,8 @@ See the repository [setup guide](../wiki/MO2-253-Testing.md) and [GameSync techn
 
 ## Repairs in 0.10.2
 
+A compact installed-mod table is now the default. Read-only update and maintenance checks start on live connection, publish results progressively, and keep manual notes separate from detected status. Disable launch checks under Tools; use Check for updates for a fresh all-source scan.
+
 Automatic live discovery, current dictionary callbacks, native download handle 0, live toolbar refresh/audit, and credential-free connection details are repaired. The start page distinguishes the optional demo from your actual profile. Publication now requires the compiled desktop connected to actual MO2, not only independent desktop and plugin tests.
 
 ## Run

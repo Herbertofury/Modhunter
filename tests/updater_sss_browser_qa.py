@@ -174,6 +174,10 @@ source_details={**source_update,"publisher":{"name":"Arcane Release Team",
         "hashes":{"sha256":"b"*64}}]}
 source_mock={"catalog":source_catalog,"plan":plan_updates(source_catalog),"review":review,
     "history":[],"sourceDetails":{"live-a":source_details},"detailDelayMs":350}
+def show(page, panel):
+    if page.locator('body').get_attribute('data-workspace') != panel:
+        page.locator('.workspace-tabs [data-workspace="'+panel+'"]').click()
+
 with sync_playwright() as pw:
     browser_args={'headless':True,'args':['--no-sandbox','--disable-gpu','--disable-dev-shm-usage']}
     chromium_path=shutil.which('chromium') or shutil.which('chromium-browser')
@@ -184,11 +188,13 @@ with sync_playwright() as pw:
     page.on('pageerror',lambda e: errors.append(str(e)))
     page.on('dialog',lambda d: d.accept())
     page.set_content(html,wait_until='load',timeout=30000)
+    show(page, 'updates')
     page.locator('#workshopResults .workshop-item').first.wait_for(timeout=15000)
     assert page.locator('#workshopResults .workshop-item').count()==2
     # A mod name now opens its actual source, while a separate icon reveals it in MO2.
     page.context.route('https://www.nexusmods.com/**', lambda route: route.fulfill(status=200,
                content_type='text/html', body='<html><title>Mod source</title></html>'))
+    show(page, 'mods')
     name=page.locator('#row-live-a a.mod-title.source-title')
     assert name.get_attribute('href')=='https://www.nexusmods.com/skyrimspecialedition/mods/44'
     assert name.get_attribute('target')=='_blank'
@@ -206,6 +212,7 @@ with sync_playwright() as pw:
     # Unlinked mods are explicitly searches, never fabricated exact links.
     assert page.locator('#row-live-c a.mod-title.source-title').get_attribute('href').startswith('https://www.google.com/search?q=')
     assert page.locator('#row-live-c a.mod-title.source-title.unknown').count()==1
+    show(page, 'mods')
     page.locator('#row-live-a button[data-act="inspect"]').click()
     page.locator('#drawerUrl').fill('javascript:alert(1)')
     assert page.locator('#drawerOpenLink').get_attribute('href') is None
@@ -214,8 +221,10 @@ with sync_playwright() as pw:
     assert page.locator('#drawerOpenLink').get_attribute('href')=='https://github.com/example/alternate'
     assert page.locator('#drawerOpenLink').get_attribute('aria-disabled') is None
     page.locator('#drawerClose').click()
+    show(page, 'mods')
     page.locator('#row-live-a button.mod-inline-locate').click()
     assert page.evaluate('window.__SSS_MOCK__.focusCalls.length')==1
+    show(page, 'updates')
     workshop=page.locator('[data-workshop-id="live-a"] a.workshop-item-title')
     assert workshop.get_attribute('href')=='https://www.nexusmods.com/skyrimspecialedition/mods/44'
     with page.expect_popup() as pop:
@@ -225,29 +234,37 @@ with sync_playwright() as pw:
     assert opened is not None
     opened.close()
     # A custom source saved in the inspector wins consistently in every view.
+    show(page, 'mods')
     page.locator('#row-live-a button[data-act="inspect"]').click()
     page.locator('#drawerUrl').fill('https://github.com/example/custom-mod')
     page.locator('#saveInspector').click()
     assert page.locator('#row-live-a a.mod-title.source-title').get_attribute('href')=='https://github.com/example/custom-mod'
     assert page.locator('[data-workshop-id="live-a"] a.workshop-item-title').get_attribute('href')=='https://github.com/example/custom-mod'
     # Clearing the override restores the real native source, with no reassociation.
+    show(page, 'mods')
     page.locator('#row-live-a button[data-act="inspect"]').click()
     page.locator('#drawerUrl').fill('')
     page.locator('#saveInspector').click()
     assert page.locator('[data-workshop-id="live-a"] a.workshop-item-title').get_attribute('href')=='https://www.nexusmods.com/skyrimspecialedition/mods/44'
+    show(page, 'updates')
     page.locator('[data-workshop-id="live-a"] button.workshop-inline-locate').click()
     assert page.evaluate('window.__SSS_MOCK__.focusCalls.length')==2
+    show(page, 'updates')
     page.locator('#workshopFilter').select_option('all')
     assert page.locator('[data-workshop-id="live-c"] a.workshop-item-title.source-unresolved').count()==1
     # A trusted GitHub project takes users directly to its repository as well.
     page.evaluate("window.__SSS_MOCK__.data.catalog.items[2].source={type:'github',verified:true,url:'https://github.com/example/mod'};window.__SSS_MOCK__.generation=2")
+    show(page, 'updates')
     page.locator('#workshopFilter').select_option('manual')
     page.wait_for_function("document.querySelector('[data-workshop-id=\"live-c\"] a.workshop-item-title')?.getAttribute('href')==='https://github.com/example/mod'", timeout=15000)
     assert page.locator('[data-workshop-id="live-c"] a.workshop-item-title').get_attribute('href')=='https://github.com/example/mod'
+    show(page, 'updates')
     page.locator('#workshopFilter').select_option('candidate')
     page.screenshot(path=str(OUTPUT/'direct-mod-websites.png'),full_page=False)
+    show(page, 'history')
     page.locator('#activityResults .activity-entry').first.wait_for(timeout=10000)
     assert page.locator('#activityResults .activity-entry').count()==1
+    show(page, 'history')
     history_name=page.locator('#activityResults .activity-mod-link').first
     assert history_name.get_attribute('href')=='https://www.nexusmods.com/skyrimspecialedition/mods/45'
     with page.expect_popup() as pop:
@@ -256,20 +273,27 @@ with sync_playwright() as pw:
     assert page.locator('#activityResults .activity-entry').first.get_attribute('open') is None
     assert 'Previous session' in page.locator('#activityResults').inner_text()
     assert page.locator('#activityCount').inner_text()=='1 / 1 visible'
+    show(page, 'history')
     page.locator('#activitySearch').fill('not-present')
     assert page.locator('#activityCount').inner_text()=='0 / 1 visible'
+    show(page, 'history')
     page.locator('#activitySearch').fill('')
+    show(page, 'history')
     page.locator('#activityFilter').select_option('verified')
     assert page.locator('#activityCount').inner_text()=='0 / 1 visible'
+    show(page, 'history')
     page.locator('#activityFilter').select_option('review')
     assert page.locator('#activityCount').inner_text()=='1 / 1 visible'
+    show(page, 'history')
     page.locator('#activityResults summary').first.click()
     assert 'No automatic resume' in page.locator('#activityResults').inner_text()
     page.screenshot(path=str(OUTPUT/'update-history.png'),full_page=False)
     with page.expect_download(timeout=10000) as export_info:
+        show(page, 'history')
         page.locator('#activityExport').click()
     assert export_info.value.suggested_filename.startswith('Modhunter-Operations-')
     assert page.locator('#workshopReviewNext').is_enabled()
+    show(page, 'updates')
     page.locator('#workshopReviewNext').click()
     page.locator('#filePickerVeil').wait_for(state='visible')
     page.locator('.picker-suggested').first.wait_for(timeout=10000)
@@ -285,10 +309,12 @@ with sync_playwright() as pw:
     assert '1 REVIEWED' in page.locator('#workshopCount').inner_text()
     assert page.locator('button[data-workshop-act="remove"]').count()==1
     assert page.locator('#workshopReviewNext').is_enabled()
+    show(page, 'updates')
     page.locator('#workshopReviewNext').click()
     page.locator('#filePickerVeil').wait_for(state='visible')
     assert page.locator('#filePickerTitle').inner_text()=='Quest Example'
     page.locator('#filePickerClose').click()
+    show(page, 'updates')
     page.locator('#workshopInspectQueue').click()
     page.locator('#queueReviewVeil').wait_for(state='visible')
     assert page.locator('#queueReviewRows .queue-review-row').count()==1
@@ -296,18 +322,24 @@ with sync_playwright() as pw:
     page.screenshot(path=str(OUTPUT/'batch-review.png'),full_page=False)
     page.locator('#queueReviewCancel').click()
     assert page.locator('#queueReviewVeil').is_hidden()
+    show(page, 'updates')
     page.locator('#workshopQueue').click()
     assert page.locator('#queueReviewVeil').is_hidden()
+    show(page, 'downloads')
     page.locator('#liveDownloadList .download-ticket').wait_for(timeout=10000)
     calls=page.evaluate('window.__SSS_MOCK__.calls')
     assert len(calls)==1 and calls[0]['endpoint']=='update-queue',calls
     assert page.locator('.download-ticket').count()==1
     page.screenshot(path=str(OUTPUT/'queued-download.png'),full_page=False)
     page.evaluate("window.__SSS_MOCK__.tickets[302].status='complete'")
+    show(page, 'updates')
     page.locator('#workshopRefreshDownloads').click()
+    show(page, 'downloads')
     page.locator('button[data-download-id]').wait_for(timeout=10000)
-    page.locator('#workshopSummary button[data-lane="ready"]').click()
+    show(page, 'updates')
+    page.locator('#workshopFilter').select_option('ready')
     assert '1 of 3 mods shown' in page.locator('#workshopVisibleCount').inner_text()
+    show(page, 'downloads')
     page.locator('button[data-download-details]').click()
     page.locator('#installPreviewVeil').wait_for(state='visible')
     page.locator('#installPreviewConfirm').wait_for(state='attached')
@@ -317,6 +349,7 @@ with sync_playwright() as pw:
     page.screenshot(path=str(OUTPUT/'install-brief.png'),full_page=False)
     page.keyboard.press('Escape')
     assert page.locator('#installPreviewVeil').is_hidden()
+    show(page, 'downloads')
     page.locator('button[data-download-id]').click()
     assert page.locator('#installPreviewVeil').is_hidden()
     page.wait_for_function('window.__SSS_MOCK__.tickets[302].status === "installing"')
@@ -325,7 +358,9 @@ with sync_playwright() as pw:
     assert calls[-1]['body']['downloadId']==302
     # Switch runtime between ready and install to show a blocked preflight.
     page.evaluate("window.__SSS_MOCK__.tickets[302].status='complete';window.__SSS_MOCK__.data.catalog.gameRuntime='1.6.1170'")
+    show(page, 'updates')
     page.locator('#workshopRefreshDownloads').click()
+    show(page, 'downloads')
     page.locator('button[data-download-details]').click()
     page.locator('#installPreviewVeil').wait_for(state='visible')
     page.wait_for_function("document.getElementById('installBriefWarnings').textContent.includes('runtime changed')")
@@ -343,7 +378,9 @@ with sync_playwright() as pw:
     fast.on('pageerror',lambda e: fast_errors.append(str(e)))
     fast.on('dialog',lambda d: (unexpected_dialogs.append(d.message),d.dismiss()))
     fast.set_content(html,wait_until='load',timeout=30000)
+    show(fast, 'updates')
     fast.locator('[data-workshop-id="live-a"] [data-workshop-act="quick"]').click()
+    show(fast, 'downloads')
     fast.locator('#liveDownloadList .download-ticket').wait_for(timeout=10000)
     assert fast.locator('#queueReviewVeil').is_hidden()
     assert fast.locator('#installPreviewVeil').is_hidden()
@@ -352,13 +389,17 @@ with sync_playwright() as pw:
     assert fast.evaluate('window.__SSS_MOCK__.calls[0].body.autoInstall') is True
     fast.screenshot(path=str(OUTPUT/'one-click-update.png'),full_page=False)
     fast.evaluate("window.__SSS_MOCK__.tickets[701].status='complete'")
+    show(fast, 'updates')
     fast.locator('#workshopRefreshDownloads').click()
+    show(fast, 'downloads')
     fast.locator('button[data-download-id]').wait_for(timeout=10000)
+    show(fast, 'downloads')
     fast.locator('button[data-download-id]').click()
     fast.wait_for_function("window.__SSS_MOCK__.tickets[701].status === 'installing'")
     assert fast.locator('#installPreviewVeil').is_hidden()
     assert fast.evaluate('window.__SSS_MOCK__.calls.at(-1).endpoint')=='install'
     # A DLL risk does not produce an extra modal or block the user from choosing.
+    show(fast, 'updates')
     fast.locator('[data-workshop-id="live-b"] [data-workshop-act="quick"]').click()
     fast.locator('#filePickerVeil').wait_for(state='visible',timeout=10000)
     assert 'Compatibility notes' in fast.locator('#filePickerSummary').inner_text()
@@ -371,8 +412,10 @@ with sync_playwright() as pw:
     # One-click bulk queue is asynchronous and preserves per-mod choices.
     bulk=browser.new_page(viewport={"width":1250,"height":900})
     bulk.set_content(html,wait_until='load',timeout=30000)
+    show(bulk, 'updates')
     bulk.locator('#workshopQuickAll').click()
     bulk.wait_for_function("window.__SSS_MOCK__.quickState?.state === 'completed'")
+    show(bulk, 'downloads')
     bulk.locator('#liveDownloadList .download-ticket').wait_for(timeout=10000)
     assert bulk.locator('#queueReviewVeil').is_hidden()
     assert bulk.locator('#installPreviewVeil').is_hidden()
@@ -384,6 +427,7 @@ with sync_playwright() as pw:
     recovery_errors=[]
     recovery.on('pageerror',lambda e: recovery_errors.append(str(e)))
     recovery.set_content(html,wait_until='load',timeout=30000)
+    show(recovery, 'updates')
     recovery.locator('#workshopResults .workshop-item').first.wait_for(timeout=15000)
     recovery.evaluate("""()=>{
       const m=window.__SSS_MOCK__,profile=m.data.catalog.profileId,runtime=m.data.catalog.gameRuntime;
@@ -393,15 +437,20 @@ with sync_playwright() as pw:
       m.tickets[802]={status:'complete',provider:'nexus',modId:45,fileId:145,
         itemId:'live-b',installedVersion:'1.5',targetVersion:'2.3',profileId:profile,gameRuntime:runtime};
     }""")
+    show(recovery, 'updates')
     recovery.locator('#workshopRefreshDownloads').click()
+    show(recovery, 'downloads')
     recovery.locator('#downloadPulse').wait_for(state='visible')
     assert recovery.locator('#pulseReady').inner_text()=='1'
     assert recovery.locator('#pulseFailed').inner_text()=='1'
+    show(recovery, 'downloads')
     recovery.locator('[data-retry-download-id="801"]').click()
     recovery.wait_for_function("window.__SSS_MOCK__.tickets[801].retriedBy === 803")
+    show(recovery, 'downloads')
     recovery.locator('.ticket-requeued').first.wait_for(timeout=3500)
     assert recovery.locator('.ticket-requeued').count()==1
     assert recovery.evaluate("window.__SSS_MOCK__.calls.at(-1).endpoint")=='retry-download'
+    show(recovery, 'downloads')
     recovery.locator('#installAllReady').click()
     recovery.wait_for_function("window.__SSS_MOCK__.tickets[802].status === 'installing'")
     recovery.wait_for_function("document.getElementById('pulseReady').textContent === '0'")
@@ -416,7 +465,9 @@ with sync_playwright() as pw:
     source_errors=[]
     source_page.on('pageerror',lambda e:source_errors.append(str(e)))
     source_page.set_content(fixture_html(source_mock),wait_until='load',timeout=30000)
+    show(source_page, 'updates')
     source_page.locator('#workshopResults .workshop-item').first.wait_for(timeout=15000)
+    show(source_page, 'updates')
     source_page.locator('#sourceCoverage > summary').click()
     # The browser dispatches <details> toggle asynchronously. Wait for the
     # resulting evidence table, not merely completion of the pointer action.
@@ -431,6 +482,7 @@ with sync_playwright() as pw:
             providers:window.__ARSENAL_QA__.getCatalog().items.map(m=>({id:m.id,source:m.source,provider:m.update?.provider}))
         })"""),"jsErrors":source_errors},indent=2))
         raise
+    show(source_page, 'mods')
     source_page.locator('#row-live-a button[data-act="inspect"]').click()
     source_page.locator('#drawerNote').fill('Keep my custom FOMOD choices.')
     source_page.locator('#modSourceDetails .source-person strong').wait_for(timeout=10000)
@@ -445,6 +497,7 @@ with sync_playwright() as pw:
     source_page.locator('.source-changelog').scroll_into_view_if_needed()
     source_page.screenshot(path=str(OUTPUT/'source-adapter-inspector.png'),full_page=False)
     source_page.locator('#drawerClose').click()
+    show(source_page, 'updates')
     source_page.locator('[data-workshop-id="live-a"] [data-workshop-act="review"]').click()
     source_page.locator('#filePickerFiles [data-source-kind="release"]').wait_for(timeout=10000)
     assert source_page.locator('#filePickerFiles [data-file-id][data-mod-id]').count()==0
@@ -454,7 +507,9 @@ with sync_playwright() as pw:
     assert 'b'*64 in source_page.locator('.source-file-hashes').inner_text()
     source_page.screenshot(path=str(OUTPUT/'source-release-files.png'),full_page=False)
     source_page.locator('#filePickerFiles [data-source-kind="release"]').click()
+    show(source_page, 'updates')
     source_page.locator('#workshopQueue').click()
+    show(source_page, 'downloads')
     source_page.locator('#liveDownloadList .download-ticket').wait_for(timeout=10000)
     source_calls=source_page.evaluate('window.__SSS_MOCK__.calls')
     source_entry=source_calls[-1]['body']['entries'][0]
@@ -468,6 +523,7 @@ with sync_playwright() as pw:
     assert not any(endpoint.startswith('files?') for endpoint in source_reads)
     assert source_page.evaluate('window.__ARSENAL_QA__.getCatalog().items[0].update.releaseAssets === undefined')
     source_page.set_viewport_size({'width':390,'height':844})
+    show(source_page, 'mods')
     source_page.locator('#row-live-a button[data-act="inspect"]').click()
     source_page.locator('#modSourceDetails').scroll_into_view_if_needed()
     source_page.screenshot(path=str(OUTPUT/'mobile-source-inspector.png'),full_page=False)
@@ -496,6 +552,7 @@ with sync_playwright() as pw:
     expect(offline.locator('#advisoryBody')).not_to_contain_text('SKSE is 2.0.20')
     expect(offline.locator('#referenceLinks')).not_to_contain_text('SE Address Library')
     expect(offline.locator('.pagefooter')).to_contain_text('MO2 SNAPSHOT / fallout4 / Imported Runtime QA')
+    show(offline, 'mods')
     offline.locator('#row-snapshot-a button[data-act="inspect"]').click()
     expect(offline.locator('.drawer-priority')).to_contain_text('IMPORTED PROFILE')
     expect(offline.locator('.drawer-alert .drawer-label')).to_have_text('RUNTIME / FILE COMPATIBILITY CHECK')
@@ -507,6 +564,7 @@ with sync_playwright() as pw:
     offline.screenshot(path=str(OUTPUT/'imported-profile-runtime.png'),full_page=False)
     offline.locator('#drawerClose').click()
     with offline.expect_download(timeout=10000) as csv_export:
+        show(offline, 'tools')
         offline.locator('#csvBtn').click()
     assert csv_export.value.suggested_filename=='Modhunter - Imported Runtime QA - Visible Mods.csv'
     csv_header=Path(csv_export.value.path()).read_text(encoding='utf-8-sig').splitlines()[0]

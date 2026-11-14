@@ -340,6 +340,7 @@ class NativeNexusGateway:
             return
         request.finish({
             "ok": False,
+            "statusCode": args[4] if type(args[4]) is int else None,
             "error": "MO2 Nexus connection failed: " + str(args[-1])[:200]
             + ". Verify MO2 Settings > Nexus > Connect to Nexus.",
         })

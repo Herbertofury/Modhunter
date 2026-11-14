@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .download_ids import download_id as parse_download_id
-from .scanner import Cache, MissingAuth, NexusClient, NexusError, UpdateScanner, local_mo2_candidates
+from .scanner import Cache, MissingAuth, NexusClient, NexusError, UpdateScanner, local_mo2_candidates, nexus_project_id
 from .gameplay import Chronicle
 from html import unescape
 import re
@@ -135,6 +135,7 @@ class ArsenalService:
         self._thread: threading.Thread | None = None
         self._scan: dict[str, Any] = {"state": "idle"}
         self._scan_epoch = 0
+        self._startup_context: tuple[str, int] | None = None
         self._scan_cancel = threading.Event()
         self._source_scanner = None
         self._source_cache_path = cache_path.with_name("source-adapter-cache.json")
@@ -522,8 +523,43 @@ class ArsenalService:
             forget()
             raise
 
+    def cancel_scan(self, profile_id: str, job_id: int) -> dict:
+        """Cancel only the observed scan, never a newer job or installation."""
+        with self._guard:
+            if (self._stopped or profile_id != self._snapshot.get("profileId")
+                    or type(job_id) is not int or job_id != self._scan.get("jobId")):
+                return {"ok": False, "error": "The scan changed; refresh before cancelling"}
+            if self._scan.get("state") == "running":
+                self._scan_epoch += 1
+                self._scan_cancel.set()
+                self._scan = {k: v for k, v in self._scan.items() if k not in {"records", "itemRecords"}}
+                self._scan.update(state="cancelled", reason="Check cancelled; completed results retained")
+                self._generation += 1
+            return {"ok": True, "scan": self.scan_state(), "profileId": profile_id}
+
+    def startup_check(self, profile_id: str, execution_epoch: int) -> dict:
+        """One read-only launch check per owned profile context, across all tabs.
+
+        Cached successful metadata is compared first; only stale/missing Nexus
+        projects are fetched. This never queues downloads or installations.
+        """
+        with self._guard:
+            if (self._stopped or not profile_id or profile_id != self._snapshot.get("profileId")
+                    or type(execution_epoch) is not int or execution_epoch != self._execution_epoch):
+                return {"ok": False, "error": "MO2 context changed; refresh before checking updates"}
+            context = (profile_id, execution_epoch)
+            if self._startup_context == context or self._scan.get("state") == "running":
+                self._startup_context = context
+                return {"ok": True, "started": False, "scan": self.scan_state(), "profileId": profile_id}
+            result = self.begin_scan("startup", profile_id)
+            if not result.get("ok"):
+                return result
+            self._startup_context = context
+        self.intelligence.auto_audit()
+        return {"ok": True, "started": True, "scan": self.scan_state(), "profileId": profile_id}
+
     def begin_scan(self, mode: str, profile_id: str | None = None) -> dict:
-        if mode not in ("quick", "deep", "local", "sources", "all"):
+        if mode not in ("quick", "deep", "local", "sources", "all", "startup"):
             return {"ok": False, "error": "Invalid scan mode"}
         with self._guard:
             if self._stopped:
@@ -548,10 +584,30 @@ class ArsenalService:
         def is_current():
             return (not self._stopped and self._scan_epoch == job_epoch
                     and tuple(self._snapshot.get(key) for key in ("profileId", "game", "gameRuntime", "loader")) == scan_identity)
+        from_source = {str(i.get("id")): i for i in snapshot.get("items", [])}
+
+        def apply_records(records):
+            # Caller owns _guard and checked scan identity. Bind every partial
+            # result to the same source snapshot used by the complete scan.
+            changed = False
+            for item_key, update in records.items():
+                item = self._items_by_id.get(str(item_key))
+                scanned_item = from_source.get(str(item_key))
+                if item is None or scanned_item is None or not isinstance(update, dict):
+                    continue
+                item["update"] = dict(update)
+                source_url = canonical_source_url((scanned_item.get("source") or {}).get("url", ""))
+                if source_url != canonical_source_url((item.get("source") or {}).get("url", "")):
+                    item["update"]["sourceUrl"] = source_url
+                changed = True
+            if changed:
+                self._generation += 1
+
         def progress(data):
             with self._guard:
                 if is_current() and self._scan.get("state") == "running":
-                    self._scan.update(data)
+                    apply_records(data.get("itemRecords", {}))
+                    self._scan.update({k: v for k, v in data.items() if k not in {"itemRecords", "records"}})
         def worker():
             try:
                 with self._guard:
@@ -576,7 +632,16 @@ class ArsenalService:
                                 {"game": game, "modId": int(m.group(1))}, timeout=70,
                                 cancel_event=scan_cancel)
                             if not native.get("ok"):
-                                raise NexusError(str(native.get("error") or "MO2 Nexus lookup failed"))
+                                message = str(native.get("error") or "MO2 Nexus lookup failed")
+                                # Only an explicit native HTTP code classifies
+                                # credentials/quota; never infer it from an empty list.
+                                code = native.get("statusCode", native.get("httpStatus"))
+                                if code in (401, 403):
+                                    raise MissingAuth(message)
+                                if code == 429:
+                                    from .scanner import QuotaDepleted
+                                    raise QuotaDepleted(message)
+                                raise NexusError(message)
                             return native["meta"]
                         client = NexusClient("mo2-native", request_json=mo2_nexus_get)
                     else:
@@ -593,12 +658,32 @@ class ArsenalService:
                 effective_mode = mode
                 if mode == "sources":
                     result = scan_sources()
-                elif mode == "all":
-                    nexus, coverage = scan_nexus("deep" if key or native_nexus else "local")
-                    with self._guard:
-                        if not is_current():
-                            return
-                    other = scan_sources()
+                elif mode in ("all", "startup"):
+                    if mode == "startup":
+                        def independent_sources():
+                            result = scan_sources()
+                            progress({"itemRecords": result.get("itemRecords", {}),
+                                      "phase": "source-adapters-complete"})
+                            return result
+                        # Two coordinator jobs; each adapter keeps its own
+                        # bounded concurrency, deadlines and cancellation.
+                        from concurrent.futures import ThreadPoolExecutor
+                        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="ModhunterLaunch") as pool:
+                            sources = pool.submit(independent_sources)
+                            nexus, coverage = scan_nexus("startup" if key or native_nexus else "local")
+                            if coverage == "local":
+                                for update in nexus.get("itemRecords", {}).values():
+                                    update["availability"] = "authentication-required"
+                                    update["reason"] = "Connect Nexus in MO2 to verify this mod; showing local metadata only."
+                            progress({"itemRecords": nexus.get("itemRecords", {})})
+                            other = sources.result()
+                    else:
+                        nexus, coverage = scan_nexus("deep" if key or native_nexus else "local")
+                        progress({"itemRecords": nexus.get("itemRecords", {}), "phase": "querying-sources"})
+                        with self._guard:
+                            if not is_current():
+                                return
+                        other = scan_sources()
                     result = {**nexus,
                         "itemRecords": {**nexus.get("itemRecords", {}), **other.get("itemRecords", {})},
                         "errors": list(nexus.get("errors", [])) + list(other.get("errors", [])),
@@ -606,7 +691,7 @@ class ArsenalService:
                         "sourcesChecked": other.get("sourceProjects", 0),
                         "manualSources": other.get("manualSources", 0),
                         "sourceEngine": other.get("sourceEngine"), "adapterStats": other.get("adapterStats", {}),
-                        "nexusCoverage": coverage, "mode": "all"}
+                        "nexusCoverage": coverage, "mode": mode}
                 else:
                     result, effective_mode = scan_nexus(mode)
                 with self._guard:
@@ -616,7 +701,10 @@ class ArsenalService:
                     for item in self._snapshot.get("items", []):
                         item_key = str(item.get("id", ""))
                         scanned_item = from_source.get(item_key)
-                        update = result.get("itemRecords", {}).get(item_key) or result["records"].get(str(item.get("nexusId") or 0))
+                        update = result.get("itemRecords", {}).get(item_key)
+                        native_project = nexus_project_id(scanned_item or {}, snapshot.get("game", ""))
+                        if update is None and native_project:
+                            update = result.get("records", {}).get(str(native_project))
                         if update:
                             item["update"] = dict(update)
                             source_url = canonical_source_url(((scanned_item or {}).get("source") or {}).get("url", ""))
@@ -1559,6 +1647,10 @@ class ArsenalService:
                     return self._reply(service.call_ui("refresh", {}))
                 if uri.path == "/api/runtime":
                     return self._reply(service.call_ui("runtime", {}, timeout=180))
+                if uri.path == "/api/cancel-scan":
+                    return self._reply(service.cancel_scan(data.get("profileId", ""), data.get("jobId")))
+                if uri.path == "/api/startup-check":
+                    return self._reply(service.startup_check(data.get("profileId", ""), data.get("executionEpoch")))
                 if uri.path == "/api/scan":
                     return self._reply(service.begin_scan(data.get("mode", "quick"), data.get("profileId")))
                 if uri.path == "/api/update-queue":

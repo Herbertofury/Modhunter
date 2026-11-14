@@ -115,8 +115,10 @@ class Chronicle:
                 item["status"] = "pending"
             sanitized[mid] = item
         safe_prefs = {}
-        for k in ("filter", "query", "sort", "theme", "density", "effect", "sound", "focus", "collapsed"):
+        for k in ("filter", "query", "sort", "theme", "density", "effect", "sound", "focus", "collapsed", "autoCheckOnLaunch"):
             v = prefs.get(k)
+            if k == "autoCheckOnLaunch" and not isinstance(v, bool):
+                continue
             if isinstance(v, (bool, str)):
                 safe_prefs[k] = v[:300] if isinstance(v, str) else v
             elif k == "collapsed" and isinstance(v, list):

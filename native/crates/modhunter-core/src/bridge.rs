@@ -9,6 +9,9 @@ use url::Url;
 
 const HEALTH_LIMIT: u64 = 16_384;
 
+#[path = "native_bridge.rs"]
+mod native;
+
 pub fn validate_bridge_endpoint(raw: &str) -> Result<String, CoreError> {
     let raw = raw.trim();
     if raw.chars().any(char::is_control) {

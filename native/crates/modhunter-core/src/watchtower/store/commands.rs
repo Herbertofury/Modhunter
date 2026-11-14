@@ -8,6 +8,9 @@ pub(super) fn apply(
 ) -> Result<Value, String> {
     let mut result = match action {
         "saveWatch" => save_watch(doc, payload, now)?,
+        "saveCreator" | "saveSourceBinding" | "saveFileDecision" | "clearFileDecision" => {
+            sources::apply(doc, action, payload, now)?
+        }
         "removeWatch" | "restoreWatch" | "pauseWatch" | "cancel" => {
             change_watch(doc, action, payload, now)?
         }
@@ -659,6 +662,18 @@ fn invalidate_session_watches(
     now: u64,
     removed: bool,
 ) -> Result<(), String> {
+    let generation = doc
+        .sessions
+        .iter()
+        .find(|session| session.id == id)
+        .map(|session| session.storage_generation);
+    if removed
+        || doc.source_preferences.accounts.iter().any(|account| {
+            account.session_id == id && Some(account.storage_generation) != generation
+        })
+    {
+        sources::forget_account(doc, id);
+    }
     for watch in doc
         .watches
         .iter_mut()
@@ -695,6 +710,9 @@ fn change_session(
     now: u64,
 ) -> Result<Value, String> {
     let id = required(payload, "id")?;
+    if action == "confirmSession" {
+        sources::release_hold(doc, id);
+    }
     let index = doc
         .sessions
         .iter()
@@ -763,6 +781,11 @@ fn save_settings(doc: &mut Document, payload: &Value, now: u64) -> Result<Value,
     settings.notifications = boolean(payload, "notifications", settings.notifications)?;
     settings.hide_titles = boolean(payload, "hideTitles", settings.hide_titles)?;
     settings.privacy_screen = boolean(payload, "privacyScreen", settings.privacy_screen)?;
+    settings.filter_hidden_resources = boolean(
+        payload,
+        "filterHiddenResources",
+        settings.filter_hidden_resources,
+    )?;
     settings.default_interval_minutes = interval(
         payload,
         "defaultIntervalMinutes",
@@ -784,6 +807,23 @@ fn save_settings(doc: &mut Document, payload: &Value, now: u64) -> Result<Value,
     settings.muted_folders = strings(payload, "mutedFolders", &settings.muted_folders, 1000, 200)?;
     validate_settings(&settings)?;
     for watch in &mut doc.watches {
+        if settings.filter_hidden_resources != old.filter_hidden_resources {
+            watch.generation = watch
+                .generation
+                .checked_add(1)
+                .ok_or("Page generation limit reached.")?;
+            watch.context_generation = watch
+                .context_generation
+                .checked_add(1)
+                .ok_or("Page context generation limit reached.")?;
+            watch.fresh_check_required = true;
+            watch.updated_at = now;
+            watch.retry_at = 0;
+            watch.next_check_at = 0;
+            if watch.state == "checking" {
+                watch.state = "cancelled".into();
+            }
+        }
         if muted(watch, &settings) && !muted(watch, &old) {
             watch.generation = watch
                 .generation
@@ -810,6 +850,7 @@ pub(super) fn export_document(doc: &Document, history: bool, now: u64) -> Value 
             "sessionId":Value::Null,"requiresSession":w.requires_session,"selector":w.selector,"ignoreSelectors":w.ignore_selectors,
             "intervalMinutes":w.interval_minutes,"association":w.association});
         if let Some(session)=w.session_id.as_ref().and_then(|id|doc.sessions.iter().find(|s|&s.id==id)){value["sessionLabel"]=json!(session.label);value["sessionOrigin"]=json!(session.origin);}
+        value["sourceChoices"]=sources::export_choices(doc,w);
         if history{value["observationReport"]=json!({"latest":w.latest,"history":w.history,"seenObservationId":w.seen_observation_id});}
         value
     }).collect();
@@ -896,7 +937,9 @@ fn import_config(doc: &Document, value: &Value) -> Result<Watch, String> {
     if requires {
         clean["enabled"] = json!(false);
     }
-    config(doc, &clean, None, 0)
+    let watch = config(doc, &clean, None, 0)?;
+    sources::validate_import_choices(&watch, value)?;
+    Ok(watch)
 }
 pub(super) fn import_preview(doc: &Document, payload: &Value) -> Result<Value, String> {
     let values = import_values(payload)?;
@@ -936,7 +979,7 @@ pub(super) fn import_preview(doc: &Document, payload: &Value) -> Result<Value, S
     }
     Ok(
         json!({"ok":true,"preview":true,"revision":doc.revision,"items":items,"counts":{"new":new,"duplicates":duplicates,"restore":restore,"invalid":invalid,"sessionRequired":session_required},
-        "warnings":["Import adds watches without overwriting existing active pages. Account pages require a new session assignment. Fresh checks establish baselines; observation reports and settings are not applied automatically."]}),
+        "warnings":["Import adds watches without overwriting existing active pages. Account pages require a new session assignment. New pages retain their exact source, creator and file choices. Existing source preferences are preserved. Fresh checks establish baselines; account observations, observation reports and settings are not applied automatically."]}),
     )
 }
 fn commit_import(doc: &mut Document, payload: &Value, now: u64) -> Result<Value, String> {
@@ -957,6 +1000,7 @@ fn commit_import(doc: &mut Document, payload: &Value, now: u64) -> Result<Value,
     let mut restored = 0;
     let mut skipped = 0;
     let mut ids = Vec::new();
+    let mut imported_creators = sources::ImportedCreators::new();
     for value in values {
         let mut watch = import_config(doc, value)?;
         if let Some(index) = doc.watches.iter().position(|w| same_page(w, &watch)) {
@@ -975,7 +1019,9 @@ fn commit_import(doc: &mut Document, payload: &Value, now: u64) -> Result<Value,
         watch.updated_at = now;
         watch.state = idle_state(&watch);
         ids.push(watch.id.clone());
+        let watch_id = watch.id.clone();
         doc.watches.push(watch);
+        sources::import_choices(doc, &watch_id, value, &mut imported_creators)?;
         added += 1;
     }
     Ok(

@@ -23,7 +23,6 @@ use tauri::{
     webview::{NewWindowFeatures, NewWindowResponse, PermissionResponse},
 };
 use tauri_plugin_dialog::DialogExt;
-use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 use url::Url;
 use windows_core::Interface;
@@ -32,12 +31,46 @@ type Result<T> = std::result::Result<T, String>;
 const MAX_CHECKS: usize = 2;
 const CHECK_DEADLINE: Duration = Duration::from_secs(45);
 
+#[path = "watchtower_acquisition.rs"]
+mod acquisition;
+
+#[path = "watchtower_review.rs"]
+mod review;
+
+#[path = "watchtower_access.rs"]
+mod access;
+
+#[path = "watchtower_browser_data.rs"]
+mod browser_data;
+
+#[path = "watchtower_privacy.rs"]
+pub(crate) mod privacy;
+
+#[path = "watchtower_maintenance.rs"]
+mod maintenance;
+
+#[path = "watchtower_inventory.rs"]
+mod inventory;
+
+#[path = "watchtower_queue.rs"]
+mod queue;
+
+#[path = "watchtower_notices.rs"]
+mod notices;
+
+#[path = "watchtower_reset.rs"]
+mod reset;
+pub(crate) use reset::dispatch_helper as dispatch_reset_helper;
+
 #[path = "watchtower_smoke.rs"]
 mod smoke;
 pub use smoke::start as start_smoke;
 
 fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
+}
+pub(crate) fn localized(app: &tauri::AppHandle, key: &str) -> String {
+    crate::locale::text(&maintenance::settings(app).locale, key)
 }
 fn now() -> u64 {
     SystemTime::now()
@@ -81,6 +114,9 @@ struct SiteContext {
     // Set only by the private, internally owned smoke server. No command accepts it.
     fixture_origin: Option<String>,
     lease: Option<CheckJob>,
+    download_watch: Option<(String, u64)>,
+    download_file_key: Option<String>,
+    download_scope: Option<Arc<Mutex<policy::download_scope::SelectedDownloadScope>>>,
     cancellation: Option<Arc<AtomicBool>>,
 }
 impl SiteContext {
@@ -97,6 +133,9 @@ impl SiteContext {
             origin,
             fixture_origin: None,
             lease: None,
+            download_watch: None,
+            download_file_key: None,
+            download_scope: None,
             cancellation: None,
         })
     }
@@ -110,6 +149,11 @@ impl SiteContext {
                 .lease
                 .as_ref()
                 .is_none_or(|job| state.store.is_current(job))
+            && self.download_watch.as_ref().is_none_or(|(id, generation)| {
+                state.store.watch(id).is_some_and(|watch| {
+                    watch.generation == *generation && watch.removed_at.is_none()
+                })
+            })
             && (self.fixture_origin.is_some()
                 || self.session.as_ref().is_none_or(|session| {
                     state.store.session(&session.id).is_some_and(|current| {
@@ -122,11 +166,14 @@ impl SiteContext {
 struct Load {
     navigation: Mutex<policy::NavigationProgress>,
     native_error: Mutex<Option<String>>,
+    filtered_resources: AtomicBool,
+    blocked_resources: AtomicU64,
 }
 pub struct WatchRuntime {
     store: WatchStore,
     work: Mutex<Work>,
     windows: Mutex<BTreeMap<String, SiteWindow>>,
+    anonymous_origins: Mutex<std::collections::BTreeSet<String>>,
     prefill: Mutex<Option<Value>>,
     profiles: PathBuf,
     ephemeral: tempfile::TempDir,
@@ -137,8 +184,6 @@ pub struct WatchRuntime {
     revision: AtomicU64,
     pumping: AtomicBool,
     stopping: AtomicBool,
-    last_notification: Mutex<Option<Instant>>,
-    notified_hashes: Mutex<BTreeMap<String, String>>,
     retired: Mutex<Vec<PathBuf>>,
     runtime_warning: Mutex<String>,
 }
@@ -206,6 +251,12 @@ impl WatchRuntime {
                 .join(format!("{:x}", Sha256::digest(origin.as_bytes()))),
         };
         std::fs::create_dir_all(&directory).map_err(err)?;
+        if session.is_none() {
+            self.anonymous_origins
+                .lock()
+                .map_err(err)?
+                .insert(origin.to_owned());
+        }
         // An owned marker distinguishes our retired browser generations from arbitrary directories.
         let marker = directory.join("modhunter-profile-owner.json");
         if !marker.exists() {
@@ -222,6 +273,14 @@ impl WatchRuntime {
 pub fn setup(app: &tauri::AppHandle) -> Result<()> {
     let config = app.path().app_config_dir().map_err(err)?;
     let data = app.path().app_data_dir().map_err(err)?;
+    reset::setup(
+        app,
+        modhunter_core::app_reset::AppPaths {
+            config: config.clone(),
+            data: data.clone(),
+            local_data: app.path().app_local_data_dir().map_err(err)?,
+        },
+    )?;
     setup_paths(app, config, data, true)
 }
 
@@ -270,6 +329,7 @@ fn setup_paths(
         store,
         work: Mutex::new(Work::default()),
         windows: Mutex::new(BTreeMap::new()),
+        anonymous_origins: Mutex::new(std::collections::BTreeSet::new()),
         prefill: Mutex::new(None),
         profiles,
         ephemeral,
@@ -280,11 +340,15 @@ fn setup_paths(
         revision: AtomicU64::new(0),
         pumping: AtomicBool::new(false),
         stopping: AtomicBool::new(false),
-        last_notification: Mutex::new(None),
-        notified_hashes: Mutex::new(BTreeMap::new()),
         retired: Mutex::new(Vec::new()),
         runtime_warning: Mutex::new(String::new()),
     });
+    privacy::setup(app)?;
+    acquisition::setup(app, data.join("watchtower-acquisitions"));
+    review::setup(app, data.join("watchtower-prepared"))?;
+    notices::setup(app, config.join("watchtower-notifications.json"));
+    maintenance::setup(app, config, data)?;
+    inventory::setup(app);
     recover_retired(&app.state::<WatchRuntime>());
     if !scheduler {
         return Ok(());
@@ -309,6 +373,8 @@ fn setup_paths(
                     scanned = Instant::now();
                 }
                 pump(&handle);
+                maintenance::tick(&handle);
+                notices::tick(&handle);
                 cleanup_retired(&state);
             }
             first = false;
@@ -319,11 +385,12 @@ fn setup_paths(
 }
 
 fn notify(app: &tauri::AppHandle) {
-    let _ = app.emit_to(
-        "watchtower",
-        "watchtower-state",
-        app.state::<WatchRuntime>().snapshot(),
-    );
+    let mut snapshot = app.state::<WatchRuntime>().snapshot();
+    snapshot["acquisitions"] = acquisition::snapshot(app);
+    snapshot["reviews"] = review::snapshot(app);
+    snapshot["maintenance"] = maintenance::snapshot(app);
+    snapshot["notices"] = notices::snapshot(app);
+    let _ = app.emit_to("watchtower", "watchtower-state", snapshot);
 }
 
 pub fn open(app: &tauri::AppHandle, prefill: Option<Value>) -> Result<()> {
@@ -336,19 +403,34 @@ pub fn open(app: &tauri::AppHandle, prefill: Option<Value>) -> Result<()> {
         *app.state::<WatchRuntime>().prefill.lock().map_err(err)? = Some(value);
     }
     if let Some(window) = app.get_webview_window("watchtower") {
-        window.show().map_err(err)?;
-        window.set_focus().map_err(err)?;
+        let native = app
+            .get_window(window.label())
+            .ok_or("This native window closed.")?;
+        privacy::guarded_show(app, &native, true)?;
         notify(app);
         return Ok(());
     }
-    WebviewWindowBuilder::new(app, "watchtower", WebviewUrl::App("watchtower.html".into()))
-        .title("Modhunter · Watchtower")
-        .inner_size(1280.0, 880.0)
-        .min_inner_size(760.0, 560.0)
-        .on_navigation(|url| crate::policy::local_asset(url, "/watchtower.html"))
-        .on_new_window(|_, _| NewWindowResponse::Deny)
-        .build()
-        .map_err(err)?;
+    let window =
+        WebviewWindowBuilder::new(app, "watchtower", WebviewUrl::App("watchtower.html".into()))
+            .visible(false)
+            .focused(false)
+            .title("Modhunter · Watchtower")
+            .inner_size(1280.0, 880.0)
+            .min_inner_size(760.0, 560.0)
+            .on_navigation(|url| crate::policy::local_asset(url, "/watchtower.html"))
+            .on_new_window(|_, _| NewWindowResponse::Deny)
+            .build()
+            .map_err(err)?;
+    let handle = app.clone();
+    window.on_window_event(move |event| {
+        if matches!(event, tauri::WindowEvent::Destroyed) {
+            privacy::forget_window(&handle, "watchtower");
+        }
+    });
+    let native = app
+        .get_window("watchtower")
+        .ok_or("The manager window closed.")?;
+    privacy::guarded_show(app, &native, true)?;
     Ok(())
 }
 
@@ -780,6 +862,8 @@ fn site_window(
     let nav_context = context.clone();
     let popup_app = app.clone();
     let popup_context = context.clone();
+    let observe_app = app.clone();
+    let observe_context = context.clone();
     let initial = Url::parse("about:blank").expect("literal");
     let popup = features.is_some();
     let mut builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(initial))
@@ -790,11 +874,10 @@ fn site_window(
         })
         .inner_size(1050.0, 790.0)
         .min_inner_size(500.0, 500.0)
-        .visible(interactive)
-        .focused(interactive)
+        .visible(false)
+        .focused(false)
         .data_directory(directory.clone())
         .on_permission_request(|_, _| PermissionResponse::Deny)
-        .on_download(|_, _| false)
         .on_navigation(move |url| {
             let live = nav_context.current(&nav_app.state::<WatchRuntime>());
             let allowed = match &nav_context.fixture_origin {
@@ -811,6 +894,14 @@ fn site_window(
                     "Modhunter · {}",
                     event.url().origin().ascii_serialization()
                 ));
+            }
+            if interactive && event.event() == tauri::webview::PageLoadEvent::Finished {
+                access::page_loaded(
+                    observe_app.clone(),
+                    view.label().to_owned(),
+                    observe_context.clone(),
+                    event.url().clone(),
+                );
             }
         })
         .on_new_window(move |target, features| {
@@ -840,9 +931,14 @@ fn site_window(
             if count >= 4 {
                 return NewWindowResponse::Deny;
             }
+            // A new browsing surface cannot inherit a selected attachment's
+            // file authority. It may still save an unclassified manual archive.
+            let mut child_context = popup_context.clone();
+            child_context.download_file_key = None;
+            child_context.download_scope = None;
             match site_window(
                 &popup_app,
-                popup_context.clone(),
+                child_context,
                 Url::parse("about:blank").expect("literal"),
                 true,
                 Some(features),
@@ -855,15 +951,33 @@ fn site_window(
     if let Some(features) = features {
         builder = builder.window_features(features);
     }
-    let window = builder.build().map_err(err)?;
+    let window = builder.visible(false).focused(false).build().map_err(err)?;
+    let native = app.get_window(&label).ok_or("The website window closed.")?;
+    if let Err(error) = privacy::apply_window(app, &native) {
+        let _ = window.close();
+        return Err(error);
+    }
     let native_load = load.clone();
+    let download_app = app.clone();
+    let download_context = context.clone();
+    let download_label = label.clone();
+    let filter_resources = !interactive
+        && context.lease.as_ref().map_or_else(
+            || state.store.settings().filter_hidden_resources,
+            |job| job.filtered_resources,
+        );
     window
         .with_webview(move |platform| {
             let starting_load = native_load.clone();
             let completed_load = native_load.clone();
+            let starting_scope = download_context.download_scope.clone();
+            let completed_scope = download_context.download_scope.clone();
+            let changed_scope = download_context.download_scope.clone();
             let result = (|| -> windows_core::Result<()> {
                 unsafe {
                     let webview = platform.controller().CoreWebView2()?;
+                    browser_data::install_filter(&webview,platform.environment(),native_load.clone(),filter_resources)?;
+                    acquisition::install(download_app.clone(), &webview, download_context.clone(), download_label.clone(), interactive)?;
                     let starting = webview2_com::NavigationStartingEventHandler::create(Box::new(
                         move |_, args| {
                             if let Some(args) = args {
@@ -871,7 +985,14 @@ fn site_window(
                                 args.NavigationId(&mut id)?;
                                 let mut uri = windows_core::PWSTR::null();
                                 args.Uri(&mut uri)?;
-                                let website = webview2_com::take_pwstr(uri) != "about:blank";
+                                let raw = webview2_com::take_pwstr(uri);
+                                let website = raw != "about:blank";
+                                if let Some(scope) = &starting_scope && let Ok(mut scope) = scope.lock() {
+                                    let mut redirected = windows_core::BOOL(0);
+                                    if args.IsRedirected(&mut redirected).is_ok() && let Ok(url) = Url::parse(&raw) {
+                                        scope.navigation_started(id, &url, redirected.as_bool());
+                                    } else { scope.invalidate(); }
+                                }
                                 if let Ok(mut progress) = starting_load.navigation.lock() {
                                     progress.started(id, website);
                                 }
@@ -881,13 +1002,31 @@ fn site_window(
                     ));
                     let mut token = 0;
                     webview.add_NavigationStarting(&starting, &mut token)?;
+                    let changed = webview2_com::SourceChangedEventHandler::create(Box::new(move |sender, _| {
+                        if let Some(scope) = &changed_scope && let Ok(mut scope) = scope.lock() {
+                            let mut raw = windows_core::PWSTR::null();
+                            if let Some(sender) = sender && sender.Source(&mut raw).is_ok() {
+                                if let Ok(url) = Url::parse(&webview2_com::take_pwstr(raw)) { scope.source_changed(&url); }
+                                else { scope.invalidate(); }
+                            } else { scope.invalidate(); }
+                        }
+                        Ok(())
+                    }));
+                    webview.add_SourceChanged(&changed, &mut token)?;
                     let completed = webview2_com::NavigationCompletedEventHandler::create(Box::new(
-                        move |_, args| {
+                        move |sender, args| {
                             if let Some(args) = args {
                                 let mut id = 0;
                                 args.NavigationId(&mut id)?;
                                 let mut success = windows_core::BOOL(0);
                                 let valid = args.IsSuccess(&mut success).is_ok();
+                                if let Some(scope) = &completed_scope && let Ok(mut scope) = scope.lock() {
+                                    let mut raw = windows_core::PWSTR::null();
+                                    if let Some(sender) = sender && sender.Source(&mut raw).is_ok() {
+                                        if let Ok(url) = Url::parse(&webview2_com::take_pwstr(raw)) { scope.navigation_completed(id, valid && success.as_bool(), &url); }
+                                        else { scope.invalidate(); }
+                                    } else { scope.invalidate(); }
+                                }
                                 let mut status = 0;
                                 let mut web_error = Default::default();
                                 let _ = args.WebErrorStatus(&mut web_error);
@@ -929,6 +1068,7 @@ fn site_window(
     let close_label = label.clone();
     window.on_window_event(move |event| {
         if matches!(event, tauri::WindowEvent::Destroyed) {
+            privacy::forget_window(&close_app, &close_label);
             if let Ok(mut windows) = close_app.state::<WatchRuntime>().windows.lock() {
                 windows.remove(&close_label);
             }
@@ -944,6 +1084,9 @@ fn site_window(
             let _ = window.close();
             err(error)
         })?;
+    }
+    if interactive {
+        privacy::guarded_show(app, &native, true)?;
     }
     Ok(window)
 }
@@ -1054,6 +1197,14 @@ fn capture(
     let mut result: PageObservation = serde_json::from_value(value)
         .map_err(|_| "The page capture was incomplete. Try a smaller page region.".to_string())?;
     result.http_status = Some(navigation.http_status).filter(|status| *status > 0);
+    result.filtered_resources = load.filtered_resources.load(Ordering::Acquire);
+    if result.filtered_resources && load.blocked_resources.load(Ordering::Acquire) > 0 {
+        let failed=eval_json(window,"(()=>{const visible=e=>e.getClientRects().length&&getComputedStyle(e).visibility!=='hidden';return [...document.querySelectorAll('[role=alert],[data-error]')].some(e=>visible(e)&&/failed to load|unable to load|required (?:image|media|resource)|could not load/i.test(e.innerText||''))||performance.getEntriesByType('resource').some(e=>['script','fetch','xmlhttprequest'].includes(e.initiatorType)&&Number(e.responseStatus)>=400)})()".into(),cancel,deadline)?;
+        if failed == true {
+            result.status = "incomplete".into();
+            result.message="This page reported a required resource failure while hidden media filtering was enabled. Disable the option and recheck; the previous complete observation is retained.".into();
+        }
+    }
     let mut after = window.url().map_err(err)?;
     after.set_fragment(None);
     if *load.navigation.lock().map_err(err)? != navigation
@@ -1153,37 +1304,8 @@ fn finish_check(
             false
         }
     };
-    let latest = store.latest_hash(&job.watch_id);
-    if accepted
-        && previous.is_some()
-        && previous != latest
-        && store.settings().notifications
-        && let Some(hash) = latest
-    {
-        let mut hashes = state
-            .notified_hashes
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        if hashes.get(&job.watch_id) == Some(&hash) {
-            return;
-        }
-        hashes.insert(job.watch_id.clone(), hash);
-        drop(hashes);
-        let mut last = state
-            .last_notification
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        if last.is_none_or(|time| time.elapsed() >= Duration::from_secs(60))
-            && app
-                .notification()
-                .builder()
-                .title("Modhunter Watchtower")
-                .body("A watched page has new content. Open Watchtower to review it.")
-                .show()
-                .is_ok()
-        {
-            *last = Some(Instant::now());
-        }
+    if accepted {
+        notices::page_changed(app, job, previous.as_deref());
     }
 }
 
@@ -1380,8 +1502,10 @@ fn open_session(app: &tauri::AppHandle, session_id: &str, page: Option<&str>) ->
             .iter()
             .find_map(|label| app.get_webview_window(label))
     {
-        window.show().map_err(err)?;
-        window.set_focus().map_err(err)?;
+        let native = app
+            .get_window(window.label())
+            .ok_or("This native window closed.")?;
+        privacy::guarded_show(app, &native, true)?;
         return Ok(());
     }
     let url = Url::parse(page.unwrap_or(&session.origin)).map_err(err)?;
@@ -1439,7 +1563,12 @@ fn write_export(app: &tauri::AppHandle, value: &Value) -> Result<Value> {
 fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
     let state = app.state::<WatchRuntime>();
     if kind == "state" {
-        return Ok(json!({"ok":true,"state":state.snapshot()}));
+        let mut snapshot = state.snapshot();
+        snapshot["acquisitions"] = acquisition::snapshot(app);
+        snapshot["reviews"] = review::snapshot(app);
+        snapshot["maintenance"] = maintenance::snapshot(app);
+        snapshot["notices"] = notices::snapshot(app);
+        return Ok(json!({"ok":true,"state":snapshot}));
     }
     if kind == "close" {
         if let Some(window) = app.get_webview_window("watchtower") {
@@ -1447,11 +1576,81 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
         }
         return Ok(json!({"ok":true}));
     }
-    if !matches!(kind, "detail" | "export" | "exportFile") {
+    if reset::pending(app) {
+        return Err("Modhunter is closing for an approved application reset.".into());
+    }
+    if !matches!(
+        kind,
+        "detail"
+            | "export"
+            | "exportFile"
+            | "readiness"
+            | "unattributedInventory"
+            | "installQueue"
+            | "notices"
+    ) {
         state.writable()?;
     }
     let mut result = json!({});
     match kind {
+        "notices" | "refreshNotices" | "activateNotice" | "dismissNotice" => {
+            result = notices::execute(app, kind, &value)?;
+        }
+        "installQueue" | "installQueueControl" => {
+            result = queue::execute(app, kind, &value)?;
+        }
+        "readiness"
+        | "scanUnattributed"
+        | "cancelUnattributed"
+        | "unattributedInventory"
+        | "revealUnattributed" => {
+            result = inventory::execute(app, kind, &value)?;
+        }
+        "previewAppReset" | "applyAppReset" => {
+            result = reset::execute(app, kind, &value)?;
+        }
+        "maintenance"
+        | "globalSettings"
+        | "checkAppRelease"
+        | "dismissAppRelease"
+        | "openAppRelease"
+        | "storage"
+        | "previewDownloadCleanup"
+        | "applyDownloadCleanup"
+        | "diagnosticsPreview"
+        | "diagnosticsCopy"
+        | "diagnosticsSave"
+        | "browserChoices"
+        | "openPrivate"
+        | "copySourceLink"
+        | "licenses" => {
+            result = maintenance::execute(app, kind, &value)?;
+        }
+        "prepareReview"
+        | "openReview"
+        | "saveReviewSelection"
+        | "installReview"
+        | "cancelReview"
+        | "discardReview"
+        | "contentJobs"
+        | "cancelContentJob"
+        | "contentBackups"
+        | "contentRecovery"
+        | "contentBatchRestore"
+        | "duplicateScan"
+        | "duplicateRecovery" => {
+            result = review::execute(app, kind, &value)?;
+        }
+        "approveDownload" | "rejectDownload" | "cancelDownload" | "removeDownload"
+        | "verifyDownload" | "showDownload" | "resolveFiles" | "resolveFolder" | "openOffer"
+        | "decideOffer" | "clearOfferDecision" => {
+            result = acquisition::execute(app, kind, &value)?;
+            if matches!(kind, "decideOffer" | "clearOfferDecision")
+                && let Some(id) = result["watchId"].as_str()
+            {
+                cancel_selected(app, Some(&[id.to_string()]), false)?;
+            }
+        }
         "check" => {
             let selected = ids(&value)?;
             if selected.len() > 5000 {
@@ -1476,6 +1675,45 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
             cancel_selected(app, Some(&selected), true)?;
         }
         "cancelAll" => cancel(app, None)?,
+        "clearSessionCache" => {
+            result = browser_data::clear_session_cache(app, id(&value)?)?;
+        }
+        "clearAllCaches" => {
+            if value["confirm"] != "CLEAR CACHE" {
+                return Err("Confirm CLEAR CACHE in the trusted manager.".into());
+            }
+            result = browser_data::clear_all_caches(app)?;
+            if !maintenance::settings(app).retain_sign_ins {
+                let sessions: Vec<Session> =
+                    serde_json::from_value(state.store.snapshot()["sessions"].clone())
+                        .map_err(err)?;
+                let mut cleared = 0usize;
+                let mut failures = Vec::new();
+                for session in sessions {
+                    match state
+                        .store
+                        .command("resetSession", &json!({"id":session.id}), now())
+                    {
+                        Ok(_) => {
+                            cleared += 1;
+                            session_changed(app, Some(session));
+                        }
+                        Err(error) => failures.push(error),
+                    }
+                }
+                result["sessionsReset"] = json!(cleared);
+                if !failures.is_empty() {
+                    return Err(format!(
+                        "Browser caches cleared; {cleared} named sessions reset, but {} session resets failed: {}",
+                        failures.len(),
+                        failures.join("; ")
+                    ));
+                }
+                result["message"] = json!(format!(
+                    "Browser caches and history cleared. {cleared} named sessions reset; their old sign-in data is queued for removal when browser handles close."
+                ));
+            }
+        }
         "openSession" => {
             open_session(app, id(&value)?, None)?;
             result["message"] = json!(
@@ -1490,15 +1728,26 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
                 .ok_or("This watched page no longer exists.")?;
             let url = canonical_page_url(&watch.url)?;
             if kind == "openExternal" {
-                app.opener().open_url(url, None::<&str>).map_err(err)?;
-                result["message"] = json!(
-                    "Opened in your regular browser. Its sign-in stays separate from Modhunter's site session."
-                );
-            } else if let Some(session_id) = watch.session_id {
-                open_session(app, &session_id, Some(&url))?;
+                result = maintenance::open_external(app, &url, false)?;
             } else {
+                let session = watch
+                    .session_id
+                    .as_ref()
+                    .map(|id| {
+                        state
+                            .store
+                            .session(id)
+                            .ok_or("This page's site session no longer exists.")
+                    })
+                    .transpose()?;
+                if watch.requires_session && session.is_none() {
+                    return Err(
+                        "Choose this page's account before opening a download session.".into(),
+                    );
+                }
                 let url = Url::parse(&url).map_err(err)?;
-                let context = SiteContext::production(None, &url)?;
+                let mut context = SiteContext::production(session, &url)?;
+                context.download_watch = Some((watch.id.clone(), watch.generation));
                 site_window(app, context, url, true, None, Arc::new(Load::default()))?;
             }
         }
@@ -1507,7 +1756,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
             if let Some(file) = app
                 .dialog()
                 .file()
-                .set_title("Preview a Watchtower JSON import")
+                .set_title(localized(app, "Preview a Watchtower JSON import"))
                 .add_filter("Watchtower export", &["json"])
                 .blocking_pick_file()
             {
@@ -1533,7 +1782,8 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
         }
         "saveWatch" | "removeWatch" | "restoreWatch" | "pauseWatch" | "markSeen" | "undoSeen"
         | "saveSession" | "resetSession" | "removeSession" | "confirmSession" | "settings"
-        | "import" | "export" | "detail" | "recover" => {
+        | "import" | "export" | "detail" | "recover" | "saveCreator" | "saveSourceBinding"
+        | "clearFileDecision" => {
             // Validate before the durable mutation. Cancellation itself happens
             // only after success, so an invalid edit cannot stop an owned check.
             let selected = if matches!(kind, "saveWatch" | "removeWatch" | "pauseWatch")
@@ -1552,6 +1802,26 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
                 None
             };
             result = state.store.command(kind, &value, now())?;
+            if matches!(
+                kind,
+                "saveCreator" | "saveSourceBinding" | "clearFileDecision"
+            ) {
+                let mut affected = result["watchIds"]
+                    .as_array()
+                    .map(|ids| {
+                        ids.iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_owned)
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                if let Some(id) = result["watchId"].as_str() {
+                    affected.push(id.to_owned());
+                }
+                if !affected.is_empty() {
+                    cancel_selected(app, Some(&affected), false)?;
+                }
+            }
             if let Some(selected) = selected {
                 cancel_selected(app, Some(&selected), false)?;
             }
@@ -1585,6 +1855,10 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
     }
     result["ok"] = json!(true);
     result["state"] = state.snapshot();
+    result["state"]["acquisitions"] = acquisition::snapshot(app);
+    result["state"]["reviews"] = review::snapshot(app);
+    result["state"]["maintenance"] = maintenance::snapshot(app);
+    result["state"]["notices"] = notices::snapshot(app);
     notify(app);
     Ok(result)
 }
@@ -1599,15 +1873,54 @@ pub async fn watchtower_command(
     if !policy::trusted_manager(webview.label(), &webview.url().map_err(err)?) {
         return Err("Watchtower commands belong only to the bundled manager.".into());
     }
-    tauri::async_runtime::spawn_blocking(move || execute(&app, &kind, value.unwrap_or(Value::Null)))
-        .await
-        .map_err(err)?
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = execute(&app, &kind, value.unwrap_or(Value::Null));
+        if result.is_err() {
+            notify(&app);
+        }
+        result
+    })
+    .await
+    .map_err(err)?
+}
+
+pub(crate) fn apply_global_appearance(app: &tauri::AppHandle) -> Result<()> {
+    maintenance::apply_appearance(app)
+}
+
+pub(crate) fn reset_pending(app: &tauri::AppHandle) -> bool {
+    reset::pending(app)
+}
+pub(crate) fn reset_status(app: &tauri::AppHandle) -> Value {
+    reset::status(app)
 }
 
 pub fn shutdown(app: &tauri::AppHandle) {
+    privacy::shutdown(app);
     let Some(state) = app.try_state::<WatchRuntime>() else {
         return;
     };
+    acquisition::cancel_all(app);
+    let preferences = maintenance::settings(app);
+    if preferences.clear_cache_on_exit && !state.stopping.load(Ordering::Acquire) {
+        if let Err(error) = browser_data::clear_all_caches(app) {
+            record_runtime_warning(&state, error);
+        }
+        if !preferences.retain_sign_ins {
+            let sessions: Vec<Session> =
+                serde_json::from_value(state.store.snapshot()["sessions"].clone())
+                    .unwrap_or_default();
+            for session in sessions {
+                match state
+                    .store
+                    .command("resetSession", &json!({"id":session.id}), now())
+                {
+                    Ok(_) => session_changed(app, Some(session)),
+                    Err(error) => record_runtime_warning(&state, error),
+                }
+            }
+        }
+    }
     if state.stopping.swap(true, Ordering::AcqRel) {
         return;
     }

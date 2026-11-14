@@ -78,8 +78,104 @@ struct Runtime {
     catalog_cache: crate::catalog::CatalogCache,
     smoke_output: Option<PathBuf>,
     smoke_sent: AtomicBool,
+    smoke_finishing: AtomicBool,
     smoke_ui: Mutex<Option<Value>>,
     smoke_export: Mutex<Option<PathBuf>>,
+}
+
+/// A host-owned connection lease; remote content and the Watchtower renderer
+/// never choose an endpoint or receive the native authentication token.
+pub(crate) fn mo2_connection(app: &tauri::AppHandle) -> Result<(BridgeClient, String, u64)> {
+    let runtime = app
+        .try_state::<Runtime>()
+        .ok_or("No live MO2 desktop connection is available.")?;
+    let model = runtime.model.lock().map_err(err)?;
+    if !model.connected {
+        return Err("Connect Modhunter to MO2 before reviewing an installation.".into());
+    }
+    let endpoint = model
+        .endpoint
+        .clone()
+        .ok_or("The MO2 connection has no address.")?;
+    Ok((
+        runtime.client.clone(),
+        endpoint,
+        runtime.epoch.load(Ordering::Acquire),
+    ))
+}
+
+pub(crate) fn mo2_connection_current(app: &tauri::AppHandle, endpoint: &str, epoch: u64) -> bool {
+    let Some(runtime) = app.try_state::<Runtime>() else {
+        return false;
+    };
+    runtime.epoch.load(Ordering::Acquire) == epoch
+        && runtime
+            .model
+            .lock()
+            .is_ok_and(|model| model.connected && model.endpoint.as_deref() == Some(endpoint))
+}
+
+/// On-demand catalog and native folder facts for the trusted readiness view.
+/// No connection is selected, no demo is treated as live, and no asset walk is
+/// performed by this read. The caller rechecks the lease before publishing.
+pub(crate) fn inspection_snapshot(app: &tauri::AppHandle) -> Result<Value> {
+    let state = app.state::<Runtime>();
+    let (connected, endpoint, epoch, offline, profile) = {
+        let model = state.model.lock().map_err(err)?;
+        (
+            model.connected,
+            model.endpoint.clone(),
+            state.epoch.load(Ordering::Acquire),
+            model.catalog.clone(),
+            model.prefs.profile.clone(),
+        )
+    };
+    if connected {
+        let endpoint = endpoint.ok_or("The current live connection has no address.")?;
+        let response = state
+            .client
+            .native_content(&endpoint, "snapshot", &json!({}))
+            .map_err(err)?;
+        let catalog = response
+            .get("catalog")
+            .filter(|catalog| catalog["items"].is_array())
+            .ok_or("The live MO2 catalog is unavailable.")?;
+        let context = state
+            .client
+            .native_content(&endpoint, "content-context", &json!({}))
+            .map_err(err)?;
+        if !mo2_connection_current(app, &endpoint, epoch)
+            || catalog["profileId"] != context["profileId"]
+            || catalog["game"] != context["game"]
+            || catalog["gameRuntime"] != context["gameRuntime"]
+            || catalog["executionEpoch"] != context["executionEpoch"]
+        {
+            return Err("MO2 changed while preparing its readiness summary. Refresh the current instance and profile.".into());
+        }
+        Ok(
+            json!({"mode":"live","connectionEpoch":epoch,"endpoint":endpoint,"catalog":catalog,"context":context}),
+        )
+    } else if let Some(catalog) = offline.filter(|_| profile.is_some()) {
+        Ok(
+            json!({"mode":"offline","connectionEpoch":epoch,"catalog":catalog.as_ref(),"import":profile,"scope":"Read-only imported profile. Native installation, accounts and game state have not been verified."}),
+        )
+    } else {
+        Ok(
+            json!({"mode":"disconnected","connectionEpoch":epoch,"scope":"No live MO2 instance or imported profile. Demo content is practice only and is excluded from this readiness summary."}),
+        )
+    }
+}
+
+pub(crate) fn inspect_available_instances() -> Result<Value> {
+    let directory = std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .ok_or("Windows LOCALAPPDATA directory is unavailable")?
+        .join("Modhunter")
+        .join("mo2-sessions");
+    let client = BridgeClient::with_timeout(std::time::Duration::from_millis(800)).map_err(err)?;
+    Ok(json!(
+        crate::discovery::discover(&directory, &client).map_err(err)?
+    ))
 }
 
 impl Runtime {
@@ -346,7 +442,9 @@ fn activate(app: &tauri::AppHandle, id: u64) -> Result<()> {
         if let Some(view) = app.get_webview(&label) {
             if label == active {
                 view.show().map_err(err)?;
-                view.set_focus().map_err(err)?;
+                if !crate::watchtower_windows::privacy::is_hidden(app) {
+                    view.set_focus().map_err(err)?;
+                }
             } else {
                 view.hide().map_err(err)?;
             }
@@ -410,6 +508,9 @@ fn finish_smoke(app: &tauri::AppHandle) {
         smoke_event(app, "waiting-for-dashboard-or-export", json!({}));
         return;
     };
+    if state.smoke_finishing.swap(true, Ordering::AcqRel) {
+        return;
+    }
     let exported = std::fs::read(&export)
         .ok()
         .and_then(|b| serde_json::from_slice::<Value>(&b).ok());
@@ -429,7 +530,39 @@ fn finish_smoke(app: &tauri::AppHandle) {
         "report-written",
         json!({"passed": pass, "written": written}),
     );
-    app.exit(if pass && written { 0 } else { 1 });
+    if !pass || !written {
+        app.exit(1);
+        return;
+    }
+    // Keep the actual rendered window alive until the launcher has captured it.
+    // Previously the launcher photographed the runner desktop after this exit.
+    // This bounded handshake exists only for the explicit native smoke mode.
+    let acknowledgement = path.with_extension("capture-complete");
+    let handle = app.clone();
+    if let Some(window) = app.get_window("main") {
+        let _ = window.set_focus();
+    }
+    std::thread::spawn(move || {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        let process_id = std::process::id().to_string();
+        let captured = loop {
+            if std::fs::read_to_string(&acknowledgement)
+                .is_ok_and(|value| value.trim() == process_id)
+            {
+                break true;
+            }
+            if std::time::Instant::now() >= deadline {
+                break false;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        };
+        smoke_event(
+            &handle,
+            "desktop-capture-acknowledged",
+            json!({"captured": captured}),
+        );
+        handle.exit(if captured { 0 } else { 1 });
+    });
 }
 
 fn inject_catalog(app: &tauri::AppHandle, label: &str) -> Result<()> {
@@ -555,6 +688,38 @@ fn inject_watchtower_capability(app: &tauri::AppHandle, view: &Webview) {
     if trusted {
         let _ = view.eval("window.__MODHUNTER_NATIVE_WATCHTOWER__=true;window.dispatchEvent(new Event('modhunter-watchtower-ready'));");
     }
+}
+
+pub(crate) fn apply_content_preferences(app: &tauri::AppHandle, value: &Value) -> Result<()> {
+    let Some(runtime) = app.try_state::<Runtime>() else {
+        return Ok(());
+    };
+    let (labels, endpoint) = {
+        let model = runtime.model.lock().map_err(err)?;
+        (
+            model
+                .tabs
+                .iter()
+                .map(|tab| tab.label.clone())
+                .collect::<Vec<_>>(),
+            model.endpoint.clone(),
+        )
+    };
+    let script = format!(
+        "if(!window.ModhunterI18n){{ {} {} }}window.dispatchEvent(new CustomEvent('modhunter-preferences',{{detail:{value}}}));",
+        include_str!("../../../ui/locale-catalogs.js"),
+        include_str!("../../../ui/preferences.js")
+    );
+    for label in labels {
+        if let Some(view) = app.get_webview(&label)
+            && view
+                .url()
+                .is_ok_and(|url| policy::owned_page(&url, endpoint.as_deref()))
+        {
+            view.eval(&script).map_err(err)?;
+        }
+    }
+    Ok(())
 }
 
 fn invalidate_analysis(model: &mut Model) {
@@ -825,6 +990,7 @@ fn open_tab(app: &tauri::AppHandle, mode: Mode) -> Result<u64> {
             }
             if done {
                 inject_watchtower_capability(&load_app, &view);
+                let _ = crate::watchtower_windows::apply_global_appearance(&load_app);
                 if let Err(error) = inject_catalog(&load_app, view.label()) {
                     smoke_event(
                         &load_app,
@@ -954,7 +1120,10 @@ fn import_profile(app: &tauri::AppHandle, refresh: bool, deep: bool) -> Result<V
         let file = app
             .dialog()
             .file()
-            .set_title("Choose an MO2 profile's modlist.txt")
+            .set_title(crate::watchtower_windows::localized(
+                app,
+                "Choose an MO2 profile's modlist.txt",
+            ))
             .add_filter("MO2 modlist", &["txt"])
             .blocking_pick_file();
         let Some(file) = file else {
@@ -1159,10 +1328,14 @@ fn live_dashboard_action(app: &tauri::AppHandle, action: &str) -> Result<Value> 
 }
 
 fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
+    if kind != "state" && crate::watchtower_windows::reset_pending(app) {
+        return Err("Modhunter is closing for an approved application reset.".into());
+    }
     let state = app.state::<Runtime>();
     match kind {
         "state" => return Ok(json!({"ok": true, "state": state.snapshot()})),
         "watchtower" => crate::watchtower_windows::open(app, None)?,
+        "readiness" => crate::watchtower_windows::open(app, Some(json!({"action":"readiness"})))?,
         "ready" => {
             smoke_event(app, "shell-ready-command", json!({}));
             let restore = {
@@ -1252,7 +1425,10 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
             let picked = app
                 .dialog()
                 .file()
-                .set_title("Choose this instance's ModOrganizer.ini (Cancel keeps current setting)")
+                .set_title(crate::watchtower_windows::localized(
+                    app,
+                    "Choose this instance's ModOrganizer.ini (Cancel keeps current setting)",
+                ))
                 .add_filter("MO2 configuration", &["ini"])
                 .blocking_pick_file();
             if let Some(file) = picked {
@@ -1273,7 +1449,10 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
             if let Some(file) = app
                 .dialog()
                 .file()
-                .set_title("Choose the configured MO2 mods directory")
+                .set_title(crate::watchtower_windows::localized(
+                    app,
+                    "Choose the configured MO2 mods directory",
+                ))
                 .blocking_pick_folder()
             {
                 let path = file.into_path().map_err(err)?;
@@ -1305,7 +1484,10 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
             let picked = app
                 .dialog()
                 .file()
-                .set_title("Choose ESLifier_Data or ESLifier_FO4_Data beside ESLifier's executable")
+                .set_title(crate::watchtower_windows::localized(
+                    app,
+                    "Choose ESLifier_Data or ESLifier_FO4_Data beside ESLifier's executable",
+                ))
                 .blocking_pick_folder();
             if let Some(file) = picked {
                 let path = policy::eslifier_data_directory(&file.into_path().map_err(err)?)?;
@@ -1513,15 +1695,20 @@ pub fn run() {
                 catalog_cache: crate::catalog::CatalogCache::default(),
                 smoke_output,
                 smoke_sent: AtomicBool::new(false),
+                smoke_finishing: AtomicBool::new(false),
                 smoke_ui: Mutex::new(None),
                 smoke_export: Mutex::new(None),
             });
             smoke_event(app.handle(), "runtime-created", json!({}));
             let window = WindowBuilder::new(app, "main")
                 .title("Modhunter · Rust")
+                .visible(false)
+                .focused(false)
                 .inner_size(1480.0, 960.0)
                 .min_inner_size(760.0, 550.0)
                 .build()?;
+            crate::watchtower_windows::privacy::apply_window(app.handle(), &window)
+                .map_err(std::io::Error::other)?;
             let handle = app.handle().clone();
             let closing = Arc::new(AtomicBool::new(false));
             window.on_window_event(move |event| {
@@ -1547,7 +1734,13 @@ pub fn run() {
                     resize(&handle);
                 }
             });
+            let appearance_app = app.handle().clone();
             let chrome = WebviewBuilder::new("chrome", WebviewUrl::App("shell.html".into()))
+                .on_page_load(move |_, payload| {
+                    if payload.event() == PageLoadEvent::Finished {
+                        let _ = crate::watchtower_windows::apply_global_appearance(&appearance_app);
+                    }
+                })
                 .on_navigation(|u| policy::local_asset(u, "/shell.html"))
                 .on_new_window(|_, _| NewWindowResponse::Deny);
             window.add_child(
@@ -1558,6 +1751,8 @@ pub fn run() {
             smoke_event(app.handle(), "chrome-created", json!({}));
             open_tab(app.handle(), Mode::Dashboard).map_err(std::io::Error::other)?;
             smoke_event(app.handle(), "dashboard-created", json!({}));
+            crate::watchtower_windows::privacy::guarded_show(app.handle(), &window, true)
+                .map_err(std::io::Error::other)?;
             Ok(())
         })
         .run(tauri::generate_context!())

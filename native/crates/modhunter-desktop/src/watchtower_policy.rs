@@ -5,6 +5,26 @@ use url::Url;
 
 pub const MAX_RESULT_BYTES: usize = 1_200_000;
 
+/// A native hide transition may clear capture affinity. Repair only after the
+/// real visibility getter confirms the window is hidden; never show it to fix
+/// the policy. The native caller performs all three operations on its GUI thread.
+pub fn hide_before_capture(
+    hide: impl FnOnce() -> Result<(), String>,
+    is_visible: impl FnOnce() -> Result<bool, String>,
+    apply_capture: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    hide()?;
+    if is_visible()? {
+        return Err("Windows did not confirm that the window was hidden.".into());
+    }
+    apply_capture()
+}
+
+#[path = "watchtower_download_scope.rs"]
+pub mod download_scope;
+#[path = "watchtower_preparation.rs"]
+pub mod preparation;
+
 /// Readiness belongs to one top-level WebView2 navigation. In particular, the
 /// cancelled initial about:blank must never complete a newer website request.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -116,6 +136,7 @@ if(document.readyState==='loading')return fail('loading','The page is still load
 const visible=e=>{if(!e)return false;const s=getComputedStyle(e);return s.display!=='none'&&s.visibility!=='hidden'&&s.contentVisibility!=='hidden'&&e.getClientRects().length>0};
 if([...document.querySelectorAll('input[type="password"]')].slice(0,100).some(visible))return fail('signInRequired','Sign in in this site session, then check the page again.');
 const title=result.title.toLowerCase();
+if(/(^|\.)patreon\.com$/.test(here.hostname)&&/\/posts\//.test(here.pathname)&&/unlock this post|join to unlock|become a member to unlock/i.test(String(document.body?.innerText||'').slice(0,32768)))return fail('accessRestricted','This release is not readable by the selected account. Sign-in and release access are separate; the previous complete observation is retained.');
 if(/just a moment|checking your browser|verify you are human|security verification|attention required/.test(title)||[...document.querySelectorAll('#challenge-running,#challenge-stage,[data-cf-beacon]~#challenge-form')].some(visible))return fail('challenge','This site needs an interactive check. Open its session to complete it.');
 if(/access denied|403 forbidden|429 too many requests|this site can.t be reached|can.t reach this page/.test(title)||document.documentURI.startsWith('chrome-error:'))return fail('unavailable','The site declined or could not complete this request. Review it in the site session and retry later.');
 let root;try{root=cfg.selector?document.querySelector(cfg.selector):(document.querySelector('main,article,[role="main"]')||document.body)}catch{return fail('selectorMissing','The CSS selector is invalid. Edit this watched page.');}
@@ -135,6 +156,71 @@ return result;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hidden_capture_transition_repairs_a_reset_only_after_native_visibility_confirmation() {
+        use std::cell::Cell;
+        let visible = Cell::new(true);
+        let affinity = Cell::new(17);
+        let confirmed_hidden = Cell::new(false);
+        hide_before_capture(
+            || {
+                visible.set(false);
+                affinity.set(0); // Actual Windows fixture transition.
+                Ok(())
+            },
+            || {
+                confirmed_hidden.set(!visible.get());
+                Ok(visible.get())
+            },
+            || {
+                assert!(confirmed_hidden.get() && !visible.get());
+                affinity.set(17);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert!(!visible.get());
+        assert_eq!(affinity.get(), 17);
+    }
+
+    #[test]
+    fn hidden_capture_transition_never_repairs_without_a_successful_hide_and_native_query() {
+        for hide_result in [Ok(()), Err("hide failed".to_string())] {
+            for visibility_result in [Ok(true), Err("query failed".to_string())] {
+                let result = hide_before_capture(
+                    || hide_result.clone(),
+                    || visibility_result.clone(),
+                    || panic!("must not repair capture while visibility is unconfirmed"),
+                );
+                assert!(result.is_err());
+            }
+        }
+        assert_eq!(
+            hide_before_capture(
+                || Err("hide failed".into()),
+                || panic!("hide failed"),
+                || panic!("hide failed")
+            ),
+            Err("hide failed".into())
+        );
+    }
+
+    #[test]
+    fn hidden_capture_transition_reports_reapply_failure_without_revealing_the_window() {
+        use std::cell::Cell;
+        let visible = Cell::new(true);
+        let result = hide_before_capture(
+            || {
+                visible.set(false);
+                Ok(())
+            },
+            || Ok(visible.get()),
+            || Err("affinity failed".into()),
+        );
+        assert_eq!(result, Err("affinity failed".into()));
+        assert!(!visible.get());
+    }
     #[test]
     fn obsolete_blank_completion_cannot_complete_a_website_navigation() {
         let mut load = NavigationProgress::default();

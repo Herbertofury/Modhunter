@@ -2,9 +2,9 @@ name: Rust desktop and MO2 readiness
 on:
   push:
     branches: [main, 'upgrade/**']
-    paths: ['native/**', 'mo2_update_arsenal/**', 'desktop/**', 'tests/**', 'scripts/**', 'build.py', '.github/workflows/native-rust.yml']
+    paths: ['native/**', 'mo2_update_arsenal/**', 'desktop/**', 'tests/**', 'scripts/**', 'build.py', '.gitattributes', '.github/workflows/native-rust.yml']
   pull_request:
-    paths: ['native/**', 'mo2_update_arsenal/**', 'desktop/**', 'tests/**', 'scripts/**', 'build.py', '.github/workflows/native-rust.yml']
+    paths: ['native/**', 'mo2_update_arsenal/**', 'desktop/**', 'tests/**', 'scripts/**', 'build.py', '.gitattributes', '.github/workflows/native-rust.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -33,14 +33,29 @@ jobs:
         run: |
           python3 native/scripts/prepare_release.py --print-version
           python3 native/scripts/prepare_assets.py
+          python3 native/scripts/prepare_archive_tools.py
+          python3 native/scripts/prepare_notices.py
           cargo fmt --manifest-path native/Cargo.toml --all -- --check
           cargo test --manifest-path native/Cargo.toml --workspace --locked
+          cargo build --manifest-path native/Cargo.toml --locked -p modhunter-core --bin modhunter-cli
+          MODHUNTER_CONTENT_CLI="$PWD/native/target/debug/modhunter-cli" python3 -m unittest discover -s tests -p test_content_recovery.py -v
+          MODHUNTER_CONTENT_CLI="$PWD/native/target/debug/modhunter-cli" python3 -m unittest discover -s tests -p test_shared_install_queue.py -v
+          python3 native/scripts/verify_archive_review.py --cli native/target/debug/modhunter-cli --output native/target/archive-review-proof.json
           python3 native/scripts/verify_plugin_bridge.py --cli native/target/debug/modhunter-cli --output native/target/plugin-bridge-protocol.json
           python3 native/scripts/verify_source_bridge.py --cli native/target/debug/modhunter-cli --output native/target/source-bridge-protocol.json
           cargo clippy --manifest-path native/Cargo.toml --workspace --all-targets --locked -- -D warnings
           python3 -m unittest discover -s tests -p 'test_*.py' -q
           node --check native/ui/shell.js
           node --check native/ui/watchtower.js
+          node --check native/ui/watchtower-review.js
+          node --check native/ui/watchtower-maintenance.js
+          node --check native/ui/watchtower-inventory.js
+          node --check native/ui/watchtower-queue.js
+          node --check native/ui/watchtower-notices.js
+          node --check native/ui/locale-catalogs.js
+          node --check native/ui/mega-folder.js
+          node --check native/ui/preferences.js
+          node --test tests/watchtower_source_scripts.test.cjs
           node --check tests/fixtures/watchtower_native_fixture.js
           node --test native/crates/modhunter-desktop/tests/shell_runtime.test.cjs
           node --test tests/mod_insights.test.cjs
@@ -60,6 +75,8 @@ jobs:
           PYTHONPATH=. /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_frontend_responsiveness.py' -v
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_compact_workspace.py' -v
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/test_watchtower_browser.py
+          PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p test_watchtower_sources_ui.py -v
+          PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/test_watchtower_native_ui.py
           PYTHONPATH=. /tmp/modhunter-qa/bin/python scripts/benchmark_dashboard_render.py --baseline-ref 63e5df3e3ef218ae72ce58b5e4502165c40ca604 --output /tmp/modhunter-proof/dashboard-render-comparison.json
       - name: Upload browser proof
         if: always()
@@ -89,6 +106,10 @@ jobs:
           python native/scripts/prepare_release.py --print-version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python native/scripts/prepare_assets.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python native/scripts/prepare_archive_tools.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python native/scripts/prepare_notices.py
       - name: Install the Qt SDK matching MO2 2.5.2
         id: qt
         uses: jurplel/install-qt-action@v4
@@ -153,12 +174,16 @@ jobs:
         run: |
           cargo test --manifest-path native/Cargo.toml --workspace --locked
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python native/scripts/verify_archive_review.py --cli native/target/debug/modhunter-cli.exe --output native/target/archive-review-proof.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo clippy --manifest-path native/Cargo.toml --workspace --all-targets --locked -- -D warnings
       - name: Build Rust executable and Windows installer
         working-directory: native/crates/modhunter-desktop
         run: npx --yes @tauri-apps/cli@2 build
       - name: Build portable Rust diagnostic CLI
         run: cargo build --manifest-path native/Cargo.toml --release --locked -p modhunter-core
+      - name: Verify the exact release CLI and packaged archive helper
+        run: python native/scripts/verify_archive_review.py --cli native/target/release/modhunter-cli.exe --output native/target/archive-review-proof.json
       - name: Launch actual Windows WebView2 and import a fixture profile
         shell: pwsh
         run: ./native/scripts/windows_smoke.ps1 -Executable "$PWD/native/target/release/Modhunter.exe" -Output "$PWD/native/target/native-smoke"
@@ -182,9 +207,12 @@ jobs:
           if (Test-Path native/target/portable) { Remove-Item -Recurse -Force native/target/portable }
           New-Item -ItemType Directory -Force native/target/portable/MO2 | Out-Null
           Copy-Item native/target/release/Modhunter.exe native/target/portable/
+          Copy-Item -Recurse native/resources/archive-tools native/target/portable/archive-tools
           Copy-Item -Recurse mo2_update_arsenal native/target/portable/MO2/
           Get-ChildItem -Recurse native/target/portable -Directory -Filter __pycache__ | Remove-Item -Recurse -Force
           Copy-Item native/README.md native/target/portable/README.md
+          Copy-Item native/PROJECT_NOTICE.txt native/target/portable/PROJECT_NOTICE.txt
+          Copy-Item native/resources/THIRD_PARTY_NOTICES.json native/target/portable/THIRD_PARTY_NOTICES.json
           Copy-Item native/Install_MO2_Plugin.ps1 native/target/portable/
           Copy-Item native/Install_MO2_Plugin.bat native/target/portable/
           Copy-Item native/Check_MO2_Readiness.ps1 native/target/portable/
@@ -194,10 +222,12 @@ jobs:
           Copy-Item native/target/release/modhunter-cli.exe native/target/portable/
           New-Item -ItemType Directory -Force native/target/portable/MO2/mo2_update_arsenal/bin | Out-Null
           Copy-Item native/target/release/modhunter-cli.exe native/target/portable/MO2/mo2_update_arsenal/bin/modhunter-cli.exe
+          Copy-Item -Recurse native/resources/archive-tools native/target/portable/MO2/mo2_update_arsenal/bin/archive-tools
           Copy-Item native/target/qt-bridge/Release/modhunter-qt-bridge.dll native/target/portable/MO2/mo2_update_arsenal/bin/modhunter-qt-bridge.dll
           New-Item -ItemType Directory -Force native/target/portable/Evidence | Out-Null
           Copy-Item native/target/native-smoke/native-smoke.json native/target/portable/Evidence/
           Copy-Item native/target/watchtower-smoke/watchtower-smoke.json native/target/portable/Evidence/
+          Copy-Item native/target/archive-review-proof.json native/target/portable/Evidence/
           Copy-Item native/target/qt-forward/qt-forward.json native/target/portable/Evidence/
           Copy-Item native/target/live-mo2-smoke/desktop-live.json native/target/portable/Evidence/
           $BenchmarkFiles = @(python native/scripts/prepare_release.py --benchmark-files)
@@ -230,6 +260,7 @@ jobs:
             native/target/watchtower-smoke/*.json
             native/target/watchtower-smoke/*.jsonl
             native/target/watchtower-smoke/*.log
+            native/target/archive-review-proof.json
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [contracts, windows, mo2]
@@ -299,11 +330,13 @@ jobs:
           cmake --build native/target/qt-bridge --config Release --parallel 2
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ctest --test-dir native/target/qt-bridge -C Release --output-on-failure
-      - name: Prepare the production dashboard
+      - name: Prepare the production dashboard and pinned archive tools
         run: |
           python native/scripts/prepare_release.py --print-version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python native/scripts/prepare_assets.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python native/scripts/prepare_archive_tools.py
       - name: Build the real Rust connection client
         run: cargo build --manifest-path native/Cargo.toml --release --locked -p modhunter-core
       - name: Exercise the production plugin inside real MO2 2.5.2

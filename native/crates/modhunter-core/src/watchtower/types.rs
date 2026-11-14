@@ -19,6 +19,7 @@ pub struct WatchSettings {
     pub muted_folders: Vec<String>,
     pub hide_titles: bool,
     pub privacy_screen: bool,
+    pub filter_hidden_resources: bool,
 }
 impl Default for WatchSettings {
     fn default() -> Self {
@@ -32,11 +33,12 @@ impl Default for WatchSettings {
             muted_folders: Vec::new(),
             hide_titles: false,
             privacy_screen: false,
+            filter_hidden_resources: false,
         }
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ModAssociation {
     pub profile_id: String,
@@ -76,6 +78,8 @@ pub struct Observation {
     /// A bounded preview; the digest always covers the complete accepted capture.
     pub text_preview: String,
     pub preview_truncated: bool,
+    #[serde(default)]
+    pub filtered_resources: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
@@ -165,6 +169,7 @@ pub struct CheckJob {
     pub ignore_selectors: Vec<String>,
     pub session_id: Option<String>,
     pub session_storage_generation: u64,
+    pub filtered_resources: bool,
     pub session: Option<Session>,
 }
 
@@ -180,6 +185,7 @@ pub struct PageObservation {
     pub http_status: Option<u16>,
     /// Incomplete browser captures must not advance the successful baseline.
     pub truncated: bool,
+    pub filtered_resources: bool,
 }
 impl Default for PageObservation {
     fn default() -> Self {
@@ -191,6 +197,7 @@ impl Default for PageObservation {
             message: String::new(),
             http_status: None,
             truncated: false,
+            filtered_resources: false,
         }
     }
 }
@@ -205,6 +212,8 @@ pub(crate) struct Document {
     pub watches: Vec<Watch>,
     pub sessions: Vec<Session>,
     pub seen_history: Vec<SeenEvent>,
+    #[serde(default)]
+    pub source_preferences: SourcePreferences,
 }
 impl Default for Document {
     fn default() -> Self {
@@ -216,6 +225,75 @@ impl Default for Document {
             watches: Vec::new(),
             sessions: Vec::new(),
             seen_history: Vec::new(),
+            source_preferences: SourcePreferences::default(),
         }
     }
+}
+
+/// User decisions and observed access facts. No browser credentials or private
+/// download addresses enter this structure. Unknown attachments remain unknown.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct SourcePreferences {
+    pub creators: Vec<CreatorPreferences>,
+    pub bindings: Vec<SourceBinding>,
+    pub files: Vec<SourceFileDecision>,
+    pub accounts: Vec<SessionAccess>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CreatorPreferences {
+    pub id: String,
+    pub profile_id: String,
+    pub name: String,
+    pub offer_new_content: bool,
+    pub muted_origins: Vec<String>,
+    pub revision: u64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceBinding {
+    pub watch_id: String,
+    pub source_url: String,
+    pub association: Option<ModAssociation>,
+    pub creator_id: Option<String>,
+    #[serde(default)]
+    pub game: String,
+    #[serde(default)]
+    pub runtime: String,
+    pub variant: String,
+    #[serde(default)]
+    pub compatibility_confirmed: bool,
+    /// update, newContent, or unclassified. A page binding is not an attachment approval.
+    pub content_intent: String,
+    pub preferred: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceFileDecision {
+    pub watch_id: String,
+    pub source_url: String,
+    pub source_file_key: String,
+    pub name: String,
+    pub ignored: bool,
+    /// update, newContent, or unclassified; update requires the exact saved association.
+    pub kind: String,
+    pub association: Option<ModAssociation>,
+    pub updated_at: u64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionAccess {
+    pub session_id: String,
+    pub storage_generation: u64,
+    /// unknown, signedIn, or signedOut: observed page controls, not entitlement.
+    pub login_state: String,
+    pub status: String,
+    pub verification_hold: bool,
+    pub guidance: String,
+    pub observed_at: u64,
 }

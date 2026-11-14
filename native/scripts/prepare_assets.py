@@ -8,6 +8,7 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
+subprocess.run([sys.executable, str(ROOT / 'native/scripts/prepare_locales.py')], cwd=ROOT, check=True)
 env = dict(os.environ, MODHUNTER_ARTIFACT_DIR=str(ROOT / 'native' / 'target' / 'assets'))
 subprocess.run([sys.executable, str(ROOT / 'build.py')], cwd=ROOT, env=env, check=True)
 ui = ROOT / 'native' / 'ui'

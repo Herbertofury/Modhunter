@@ -12,6 +12,9 @@ mod commands;
 #[path = "store/recovery_tests.rs"]
 mod recovery_tests;
 #[cfg(test)]
+mod source_tests;
+mod sources;
+#[cfg(test)]
 mod tests;
 
 struct Inner {
@@ -94,7 +97,8 @@ impl WatchStore {
         let (mut total, mut new, mut changed, mut unread, mut checking, mut paused, mut errors) =
             (0, 0, 0, 0, 0, 0, 0);
         for watch in &doc.watches {
-            let row = summary(watch, &doc.settings);
+            let mut row = summary(watch, &doc.settings);
+            sources::enrich(doc, watch, &mut row);
             if watch.removed_at.is_none() {
                 total += 1;
                 if row["needsCheck"] == true {
@@ -120,6 +124,7 @@ impl WatchStore {
         }
         json!({"ok":true,"schemaVersion":SCHEMA_VERSION,"revision":doc.revision,
             "settings":doc.settings,"watches":watches,"sessions":doc.sessions,
+            "sourcePreferences":{"creators":doc.source_preferences.creators,"bindings":doc.source_preferences.bindings,"accounts":doc.source_preferences.accounts,"fileDecisionCount":doc.source_preferences.files.len()},
             "seenHistory":doc.seen_history,"history":doc.seen_history,
             "readOnly":inner.read_only,"recoveryWarning":inner.warning,
             "counts":{"total":total,"all":doc.watches.len(),"new":new,"changed":changed,
@@ -173,6 +178,7 @@ impl WatchStore {
                 .find(|w| w.id == id)
                 .is_some_and(|watch| {
                     eligible(watch, &inner.document.settings)
+                        && sources::eligible(&inner.document, watch)
                         && (!watch.requires_session || watch.session_id.is_some())
                 })
     }
@@ -228,6 +234,8 @@ impl WatchStore {
                     .ok_or("This page watch no longer exists.")?;
                 let mut value = serde_json::to_value(watch).map_err(|e| e.to_string())?;
                 add_flags(&mut value, watch, &inner.document.settings);
+                sources::enrich(&inner.document, watch, &mut value);
+                sources::detail(&inner.document, watch, &mut value);
                 Ok(
                     json!({"ok":true,"revision":inner.document.revision,"watch":value,
                     "seenHistory":inner.document.seen_history.iter().filter(|e|e.watch_id==id).collect::<Vec<_>>() }),
@@ -301,6 +309,7 @@ impl WatchStore {
             .iter()
             .filter(|w| {
                 eligible(w, &doc.settings)
+                    && sources::eligible(doc, w)
                     && w.state != "checking"
                     && (!w.requires_session || w.session_id.is_some())
                     && (!due_only || now_ms >= w.next_check_at.max(w.retry_at))
@@ -318,7 +327,7 @@ impl WatchStore {
                 .position(|w| w.id == id)
                 .ok_or("This page watch no longer exists.")?;
             let watch = &doc.watches[index];
-            if !eligible(watch, &doc.settings) {
+            if !eligible(watch, &doc.settings) || !sources::eligible(doc, watch) {
                 return Err("This page watch is paused, muted, or removed.".into());
             }
             if watch.state == "checking" {
@@ -362,6 +371,7 @@ impl WatchStore {
                 ignore_selectors: watch.ignore_selectors.clone(),
                 session_id: watch.session_id.clone(),
                 session_storage_generation: session.as_ref().map_or(0, |s| s.storage_generation),
+                filtered_resources: doc.settings.filter_hidden_resources,
                 session,
             })
         })
@@ -379,6 +389,9 @@ impl WatchStore {
         now_ms: u64,
     ) -> Result<bool, String> {
         let now_ms = now_ms.max(job.started_at);
+        if observed.filtered_resources != job.filtered_resources {
+            return self.fail_check(job,"incomplete","The browser resource policy changed during capture. The previous complete observation is retained.",now_ms);
+        }
         if !self.is_current(job) {
             return Ok(false);
         }
@@ -427,7 +440,15 @@ impl WatchStore {
                     .iter_mut()
                     .find(|w| w.id == job.watch_id)
                     .ok_or("Missing watch")?;
-                let previous = watch.latest.as_ref();
+                let current_context = watch.latest.as_ref().is_some_and(|latest| {
+                    watch.history.iter().any(|entry| {
+                        entry.observation_id == latest.id
+                            && entry.context_generation == watch.context_generation
+                    })
+                });
+                let previous = watch.latest.as_ref().filter(|p| {
+                    current_context && p.filtered_resources == observed.filtered_resources
+                });
                 let changed = previous.is_some_and(|p| p.hash != hash);
                 let id = previous
                     .filter(|p| p.hash == hash)
@@ -443,6 +464,7 @@ impl WatchStore {
                     text_bytes: normalized.len(),
                     text_preview: bounded_text(&normalized, MAX_PREVIEW_BYTES),
                     preview_truncated: normalized.len() > MAX_PREVIEW_BYTES,
+                    filtered_resources: observed.filtered_resources,
                 };
                 if previous.is_none() || changed {
                     let entry = change_entry(previous, &observation, watch.context_generation);
@@ -493,6 +515,7 @@ impl WatchStore {
         }
         let status = match status {
             "loginRequired" => "signInRequired",
+            "accessRestricted" => "unavailable",
             "verificationRequired" => "challenge",
             "incomplete" => "tooLarge",
             "empty" => "selectorMissing",
@@ -546,6 +569,17 @@ impl WatchStore {
                 watch.next_check_at = now_ms
                     .saturating_add(u64::from(watch.interval_minutes) * 60_000)
                     .max(watch.retry_at);
+                if matches!(status, "challenge" | "signInRequired")
+                    && let Some(session_id) = &job.session_id
+                {
+                    sources::hold(
+                        doc,
+                        session_id,
+                        job.session_storage_generation,
+                        status,
+                        now_ms,
+                    )?;
+                }
                 Ok(true)
             },
             |changed| *changed,
@@ -737,6 +771,7 @@ fn validate_document(doc: &Document) -> Result<(), String> {
         return Err("Unsupported Watchtower data schema or sequence.".into());
     }
     commands::validate_settings(&doc.settings)?;
+    sources::validate(doc)?;
     let mut sessions = std::collections::HashMap::new();
     let mut largest_id = 0;
     for session in &doc.sessions {
@@ -988,10 +1023,12 @@ fn current(doc: &Document, job: &CheckJob) -> bool {
             w.state == "checking"
                 && w.operation_id == job.operation_id
                 && w.generation == job.generation
+                && job.filtered_resources == doc.settings.filter_hidden_resources
                 && w.added_at <= job.started_at
                 && w.url == job.url
                 && w.session_id == job.session_id
                 && eligible(w, &doc.settings)
+                && sources::eligible(doc, w)
                 && job.session_id.as_ref().is_none_or(|id| {
                     doc.sessions.iter().any(|s| {
                         &s.id == id && s.storage_generation == job.session_storage_generation

@@ -1,0 +1,39 @@
+name: Recover interrupted parity source
+on:
+  push:
+    branches: [upgrade/whimwatch-parity-0110]
+    paths: ['.github/workflows/parity-recovery.yml']
+permissions:
+  contents: read
+jobs:
+  recover:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - name: Recover exact previously uploaded Git object
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p recovered
+          gh api repos/Herbertofury/Modhunter/git/blobs/fa50a9604ac772753ce790bba902dc0a61d76b53 > recovered/blob.json
+          python3 - <<'PY'
+          import base64,hashlib,json,pathlib,zlib
+          root=pathlib.Path('recovered')
+          blob=json.loads((root/'blob.json').read_text())
+          raw=base64.b64decode(blob['content'])
+          assert hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()=='fa50a9604ac772753ce790bba902dc0a61d76b53'
+          (root/'source.gz.part').write_bytes(raw)
+          decoder=zlib.decompressobj(31)
+          content=decoder.decompress(raw,2000000)
+          (root/'source.partial.patch').write_bytes(content)
+          (root/'status.json').write_text(json.dumps({'completeGzip':decoder.eof,'compressedBytes':len(raw),'recoveredBytes':len(content)}))
+          (root/'blob.json').unlink()
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Modhunter-Parity-Recovered-Source
+          path: recovered/
+          retention-days: 7
+          if-no-files-found: error

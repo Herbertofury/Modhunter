@@ -68,7 +68,7 @@
   }catch(error){message(String(error),true);return null}
   finally{if(exclusive){busy.delete(kind);render(state)}}
  }
- for(const [id,kind,value] of [['openWatchtower','watchtower'],['newDash','new','dashboard'],['newSiege','new','siege'],['newRealm','new','realm'],['back','back'],['forward','forward'],['reload','reload'],['open','external'],['copy','copy'],['diagnostics','diagnostics'],['disconnect','disconnect'],['importMo2','importMo2'],['refreshProfile','refreshProfile'],['pluginAudit','pluginAudit'],['configureIni','configureIni'],['configureMods','configureMods'],['clearPaths','clearPaths'],['configureEslifierData','configureEslifierData'],['clearEslifierData','clearEslifierData']])$(id).onclick=()=>command(kind,value);
+ for(const [id,kind,value] of [['openWatchtower','watchtower'],['openReadiness','readiness'],['newDash','new','dashboard'],['newSiege','new','siege'],['newRealm','new','realm'],['back','back'],['forward','forward'],['reload','reload'],['open','external'],['copy','copy'],['diagnostics','diagnostics'],['disconnect','disconnect'],['importMo2','importMo2'],['refreshProfile','refreshProfile'],['pluginAudit','pluginAudit'],['configureIni','configureIni'],['configureMods','configureMods'],['clearPaths','clearPaths'],['configureEslifierData','configureEslifierData'],['clearEslifierData','clearEslifierData']])$(id).onclick=()=>command(kind,value);
  $('connect').onclick=()=>command('connect',$('endpoint').value.trim());
  $('discover').onclick=()=>command('discover');
  $('cancelImport').onclick=()=>command('cancelImport',{epoch:state.epoch,importOperationId:state.importOperationId});

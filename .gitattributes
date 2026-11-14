@@ -18,5 +18,7 @@
 *.ps1 text eol=lf
 *.sh text eol=lf
 Cargo.lock text eol=lf
+# This notice is compared byte for byte with the tested portable package.
+native/PROJECT_NOTICE.txt text eol=lf
 # Keep cmd.exe launchers explicit and identical on all checkout platforms too.
 *.bat text eol=crlf

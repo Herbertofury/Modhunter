@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Modhunter",
-  "version": "0.10.2",
+  "version": "0.11.0",
   "identifier": "com.modhunter.desktop",
   "build": {
     "frontendDist": "../../ui"
@@ -20,6 +20,7 @@
     "icon": ["icons/icon.png", "icons/icon.ico"],
     "category": "Utility",
     "shortDescription": "Fast Rust desktop for MO2 maintenance and Modhunter campaigns",
+    "resources": {"../../resources/archive-tools/": "archive-tools/"},
     "windows": {
       "webviewInstallMode": {"type": "downloadBootstrapper", "silent": true},
       "nsis": {"installMode": "currentUser"}

@@ -1,0 +1,33 @@
+name: Parity archive tool inputs
+on:
+  push:
+    branches: [upgrade/whimwatch-parity-0110]
+    paths: ['.github/workflows/parity-archive-tools.yml']
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Verify official release digests and extract standalone helpers
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p inputs/linux inputs/windows
+          curl --fail --location --proto '=https' --retry 2 https://github.com/ip7z/7zip/releases/download/26.06/7z2606-linux-x64.tar.xz -o inputs/linux.tar.xz
+          curl --fail --location --proto '=https' --retry 2 https://github.com/ip7z/7zip/releases/download/26.06/7z2606-x64.exe -o inputs/windows.exe
+          echo '2b539cf067b2ad48e1baa5093dbaa8818b73542d1222a0ffde9dc5f2922ea62e  inputs/linux.tar.xz' | sha256sum -c -
+          echo '9b697f65ecc2d9b0152f5ee96d72dde522a7827690349d9307935dacf40f42ec  inputs/windows.exe' | sha256sum -c -
+          tar -xJf inputs/linux.tar.xz -C inputs/linux
+          chmod +x inputs/linux/7zz
+          inputs/linux/7zz x inputs/windows.exe -oinputs/windows -y
+          rm inputs/linux.tar.xz inputs/windows.exe
+          find inputs -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
+          mv SHA256SUMS.txt inputs/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Modhunter-Archive-Tool-Inputs
+          path: inputs/
+          retention-days: 7
+          if-no-files-found: error

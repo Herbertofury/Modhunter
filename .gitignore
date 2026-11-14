@@ -3,3 +3,7 @@ __pycache__/
 .pytest_cache/
 node_modules/
 native/target/
+native/resources/archive-tools/
+native/resources/THIRD_PARTY_NOTICES.json
+# The pinned Qt downloader creates this diagnostic log in the checkout root.
+/aqtinstall.log

@@ -9,6 +9,84 @@ const VISIBLE: &str = "privacy-smoke-visible";
 const BACKGROUND: &str = "privacy-smoke-background";
 const LATE: &str = "privacy-smoke-late";
 type Observations = Arc<Mutex<Vec<Value>>>;
+type OwnedWindows = Arc<Mutex<BTreeMap<String, usize>>>;
+
+fn remember_window(owned: &OwnedWindows, window: &Window) -> Result<()> {
+    let hwnd = window.hwnd().map_err(err)?.0 as usize;
+    owned
+        .lock()
+        .map_err(err)?
+        .insert(window.label().into(), hwnd);
+    Ok(())
+}
+
+fn destroy_windows(app: &tauri::AppHandle, windows: BTreeMap<String, usize>) -> Result<()> {
+    let app_clone = app.clone();
+    let requested = windows.clone();
+    let mut failures = on_gui(app, move || {
+        let mut failures = Vec::new();
+        for (label, expected) in requested {
+            if let Some(window) = app_clone.get_window(&label) {
+                // Never destroy a different window if a fixture label was reused.
+                match window.hwnd() {
+                    Ok(hwnd) if hwnd.0 as usize == expected => {
+                        if let Err(error) = window.destroy() {
+                            failures
+                                .push(format!("Could not request destruction of {label}: {error}"));
+                        }
+                    }
+                    Ok(_) => failures.push(format!(
+                        "The owned native window identity changed for {label}."
+                    )),
+                    Err(error) => failures.push(format!(
+                        "Could not read the retiring fixture {label}: {error}"
+                    )),
+                }
+            }
+        }
+        Ok(failures)
+    })?;
+    // Unlike show/hide, Tauri destroy always posts an event even on the GUI
+    // thread. A label may briefly outlive its usable dispatcher handle. Wait
+    // for both independent lifetime signals before configuring all app windows.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let app_clone = app.clone();
+        let pending = windows.clone();
+        let remaining = on_gui(app, move || {
+            let mut remaining = Vec::new();
+            for (label, hwnd) in pending {
+                let registered = app_clone.get_window(&label).is_some();
+                let native_alive = unsafe { IsWindow(hwnd as HWND) } != 0;
+                if registered || native_alive {
+                    remaining.push(
+                        json!({"label":label,"registered":registered,"nativeAlive":native_alive}),
+                    );
+                }
+            }
+            Ok(remaining)
+        })?;
+        if remaining.is_empty() {
+            break;
+        }
+        if Instant::now() >= deadline {
+            failures.push(format!(
+                "The owned privacy fixture windows did not finish destruction: {}",
+                json!(remaining)
+            ));
+            return Err(failures.join(" "));
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    for label in windows.keys() {
+        forget_window(app, label);
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join(" "))
+    }
+}
 
 fn observe(
     app: &tauri::AppHandle,
@@ -86,10 +164,12 @@ pub(super) fn check(app: &tauri::AppHandle) -> Result<Value> {
     }
     let original = snapshot(app);
     let observations: Observations = Arc::new(Mutex::new(Vec::new()));
+    let owned: OwnedWindows = Arc::new(Mutex::new(BTreeMap::new()));
     let result = (|| -> Result<Value> {
         configure(app, true, true)?;
         let app_clone = app.clone();
         let stages = observations.clone();
+        let created = owned.clone();
         on_gui(app, move || {
             let visible = tauri::window::WindowBuilder::new(&app_clone, VISIBLE)
                 .title("Privacy fixture")
@@ -97,17 +177,37 @@ pub(super) fn check(app: &tauri::AppHandle) -> Result<Value> {
                 .focused(false)
                 .build()
                 .map_err(err)?;
+            remember_window(&created, &visible)?;
             let background = tauri::window::WindowBuilder::new(&app_clone, BACKGROUND)
                 .title("Hidden fixture")
                 .visible(false)
                 .focused(false)
                 .build()
                 .map_err(err)?;
-            observe(&app_clone, &stages, "created-hidden", &[VISIBLE, BACKGROUND], None)?;
+            remember_window(&created, &background)?;
+            observe(
+                &app_clone,
+                &stages,
+                "created-hidden",
+                &[VISIBLE, BACKGROUND],
+                None,
+            )?;
             apply_on_gui(&app_clone, &background)?;
-            observe(&app_clone, &stages, "background-policy-applied", &[BACKGROUND], Some(true))?;
+            observe(
+                &app_clone,
+                &stages,
+                "background-policy-applied",
+                &[BACKGROUND],
+                Some(true),
+            )?;
             guarded_show(&app_clone, &visible, false)?;
-            observe(&app_clone, &stages, "after-guarded-show", &[VISIBLE, BACKGROUND], Some(true))?;
+            observe(
+                &app_clone,
+                &stages,
+                "after-guarded-show",
+                &[VISIBLE, BACKGROUND],
+                Some(true),
+            )?;
             if !visible.is_visible().map_err(err)? || background.is_visible().map_err(err)? {
                 return Err("The initial visible/background fixture state is incorrect.".into());
             }
@@ -134,16 +234,30 @@ pub(super) fn check(app: &tauri::AppHandle) -> Result<Value> {
         wait_hidden(app, true)?;
         let app_clone = app.clone();
         let stages = observations.clone();
+        let created = owned.clone();
         on_gui(app, move || {
-            observe(&app_clone, &stages, "after-quick-hide", &[VISIBLE, BACKGROUND], Some(true))?;
+            observe(
+                &app_clone,
+                &stages,
+                "after-quick-hide",
+                &[VISIBLE, BACKGROUND],
+                Some(true),
+            )?;
             let late = tauri::window::WindowBuilder::new(&app_clone, LATE)
                 .title("Late fixture")
                 .visible(false)
                 .focused(false)
                 .build()
                 .map_err(err)?;
+            remember_window(&created, &late)?;
             guarded_show(&app_clone, &late, true)?;
-            observe(&app_clone, &stages, "after-late-window", &[VISIBLE, BACKGROUND, LATE], Some(true))?;
+            observe(
+                &app_clone,
+                &stages,
+                "after-late-window",
+                &[VISIBLE, BACKGROUND, LATE],
+                Some(true),
+            )?;
             for label in [VISIBLE, BACKGROUND, LATE] {
                 let window = app_clone
                     .get_window(label)
@@ -159,7 +273,13 @@ pub(super) fn check(app: &tauri::AppHandle) -> Result<Value> {
         let app_clone = app.clone();
         let stages = observations.clone();
         on_gui(app, move || {
-            observe(&app_clone, &stages, "after-restore", &[VISIBLE, BACKGROUND, LATE], Some(true))?;
+            observe(
+                &app_clone,
+                &stages,
+                "after-restore",
+                &[VISIBLE, BACKGROUND, LATE],
+                Some(true),
+            )?;
             for (label, expected) in [(VISIBLE, true), (BACKGROUND, false), (LATE, true)] {
                 let window = app_clone
                     .get_window(label)
@@ -170,44 +290,65 @@ pub(super) fn check(app: &tauri::AppHandle) -> Result<Value> {
                     ));
                 }
             }
-            let window = app_clone.get_window(VISIBLE).ok_or("Missing visible privacy fixture.")?;
+            let window = app_clone
+                .get_window(VISIBLE)
+                .ok_or("Missing visible privacy fixture.")?;
             window.set_always_on_top(true).map_err(err)?;
             window.set_resizable(false).map_err(err)?;
-            observe(&app_clone, &stages, "after-unrelated-style-changes", &[VISIBLE], Some(true))?;
+            observe(
+                &app_clone,
+                &stages,
+                "after-unrelated-style-changes",
+                &[VISIBLE],
+                Some(true),
+            )?;
             if !window.is_always_on_top().map_err(err)? || window.is_resizable().map_err(err)? {
                 return Err("Capture preservation changed unrelated native style choices.".into());
             }
             window.set_always_on_top(false).map_err(err)?;
             window.set_resizable(true).map_err(err)?;
-            observe(&app_clone, &stages, "after-style-restore", &[VISIBLE], Some(true))?;
+            observe(
+                &app_clone,
+                &stages,
+                "after-style-restore",
+                &[VISIBLE],
+                Some(true),
+            )?;
             Ok(())
         })?;
         configure(app, true, false)?;
         let app_clone = app.clone();
         let stages = observations.clone();
-        on_gui(app, move || observe(&app_clone, &stages, "capture-disabled", &[VISIBLE, BACKGROUND, LATE], Some(false)))?;
+        on_gui(app, move || {
+            observe(
+                &app_clone,
+                &stages,
+                "capture-disabled",
+                &[VISIBLE, BACKGROUND, LATE],
+                Some(false),
+            )
+        })?;
         configure(app, true, true)?;
         let app_clone = app.clone();
         let stages = observations.clone();
-        let retired = on_gui(app, move || {
-            observe(&app_clone, &stages, "capture-reenabled", &[VISIBLE, BACKGROUND, LATE], Some(true))?;
-            let late = app_clone.get_window(LATE).ok_or("Missing late privacy fixture.")?;
-            let hwnd = late.hwnd().map_err(err)?.0 as usize;
-            late.destroy().map_err(err)?;
-            forget_window(&app_clone, LATE);
-            Ok(hwnd)
+        on_gui(app, move || {
+            observe(
+                &app_clone,
+                &stages,
+                "capture-reenabled",
+                &[VISIBLE, BACKGROUND, LATE],
+                Some(true),
+            )?;
+            Ok(())
         })?;
-        let deadline = Instant::now() + Duration::from_secs(5);
-        loop {
-            let app_clone = app.clone();
-            let gone = on_gui(app, move || Ok(app_clone.get_window(LATE).is_none()
-                && unsafe { IsWindow(retired as HWND) } == 0))?;
-            if gone { break; }
-            if Instant::now() >= deadline {
-                return Err("A protected fixture window did not complete native destruction.".into());
-            }
-            std::thread::sleep(Duration::from_millis(20));
-        }
+        let retired_hwnd = *owned
+            .lock()
+            .map_err(err)?
+            .get(LATE)
+            .ok_or("The protected late fixture has no recorded native lifetime.")?;
+        let retired = BTreeMap::from([(LATE.to_owned(), retired_hwnd)]);
+        destroy_windows(app, retired)?;
+        owned.lock().map_err(err)?.remove(LATE);
         Ok(
             json!({"captureAffinityConfirmed":true,"globalShortcutRegistered":true,"conflictingShortcutRejected":true,"guiThreadWindowMutation":true,"allVisibleWindowsHidden":true,"newWindowHeldWhileHidden":true,"backgroundWindowRemainedHidden":true,"intendedWindowsRestored":true,
                 "frameworkStyleTransitionsRetained":true,"unrelatedStyleChoicesRetained":true,
@@ -215,28 +356,47 @@ pub(super) fn check(app: &tauri::AppHandle) -> Result<Value> {
                 "affinityStages":observations.lock().map_err(err)?.clone(),
                 "shortcutDelivery":"Synthetic WM_HOTKEY after real RegisterHotKey; physical keyboard behavior is not claimed."}),
         )
-    })().map_err(|error| format!("{error} Owned privacy observations: {}", json!(observations.lock().unwrap_or_else(|e|e.into_inner()).clone())));
-    if is_hidden(app) {
-        let _ = toggle(app);
+    })();
+    let mut failures = Vec::new();
+    if let Err(error) = &result {
+        failures.push(format!("Privacy checks: {error}"));
     }
-    let app_clone = app.clone();
-    let _ = on_gui(app, move || {
-        for label in [VISIBLE, BACKGROUND, LATE] {
-            if let Some(window) = app_clone.get_window(label) {
-                let _ = window.destroy();
+    if is_hidden(app)
+        && let Err(error) = toggle(app)
+    {
+        failures.push(format!("Privacy visibility cleanup: {error}"));
+    }
+    let retired = owned
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .clone();
+    match destroy_windows(app, retired) {
+        Ok(()) => {
+            if let Err(error) = configure(
+                app,
+                original["quickHide"].as_bool().unwrap_or(false),
+                original["captureProtection"].as_bool().unwrap_or(false),
+            ) {
+                failures.push(format!("Privacy settings restoration: {error}"));
             }
-            forget_window(&app_clone, label);
         }
-        Ok(())
-    });
-    let restored = configure(
-        app,
-        original["quickHide"].as_bool().unwrap_or(false),
-        original["captureProtection"].as_bool().unwrap_or(false),
-    );
-    match (result, restored) {
-        (Ok(value), Ok(())) => Ok(value),
-        (Err(error), _) => Err(error),
-        (_, Err(error)) => Err(error),
+        Err(error) => failures.push(format!("Privacy fixture destruction: {error}; settings restoration was not attempted before destruction was confirmed.")),
+    }
+    if failures.is_empty() {
+        let mut value = result?;
+        value["allFixtureWindowsDestroyed"] = json!(true);
+        value["originalSettingsRestored"] = json!(true);
+        Ok(value)
+    } else {
+        Err(format!(
+            "{} Owned privacy observations: {}",
+            failures.join(" "),
+            json!(
+                observations
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .clone()
+            )
+        ))
     }
 }

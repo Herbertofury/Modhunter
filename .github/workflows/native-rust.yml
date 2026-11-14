@@ -39,6 +39,7 @@ jobs:
           cargo test --manifest-path native/Cargo.toml --workspace --locked
           cargo build --manifest-path native/Cargo.toml --locked -p modhunter-core --bin modhunter-cli
           MODHUNTER_CONTENT_CLI="$PWD/native/target/debug/modhunter-cli" python3 -m unittest discover -s tests -p test_content_recovery.py -v
+          MODHUNTER_CONTENT_CLI="$PWD/native/target/debug/modhunter-cli" python3 -m unittest discover -s tests -p test_shared_install_queue.py -v
           python3 native/scripts/verify_archive_review.py --cli native/target/debug/modhunter-cli --output native/target/archive-review-proof.json
           python3 native/scripts/verify_plugin_bridge.py --cli native/target/debug/modhunter-cli --output native/target/plugin-bridge-protocol.json
           python3 native/scripts/verify_source_bridge.py --cli native/target/debug/modhunter-cli --output native/target/source-bridge-protocol.json

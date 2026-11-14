@@ -134,6 +134,16 @@ class ArsenalService:
         self._queue_lock = threading.Lock()  # Serialize reviewed batches; never enqueue the same mod twice.
         self._quick_job: dict[str, Any] = {"state": "idle", "profileId": snapshot.get("profileId"), "queued": [], "skipped": [], "failed": []}
         self._install_lock = threading.Lock()  # MO2 supports one interactive installer at a time.
+        # Only explicitly approved work enters this queue. The existing native
+        # lease also covers recovery/duplicate mutations, which may finish
+        # before the next queued installer is dispatched.
+        self._install_pending: list[dict] = []
+        self._install_active: dict | None = None
+        self._install_history: list[dict] = []
+        self._install_mode = "running"
+        self._install_stop_mode = ""
+        self._install_cancel_generation = 0
+        self._install_intent_epoch = 0
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._scan: dict[str, Any] = {"state": "idle"}
@@ -328,6 +338,7 @@ class ArsenalService:
             changed = {key for key in before.keys() | after.keys() if before.get(key, "") != after.get(key, "")}
             if changed:
                 self._execution_epoch += 1
+                self._install_intent_epoch += 1
                 self._file_cache.clear()
                 self._file_epoch += 1
                 self._scan_epoch += 1
@@ -373,6 +384,8 @@ class ArsenalService:
             scan_context_changed = not (same_profile and same_game and same_runtime) or versions_changed
             if scan_context_changed:
                 self._execution_epoch += 1
+                if not (same_profile and same_game and same_runtime):
+                    self._install_intent_epoch += 1
                 self._file_cache.clear()  # File identity belongs to a specific game/profile.
                 self._file_epoch += 1
                 self._scan_epoch += 1
@@ -930,6 +943,7 @@ class ArsenalService:
         with self._guard:
             profile = self.profile_id()
             execution_epoch = self._execution_epoch
+            approval_generation = self._install_cancel_generation
         if (not profile or payload.get("profileId") != profile
                 or payload.get("executionEpoch", execution_epoch) != execution_epoch):
             return {"ok": False, "error": "MO2 profile changed; refresh and try again"}
@@ -948,7 +962,8 @@ class ArsenalService:
                 if self._quick_job.get("state") == "running":
                     return {"ok": True, **deepcopy(self._quick_job)}
                 self._quick_job = {"state": "running", "profileId": profile, "total": len(ids),
-                                   "completed": 0, "queued": [], "skipped": [], "failed": []}
+                                   "completed": 0, "queued": [], "skipped": [], "failed": [],
+                                   "installQueueGeneration": approval_generation}
                 job = self._quick_job
             threading.Thread(target=self._quick_worker, args=(profile, ids, job, execution_epoch), daemon=True,
                              name="ModhunterQuickQueue").start()
@@ -961,7 +976,7 @@ class ArsenalService:
             return {"ok": False, "error": "A download queue is already being prepared; retry shortly"}
         try:
             result = self._quick_one(profile, ids[0], auto_install=payload.get("autoInstall") is True,
-                                     execution_epoch=execution_epoch)
+                                     execution_epoch=execution_epoch, approval_generation=approval_generation)
         finally:
             self._queue_lock.release()
         if result.get("queued") and payload.get("autoInstall") is True:
@@ -983,15 +998,17 @@ class ArsenalService:
         try:
             for item_id in ids:
                 with self._guard:
-                    if self._stopped or self._quick_job is not job or self.profile_id() != profile:
+                    if (self._stopped or self._quick_job is not job or self.profile_id() != profile
+                            or job.get("installQueueGeneration") != self._install_cancel_generation):
                         job["skipped"].append({"itemId": item_id, "reason": "MO2 profile changed or session closed"})
                         break
                 with self._queue_lock:
                     with self._guard:
-                        if self._stopped or self._quick_job is not job or self.profile_id() != profile:
+                        if (self._stopped or self._quick_job is not job or self.profile_id() != profile
+                                or job.get("installQueueGeneration") != self._install_cancel_generation):
                             break
                     result = self._quick_one(profile, item_id, auto_install=False,
-                                             execution_epoch=execution_epoch)
+                                             execution_epoch=execution_epoch, approval_generation=job.get("installQueueGeneration"))
                 with self._guard:
                     for key in ("queued", "skipped", "failed"):
                         job[key].extend(result.get(key, []))
@@ -1001,10 +1018,14 @@ class ArsenalService:
                 job["failed"].append({"error": "Update queue failed: " + type(exc).__name__})
         finally:
             with self._guard:
-                job["state"] = "completed" if not self._stopped else "stopped"
+                job["state"] = ("cancelled" if job.get("installQueueGeneration") != self._install_cancel_generation
+                                else "completed" if not self._stopped else "stopped")
 
     def _quick_one(self, profile: str, item_id: str, auto_install: bool,
-                   *, execution_epoch: int | None = None) -> dict:
+                   *, execution_epoch: int | None = None, approval_generation: int | None = None) -> dict:
+        with self._guard:
+            if approval_generation is None:
+                approval_generation = self._install_cancel_generation
         live = self.selection_snapshot([item_id])
         if (live.get("profileId") != profile
                 or execution_epoch is not None and live.get("executionEpoch") != execution_epoch):
@@ -1045,6 +1066,7 @@ class ArsenalService:
             return {"skipped": [{"itemId": item_id, "reason": reason}]}
         result = self._queue_reviewed_downloads_once({
             "profileId": profile, "executionEpoch": live["executionEpoch"],
+            "_installQueueGeneration": approval_generation,
             "confirm": "QUEUE_REVIEWED_DOWNLOADS", "entries": [entry]})
         if result.get("queued"):
             with self._guard:
@@ -1052,40 +1074,210 @@ class ArsenalService:
                     ticket = self._downloads.get(int(queued["downloadId"]))
                     if ticket:
                         ticket["selectionMode"] = "verified-match"
-                        ticket["autoInstallRequested"] = auto_install
+                        ticket["autoInstallRequested"] = auto_install and approval_generation == self._install_cancel_generation
+                        ticket["installDisarmed"] = approval_generation != self._install_cancel_generation
+                        ticket["installContextEpoch"] = self._install_intent_epoch
                         self.journal.record(ticket, int(queued["downloadId"]))
         if not result.get("ok"):
             failed = result.get("failed") or [{"itemId": item_id, "error": result.get("error", "Queue rejected")}]
             return {"failed": failed, "message": "Select an exact file if this recommendation is unavailable"}
         return result
 
-    def _maybe_autoinstall(self) -> None:
-        """Drain explicitly armed tickets sequentially, without recursive retries."""
-        if self._stopped or self._install_lock.locked():
-            return
-        while not self._stopped and not self._install_lock.locked():
+    @staticmethod
+    def _public_install_entry(entry: dict) -> dict:
+        public = {key: entry.get(key, "") for key in
+                  ("kind", "jobId", "reviewId", "downloadId", "profileId", "itemId", "modName", "state", "queuedAt")}
+        if entry.get("job"):
+            public.update(state=entry["job"]["state"], nativeStarted=entry["job"].get("nativeStarted") is True)
+        return public
+
+    def install_queue(self) -> dict:
+        with self._guard:
+            profile = self._snapshot.get("profileId")
+            pending = [self._public_install_entry(entry) for entry in self._install_pending if entry["profileId"] == profile]
+            active = self._public_install_entry(self._install_active) if self._install_active else None
+            waiting_downloads = sum(ticket.get("profileId") == profile and ticket.get("autoInstallRequested") is True
+                                    and ticket.get("status") != "complete" for ticket in self._downloads.values())
+            return {"ok": True, "profileId": profile, "executionEpoch": self._execution_epoch,
+                    "mode": self._install_mode, "stopMode": self._install_stop_mode,
+                    "active": active, "pending": pending,
+                    "history": deepcopy([row for row in self._install_history if row["profileId"] == profile]),
+                    "counts": {"pending": len(pending), "awaitingDownload": waiting_downloads,
+                               "active": int(active is not None)}}
+
+    def _enqueue_install(self, entry: dict) -> None:
+        with self._guard:
+            if self._stopped:
+                raise RuntimeError("The native MO2 session is closed")
+            if entry.get("approvalGeneration", self._install_cancel_generation) != self._install_cancel_generation:
+                raise RuntimeError("Install approval was cancelled before it entered the native queue")
+            if len(self._install_pending) >= 256:
+                raise RuntimeError("The reviewed install queue is full")
+            entry.update(state="queued", queuedAt=int(time.time() * 1000),
+                         intentEpoch=self._install_intent_epoch, cancel=threading.Event())
+            self._install_pending.append(entry)
+        self._drain_install_queue()
+
+    def queue_content_install(self, job: dict, data: dict, approval_generation: int) -> None:
+        self._enqueue_install({"kind": "page", "jobId": job["jobId"], "reviewId": job["reviewId"],
+            "downloadId": job["downloadId"], "profileId": job["profileId"], "itemId": job.get("itemId", ""),
+            "modName": job.get("modName", ""), "job": job, "data": data, "approvalGeneration": approval_generation})
+
+    def _drain_install_queue(self) -> None:
+        """Reserve one existing native lease; no waiting HTTP thread or retry."""
+        with self._guard:
+            if self._stopped or self._install_mode != "running" or self._install_active or not self._install_pending:
+                return
+            if not self._install_lock.acquire(blocking=False):
+                return  # The recovery owner wakes us after releasing its lease.
+            entry = self._install_pending.pop(0)
+            self._install_active = entry
+            entry["leaseHeld"] = True
+            entry["state"] = "preparing"
+            if entry["kind"] == "native":
+                entry["ticket"]["installQueueState"] = "preparing"
+                entry["ticket"]["status"] = "installing"
+        try:
+            threading.Thread(target=self._run_queued_install, args=(entry,), daemon=True,
+                             name="Modhunter-reviewed-install-queue").start()
+        except (RuntimeError, OSError) as exc:
+            result = {"ok": False, "state": "failed", "error": "Could not start native install worker: " + str(exc)}
+            if entry["kind"] == "page":
+                self.content.finish_queued_install(entry["job"], entry["data"], result)
+            self._finish_queued_install(entry, result)
+
+    def release_queued_install_lease(self, job_id: str) -> None:
+        """Release finished file ownership before the durable terminal receipt."""
+        with self._guard:
+            active = self._install_active
+            if active and active.get("jobId") == job_id and active.get("leaseHeld"):
+                active["leaseHeld"] = False
+                self._install_lock.release()
+
+    def _run_queued_install(self, entry: dict) -> None:
+        result = {"ok": False, "state": "failed", "error": "Native install worker ended without a result"}
+        try:
             with self._guard:
-                profile = self._snapshot.get("profileId")
-                selected = next(((did, ticket) for did, ticket in self._downloads.items()
-                                 if ticket.get("profileId") == profile
-                                 and ticket.get("status") == "complete"
-                                 and ticket.get("autoInstallRequested") is True), None)
-                if selected is None:
-                    return
-                did, ticket = selected
+                stale = entry["profileId"] != self._snapshot.get("profileId") or entry["intentEpoch"] != self._install_intent_epoch
+                epoch = self._execution_epoch
+            if stale:
+                raise ValueError("Native profile, source, or execution context changed while this approved item was waiting; review it again")
+            if entry["cancel"].is_set():
+                raise ValueError("Install preparation cancelled before native mutation")
+            if entry["kind"] == "page":
+                result = self.content._worker(entry["job"], entry["data"], self.content._install_work, lock_held=True)
+            else:
+                with self._guard:
+                    ticket = entry["ticket"]
+                    if self._downloads.get(entry["downloadId"]) is not ticket:
+                        raise ValueError("Native download ticket changed while queued")
+                    reviewed = deepcopy(ticket)
+                    reviewed["status"] = "complete"
+                brief = build_install_brief(self.selection_snapshot([str(ticket.get("itemId") or "")]), reviewed, entry["downloadId"])
+                if not brief.get("canInstall"):
+                    raise ValueError("; ".join(brief.get("errors") or ["Review this archive again"]))
+                result = self._complete_native_install(entry["downloadId"], ticket, epoch, entry["cancel"])
+        except Exception as exc:
+            result = {"ok": False, "state": "cancelled" if entry["cancel"].is_set() else "failed",
+                      "needsReview": not entry["cancel"].is_set(), "error": str(exc)}
+            if entry["kind"] == "page":
+                result = self.content.finish_queued_install(entry["job"], entry["data"], result)
+        finally:
+            self._finish_queued_install(entry, result)
+
+    def _finish_queued_install(self, entry: dict, result: dict) -> None:
+        with self._guard:
+            if self._install_active is not entry:
+                return
+            if entry["kind"] == "native":
+                ticket = entry["ticket"]
                 ticket["autoInstallRequested"] = False
-            result = self.install_reviewed_download(did)
-            if result.get("ok"):
-                return  # The native worker drains the next ticket when MO2 finishes.
-            if "already open" in str(result.get("error") or ""):
+                ticket["installQueueState"] = result.get("state", "complete" if result.get("ok") else "failed")
+                if not result.get("ok") and ticket.get("status") == "installing":
+                    ticket["status"] = "needs-review" if result.get("needsReview") or result.get("state") in {"unknown", "interrupted"} else "complete"
+                    ticket["lastError"] = str(result.get("error") or "Review the native installation result")[:240]
+                    try:
+                        self.journal.record(ticket, entry["downloadId"])
+                    except Exception:
+                        # Failure to acknowledge history cannot retain a dead
+                        # native lease or automatically dispatch more work.
+                        ticket["status"] = "needs-review"
+                        self._install_mode = "paused"
+                        self._install_stop_mode = "historyRequiresReview"
+            record = self._public_install_entry(entry)
+            record.update(state=result.get("state", "complete" if result.get("ok") else "failed"),
+                          ok=result.get("ok") is True, needsReview=result.get("needsReview") is True,
+                          error=str(result.get("error") or "")[:240], finishedAt=int(time.time() * 1000))
+            self._install_history.append(record)
+            self._install_history = self._install_history[-100:]
+            self._install_active = None
+            if entry.get("leaseHeld"):
+                entry["leaseHeld"] = False
+                self._install_lock.release()
+        self._maybe_autoinstall()
+
+    def remove_queued_content(self, job_id: str) -> dict | None:
+        with self._guard:
+            found = next((entry for entry in self._install_pending if entry.get("jobId") == job_id), None)
+            if found:
+                self._install_pending.remove(found)
+                found["cancel"].set()
+            return found
+
+    def install_queue_control(self, data: dict) -> dict:
+        action = data.get("action")
+        if action not in {"stopAfterCurrent", "cancelPreparation", "resume"}:
+            return {"ok": False, "error": "Choose stopAfterCurrent, cancelPreparation, or resume"}
+        removed = []
+        with self._guard:
+            if (self._stopped or data.get("profileId") != self._snapshot.get("profileId")
+                    or type(data.get("executionEpoch")) is not int or data["executionEpoch"] != self._execution_epoch):
+                return {"ok": False, "error": "Native profile or execution context changed before queue control"}
+            self._install_mode = "running" if action == "resume" else "paused"
+            self._install_stop_mode = "" if action == "resume" else action
+            if action == "cancelPreparation":
+                self._install_cancel_generation += 1
+                removed, self._install_pending = self._install_pending, []
+                for ticket in self._downloads.values():
+                    if ticket.get("status") != "installed":
+                        ticket["autoInstallRequested"] = False
+                        ticket["installDisarmed"] = True
+                        if ticket.get("installQueueState") == "queued":
+                            ticket["installQueueState"] = "cancelled"
+                active = self._install_active
+                if active:
+                    active["cancel"].set()
+                    if active.get("request"):
+                        active["request"].cancel_if_pending()
+        if action == "cancelPreparation":
+            self.content.cancel_install_preparation()
+            for entry in removed:
+                if entry["kind"] == "page":
+                    self.content.finish_queued_install(entry["job"], entry["data"],
+                        {"ok": False, "state": "cancelled", "error": "Queue preparation cancelled before native mutation"})
+        if action == "resume":
+            self._maybe_autoinstall()
+        return {**self.install_queue(), "action": action,
+                "message": "An already-started native installer or atomic file transaction keeps its lease until its actual result. Cancelled and uncertain jobs are never replayed."}
+
+    def _maybe_autoinstall(self) -> None:
+        """Append armed ready tickets to the same FIFO as approved page work."""
+        with self._guard:
+            if self._stopped:
+                return
+            selected = [(did, ticket) for did, ticket in self._downloads.items()
+                        if ticket.get("profileId") == self._snapshot.get("profileId")
+                        and ticket.get("status") == "complete" and ticket.get("autoInstallRequested") is True]
+            for _, ticket in selected:
+                ticket["autoInstallRequested"] = False
+        for did, ticket in selected:
+            result = self.install_reviewed_download(did, queued_approval=True)
+            if not result.get("ok"):
                 with self._guard:
                     if self._downloads.get(did) is ticket:
-                        ticket["autoInstallRequested"] = True
-                return
-            with self._guard:
-                if self._downloads.get(did) is ticket:
-                    ticket["lastError"] = str(result.get("error") or "Review this archive in MO2")[:240]
-                    self.journal.record(ticket, did)
+                        ticket["lastError"] = str(result.get("error") or "Review this archive in MO2")[:240]
+                        self.journal.record(ticket, did)
+        self._drain_install_queue()
 
     def install_ready_queue(self) -> dict:
         """One click arms all completed, valid downloads for sequential MO2 dialogs.
@@ -1102,12 +1294,14 @@ class ArsenalService:
                 brief = build_install_brief(self.selection_snapshot([str(ticket.get("itemId") or "")]), deepcopy(ticket), did)
                 if brief.get("canInstall"):
                     ticket["autoInstallRequested"] = True
+                    ticket["installDisarmed"] = False
+                    ticket["installContextEpoch"] = self._install_intent_epoch
                     armed.append(did)
                 else:
                     blocked.append({"downloadId": did, "reason": "; ".join(brief.get("errors") or ["Recheck this update"])})
         self._maybe_autoinstall()
         return {"ok": True, "armed": len(armed), "blocked": blocked,
-                "state": "installing" if self._install_lock.locked() else "idle",
+                "state": "paused" if self._install_mode == "paused" else "installing" if self._install_lock.locked() else "idle",
                 "message": (f"Opening {len(armed)} ready MO2 installer(s), one at a time."
                             if armed else "No ready downloads passed installation checks.")}
 
@@ -1129,8 +1323,8 @@ class ArsenalService:
             return {"ok": False, "error": "Mod, release, or compatibility changed. Choose the correct file again."}
         base = {"itemId": item_id, "installedVersion": old["installedVersion"],
                 "targetVersion": old["targetVersion"], "reviewed": True, "riskAcknowledged": True,
-                "autoInstall": old.get("autoInstallRequested") is True or
-                               old.get("selectionMode") == "verified-match"}
+                "autoInstall": old.get("installDisarmed") is not True and (old.get("autoInstallRequested") is True or
+                               old.get("selectionMode") == "verified-match")}
         if old.get("provider") == "nexus":
             if int(mod.get("nexusId") or 0) != int(old.get("modId") or 0) or not old.get("fileId"):
                 return {"ok": False, "error": "Source identity changed. Choose the file again."}
@@ -1160,7 +1354,7 @@ class ArsenalService:
             if payload.get("executionEpoch", epoch) != epoch:
                 return {"ok": False, "error": "MO2 context changed; refresh and review the files again",
                         "queued": [], "failed": []}
-            payload = {**payload, "executionEpoch": epoch}
+            payload = {**payload, "executionEpoch": epoch, "_installQueueGeneration": self._install_cancel_generation}
         with self._queue_lock:
             result = self._queue_reviewed_downloads_once(payload)
         # An instantly completed archive can already be ready by the time the
@@ -1174,6 +1368,8 @@ class ArsenalService:
         One reviewed queue can contain both sources. It never overwrites mods,
         never auto-installs, and reports every attempted native download.
         """
+        with self._guard:
+            approval_generation = payload.get("_installQueueGeneration", self._install_cancel_generation)
         raw = payload.get("entries")
         # Validate a batch against exactly its selected rows; a one-click queue
         # must not repeatedly copy tens of thousands of unrelated mods.
@@ -1240,6 +1436,10 @@ class ArsenalService:
             exact_files[(item["modId"], item["fileId"])] = matched
         queued, failed = [], []
         for item in approved + sources:
+            with self._guard:
+                if approval_generation != self._install_cancel_generation:
+                    failed.append({"itemId": item["itemId"], "error": "Download preparation was cancelled; existing downloaded files remain retained"})
+                    break
             live = self.selection_snapshot([item["itemId"]])
             current = next((x for x in live.get("items", []) if x.get("id") == item["itemId"]), None)
             reviewed_context = self._download_context(snapshot, reviewed_items[item["itemId"]])
@@ -1292,7 +1492,9 @@ class ArsenalService:
                             "game": str(live.get("game") or ""),
                             "gameRuntime": str(live.get("gameRuntime") or "unknown"),
                             "riskReasons": risk_reasons(selected_row), "reviewed": True,
-                            "autoInstallRequested": item["itemId"] in user_requested_native_install,
+                            "autoInstallRequested": item["itemId"] in user_requested_native_install and approval_generation == self._install_cancel_generation,
+                            "installDisarmed": approval_generation != self._install_cancel_generation,
+                            "installContextEpoch": self._install_intent_epoch,
                             "fileName": metadata.get("fileName") or metadata.get("name") or item.get("name") or "",
                             "fileVersion": str(metadata.get("version") or ""),
                         })
@@ -1346,50 +1548,47 @@ class ArsenalService:
         return build_install_brief(self.selection_snapshot([str((ticket or {}).get("itemId") or "")]), ticket, download_id,
                                    content_backup_available=self.content.native_enabled and self.content.runner.available)
 
-    def install_reviewed_download(self, download_id: int) -> dict:
-        """Start one interactive MO2 installer without blocking the browser.
-
-        An unfinished native dialog is a normal in-progress state, not an HTTP
-        timeout. Keep the global install lease until the Qt callback actually
-        finishes, then publish the verified receipt to the download ticket.
-        """
+    def install_reviewed_download(self, download_id: int, *, queued_approval=False) -> dict:
+        """Queue one exact approved native download beside reviewed page jobs."""
         if type(download_id) is not int or parse_download_id(download_id) is None:
             return {"ok": False, "error": "Invalid MO2 download ID"}
-        if not self._install_lock.acquire(blocking=False):
-            return {"ok": False, "error": "Another MO2 installer is already open"}
-        started = False
         try:
             with self._guard:
                 ticket = self._downloads.get(download_id)
                 if not ticket or ticket.get("profileId") != self._snapshot.get("profileId"):
                     return {"ok": False, "error": "Download does not belong to this active MO2 profile"}
+                if any(entry.get("kind") == "native" and entry["downloadId"] == download_id for entry in self._install_pending):
+                    return {"ok": True, "state": "queued", "downloadId": download_id, "alreadyAccepted": True}
+                if ticket.get("status") == "installing":
+                    return {"ok": False, "error": "This exact MO2 installer is already active; inspect its current result"}
                 preflight = build_install_brief(self.selection_snapshot([str(ticket.get("itemId") or "")]), ticket, download_id)
                 if not preflight["canInstall"]:
                     return {"ok": False, "error": "; ".join(preflight["errors"])}
-                ticket["status"] = "installing"
-                execution_epoch = self._execution_epoch
+                if queued_approval and (ticket.get("installDisarmed") is True
+                        or ticket.get("installContextEpoch", self._install_intent_epoch) != self._install_intent_epoch):
+                    return {"ok": False, "error": "Queued installation was disarmed or its native profile changed; review it again"}
+                ticket["installQueueState"] = "queued"
+                ticket["installDisarmed"] = False
+                ticket["autoInstallRequested"] = False
                 ticket.pop("lastError", None)
                 self.journal.record(ticket, download_id)
-            threading.Thread(target=self._complete_native_install,
-                             args=(download_id, ticket, execution_epoch), daemon=True,
-                             name=f"ArsenalInstall-{download_id}").start()
-            started = True
-            return {"ok": True, "state": "installing", "downloadId": download_id,
-                    "message": "MO2 installer requested. Finish its normal prompts; Modhunter will show the result."}
+                self._enqueue_install({"kind": "native", "downloadId": download_id, "ticket": ticket,
+                    "profileId": ticket["profileId"], "itemId": str(ticket.get("itemId") or ""),
+                    "modName": str(ticket.get("modName") or ticket.get("name") or "")})
+                state = "installing" if ticket.get("status") == "installing" else "queued"
+            return {"ok": True, "state": state, "downloadId": download_id,
+                    "message": "Exact archive approved for the shared queue. Finish each normal MO2 installer prompt when it opens."}
         except (RuntimeError, OSError) as exc:
             with self._guard:
                 if self._downloads.get(download_id) is ticket:
-                    ticket["status"] = "complete"
-            return {"ok": False, "error": "Could not open MO2 installer: " + str(exc)[:160]}
-        finally:
-            if not started:
-                self._install_lock.release()
+                    ticket["installQueueState"] = "failed"
+            return {"ok": False, "error": "Could not queue MO2 installer: " + str(exc)[:160]}
 
-    def _complete_native_install(self, download_id: int, ticket: dict, execution_epoch: int) -> None:
+    def _complete_native_install(self, download_id: int, ticket: dict, execution_epoch: int, cancel=None) -> dict:
         """Wait on a daemon worker, never the HTTP thread or MO2 GUI thread."""
         try:
             if self.content.native_enabled:
-                result = self.content.install_native_download(download_id, ticket, execution_epoch)
+                result = self.content.install_native_download(download_id, ticket, execution_epoch, cancel=cancel)
             else:
                 request = UIRequest("install", {"downloadId": download_id,
                                 "executionEpoch": execution_epoch,
@@ -1397,36 +1596,38 @@ class ArsenalService:
                                 "gameRuntime": ticket.get("gameRuntime"),
                                 "itemId": ticket.get("itemId", ""),
                                 "installedVersion": ticket.get("installedVersion", "")})
+                with self._guard:
+                    if self._install_active:
+                        self._install_active["request"] = request
+                    if cancel is not None and cancel.is_set():
+                        request.cancel_if_pending()
                 self._submit_ui(request)  # Qt signal delivers the request to MO2's GUI.
                 request.event.wait()  # No deadline while the real FOMOD dialog is open.
                 result = request.result
         except Exception as exc:
             result = {"ok": False, "error": "MO2 installer dispatch failed: " + type(exc).__name__}
-        try:
-            with self._guard:
-                if self._downloads.get(download_id) is ticket:
-                    if result.get("ok"):
-                        ticket["status"] = "installed"
-                        ticket["verifiedUpdate"] = result.get("verifiedUpdate") is True
-                        ticket["installedName"] = str(result.get("installedName") or "")
-                        ticket["backupPath"] = str((result.get("backup") or {}).get("backupPath") or "")
-                    else:
-                        # Cancellation keeps the reviewed archive retryable.
-                        ticket["status"] = "complete"
-                        ticket["lastError"] = str(result.get("error") or "MO2 installer canceled")[:240]
-                        # A canceled FOMOD can still have created the profile
-                        # text backup. Keep the evidence, never its path in history.
-                        ticket["backupPath"] = str((result.get("backup") or {}).get("backupPath") or ticket.get("backupPath") or "")
-                        if result.get("state") in ("unknown", "interrupted"):
-                            ticket["status"] = "needs-review"
-                            ticket["autoInstallRequested"] = False
-                    if result.get("contentJobId"):
-                        ticket["contentJobId"] = result["contentJobId"]
-                        ticket["contentBackup"] = result.get("backup") or {}
-                    self.journal.record(ticket, download_id)
-        finally:
-            self._install_lock.release()
-            self._maybe_autoinstall()
+        with self._guard:
+            if self._downloads.get(download_id) is ticket:
+                if result.get("ok"):
+                    ticket["status"] = "installed"
+                    ticket["verifiedUpdate"] = result.get("verifiedUpdate") is True
+                    ticket["installedName"] = str(result.get("installedName") or "")
+                    ticket["backupPath"] = str((result.get("backup") or {}).get("backupPath") or "")
+                else:
+                    # Cancellation keeps the reviewed archive retryable.
+                    ticket["status"] = "complete"
+                    ticket["lastError"] = str(result.get("error") or "MO2 installer canceled")[:240]
+                    # A canceled FOMOD can still have created the profile
+                    # text backup. Keep the evidence, never its path in history.
+                    ticket["backupPath"] = str((result.get("backup") or {}).get("backupPath") or ticket.get("backupPath") or "")
+                    if result.get("state") in ("unknown", "interrupted"):
+                        ticket["status"] = "needs-review"
+                        ticket["autoInstallRequested"] = False
+                if result.get("contentJobId"):
+                    ticket["contentJobId"] = result["contentJobId"]
+                    ticket["contentBackup"] = result.get("backup") or {}
+                self.journal.record(ticket, download_id)
+        return result
 
     def start(self) -> str:
         if self._server:
@@ -1453,12 +1654,20 @@ class ArsenalService:
             if self._scan.get("state") == "running":
                 self._scan = {"state": "idle", "reason": "MO2 session closed"}
             pending = list(self._pending_ui)
+            queued, self._install_pending = self._install_pending, []
+            self._install_cancel_generation += 1
+            if self._install_active:
+                self._install_active["cancel"].set()
         for request in pending:
             if request.cmd in ("nexus-metadata", "nexus-files"):
                 request.cancel()
             else:
                 request.cancel_if_pending()
         self.content.shutdown()
+        for entry in queued:
+            if entry["kind"] == "page":
+                self.content.finish_queued_install(entry["job"], entry["data"],
+                    {"ok": False, "state": "cancelled", "error": "Native session closed before queued install execution; staged files remain retained"})
         if self._server:
             self._server.shutdown()
             self._server.server_close()
@@ -1605,6 +1814,14 @@ class ArsenalService:
                     with service._guard:
                         result = {"ok": True, "profileId": service.profile_id(), "downloads": service.downloads()}
                     return self._reply(result)
+                if uri.path == "/api/install-queue":
+                    return self._reply(service.install_queue())
+                if uri.path == "/api/notification-facts":
+                    if not self._native_client():
+                        return self._reply({"ok": False, "error": "Updater fact verification requires the native client"}, 403)
+                    from .notification_facts import facts
+                    query = urllib.parse.parse_qs(uri.query)
+                    return self._reply(facts(service, item_id=query.get("itemId", [""])[0]))
                 if uri.path == "/api/quick-state":
                     return self._reply(service.quick_state())
                 if uri.path == "/api/activity":
@@ -1646,6 +1863,8 @@ class ArsenalService:
                     if not self._native_client():
                         return self._reply({"ok": False, "error": "Archive installation requires the owned native review"}, 403)
                     return self._reply(service.content.start_install(data))
+                if uri.path == "/api/install-queue-control":
+                    return self._reply(service.install_queue_control(data))
                 if uri.path == "/api/content-cancel":
                     return self._reply(service.content.cancel(data))
                 if uri.path == "/api/content-recovery":

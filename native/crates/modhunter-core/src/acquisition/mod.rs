@@ -4,6 +4,7 @@ use crate::watchtower::ModAssociation;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
+    collections::BTreeMap,
     fs::{self, File, OpenOptions},
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -375,26 +376,44 @@ impl Store {
             return Err("Cancel the active download before removing it.".into());
         }
         let path = self.directory(id)?;
-        // Rename first; rollback on durable receipt failure. Only our bounded files are removed.
-        for entry in fs::read_dir(&path).map_err(error)? {
-            let entry = entry.map_err(error)?;
-            reject_link(&entry.path())?;
-            if !entry.file_type().map_err(error)?.is_file() {
-                return Err("Unexpected staging contents; preserve for manual review.".into());
-            }
-        }
+        let approved = removal_inventory(&path, &row)?;
         let trash = path.with_file_name(format!("retired-{id}"));
-        if trash.exists() {
-            return Err("Previous removal needs review.".into());
+        match fs::symlink_metadata(&trash) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
+            Err(e) => return Err(error(e)),
+            Ok(_) => return Err("Previous removal needs review.".into()),
         }
         fs::rename(&path, &trash).map_err(error)?;
+        let rechecked = removal_inventory(&trash, &row);
+        if rechecked.as_ref().ok() != Some(&approved) {
+            return Err(rollback_removal(
+                &trash,
+                &path,
+                rechecked.err().unwrap_or_else(|| {
+                    "Download content changed during removal; all remaining bytes were preserved."
+                        .into()
+                }),
+            ));
+        }
         let mut draft = self.doc.clone();
         draft.jobs.retain(|r| r.id != id);
         if let Err(e) = self.commit(draft) {
-            let _ = fs::rename(&trash, &path);
-            return Err(e);
+            return Err(rollback_removal(&trash, &path, e));
         }
-        fs::remove_dir_all(&trash).map_err(error)
+        // Never recursively delete this directory. A foreign file appearing
+        // after verification must survive, even if the receipt was removed.
+        for (name, identity) in approved {
+            let file = trash.join(name);
+            if file_hash(&file, || false)? != identity {
+                return Err(
+                    "Retired download changed; its remaining evidence was preserved.".into(),
+                );
+            }
+            fs::remove_file(file).map_err(error)?;
+        }
+        fs::remove_dir(&trash).map_err(|e| {
+            format!("Download receipt removed; unexpected or locked retired contents were preserved: {e}")
+        })
     }
     pub fn staging(&self, id: &str) -> Result<PathBuf> {
         Ok(self.directory(id)?.join("payload.part"))
@@ -432,6 +451,67 @@ impl Store {
         self.doc = doc;
         Ok(())
     }
+}
+
+fn rollback_removal(retired: &Path, original: &Path, reason: String) -> String {
+    if fs::symlink_metadata(original).is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound)
+        && fs::rename(retired, original).is_ok()
+    {
+        reason
+    } else {
+        format!("{reason} Retired evidence could not be put back and remains preserved for review.")
+    }
+}
+fn removal_inventory(directory: &Path, row: &Receipt) -> Result<BTreeMap<String, (u64, String)>> {
+    reject_link(directory)?;
+    let ready = row.state == "ready";
+    let allowed = if ready {
+        let extension = row
+            .extension
+            .as_deref()
+            .filter(|extension| matches!(*extension, "zip" | "7z" | "rar"))
+            .ok_or("Ready download lacks a recognized archive identity.")?;
+        Some(format!("archive.{extension}"))
+    } else if matches!(row.state.as_str(), "cancelled" | "failed" | "interrupted") {
+        Some("payload.part".into())
+    } else if row.state == "pending" {
+        None
+    } else {
+        return Err("An active or unknown download cannot be removed.".into());
+    };
+    let mut files = BTreeMap::new();
+    for child in fs::read_dir(directory).map_err(error)? {
+        let child = child.map_err(error)?;
+        let name = child
+            .file_name()
+            .into_string()
+            .map_err(|_| "Unrecognized download contents were preserved.")?;
+        let path = child.path();
+        reject_link(&path)?;
+        let metadata = fs::symlink_metadata(&path).map_err(error)?;
+        if allowed.as_deref() != Some(&name) || !metadata.is_file() || metadata.len() > MAX_BYTES {
+            return Err("Unrecognized download contents were preserved for manual review.".into());
+        }
+        let identity = if ready {
+            let (bytes, hash, extension) = archive_identity(&path, || false)?;
+            if bytes != row.bytes
+                || row.sha256.as_deref() != Some(&hash)
+                || row.extension.as_deref() != Some(extension)
+            {
+                return Err(
+                    "Verified archive changed; removal preserved its receipt and bytes.".into(),
+                );
+            }
+            (bytes, hash)
+        } else {
+            file_hash(&path, || false)?
+        };
+        files.insert(name, identity);
+    }
+    if ready && files.len() != 1 {
+        return Err("Verified archive is missing; preserve its receipt for review.".into());
+    }
+    Ok(files)
 }
 fn valid_id(id: &str) -> Result<()> {
     if !id.starts_with("download-")

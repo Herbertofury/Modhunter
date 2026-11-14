@@ -215,6 +215,9 @@ pub(crate) fn safe_name(name: &str) -> Result<String> {
 }
 
 fn listing(text: &str, archive_bytes: u64) -> Result<Listed> {
+    listing_paths(text, archive_bytes, cfg!(windows))
+}
+fn listing_paths(text: &str, archive_bytes: u64, windows_paths: bool) -> Result<Listed> {
     let mut files = BTreeMap::new();
     let mut directories = BTreeSet::new();
     let mut identities = BTreeMap::<String, (String, bool)>::new();
@@ -233,7 +236,17 @@ fn listing(text: &str, archive_bytes: u64) -> Result<Listed> {
                 return Err("Archive listing contains duplicate or injected metadata.".into());
             }
         }
-        let name = safe_name(fields.get("Path").ok_or("Archive entry has no path.")?)?;
+        // The Windows 7-Zip CLI renders archive path separators as backslashes,
+        // including ZIP members originally stored with forward slashes. Convert
+        // that platform representation before validating traversal and aliases;
+        // do not relax safe_name for manifest paths or accept them on Unix.
+        let path = fields.get("Path").ok_or("Archive entry has no path.")?;
+        let path = if windows_paths {
+            path.replace('\\', "/")
+        } else {
+            (*path).to_owned()
+        };
+        let name = safe_name(&path)?;
         let folder = fields.get("Folder").copied() == Some("+")
             || fields.get("Attributes").is_some_and(|s| s.starts_with('D'));
         if fields.get("Encrypted").copied().is_some_and(|v| v != "-")
@@ -904,6 +917,50 @@ mod tests {
         );
         let good = listing(&block("textures/a.dds"), 100).unwrap();
         assert!(good.directories.contains("textures"));
+    }
+    #[test]
+    fn windows_technical_listing_separators_are_normalized_before_safety_checks() {
+        let block =
+            |p: &str| format!("Path = {p}\r\nFolder = -\r\nSize = 3\r\nEncrypted = -\r\n\r\n");
+        let listed = listing_paths(
+            &(block("smoke-fixture.txt")
+                + &block("textures\\modhunter-smoke.txt")
+                + &block("ModhunterSmoke.esp")),
+            100,
+            true,
+        )
+        .unwrap();
+        assert!(listed.files.contains_key("textures/modhunter-smoke.txt"));
+        assert!(listed.directories.contains("textures"));
+        for path in [
+            "..\\outside.txt",
+            "a\\..\\outside.txt",
+            "\\\\server\\share\\file",
+            "C:\\file",
+            "textures\\a:stream",
+            "textures\\CON.txt",
+            "a\\\\b",
+            "a\\.\\b",
+        ] {
+            assert!(listing_paths(&block(path), 100, true).is_err(), "{path}");
+        }
+        assert!(
+            listing_paths(
+                &(block("textures\\a.dds") + &block("textures/a.dds")),
+                100,
+                true
+            )
+            .is_err()
+        );
+        assert!(
+            listing_paths(
+                &(block("Textures\\a.dds") + &block("textures/b.dds")),
+                100,
+                true
+            )
+            .is_err()
+        );
+        assert!(listing_paths(&block("textures\\a.dds"), 100, false).is_err());
     }
     #[test]
     fn normalization_preserves_sidecars_and_installer_scope() {

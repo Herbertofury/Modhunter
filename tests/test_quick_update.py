@@ -189,7 +189,7 @@ class QuickServiceTests(unittest.TestCase):
     def test_bulk_queue_waiting_for_native_handoff_cannot_resume_after_profile_round_trip(self):
         entered, release, finished = threading.Event(), threading.Event(), threading.Event()
         seen = []
-        def blocked(profile, item_id, auto_install, *, execution_epoch=None):
+        def blocked(profile, item_id, auto_install, *, execution_epoch=None, approval_generation=None):
             seen.append(item_id)
             entered.set()
             if not release.wait(2):
@@ -220,6 +220,39 @@ class QuickServiceTests(unittest.TestCase):
         self.assertEqual(seen, ["live-a"])
         self.assertEqual(self.service.quick_state()["state"], "idle")
         self.assertFalse(self.downloads_started)
+
+    def test_cancel_preparation_during_download_dispatch_disarms_its_late_install_intent(self):
+        entered, release = threading.Event(), threading.Event()
+        requests = []
+        original = self.service.ui_call
+        def held(req):
+            if req.cmd == "download":
+                entered.set()
+                if not release.wait(3):
+                    raise AssertionError("Owned download fixture was not released")
+            original(req)
+        self.service.ui_call = held
+        worker = threading.Thread(target=lambda: requests.append(self.service.quick_update({
+            "profileId": SNAP["profileId"], "itemIds": ["live-a"], "autoInstall": True})))
+        worker.start()
+        try:
+            self.assertTrue(entered.wait(2))
+            snapshot = self.service.selection_snapshot([])
+            controlled = self.service.install_queue_control({"action": "cancelPreparation", "profileId": snapshot["profileId"],
+                                                              "executionEpoch": snapshot["executionEpoch"]})
+            self.assertTrue(controlled["ok"], controlled)
+        finally:
+            release.set()
+            worker.join(3)
+        self.assertFalse(worker.is_alive())
+        did = requests[0]["queued"][0]["downloadId"]
+        self.assertFalse(self.service.downloads()[did]["autoInstallRequested"])
+        self.assertTrue(self.service.downloads()[did]["installDisarmed"])
+        snapshot = self.service.selection_snapshot([])
+        self.service.install_queue_control({"action": "resume", "profileId": snapshot["profileId"], "executionEpoch": snapshot["executionEpoch"]})
+        self.service.set_download_status(did, "complete")
+        self.assertFalse(self.installs_started)
+        self.assertEqual(self.service.install_queue()["pending"], [])
 
     def test_quick_source_selection_keeps_original_epoch_through_profile_round_trip(self):
         def choose(item):

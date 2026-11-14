@@ -112,6 +112,75 @@ struct Stamp {
     directory: bool,
     identity: (u64, u64),
 }
+#[cfg(windows)]
+fn inventory_metadata(path: &Path) -> Result<(fs::Metadata, (u64, u64))> {
+    use std::os::windows::{fs::OpenOptionsExt, io::AsRawHandle};
+    #[repr(C)]
+    #[derive(Default)]
+    struct FileTime {
+        low: u32,
+        high: u32,
+    }
+    #[repr(C)]
+    #[derive(Default)]
+    struct Information {
+        attributes: u32,
+        created: FileTime,
+        accessed: FileTime,
+        written: FileTime,
+        volume: u32,
+        size_high: u32,
+        size_low: u32,
+        links: u32,
+        index_high: u32,
+        index_low: u32,
+    }
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetFileInformationByHandle(
+            file: *mut std::ffi::c_void,
+            information: *mut Information,
+        ) -> i32;
+    }
+    // DirEntry::metadata uses cached FindFirstFile/FindNextFile attributes on
+    // Windows. NTFS can refresh those when a file is opened, making our own hash
+    // read appear to change an otherwise stable inventory. Both passes must use
+    // current handle metadata, including identity, without following reparse
+    // points. BACKUP_SEMANTICS permits the same check for directories.
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .access_mode(0)
+        .share_mode(7)
+        .custom_flags(0x0200_0000 | 0x0020_0000)
+        .open(path)
+        .map_err(err)?;
+    let mut info = Information::default();
+    if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut info) } == 0 {
+        return Err(err(std::io::Error::last_os_error()));
+    }
+    if info.attributes & 0x400 != 0 {
+        return Err("Reparse points are not accepted in content inventories.".into());
+    }
+    Ok((
+        file.metadata().map_err(err)?,
+        (
+            u64::from(info.volume),
+            (u64::from(info.index_high) << 32) | u64::from(info.index_low),
+        ),
+    ))
+}
+#[cfg(not(windows))]
+fn inventory_metadata(path: &Path) -> Result<(fs::Metadata, (u64, u64))> {
+    let metadata = fs::symlink_metadata(path).map_err(err)?;
+    #[cfg(unix)]
+    let identity = {
+        use std::os::unix::fs::MetadataExt;
+        (metadata.dev(), metadata.ino())
+    };
+    #[cfg(not(unix))]
+    let identity = (0, 0);
+    Ok((metadata, identity))
+}
 fn inventory(root: &Path, cancel: &impl Fn() -> bool) -> Result<BTreeMap<String, Stamp>> {
     let mut out = BTreeMap::new();
     let mut names = HashSet::new();
@@ -136,7 +205,7 @@ fn inventory(root: &Path, cancel: &impl Fn() -> bool) -> Result<BTreeMap<String,
             if !names.insert(name.to_uppercase()) {
                 return Err("Case-colliding content needs manual review.".into());
             }
-            let meta = child.metadata().map_err(err)?;
+            let (meta, identity) = inventory_metadata(&path)?;
             let directory = meta.is_dir();
             if directory {
                 stack.push(path);
@@ -145,13 +214,6 @@ fn inventory(root: &Path, cancel: &impl Fn() -> bool) -> Result<BTreeMap<String,
             } else {
                 return Err("Only regular files and directories are supported.".into());
             }
-            #[cfg(unix)]
-            let identity = {
-                use std::os::unix::fs::MetadataExt;
-                (meta.dev(), meta.ino())
-            };
-            #[cfg(not(unix))]
-            let identity = (0, 0);
             out.insert(
                 name,
                 Stamp {
@@ -220,6 +282,9 @@ fn copy_tree(from: &Path, to: &Path, expected: &Tree, cancel: &impl Fn() -> bool
             output.write_all(&buf[..n]).map_err(err)?;
         }
         output.sync_all().map_err(err)?;
+        // Windows may finalize last-write metadata only when the writer closes.
+        drop(output);
+        drop(input);
         let (size, hash) = file_hash(&dest, cancel)?;
         if size != entry.bytes || hash != entry.sha256 {
             return Err("Source changed while copying; snapshot not approved.".into());
@@ -305,6 +370,8 @@ fn copy_one(
         output.write_all(&buffer[..n]).map_err(err)?;
     }
     output.sync_all().map_err(err)?;
+    drop(output);
+    drop(input);
     if file_hash(destination, cancel)? != (expected.bytes, expected.sha256.clone()) {
         return Err("Selected content changed while copying.".into());
     }

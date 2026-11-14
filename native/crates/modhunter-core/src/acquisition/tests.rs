@@ -130,6 +130,70 @@ fn removing_requires_confirmation() {
     assert!(s.row(&r.id).is_err());
 }
 #[test]
+fn removal_preserves_unknown_files_and_the_ready_receipt() {
+    let (_d, mut store, receipt) = start();
+    ready(&mut store, &receipt);
+    let archive = store.verify(&receipt.id, || false).unwrap();
+    let foreign = archive.with_file_name("user-notes.txt");
+    fs::write(&foreign, b"do not remove").unwrap();
+    assert!(store.remove(&receipt.id, "REMOVE").is_err());
+    assert_eq!(store.row(&receipt.id).unwrap().state, "ready");
+    assert_eq!(fs::read(&foreign).unwrap(), b"do not remove");
+    assert!(store.verify(&receipt.id, || false).is_ok());
+    fs::remove_file(foreign).unwrap();
+    store.remove(&receipt.id, "REMOVE").unwrap();
+    assert!(store.row(&receipt.id).is_err());
+    assert!(!archive.exists());
+}
+#[test]
+fn removal_preserves_a_changed_ready_archive() {
+    let (_d, mut store, receipt) = start();
+    ready(&mut store, &receipt);
+    let archive = store.verify(&receipt.id, || false).unwrap();
+    fs::write(&archive, b"PK\x03\x04changed").unwrap();
+    assert!(store.remove(&receipt.id, "REMOVE").is_err());
+    assert_eq!(store.row(&receipt.id).unwrap().state, "ready");
+    assert_eq!(fs::read(archive).unwrap(), b"PK\x03\x04changed");
+}
+#[test]
+fn removal_requires_the_exact_receipt_bound_archive_name() {
+    let (_d, mut store, receipt) = start();
+    ready(&mut store, &receipt);
+    let archive = store.verify(&receipt.id, || false).unwrap();
+    let wrong_name = archive.with_file_name("archive.rar");
+    fs::rename(&archive, &wrong_name).unwrap();
+    assert!(store.remove(&receipt.id, "REMOVE").is_err());
+    assert!(store.row(&receipt.id).is_ok());
+    assert!(wrong_name.exists());
+}
+#[test]
+fn terminal_removal_accepts_only_the_owned_partial_file() {
+    let (_d, mut store, receipt) = start();
+    store
+        .finish_error(&receipt.id, "cancelled", "Cancelled by the user.")
+        .unwrap();
+    let part = store.staging(&receipt.id).unwrap();
+    fs::write(&part, b"late released partial").unwrap();
+    let foreign = part.with_file_name("archive.zip");
+    fs::write(&foreign, b"unverified archive").unwrap();
+    assert!(store.remove(&receipt.id, "REMOVE").is_err());
+    assert!(part.exists() && foreign.exists());
+    assert_eq!(store.row(&receipt.id).unwrap().state, "cancelled");
+    fs::remove_file(foreign).unwrap();
+    store.remove(&receipt.id, "REMOVE").unwrap();
+    assert!(!part.exists());
+    assert!(store.row(&receipt.id).is_err());
+}
+#[test]
+fn pending_receipt_does_not_authorize_partial_file_removal() {
+    let (_d, mut store, receipt) = start();
+    let part = store.staging(&receipt.id).unwrap();
+    fs::write(&part, b"not an approved transfer").unwrap();
+    assert!(store.remove(&receipt.id, "REMOVE").is_err());
+    assert!(part.exists());
+    assert_eq!(store.row(&receipt.id).unwrap().state, "pending");
+}
+#[test]
 fn cancellation_during_hash() {
     let (_d, mut s, r) = start();
     let p = s.approve(&r.id, &binding(), "DOWNLOAD", 2).unwrap();

@@ -14,7 +14,7 @@ import mobase
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from .bridge import ArsenalService, UIRequest
-from .model import LocalMetadataCache, take_snapshot
+from .model import LocalMetadataCache, call_str, take_snapshot
 from .focus import navigate, find_mo2_view, name_column
 from .scanner import version_verdict
 from .native_nexus import NativeNexusGateway
@@ -153,7 +153,9 @@ class ModUpdateArsenal(mobase.IPluginTool):
     # matches the deprecated per-item overload first and storms large profiles.
     def _on_mod_states_changed(self, changes):
         if self.server is not None:
-            self.server.content.invalidate()
+            names = list(changes) if isinstance(changes, dict) else []
+            self.server.content.invalidate(reason="target" if len(names) == 1 else "external",
+                                           mod_name=str(names[0]) if len(names) == 1 else "")
         self._schedule_refresh()
 
     def _on_plugin_states_changed(self, changes):
@@ -161,22 +163,22 @@ class ModUpdateArsenal(mobase.IPluginTool):
 
     def _on_profile_changed(self, previous, current):
         if self.server is not None:
-            self.server.content.invalidate()
+            self.server.content.invalidate(reason="profile")
         self._schedule_refresh()
 
     def _on_mod_installed(self, mod):
         if self.server is not None:
-            self.server.content.invalidate()
+            self.server.content.invalidate(reason="target", mod_name=mod if isinstance(mod, str) else call_str(mod, "name", ""))
         self._schedule_refresh()
 
     def _on_mod_removed(self, name):
         if self.server is not None:
-            self.server.content.invalidate()
+            self.server.content.invalidate(reason="target", mod_name=str(name))
         self._schedule_refresh()
 
     def _on_mod_moved(self, name, old_priority, new_priority):
         if self.server is not None:
-            self.server.content.invalidate()
+            self.server.content.invalidate(reason="target", mod_name=str(name))
         self._schedule_refresh()
 
     def _on_plugins_refreshed(self):

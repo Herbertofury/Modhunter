@@ -57,6 +57,38 @@ fn snapshot_copies_real_bytes() {
     assert_eq!(fs::read(f.root.join("mesh.nif")).unwrap(), b"original");
 }
 #[test]
+fn full_inventory_detects_same_size_replacement_during_hashing() {
+    use std::cell::Cell;
+    let f = Fixture::new();
+    let source = f.root.join("mesh.nif");
+    let original = fs::metadata(&source).unwrap();
+    let replacement = f._d.path().join("replacement.nif");
+    let mut file = fs::File::create(&replacement).unwrap();
+    file.write_all(b"original").unwrap();
+    file.set_times(fs::FileTimes::new().set_modified(original.modified().unwrap()))
+        .unwrap();
+    file.sync_all().unwrap();
+    drop(file);
+    let original_identity = inventory_metadata(&source).unwrap().1;
+    assert_ne!(
+        original_identity,
+        inventory_metadata(&replacement).unwrap().1
+    );
+    let calls = Cell::new(0);
+    let result = tree(&f.root, &|| {
+        calls.set(calls.get() + 1);
+        // One inventory pass has completed; file_hash has opened the original
+        // handle, but no bytes have been consumed. Preserve size, bytes and
+        // last-write time while replacing its path with a different file.
+        if calls.get() == 2 {
+            fs::rename(&replacement, &source).unwrap();
+        }
+        false
+    });
+    assert!(result.unwrap_err().contains("inventory changed"));
+    assert_eq!(fs::read(&source).unwrap(), b"original");
+}
+#[test]
 fn explicit_backup_required() {
     let f = Fixture::new();
     assert!(execute(f.req("snapshot", None, None), || false).is_err());

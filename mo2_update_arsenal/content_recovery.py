@@ -433,6 +433,7 @@ class ContentRecovery:
         self._launched = set()
         self._native_generation = 0
         self._native_session = secrets.token_hex(16)
+        self._queue_transitions = []
         self.native_enabled = False
         self.launch_guard_available = False
         self._load()
@@ -580,6 +581,77 @@ class ContentRecovery:
             raise ValueError("Native MO2 state changed after review; capture a fresh target")
         return value
 
+    @staticmethod
+    def _other_targets(snapshot, mod_name):
+        # A successful installer may explain only its own target changing.
+        # Source edits, another mod's version, or inventory changes require a
+        # new review even if no native callback happened to report them.
+        return canonical_json({"context": {k: snapshot.get(k) for k in ("profileId", "profileName", "game", "gameRuntime", "loader")},
+            "items": sorted((row for row in snapshot.get("items", []) if row.get("mo2InternalName") != mod_name), key=lambda row: str(row.get("id")))})
+
+    def _queued_context(self, job, data):
+        try:
+            return self._context(job["contextId"])
+        except ValueError as original_error:
+            with self._lock:
+                original = deepcopy(self._contexts.get(job["contextId"]))
+                transitions = list(self._queue_transitions)
+                generation = self._native_generation
+            with self.service._guard:
+                intent_epoch = self.service._install_intent_epoch
+                epoch = self.service._execution_epoch
+            if (not original or original.get("nativeLease") != self._native_session
+                    or original.get("queueIntentEpoch") != intent_epoch):
+                raise original_error
+            cursor = (original.get("executionEpoch"), original.get("nativeGeneration"))
+            destination = (epoch, generation)
+            proofs = []
+            for step in transitions:
+                if cursor == destination:
+                    break
+                if tuple(step["before"]) == cursor and step["intentEpoch"] == intent_epoch:
+                    cursor = tuple(step["after"])
+                    proofs.append(step["jobId"])
+            if cursor != destination or not proofs:
+                raise original_error
+            review = data.get("review") or (data.get("resolvedArchive") or {}).get("review") or {}
+            if not original.get("newTarget") and not (review.get("comparisonDigest") or data.get("comparisonDigest")):
+                raise ValueError("This queued installer needs a fresh full content review after the preceding native installation")
+            captured = self._ui("content-capture", {"itemId": original.get("itemId", ""),
+                "targetName": original["modName"] if original.get("newTarget") else ""})
+            if not captured.get("ok"):
+                raise ValueError(captured.get("error", "Native queued target could not be recaptured"))
+            fresh = captured["context"]
+            for key in original:
+                if key not in {"executionEpoch", "nativeGeneration", "gameRunning"} and original.get(key) != fresh.get(key):
+                    raise ValueError("Queued native target or reviewed source changed after the preceding installation")
+            if (fresh.get("executionEpoch"), fresh.get("nativeGeneration")) != destination:
+                raise ValueError("Native execution changed while the queued target was being revalidated")
+            self._update(job, queueRevalidatedAfter=proofs, queueExecutionEpoch=epoch, queueNativeGeneration=generation)
+            # The original contextId/request digest stays immutable. The
+            # ordinary install work independently rehashes the owned archive,
+            # incoming manifest and exact target comparison before backup.
+            return fresh
+
+    def _record_queue_transition(self, job, context, before, result):
+        if result.get("ok") is not True or job.get("action") not in {"install", "nativeInstall"}:
+            return
+        after = self.service.native_snapshot()
+        if self._other_targets(before, context["modName"]) != self._other_targets(after, context["modName"]):
+            return
+        with self.service._guard:
+            intent_epoch = self.service._install_intent_epoch
+            epoch = self.service._execution_epoch
+        with self._lock:
+            if context.get("queueIntentEpoch") != intent_epoch:
+                return
+            origin = (context["executionEpoch"], context["nativeGeneration"])
+            destination = (epoch, self._native_generation)
+            if origin != destination:
+                self._queue_transitions.append({"before": origin, "after": destination,
+                    "intentEpoch": intent_epoch, "jobId": job["jobId"]})
+                self._queue_transitions = self._queue_transitions[-128:]
+
     def _new_job(self, data, action, *, context=None):
         review = data.get("reviewId")
         if not isinstance(review, str) or not REVIEW_ID.fullmatch(review):
@@ -620,6 +692,8 @@ class ContentRecovery:
 
     def start_install(self, data):
         try:
+            with self.service._guard:
+                approval_generation = self.service._install_cancel_generation
             if not isinstance(data, dict) or set(data) - {"reviewId", "downloadId", "contextId", "confirm", "targetName", "resolvedArchive", "review", "comparisonDigest"}:
                 raise ValueError("Native page installation accepts only owned review and receipt fields")
             if data.get("confirm") != "INSTALL":
@@ -632,7 +706,11 @@ class ContentRecovery:
                     raise ValueError("New target name changed after native context review")
             job, duplicate = self._new_job(data, "install")
             if not duplicate:
-                threading.Thread(target=self._worker, args=(job, deepcopy(data), self._install_work), daemon=True, name="Modhunter-content-install").start()
+                try:
+                    self.service.queue_content_install(job, deepcopy(data), approval_generation)
+                except Exception as exc:
+                    cancelled = self._cancel[job["jobId"]].is_set() or approval_generation != self.service._install_cancel_generation
+                    self.finish_queued_install(job, data, {"ok": False, "state": "cancelled" if cancelled else "failed", "error": str(exc)})
             return self._accepted(job, duplicate)
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
@@ -652,23 +730,56 @@ class ContentRecovery:
                 request.cancel_if_pending()
             job["cancelRequested"] = True
             self._persist()
-            return {"ok": True, "jobId": job["jobId"], "state": job["state"],
-                    "message": "Pending work will stop. An already-open MO2 installer must finish or be cancelled in its native window."}
+        queued = self.service.remove_queued_content(job["jobId"])
+        if queued:
+            self.finish_queued_install(job, queued["data"], {"ok": False, "state": "cancelled", "error": "Approved queued install cancelled before native mutation"})
+        return {"ok": True, "jobId": job["jobId"], "state": job["state"],
+                "message": "Pending work will stop. An already-open MO2 installer must finish or be cancelled in its native window."}
 
-    def invalidate(self):
+    def cancel_install_preparation(self):
+        """Disarm preparation only; an actual native transaction retains its lease."""
         with self._lock:
+            for ident, event in self._cancel.items():
+                job = self._jobs.get(ident, {})
+                if job.get("action") not in {"install", "nativeInstall"} or job.get("nativeStarted") or job.get("mutationStarted"):
+                    continue
+                event.set()
+                job["cancelRequested"] = True
+                request = self._requests.get(ident)
+                if request:
+                    request.cancel_if_pending()
+            self._persist()
+
+    def finish_queued_install(self, job, data, result):
+        """A removed pending item owns no worker, native request, or file lease."""
+        with self._lock:
+            if job.get("nativeStarted") or job.get("mutationStarted") or self._lease == job["jobId"] or job["jobId"] in self._requests:
+                raise RuntimeError("An active native transaction cannot be completed as a queued cancellation")
+            self._cancel.pop(job["jobId"], None)
+        return self._finish_worker(job, data, result)
+
+    def invalidate(self, *, reason="external", mod_name=""):
+        with self._lock:
+            active = self._jobs.get(self._lease or "", {})
+            owned = (reason == "target" and bool(mod_name) and active.get("nativeStarted") is True
+                     and active.get("action") in {"install", "nativeInstall"} and active.get("modName") == mod_name)
             self._native_generation += 1
             # Stop superseded reads/copies promptly, before the debounced MO2
             # snapshot catches up. An already-running native installer or
             # atomic restore must retain ownership until its real outcome.
             for ident, event in self._cancel.items():
                 job = self._jobs.get(ident, {})
+                if owned and job.get("action") == "install" and job.get("state") == "queued":
+                    continue
                 if job.get("state") in {"queued", "preparing", "verifying", "scanning"} or (job.get("state") == "installing" and not job.get("nativeStarted")):
                     event.set()
                     job["superseded"] = True
                     request = self._requests.get(ident)
                     if request is not None:
                         request.cancel_if_pending()
+        if not owned:
+            with self.service._guard:
+                self.service._install_intent_epoch += 1
 
     def shutdown(self):
         with self._lock:
@@ -696,7 +807,8 @@ class ContentRecovery:
                 locked = self.service._install_lock.acquire(blocking=False)
                 if not locked:
                     raise RuntimeError("Another native installer or content transaction is still active")
-            context = context or self._context(job["contextId"])
+            context = context or (self._queued_context(job, data) if job.get("action") == "install" else self._context(job["contextId"]))
+            before_catalog = self.service.native_snapshot() if job.get("action") in {"install", "nativeInstall"} else None
             self._update(job, state="preparing")
             if cancel.is_set():
                 raise RuntimeError("Content operation cancelled before native mutation")
@@ -704,9 +816,12 @@ class ContentRecovery:
             if not lease.get("ok"):
                 raise RuntimeError(lease.get("error", "Native mutation lease was rejected"))
             result = operation(job, data, context, cancel)
+            if before_catalog is not None:
+                self._record_queue_transition(job, context, before_catalog, result)
         except Exception as exc:
             state = "unknown" if job.get("nativeStarted") or job.get("mutationStarted") else "cancelled" if cancel.is_set() else "failed"
-            result = {"ok": False, "state": state, "error": str(exc), "backupRetained": bool(job.get("backupId"))}
+            result = {"ok": False, "state": state, "error": str(exc), "backupRetained": bool(job.get("backupId")),
+                      "needsReview": job.get("superseded") is True or (state == "failed" and not job.get("nativeStarted") and not job.get("mutationStarted"))}
         finally:
             with self._lock:
                 if self._lease == job["jobId"]:
@@ -714,6 +829,14 @@ class ContentRecovery:
                 self._cancel.pop(job["jobId"], None)
             if locked and not lock_held:
                 self.service._install_lock.release()
+            elif lock_held:
+                self.service.release_queued_install_lease(job["jobId"])
+        result = self._finish_worker(job, data, result)
+        if locked and not lock_held:
+            self.service._drain_install_queue()
+        return result
+
+    def _finish_worker(self, job, data, result):
         # A terminal acknowledgement must not race the next reviewed command
         # against a lease that this completed worker still owns.
         related = []
@@ -1003,8 +1126,10 @@ class ContentRecovery:
             self._update(job, completed=deepcopy(completed), remaining=[r for r, _ in prepared[index + 1:]])
         return {"ok": True, "state": "complete", "completed": completed, "failed": [], "remaining": [], "filesRestored": True, "refreshRequired": False}
 
-    def install_native_download(self, download_id, ticket, epoch):
+    def install_native_download(self, download_id, ticket, epoch, *, cancel=None):
         """Existing Nexus/public API queue uses the same actual-byte safeguards."""
+        if cancel is not None and cancel.is_set():
+            return {"ok": False, "state": "cancelled", "error": "Native install preparation was cancelled"}
         captured = self.capture(str(ticket.get("itemId") or ""))
         if not captured.get("ok"):
             return captured
@@ -1020,6 +1145,13 @@ class ContentRecovery:
         data["_nativeFileId"] = ticket.get("fileId")
         data["_nativeDownloadId"] = download_id
         job, _ = self._new_job(data, "nativeInstall", context=context)
+        with self.service._guard:
+            active = self.service._install_active
+            if active and active.get("kind") == "native" and active.get("downloadId") == download_id:
+                active.update(job=job, jobId=job["jobId"], reviewId=job["reviewId"])
+        if cancel is not None:
+            with self._lock:
+                self._cancel[job["jobId"]] = cancel
         result = self._worker(job, data, self._install_work, lock_held=True, context=context)
         result["contentJobId"] = job["jobId"]
         return result
@@ -1073,8 +1205,13 @@ class NativeContent:
         item_id = str(payload.get("itemId") or "")
         context = {k: snapshot.get(k) for k in ("profileId", "profileName", "game", "gameRuntime", "executionEpoch")}
         context.update(nativeLease=native_session, nativeGeneration=native_generation)
+        with self.service._guard:
+            context["queueIntentEpoch"] = self.service._install_intent_epoch
         context.update(modsRoot=str(root), profilesRoot=str(profile_path.parent), profilePath=str(profile_path),
                        vaultRoot=str(vault), modRoot="", modName="", itemId=item_id, installedVersion="?", newTarget=bool(target_name), nativeGameBinary=binary)
+        if item_id:
+            source_row = next((m for m in self.service.native_selection_snapshot([item_id]).get("items", []) if m.get("id") == item_id), None)
+            context["queueSourceIdentity"] = {key: deepcopy((source_row or {}).get(key)) for key in ("nexusId", "source", "flags")}
         if recovery_name:
             recovery_name = valid_target_name(recovery_name)
             mod = org.modList().getMod(recovery_name)

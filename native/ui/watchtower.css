@@ -6,3 +6,6 @@ body.privacy-active > :not(#privacyCover){visibility:hidden!important}
 .sidebar,.row-main,.session-card{min-width:0}
 #navigation{min-width:0;max-width:100%}
 @media(max-width:760px){.header-actions{flex-wrap:wrap}.list-controls{flex-wrap:wrap}.list-controls>label{min-width:0}.row-meta,.session-state{overflow-wrap:anywhere}.session-state{flex-wrap:wrap}.field-inline{flex-wrap:wrap}.field-inline select{max-width:100%}.settings-footer{flex-wrap:wrap}}
+
+/* Managed file transfers remain compact rows, never summary-card walls. */
+.download-list{border-top:1px solid var(--line)}.download-row{display:flex;gap:18px;align-items:flex-start;padding:14px 4px;border-bottom:1px solid var(--line)}.download-main{flex:1;min-width:0}.download-main>strong{overflow-wrap:anywhere;font-size:13px}.download-row .row-actions{flex:none}.download-intro{font-size:12px;margin-bottom:16px}.download-hash{margin-top:8px;font-size:11px;color:var(--muted)}.download-hash summary{cursor:pointer}.download-hash code{display:block;overflow-wrap:anywhere;margin-top:8px}.download-hash p{margin:6px 0 0}@media(max-width:760px){.download-row{flex-wrap:wrap}.download-main{flex-basis:100%}.download-row .row-actions{justify-content:flex-start}}

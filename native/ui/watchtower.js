@@ -9,6 +9,7 @@
  let state={revision:-1,watches:[],sessions:[],history:[],settings:{...DEFAULTS},work:{active:[],queued:[]}},view='pages',filter='all',query='',disposed=false,ready=false;
  let searchFrame=null,toastTimer=null,editWatch=null,editSession=null,detailId=null,detailRequest=0,lastDetailKey='',settingsDirty=false,lastSettingsRevision=-1;
  let prefillRevision=0,pendingPrefill=null,importDocument=null,importRevision=null,confirmation=null,dialogReturn=null,lastStateKey='',importGeneration=0,settingsGeneration=0,pageFormGeneration=0,sessionFormGeneration=0,exportGeneration=0;
+ const downloadRows=new Map();
  const rows=new Map(),sessionRows=new Map(),historyRows=new Map(),selected=new Set(),selectedObservations=new Map(),busy=new Set(),searchIndexes=new Map();
  let watchById=new Map(),sessionById=new Map(),workIds=new Set(),activeIds=new Set();
  function rebuildIndexes(){watchById=new Map(state.watches.map(w=>[w.id,w]));sessionById=new Map(state.sessions.map(s=>[s.id,s]));activeIds=new Set(state.work?.active||[]);workIds=new Set([...activeIds,...(state.work?.queued||[])])}
@@ -130,8 +131,39 @@
  }
  function setChoice(select,value){const str=String(value);if(![...select.options].some(option=>option.value===str)){const option=document.createElement('option');option.value=str;option.textContent=str;select.append(option)}select.value=str}
  function updatePrivacy(){const hidden=state.settings.privacyScreen&&!document.hasFocus();$('privacyCover').hidden=!hidden;$('app').setAttribute('aria-hidden',String(hidden));document.body.classList.toggle('privacy-active',hidden)}
+
+ function fileBytes(n){return Number.isFinite(n)?n<1024?n+' B':n<1048576?(n/1024).toFixed(1)+' KiB':n<1073741824?(n/1048576).toFixed(1)+' MiB':(n/1073741824).toFixed(2)+' GiB':'Size pending'}
+ function acceptAcquisitions(next){if(!next||!Number.isFinite(next.revision))return;const previous=state.acquisitions;if(previous&&next.revision<previous.revision)return;if(previous&&Number.isFinite(next.storeRevision)&&Number.isFinite(previous.storeRevision)&&next.storeRevision<previous.storeRevision)return;state.acquisitions=next;renderDownloads()}
+ function renderDownloads(){
+  const a=state.acquisitions||{},pending=(a.jobs||[]).filter(j=>j.state==='pending'),offers=a.offers||[],artifacts=(a.jobs||[]).filter(j=>j.state!=='pending'),running=artifacts.filter(x=>['downloading','validating'].includes(x.state));
+  text('navDownloads',pending.length+running.length||artifacts.length);$('downloadBanner').hidden=!pending.length;
+  text('downloadBannerText',pending.length+' page download'+(pending.length===1?' needs':'s need')+' your approval. Nothing has been installed.');
+  const resolving=(a.resolving||[]).length;const warning=a.warning||a.error||(resolving?'Inspecting source files in the selected browser session...':a.message)||'';text('downloadWarning',warning);$('downloadWarning').hidden=!warning;
+  const list=[...pending.map(x=>({...x,pending:true})),...offers.map(x=>({...x,offer:true,filename:x.name})),...artifacts.slice().sort((x,y)=>(y.createdAt||0)-(x.createdAt||0))];
+  $('emptyDownloads').hidden=!!list.length;
+  reconcile($('pageDownloadList'),list,downloadRows,x=>{
+   const context=x.binding||{},session=sessionById.get(context.sessionId),originLabel=x.origin||context.sourceOrigin||'Tracked source',active=['downloading','validating'].includes(x.state);
+   const labels={downloading:'Downloading',validating:'Verifying file',ready:'Ready for review',cancelled:'Cancelled',failed:'Failed',interrupted:'Interrupted'};
+   const title=x.pending?'Awaiting your approval':x.offer?'Source file offer - not downloaded':labels[x.state]||'Needs review';
+   const rowBusy=[...busy].some(k=>k.endsWith(':'+x.id));const key=JSON.stringify([x,session?.label,ready,state.readOnly,state.settings.hideTitles,rowBusy]);
+   if(downloadRows.get(x.id)?.key===key)return {key,html:''};
+   const disabled=!enabled()||rowBusy;
+   const controls=x.offer?button('download-offer',x.id,x.kind==='external'?'Open host':'Open download','primary',disabled):x.pending?button('download-approve',x.id,'Download','primary',disabled)+button('download-reject',x.id,'Decline','quiet',disabled):
+    active?button('download-cancel',x.id,'Cancel','quiet',disabled):
+    (x.state==='ready'?button('download-show',x.id,'Show file','',disabled)+button('download-verify',x.id,'Verify','quiet',disabled):'')+button('download-remove',x.id,'Remove','quiet danger-text',disabled);
+   const progress=!x.pending&&active?fileBytes(x.received||0)+(x.total?' / '+fileBytes(x.total):''):(x.pending?fileBytes(x.total):fileBytes(x.bytes||x.received||0));
+   return {key,html:'<article class="download-row" data-download-id="'+esc(x.id)+'"><div class="download-main"><strong>'+esc(state.settings.hideTitles?'Archive name hidden':x.filename)+'</strong><div class="row-meta">'+esc(originLabel)+(session?' / '+esc(session.label):' / public session')+'</div><div class="row-detail">'+esc(title)+' / '+esc(progress)+'</div>'+(!x.pending&&x.message?'<div class="row-detail">'+esc(x.message)+'</div>':'')+(x.sha256?'<details class="download-hash"><summary>File identity</summary><code>'+esc(x.sha256)+'</code><p>Integrity checked; compatibility and archive contents still require review.</p></details>':'')+'</div><div class="row-actions">'+controls+'</div></article>'};
+  });
+ }
+ async function downloadAction(kind,id){
+  if(kind==='download-remove'&&!await confirmAction('Remove this downloaded archive?','Only this managed download and its receipt are removed. Installed mods and browser sign-ins are not affected.','Remove download'))return;
+  const commands={'download-offer':['openOffer',{id}],'download-approve':['approveDownload',{id,confirm:'DOWNLOAD'}],'download-reject':['rejectDownload',{id}],'download-cancel':['cancelDownload',{id}],'download-show':['showDownload',{id}],'download-verify':['verifyDownload',{id}],'download-remove':['removeDownload',{id,confirm:'REMOVE'}]};
+  const entry=commands[kind];if(!entry)return;
+  const result=command(entry[0],entry[1]);renderDownloads();await result;renderDownloads();
+ }
+
  function render(){
-  renderPages();renderSessions();renderHistory();if(view==='settings')fillSettings();updatePrivacy();
+  renderPages();renderSessions();renderHistory();renderDownloads();if(view==='settings')fillSettings();updatePrivacy();
   $('recoveryBanner').hidden=!state.recoveryWarning;text('recoveryText',state.recoveryWarning||'');$('recoverStore').disabled=!ready||!!state.runtimeWarning;$('runtimeBanner').hidden=!state.runtimeWarning;text('runtimeBanner',state.runtimeWarning||'');
   $('importOpen').disabled=!canMutate();$('exportOpen').disabled=!ready;$('saveSettings').disabled=!canMutate()||busy.has('settings:');
   if(state.version)text('version','Rust '+state.version+' · WebView2');
@@ -144,8 +176,8 @@
   if(Number.isFinite(next.storeRevision)&&Number.isFinite(state.storeRevision)&&next.storeRevision<state.storeRevision)return false;
   const fresh=next.prefill&&Number(next.prefill.revision)>prefillRevision;
   const key=JSON.stringify([next.storeRevision??next.revision,next.work,next.readOnly,next.recoveryWarning,next.runtimeWarning,next.version,next.prefill?.revision]);
-  if(key===lastStateKey&&!fresh){state.revision=next.revision;return true;}
-  lastStateKey=key;state={...next,settings:{...DEFAULTS,...next.settings},work:next.work||{active:[],queued:[]}};rebuildIndexes();render();
+  if(key===lastStateKey&&!fresh){state.revision=next.revision;if(next.acquisitions)acceptAcquisitions(next.acquisitions);return true;}
+  lastStateKey=key;const priorAcquisitions=state.acquisitions;state={...next,acquisitions:priorAcquisitions,settings:{...DEFAULTS,...next.settings},work:next.work||{active:[],queued:[]}};rebuildIndexes();if(next.acquisitions)acceptAcquisitions(next.acquisitions);render();
   if(fresh){prefillRevision=Number(next.prefill.revision);pendingPrefill=next.prefill;if(document.querySelector('dialog[open]'))$('prefillBanner').hidden=false;else usePrefill()}
   return true;
  }
@@ -157,9 +189,9 @@
   finally{if(kind!=='detail')busy.delete(key)}
  }
  function navigate(nextView,nextFilter='all'){
-  view=nextView;filter=nextFilter;clearSelected();for(const name of ['pages','sessions','history','settings'])$(name+'View').hidden=name!==view;
+  view=nextView;filter=nextFilter;clearSelected();for(const name of ['pages','sessions','history','settings','downloads'])$(name+'View').hidden=name!==view;
   for(const button of $('navigation').querySelectorAll('[data-view]')){const active=button.dataset.view===view&&(view!=='pages'||button.dataset.filter===filter);button.classList.toggle('active',active);if(active)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current')}
-  const names={all:'All pages',changed:'Changes to review',new:'Awaiting first check',attention:'Needs attention',paused:'Paused & muted',removed:'Removed pages'};text('viewTitle',view==='pages'?names[filter]:{sessions:'Site sign-ins',history:'Seen history',settings:'Preferences'}[view]);text('viewSubtitle',view==='pages'?'Track a release page, creator, changelog, or a page that needs your sign-in.':view==='sessions'?'Separate browser profiles, clear ownership, and a direct route back to your pages.':view==='history'?'Review and undo the page changes you acknowledged.':'Choose when to check, which sources to contact, and what stays visible.');render();
+  const names={all:'All pages',changed:'Changes to review',new:'Awaiting first check',attention:'Needs attention',paused:'Paused & muted',removed:'Removed pages'};text('viewTitle',view==='pages'?names[filter]:{sessions:'Site sign-ins',history:'Seen history',settings:'Preferences',downloads:'Page downloads'}[view]);text('viewSubtitle',view==='pages'?'Track a release page, creator, changelog, or a page that needs your sign-in.':view==='downloads'?'Downloads you explicitly choose, kept separate from installation.':view==='sessions'?'Separate browser profiles, clear ownership, and a direct route back to your pages.':view==='history'?'Review and undo the page changes you acknowledged.':'Choose when to check, which sources to contact, and what stays visible.');render();
  }
  function openDialog(id){dialogReturn=document.activeElement;$(id).showModal()}
  function closeDialog(id){$(id).close();if(dialogReturn?.isConnected)dialogReturn.focus({preventScroll:true})}
@@ -207,7 +239,7 @@
  function closeDetail(){detailId=null;detailRequest++;$('detailDrawer').hidden=true}
  function renderDetail(w){
   text('detailTitle',displayTitle(w));const isBusy=working(w.id),label=status(w),latest=w.latest,session=sessionById.get(w.sessionId);const privacy=state.settings.hideTitles;
-  const actions=(w.removedAt?button('restore',w.id,'Restore','primary',!canMutate()):button('edit',w.id,'Edit page','',!canMutate())+(isBusy||stopped(w)?button('cancel',w.id,stopped(w)?'Clear stopped check':'Cancel check','quiet',!canMutate()):button('check',w.id,'Check now','primary',!canMutate()||!w.enabled||w.muted||needsSession(w)))+button('pause',w.id,w.enabled?'Pause':'Resume','quiet',!canMutate())+button('remove',w.id,'Remove','quiet danger-text',!canMutate()))+button('open',w.id,'Open in app','quiet',!ready)+button('external',w.id,'System browser','quiet',!ready)+(w.hasChanges&&latest?button('seen',w.id,'Mark this change seen','primary',!canMutate(),latest.id):'')+(w.sessionId&&['signInRequired','challenge'].includes(w.state)?button('session-open',w.sessionId,'Open sign-in / verify','primary',!canMutate()):'');
+  const actions=(w.removedAt?button('restore',w.id,'Restore','primary',!canMutate()):button('edit',w.id,'Edit page','',!canMutate())+(isBusy||stopped(w)?button('cancel',w.id,stopped(w)?'Clear stopped check':'Cancel check','quiet',!canMutate()):button('check',w.id,'Check now','primary',!canMutate()||!w.enabled||w.muted||needsSession(w)))+button('pause',w.id,w.enabled?'Pause':'Resume','quiet',!canMutate())+button('remove',w.id,'Remove','quiet danger-text',!canMutate()))+button('open',w.id,'Open in app','quiet',!ready)+button('files',w.id,'Find files','',!canMutate()||needsSession(w)||!!w.removedAt)+button('external',w.id,'System browser','quiet',!ready)+(w.hasChanges&&latest?button('seen',w.id,'Mark this change seen','primary',!canMutate(),latest.id):'')+(w.sessionId&&['signInRequired','challenge'].includes(w.state)?button('session-open',w.sessionId,'Open sign-in / verify','primary',!canMutate()):'');
   const fields=[['Status',label[0]],['Page',privacy?origin(w.url):w.url],['Read using',session?session.label:'Public browser'],['Folder',w.folder||'None'],['Region',w.selector||'Readable page text'],['Ignore',(w.ignoreSelectors||[]).join(', ')||'None'],['Interval',interval(w.intervalMinutes)],['Last attempt',date(w.lastAttemptAt)],['Last success',date(w.lastSuccessAt)],['Next due',w.enabled&&!w.muted?date(Math.max(w.nextCheckAt||0,w.retryAt||0)):'Paused']];
   let html='<div class="detail-actions">'+actions+'</div><section class="detail-section"><h3>Tracking details</h3><dl>'+fields.map(([k,v])=>'<dt>'+esc(k)+'</dt><dd>'+esc(v)+'</dd>').join('')+'</dl>'+(w.lastError?'<p class="row-detail error">'+esc(w.lastError)+'</p>':'')+(!privacy&&w.notes?'<p>'+esc(w.notes)+'</p>':'')+(w.association?'<p>Linked mod: '+esc(privacy?'Name hidden':w.association.name||w.association.itemId)+'. Use the Update Workshop for release/file review.</p>':'')+'</section>';
   if(latest){html+='<section class="detail-section"><h3>Latest successful observation</h3><p>'+esc(date(latest.checkedAt))+' · '+Number(latest.textBytes||0).toLocaleString()+' bytes compared'+(latest.previewTruncated?' · preview shortened; the accepted full text was compared.':'.')+'</p>'+(privacy?'<p>Page content is hidden by your privacy preference.</p>':'<pre class="capture-preview">'+esc(latest.textPreview||'No preview stored.')+'</pre>')+'</section>'}
@@ -216,6 +248,7 @@
  }
  async function action(kind,id,observationId){
   const w=watchById.get(id),s=sessionById.get(id);
+  if(kind==='files'){navigate('downloads');await command('resolveFiles',{id});return}
   if(kind==='detail'){openDetail(id);return}if(kind==='edit'&&w){openPageForm(w);return}if(kind==='session-edit'&&s){openSessionForm(s);return}
   if(kind==='seen'&&w?.latest&&observationId){const result=await command('markSeen',{id,observationId});if(result?.ok){const eventId=result.eventId||result.seenEventId;showToast('Marked this observation as seen.',eventId?()=>command('undoSeen',{eventId}):null)}return}
   if(kind==='undo-seen'){await command('undoSeen',{eventId:id});return}
@@ -259,6 +292,8 @@
   event.preventDefault();const payload={};for(const id of ['checkOnLaunch','backgroundChecking','hideTitles','privacyScreen','notifications'])payload[id]=$(id).checked;payload.defaultIntervalMinutes=Number($('defaultIntervalMinutes').value);payload.historyLimit=Number($('historyLimit').value);payload.mutedOrigins=$('mutedOrigins').value.split('\n').map(x=>x.trim()).filter(Boolean).map(withScheme);payload.mutedFolders=$('mutedFolders').value.split('\n').map(x=>x.trim()).filter(Boolean);
   const generation=settingsGeneration;$('saveSettings').disabled=true;const result=await command('settings',payload,true);if(result?.ok&&generation!==settingsGeneration){settingsDirty=true;text('settingsDirty','Earlier preferences saved. Your newer edits are still unsaved.');showToast('Preferences saved; your newer edits are still in the form.')}else if(result?.ok){settingsDirty=false;lastSettingsRevision=state.revision;fillSettings();text('settingsDirty','Preferences saved on this device.');showToast('Watchtower preferences saved.');updatePrivacy()}else showToast(result?.error||'Preferences could not be saved.');$('saveSettings').disabled=!canMutate()||busy.has('settings:');
  }
+ $('reviewPageDownloads').onclick=()=>navigate('downloads');
+ $('pageDownloadList').addEventListener('click',event=>{const target=event.target.closest('[data-action]');if(target&&!target.disabled)void downloadAction(target.dataset.action,target.dataset.id)});
  $('navigation').addEventListener('click',event=>{const target=event.target.closest('[data-view]');if(target)navigate(target.dataset.view,target.dataset.filter||'all')});
  $('watchList').addEventListener('change',event=>{const id=event.target.dataset.select;if(!id)return;selectWatch(id,event.target.checked);renderPages()});
  for(const id of ['watchList','sessionList','historyList','detailBody'])$(id).addEventListener('click',event=>{const target=event.target.closest('[data-action]');if(target&&!target.disabled)void action(target.dataset.action,target.dataset.id,target.dataset.observationId)});
@@ -284,7 +319,7 @@ $('settingsForm').onsubmit=savePreferences;$('settingsForm').addEventListener('i
  async function poll(){if(disposed)return;if(ready&&!document.hidden){await command('state',{},true);renderPages()}if(!disposed)setTimeout(poll,15000)}
  async function start(){
   render();if(!api?.core?.invoke||!api?.event?.listen){$('connectionBanner').hidden=false;text('connectionBanner','Open WATCH PAGES in the Rust desktop to manage real pages and site sign-ins.');return}
-  unsubscribe.push(await api.event.listen('watchtower-state',event=>accept(event.payload)));ready=true;const result=await command('state',{},true);if(!result?.ok){ready=false;$('connectionBanner').hidden=false;text('connectionBanner',result?.error||'Watchtower could not connect. Reopen this window from the desktop toolbar.')}else $('connectionBanner').hidden=true;render();poll();
+  unsubscribe.push(await api.event.listen('watchtower-state',event=>accept(event.payload)));unsubscribe.push(await api.event.listen('watchtower-download-error',event=>showToast(event.payload?.message||'Download needs review.')));ready=true;const result=await command('state',{},true);if(!result?.ok){ready=false;$('connectionBanner').hidden=false;text('connectionBanner',result?.error||'Watchtower could not connect. Reopen this window from the desktop toolbar.')}else $('connectionBanner').hidden=true;render();poll();
  }
  start().catch(error=>{$('connectionBanner').hidden=false;text('connectionBanner','Watchtower startup: '+errorText(error))});
 })();

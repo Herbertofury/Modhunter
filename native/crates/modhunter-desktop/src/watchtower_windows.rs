@@ -32,6 +32,9 @@ type Result<T> = std::result::Result<T, String>;
 const MAX_CHECKS: usize = 2;
 const CHECK_DEADLINE: Duration = Duration::from_secs(45);
 
+#[path = "watchtower_acquisition.rs"]
+mod acquisition;
+
 #[path = "watchtower_smoke.rs"]
 mod smoke;
 pub use smoke::start as start_smoke;
@@ -81,6 +84,7 @@ struct SiteContext {
     // Set only by the private, internally owned smoke server. No command accepts it.
     fixture_origin: Option<String>,
     lease: Option<CheckJob>,
+    download_watch: Option<(String, u64)>,
     cancellation: Option<Arc<AtomicBool>>,
 }
 impl SiteContext {
@@ -97,6 +101,7 @@ impl SiteContext {
             origin,
             fixture_origin: None,
             lease: None,
+            download_watch: None,
             cancellation: None,
         })
     }
@@ -285,6 +290,7 @@ fn setup_paths(
         retired: Mutex::new(Vec::new()),
         runtime_warning: Mutex::new(String::new()),
     });
+    acquisition::setup(app, data.join("watchtower-acquisitions"));
     recover_retired(&app.state::<WatchRuntime>());
     if !scheduler {
         return Ok(());
@@ -319,11 +325,9 @@ fn setup_paths(
 }
 
 fn notify(app: &tauri::AppHandle) {
-    let _ = app.emit_to(
-        "watchtower",
-        "watchtower-state",
-        app.state::<WatchRuntime>().snapshot(),
-    );
+    let mut snapshot = app.state::<WatchRuntime>().snapshot();
+    snapshot["acquisitions"] = acquisition::snapshot(app);
+    let _ = app.emit_to("watchtower", "watchtower-state", snapshot);
 }
 
 pub fn open(app: &tauri::AppHandle, prefill: Option<Value>) -> Result<()> {
@@ -794,7 +798,6 @@ fn site_window(
         .focused(interactive)
         .data_directory(directory.clone())
         .on_permission_request(|_, _| PermissionResponse::Deny)
-        .on_download(|_, _| false)
         .on_navigation(move |url| {
             let live = nav_context.current(&nav_app.state::<WatchRuntime>());
             let allowed = match &nav_context.fixture_origin {
@@ -857,6 +860,9 @@ fn site_window(
     }
     let window = builder.build().map_err(err)?;
     let native_load = load.clone();
+    let download_app = app.clone();
+    let download_context = context.clone();
+    let download_label = label.clone();
     window
         .with_webview(move |platform| {
             let starting_load = native_load.clone();
@@ -864,6 +870,7 @@ fn site_window(
             let result = (|| -> windows_core::Result<()> {
                 unsafe {
                     let webview = platform.controller().CoreWebView2()?;
+                    acquisition::install(download_app.clone(), &webview, download_context.clone(), download_label.clone(), interactive)?;
                     let starting = webview2_com::NavigationStartingEventHandler::create(Box::new(
                         move |_, args| {
                             if let Some(args) = args {
@@ -1439,7 +1446,9 @@ fn write_export(app: &tauri::AppHandle, value: &Value) -> Result<Value> {
 fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
     let state = app.state::<WatchRuntime>();
     if kind == "state" {
-        return Ok(json!({"ok":true,"state":state.snapshot()}));
+        let mut snapshot = state.snapshot();
+        snapshot["acquisitions"] = acquisition::snapshot(app);
+        return Ok(json!({"ok":true,"state":snapshot}));
     }
     if kind == "close" {
         if let Some(window) = app.get_webview_window("watchtower") {
@@ -1452,6 +1461,10 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
     }
     let mut result = json!({});
     match kind {
+        "approveDownload" | "rejectDownload" | "cancelDownload" | "removeDownload"
+        | "verifyDownload" | "showDownload" | "resolveFiles" | "openOffer" => {
+            result = acquisition::execute(app, kind, &value)?;
+        }
         "check" => {
             let selected = ids(&value)?;
             if selected.len() > 5000 {
@@ -1494,11 +1507,25 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
                 result["message"] = json!(
                     "Opened in your regular browser. Its sign-in stays separate from Modhunter's site session."
                 );
-            } else if let Some(session_id) = watch.session_id {
-                open_session(app, &session_id, Some(&url))?;
             } else {
+                let session = watch
+                    .session_id
+                    .as_ref()
+                    .map(|id| {
+                        state
+                            .store
+                            .session(id)
+                            .ok_or("This page's site session no longer exists.")
+                    })
+                    .transpose()?;
+                if watch.requires_session && session.is_none() {
+                    return Err(
+                        "Choose this page's account before opening a download session.".into(),
+                    );
+                }
                 let url = Url::parse(&url).map_err(err)?;
-                let context = SiteContext::production(None, &url)?;
+                let mut context = SiteContext::production(session, &url)?;
+                context.download_watch = Some((watch.id.clone(), watch.generation));
                 site_window(app, context, url, true, None, Arc::new(Load::default()))?;
             }
         }
@@ -1585,6 +1612,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
     }
     result["ok"] = json!(true);
     result["state"] = state.snapshot();
+    result["state"]["acquisitions"] = acquisition::snapshot(app);
     notify(app);
     Ok(result)
 }
@@ -1608,6 +1636,7 @@ pub fn shutdown(app: &tauri::AppHandle) {
     let Some(state) = app.try_state::<WatchRuntime>() else {
         return;
     };
+    acquisition::cancel_all(app);
     if state.stopping.swap(true, Ordering::AcqRel) {
         return;
     }

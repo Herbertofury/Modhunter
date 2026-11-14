@@ -36,7 +36,7 @@ impl Default for WatchSettings {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ModAssociation {
     pub profile_id: String,

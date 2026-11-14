@@ -1,0 +1,81 @@
+name: Apply verified parity implementation
+on:
+  push:
+    branches: [upgrade/whimwatch-parity-0110]
+    paths: ['.github/workflows/parity-source-apply.yml']
+permissions:
+  contents: write
+  actions: write
+jobs:
+  apply:
+    if: github.repository == 'Herbertofury/Modhunter' && github.ref == 'refs/heads/upgrade/whimwatch-parity-0110'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact base and complete source bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code 0f2ab12d2ae9d79e5c3f357f1970d89e92a961ed HEAD -- . ':!.delivery' ':!.github/workflows/parity-development-kit.yml' ':!.github/workflows/parity-recovery.yml' ':!.github/workflows/parity-source-apply.yml'
+          python3 - <<'PY'
+          import base64,hashlib,lzma,pathlib,subprocess,tempfile
+          packed=b''.join(base64.b64decode(pathlib.Path(f'.delivery/parity-01-{i}.b64').read_text(),validate=True) for i in range(5))
+          assert len(packed)==28308
+          assert hashlib.sha256(packed).hexdigest()=='201be2b59a5d2e7c06977fc1d344f2112197a5d72c8625dfdf5a94fc469ed237'
+          decoder=lzma.LZMADecompressor()
+          patch=decoder.decompress(packed,max_length=120000)
+          assert decoder.eof and not decoder.unused_data and len(patch)==119621
+          assert hashlib.sha256(patch).hexdigest()=='c7d18c9466e446ee563e963f192a1b0d3db1285ff527218ecfc64816e1d1f14f'
+          with tempfile.NamedTemporaryFile() as f:
+              f.write(patch);f.flush()
+              subprocess.run(['git','apply','--check',f.name],check=True)
+              subprocess.run(['git','apply',f.name],check=True)
+          PY
+          git rm .delivery/parity-01-*.b64
+          cargo fmt --manifest-path native/Cargo.toml --all -- --check
+          python3 native/scripts/prepare_assets.py
+          git diff --check
+      - name: Validate new and existing native core behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --manifest-path native/Cargo.toml --workspace --locked
+          cargo clippy --manifest-path native/Cargo.toml --workspace --all-targets --locked -- -D warnings
+          node --check native/ui/resolve-offers.js
+          node --check native/ui/watchtower.js
+          node --test native/crates/modhunter-desktop/tests/shell_runtime.test.cjs tests/frontend_runtime.test.cjs
+      - name: Commit implementation only on the dedicated parity branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add --all
+          git commit -m 'Implement explicit page acquisition and actual-file recovery engines' -m 'Native deferred browser downloads preserve account leases and require manager approval. Transfers are bounded, cancellable, hash-verified and staged. Source offers are identity-scoped; recovery stores actual bytes and blocks restoration over later edits. Add 31 Rust regressions and three Chromium transfer-control cases. This is not full parity or a published release; native acquisition acceptance and MO2 installation integration remain required.'
+          git push origin HEAD:refs/heads/upgrade/whimwatch-parity-0110
+          mkdir -p "$RUNNER_TEMP/parity-checkpoint"
+          git rev-parse HEAD > "$RUNNER_TEMP/parity-checkpoint/COMMIT.txt"
+          git bundle create "$RUNNER_TEMP/parity-checkpoint/Modhunter-source.bundle" HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Modhunter-Parity-Source-Checkpoint
+          path: ${{ runner.temp }}/parity-checkpoint/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Compile and verify the actual Windows integration
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run native-rust.yml --repo Herbertofury/Modhunter --ref upgrade/whimwatch-parity-0110

@@ -1,5 +1,7 @@
-//! Native Modhunter work engine. No function in this crate modifies MO2 files.
+//! Native Modhunter work engine. Imports and audits are read-only. Explicit content-vault restores are separately confirmed mutations.
+pub mod acquisition;
 pub mod bridge;
+pub mod content_vault;
 pub mod importer;
 pub mod ini;
 pub mod plugin_analysis;

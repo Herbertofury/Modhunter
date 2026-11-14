@@ -11,6 +11,10 @@ window[cfg.key] = {state:'pending'};
  if ([...document.querySelectorAll('input[type=password]')].some(visible)) fail('Sign in to this site, then find files again.');
  const files = [], identities = new Map();
  const archive = /\.(zip|7z|rar)$/i;
+ function releaseDate(raw) {
+  if(typeof raw!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(raw))return '';
+  const value=Date.parse(raw);return Number.isFinite(value)&&value>0&&value<=Date.now()?raw:'';
+ }
  function boundedNodes(root, selector, limit) {
   const nodes = [...root.querySelectorAll(selector)];
   if (nodes.length > limit) fail('This page has too many links to inspect completely. Track a specific release page.');
@@ -50,13 +54,19 @@ window[cfg.key] = {state:'pending'};
   const existing = identities.get(identity);
   if (existing) {
    if (existing.url !== url.href && metadata.identity) fail('The source returned conflicting links for one file. Refresh the release page.');
+   const date=releaseDate(metadata.publishedAt);
+   if(date&&metadata.publicationEvidence==='loversLabAttachment'){
+    if(existing.publicationEvidence==='loversLabAttachment'&&existing.publishedAt&&Date.parse(existing.publishedAt)!==Date.parse(date))fail('The chooser returned conflicting publication dates for one attachment.');
+    existing.publishedAt=date;existing.publicationEvidence=metadata.publicationEvidence;
+   }
    return;
   }
   if (files.length >= 200) fail('This release has more than 200 file choices. Track a narrower release page; the complete previous result is retained.');
   const label = String(name || 'Review download').replace(/[\u0000-\u001f\u007f]/g,' ').trim();
   if (label.length > 240) fail('A source filename is too long to identify safely. Review the release page.');
   const row = {url:url.href, name:label || 'Review download', identity, related:!!metadata.related,
-   sourcePostId:metadata.sourcePostId || '', publishedAt:metadata.publishedAt || '',
+   sourcePostId:metadata.sourcePostId || '', publishedAt:releaseDate(metadata.publishedAt),
+   publicationEvidence:metadata.publicationEvidence || '',accessEvidence:metadata.accessEvidence || 'visibleLink',
    kind:metadata.kind || (/^(?:drive|mega):folder:/.test(externalIdentity(url)) ? 'folder' : externalIdentity(url) ? 'external' : 'attachment')};
   identities.set(identity,row); files.push(row);
  }
@@ -97,9 +107,9 @@ window[cfg.key] = {state:'pending'};
     const matches = included.filter(item => item.type === 'media' && item.id === reference.id);
     if (matches.length !== 1) fail('The source omitted or duplicated an attachment record. Refresh the release page.');
     const file = matches[0].attributes || {};
-    if (archive.test(file.file_name || '')) add(file.download_url,file.file_name,{identity:'patreon:post:' + expectedId + ':media:' + reference.id,related,sourcePostId:expectedId,publishedAt:a.published_at || ''});
+    if (archive.test(file.file_name || '')) add(file.download_url,file.file_name,{identity:'patreon:post:' + expectedId + ':media:' + reference.id,related,sourcePostId:expectedId,publishedAt:a.published_at || '',publicationEvidence:'patreonPost',accessEvidence:'patreonAttachment'});
    }
-   if (archive.test(a.post_file?.name || '')) add(a.post_file.url,a.post_file.name,{identity:'patreon:post:' + expectedId + ':post-file:' + a.post_file.name,related,sourcePostId:expectedId,publishedAt:a.published_at || ''});
+   if (archive.test(a.post_file?.name || '')) add(a.post_file.url,a.post_file.name,{identity:'patreon:post:' + expectedId + ':post-file:' + a.post_file.name,related,sourcePostId:expectedId,publishedAt:a.published_at || '',publicationEvidence:'patreonPost',accessEvidence:'patreonAttachment'});
   }
   attachments(release,post,false);
   const links = [];
@@ -122,7 +132,7 @@ window[cfg.key] = {state:'pending'};
   const linkedPosts = new Set();
   for (const raw of links) {
    let url; try { url = new URL(raw,here); } catch { continue; }
-   if (externalIdentity(url)) add(url.href,'Review external download',{related:false});
+   if (externalIdentity(url)) add(url.href,'Review external download',{related:false,publishedAt:attributes.published_at || '',publicationEvidence:'patreonPost'});
    if (url.origin === here.origin) { const id = postId(url.href); if (id && id !== post) linkedPosts.add(id); }
   }
   // Linked posts are explicitly labelled; they never inherit the installed-mod
@@ -138,6 +148,26 @@ window[cfg.key] = {state:'pending'};
  } else if (/(^|\.)loverslab\.com$/.test(here.hostname)) {
   const id = /\/files\/file\/(\d+)/.exec(source.pathname)?.[1];
   if (!id || /\/files\/file\/(\d+)/.exec(here.pathname)?.[1] !== id) fail('Use the exact LoversLab file page, not an unrelated topic or file.');
+  // Only structured metadata identifying this exact release may supply a page
+  // date. General page clocks, comments and the time of this check are ignored.
+  function releaseMetadata() {
+   const dates=new Set();let total=0,visited=0;
+   for(const script of boundedNodes(document,'script[type="application/ld+json"]',50)) {
+    const text=script.textContent||'';total+=text.length;if(total>1000000)fail('Release date metadata is too large to inspect completely.');
+    let data;try{data=JSON.parse(text)}catch{continue}
+    const pending=[data];while(pending.length){if(++visited>500)fail('Release date metadata is too large to inspect completely.');const item=pending.pop();
+     if(Array.isArray(item)){pending.push(...item);continue}if(!item||typeof item!=='object')continue;
+     if(Array.isArray(item['@graph']))pending.push(...item['@graph']);
+     const types=Array.isArray(item['@type'])?item['@type']:[item['@type']];
+     if(!types.some(t=>['SoftwareApplication','VideoGame','CreativeWork'].includes(t)))continue;
+     let target;try{target=new URL(item.url||item['@id'],here)}catch{continue}
+     if(target.origin!==here.origin||/\/files\/file\/(\d+)/.exec(target.pathname)?.[1]!==id)continue;
+     const date=releaseDate(item.dateModified)||releaseDate(item.datePublished);if(date)dates.add(date);
+    }
+   }
+   return dates.size===1?[...dates][0]:'';
+  }
+  const releasePublishedAt=releaseMetadata();
   function choices(root) {
    const rows=[];
    for (const link of boundedNodes(root,'a[href]',10000)) {
@@ -147,11 +177,12 @@ window[cfg.key] = {state:'pending'};
     const name=row?.querySelector('.ipsDataItem_title')?.textContent?.trim() || link.getAttribute('download') || link.textContent.trim() || 'Release archive';
     const file=url.searchParams.get('r');
     if (file && !/^\d+$/.test(file)) fail('The file chooser returned an invalid attachment identity.');
-    rows.push({url,name,file});
+    const publishedAt=releaseDate(row?.querySelector('time[datetime]')?.getAttribute('datetime'));
+    rows.push({url,name,file,publishedAt});
    }
    return rows;
   }
-  function attachment(row) { add(row.url.href,row.name,{identity:'loverslab:file:' + id + ':attachment:' + row.file,kind:'attachment'}); }
+  function attachment(row) { add(row.url.href,row.name,{identity:'loverslab:file:' + id + ':attachment:' + row.file,kind:'attachment',publishedAt:row.publishedAt||releasePublishedAt,publicationEvidence:row.publishedAt?'loversLabAttachment':'loversLabRelease',accessEvidence:'loversLabChooser'}); }
   const listed=choices(document),exact=listed.filter(row=>row.file);
   for (const row of exact) attachment(row);
   {
@@ -165,7 +196,7 @@ window[cfg.key] = {state:'pending'};
     if (filename) { try { filename=decodeURIComponent(filename); } catch { fail('The attachment filename is invalid.'); } }
     if (/attachment/i.test(disposition) && (archive.test(filename || '') || /application\/(?:zip|x-7z-compressed|x-rar-compressed|vnd.rar|octet-stream)/i.test(type))) {
      if (response.body) await response.body.cancel();
-     add(row.url.href,filename || row.name,{identity:'loverslab:file:' + id + ':direct',kind:'attachment'});continue;
+     add(row.url.href,filename || row.name,{identity:'loverslab:file:' + id + ':direct',kind:'attachment',publishedAt:releasePublishedAt,publicationEvidence:'loversLabRelease',accessEvidence:'loversLabDirect'});continue;
     }
     if (!response.body) fail('The file chooser returned no readable content.');
     const reader=response.body.getReader(),chunks=[];let size=0;

@@ -1,7 +1,76 @@
 //! Transient file authority. Only the native offer picker constructs this lease;
 //! no raw address, access token, redirect chain, or browser credential is saved.
+use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 use url::Url;
+
+/// Decrypted metadata only. Node keys and account credentials never enter this
+/// record; a shared link's access fragment remains in the transient page URL.
+/// A folder choice additionally needs an exact provider node-to-blob observation.
+#[derive(Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MegaFolderFile {
+    pub public_id: String,
+    pub root_id: String,
+    pub file_id: String,
+    pub parent_id: String,
+    pub name: String,
+    pub bytes: u64,
+    pub modified_at: u64,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct MegaBlobProof {
+    pub file: MegaFolderFile,
+    pub blob_url: String,
+    pub observed_at: u64,
+}
+
+fn mega_folder_location(url: &Url) -> Option<(String, Option<(String, String)>)> {
+    let path = url.path().trim_end_matches('/');
+    let (public, hash) = if let Some(id) = path.strip_prefix("/folder/") {
+        (id.to_owned(), url.fragment()?.to_owned())
+    } else {
+        if !matches!(path, "" | "/") {
+            return None;
+        }
+        let rest = url.fragment()?.strip_prefix("F!")?;
+        let (id, tail) = rest.split_once('!')?;
+        let hash = if let Some((key, file)) = tail.split_once('?') {
+            format!("{key}/file/{file}")
+        } else if let Some((key, folder)) = tail.split_once('!') {
+            format!("{key}/folder/{folder}")
+        } else {
+            tail.to_owned()
+        };
+        (id.to_owned(), hash)
+    };
+    if public.len() != 8 || !valid_id(&public) {
+        return None;
+    }
+    let parts: Vec<_> = hash.split('/').collect();
+    if parts[0].len() != 22 || !valid_id(parts[0]) {
+        return None;
+    }
+    let target = match parts.as_slice() {
+        [_] => None,
+        [_, kind, id] if matches!(*kind, "file" | "folder") && id.len() == 8 && valid_id(id) => {
+            Some(((*kind).into(), (*id).into()))
+        }
+        _ => return None,
+    };
+    Some((public, target))
+}
+
+pub fn mega_folder_file_identity(url: &Url) -> Option<String> {
+    if !matches!(url.host_str(), Some("mega.nz" | "mega.io")) {
+        return None;
+    }
+    let (public, Some((kind, file))) = mega_folder_location(url)? else {
+        return None;
+    };
+    (kind == "file").then(|| format!("mega:folder:{public}:file:{file}"))
+}
 
 pub fn is_folder(url: &Url) -> bool {
     match url.host_str().unwrap_or("") {
@@ -81,6 +150,9 @@ fn loverslab_file(url: &Url) -> Option<String> {
 /// an access-token-shaped query cannot secretly identify another file while
 /// inheriting a previously saved choice. None of this input is persisted raw.
 pub fn stable_identity(source: &Url, target: &Url, reported: &str) -> Result<String, String> {
+    if let Some(identity) = mega_folder_file_identity(target) {
+        return Ok(identity);
+    }
     if is_folder(target) {
         let legacy = target
             .fragment()
@@ -177,6 +249,9 @@ pub struct SelectedDownloadScope {
     redirect_count: usize,
     document: Option<Url>,
     exact_document_loaded: bool,
+    mega_folder: Option<MegaFolderFile>,
+    observer_key: Option<String>,
+    fixture_origin: Option<String>,
 }
 
 impl SelectedDownloadScope {
@@ -214,11 +289,100 @@ impl SelectedDownloadScope {
             redirect_count: 0,
             document: None,
             exact_document_loaded: false,
+            mega_folder: None,
+            observer_key: None,
+            fixture_origin: None,
         })
     }
 
+    pub fn new_mega_folder_file(
+        selected: Url,
+        file: MegaFolderFile,
+        observer_key: String,
+        fixture_origin: Option<&str>,
+    ) -> Result<Self, String> {
+        let real = selected.scheme() == "https"
+            && matches!(selected.host_str(), Some("mega.nz" | "mega.io"));
+        let fixture = fixture_origin
+            .is_some_and(|origin| origin == selected.origin().ascii_serialization())
+            && selected.scheme() == "http"
+            && selected.host_str().is_some_and(|host| {
+                host.parse::<std::net::IpAddr>()
+                    .is_ok_and(|ip| ip.is_loopback())
+            });
+        let exact = mega_folder_location(&selected).is_some_and(|(public, target)| {
+            public == file.public_id && target == Some(("file".into(), file.file_id.clone()))
+        });
+        if !(real || fixture)
+            || !exact
+            || !selected.username().is_empty()
+            || selected.password().is_some()
+            || [
+                &file.public_id,
+                &file.root_id,
+                &file.file_id,
+                &file.parent_id,
+            ]
+            .iter()
+            .any(|id| id.len() != 8 || !valid_id(id))
+            || file.name.is_empty()
+            || file.name.len() > 960
+            || file
+                .name
+                .chars()
+                .any(|c| c.is_control() || matches!(c, '/' | '\\'))
+            || ![".zip", ".7z", ".rar"]
+                .iter()
+                .any(|extension| file.name.to_ascii_lowercase().ends_with(extension))
+            || file.bytes == 0
+            || file.bytes > 16 * 1024 * 1024 * 1024
+            || observer_key.is_empty()
+            || observer_key.len() > 100
+            || !valid_id(&observer_key)
+        {
+            return Err("The folder did not resolve to one valid exact archive.".into());
+        }
+        // Use the same bounded navigation lifecycle as every selected file;
+        // normal new() deliberately continues to reject folder addresses.
+        Ok(Self {
+            selected,
+            created: Instant::now(),
+            invalid: false,
+            claimed: false,
+            navigation: None,
+            pending: false,
+            last_target: None,
+            redirect_count: 0,
+            document: None,
+            exact_document_loaded: false,
+            mega_folder: Some(file),
+            observer_key: Some(observer_key),
+            fixture_origin: fixture.then(|| fixture_origin.unwrap().to_owned()),
+        })
+    }
+
+    pub fn mega_folder(&self) -> Option<(MegaFolderFile, String, Url)> {
+        Some((
+            self.mega_folder.clone()?,
+            self.observer_key.clone()?,
+            self.selected.clone(),
+        ))
+    }
+
     pub fn live(&self) -> bool {
-        !self.invalid && (self.claimed || self.created.elapsed() <= Duration::from_secs(300))
+        self.live_for_age(self.created.elapsed())
+    }
+
+    fn live_for_age(&self, age: Duration) -> bool {
+        // MEGA produces the final browser blob after its own encrypted transfer.
+        // The bounded lease covers that preparation without granting authority
+        // to another file, navigation, account generation or late blob proof.
+        let seconds = if self.mega_folder.is_some() || mega_file(&self.selected).is_some() {
+            1800
+        } else {
+            300
+        };
+        !self.invalid && (self.claimed || age <= Duration::from_secs(seconds))
     }
 
     pub fn invalidate(&mut self) {
@@ -227,6 +391,26 @@ impl SelectedDownloadScope {
     }
 
     fn selected_document(&self, url: &Url) -> bool {
+        if let Some(file) = &self.mega_folder {
+            let host = matches!(url.host_str(), Some("mega.nz" | "mega.io"))
+                && url.scheme() == "https"
+                || self
+                    .fixture_origin
+                    .as_ref()
+                    .is_some_and(|origin| url.origin().ascii_serialization() == *origin);
+            return host
+                && mega_folder_location(url).is_some_and(|(public, target)| {
+                    public == file.public_id
+                        && match target {
+                            None => true,
+                            Some((kind, id)) => {
+                                kind == "file" && id == file.file_id
+                                    || kind == "folder"
+                                        && (id == file.parent_id || id == file.root_id)
+                            }
+                        }
+                });
+        }
         if is_folder(url) {
             return false;
         }
@@ -255,7 +439,7 @@ impl SelectedDownloadScope {
             return;
         }
         let transport = url.scheme() == self.selected.scheme()
-            && !is_folder(url)
+            && (!is_folder(url) || (self.mega_folder.is_some() && self.selected_document(url)))
             && url.username().is_empty()
             && url.password().is_none();
         if redirected {
@@ -284,6 +468,10 @@ impl SelectedDownloadScope {
 
     pub fn source_changed(&mut self, url: &Url) {
         if !self.live() || (url.as_str() == "about:blank" && self.document.is_none()) {
+            return;
+        }
+        if self.mega_folder.is_some() && !self.selected_document(url) {
+            self.invalidate();
             return;
         }
         if self.selected_document(url) {
@@ -322,6 +510,10 @@ impl SelectedDownloadScope {
     }
 
     pub fn claim(&mut self, download: &Url, current_document: &Url) -> Result<(), String> {
+        if self.mega_folder.is_some() {
+            self.invalidate();
+            return Err("This folder file requires its exact provider node-to-blob proof.".into());
+        }
         let document_current = self.selected_document(current_document)
             || (current_document.as_str() == "about:blank"
                 && self.document.is_none()
@@ -358,6 +550,35 @@ impl SelectedDownloadScope {
         self.claimed = true;
         Ok(())
     }
+
+    pub fn claim_mega_blob(
+        &mut self,
+        download: &Url,
+        current_document: &Url,
+        proof: &MegaBlobProof,
+        now: u64,
+    ) -> Result<(), String> {
+        let valid = self.live()
+            && !self.claimed
+            && self.exact_document_loaded
+            && self.selected_document(current_document)
+            && self.mega_folder.as_ref() == Some(&proof.file)
+            && proof.blob_url == download.as_str()
+            && proof.observed_at <= now
+            && now.saturating_sub(proof.observed_at) <= 15_000
+            && download.scheme() == "blob"
+            && download
+                .as_str()
+                .strip_prefix("blob:")
+                .and_then(|raw| Url::parse(raw).ok())
+                .is_some_and(|url| url.origin() == current_document.origin());
+        if !valid {
+            self.invalidate();
+            return Err("MEGA's browser download did not match the unique folder archive and exact blob you reviewed. Find files again.".into());
+        }
+        self.claimed = true;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -368,6 +589,149 @@ mod tests {
     }
     fn scope(raw: &str) -> SelectedDownloadScope {
         SelectedDownloadScope::new(url(raw)).unwrap()
+    }
+    fn folder_file() -> MegaFolderFile {
+        MegaFolderFile {
+            public_id: "pub12345".into(),
+            root_id: "root1234".into(),
+            file_id: "file1234".into(),
+            parent_id: "root1234".into(),
+            name: "Release.zip".into(),
+            bytes: 64,
+            modified_at: 100,
+        }
+    }
+    fn folder_scope() -> (SelectedDownloadScope, Url) {
+        let selected = url("https://mega.nz/folder/pub12345#abcdefghijklmnopqrstuv/file/file1234");
+        let mut scope = SelectedDownloadScope::new_mega_folder_file(
+            selected.clone(),
+            folder_file(),
+            "owned_observer".into(),
+            None,
+        )
+        .unwrap();
+        scope.navigation_started(9, &selected, false);
+        let current = url("https://mega.nz/folder/pub12345#abcdefghijklmnopqrstuv/folder/root1234");
+        scope.source_changed(&current);
+        scope.navigation_completed(9, true, &current);
+        (scope, current)
+    }
+    #[test]
+    fn a_folder_child_url_still_requires_complete_native_selection_and_exact_blob_proof() {
+        let selected = url("https://mega.nz/folder/pub12345#abcdefghijklmnopqrstuv/file/file1234");
+        assert!(SelectedDownloadScope::new(selected.clone()).is_err());
+        assert_eq!(
+            stable_identity(
+                &url("https://mods.example.com/release"),
+                &selected,
+                "forged"
+            )
+            .unwrap(),
+            "mega:folder:pub12345:file:file1234"
+        );
+        let (mut scope, current) = folder_scope();
+        let blob = url("blob:https://mega.nz/exact");
+        assert!(
+            scope.claim(&blob, &current).is_err(),
+            "a normal same-origin blob claim cannot bypass folder proof"
+        );
+        let (mut scope, current) = folder_scope();
+        let proof = MegaBlobProof {
+            file: folder_file(),
+            blob_url: blob.to_string(),
+            observed_at: 1000,
+        };
+        assert!(scope.claim_mega_blob(&blob, &current, &proof, 1001).is_ok());
+        assert!(
+            scope
+                .claim_mega_blob(&blob, &current, &proof, 1002)
+                .is_err(),
+            "folder authority is single-use"
+        );
+    }
+    #[test]
+    fn another_child_blob_metadata_or_expired_observation_cannot_borrow_folder_authority() {
+        let blob = url("blob:https://mega.nz/exact");
+        for case in 0..6 {
+            let (mut scope, mut current) = folder_scope();
+            let mut proof = MegaBlobProof {
+                file: folder_file(),
+                blob_url: blob.to_string(),
+                observed_at: 1000,
+            };
+            match case {
+                0 => proof.file.file_id = "wrong123".into(),
+                1 => proof.blob_url = "blob:https://mega.nz/another".into(),
+                2 => proof.file.bytes = 65,
+                3 => {
+                    current =
+                        url("https://mega.nz/folder/pub12345#abcdefghijklmnopqrstuv/file/wrong123")
+                }
+                4 => proof.observed_at = 20_000,
+                _ => proof.observed_at = 1,
+            }
+            let at = if case == 5 { 17_000 } else { 1001 };
+            assert!(scope.claim_mega_blob(&blob, &current, &proof, at).is_err());
+            assert!(!scope.live());
+        }
+        let (mut scope, current) = folder_scope();
+        let proof = MegaBlobProof {
+            file: folder_file(),
+            blob_url: "blob:https://attacker.example/wrong".into(),
+            observed_at: 1000,
+        };
+        assert!(
+            scope
+                .claim_mega_blob(&url(&proof.blob_url), &current, &proof, 1001)
+                .is_err()
+        );
+    }
+    #[test]
+    fn folder_navigation_to_another_node_permanently_invalidates_the_exact_child() {
+        let (mut scope, current) = folder_scope();
+        scope.source_changed(&url(
+            "https://mega.nz/folder/pub12345#abcdefghijklmnopqrstuv/file/wrong123",
+        ));
+        scope.source_changed(&current);
+        assert!(!scope.live());
+        let selected = url("https://mega.nz/folder/pub12345#abcdefghijklmnopqrstuv/file/file1234");
+        let mut wrong = folder_file();
+        wrong.file_id = "wrong123".into();
+        assert!(
+            SelectedDownloadScope::new_mega_folder_file(
+                selected,
+                wrong,
+                "owned_observer".into(),
+                None
+            )
+            .is_err()
+        );
+    }
+    #[test]
+    fn mega_browser_preparation_has_a_bounded_thirty_minute_exact_file_lease() {
+        let (folder, _) = folder_scope();
+        let direct = scope("https://mega.nz/file/file1234#abcdefghijklmnopqrstuv");
+        for selected in [folder, direct] {
+            assert!(selected.live_for_age(Duration::from_secs(1800)));
+            assert!(!selected.live_for_age(Duration::from_secs(1800) + Duration::from_nanos(1)));
+        }
+        let direct = scope("https://mods.example.com/Release.zip");
+        assert!(direct.live_for_age(Duration::from_secs(300)));
+        assert!(!direct.live_for_age(Duration::from_secs(301)));
+        let selected = url("https://mega.nz/folder/pub12345#abcdefghijklmnopqrstuv/file/file1234");
+        for name in ["../Release.zip", "sub\\Release.zip", "Release.html"] {
+            let mut file = folder_file();
+            file.name = name.into();
+            assert!(
+                SelectedDownloadScope::new_mega_folder_file(
+                    selected.clone(),
+                    file,
+                    "owned_observer".into(),
+                    None
+                )
+                .is_err()
+            );
+        }
     }
     #[test]
     fn folders_cannot_acquire_exact_file_authority_even_if_metadata_calls_them_attachments() {

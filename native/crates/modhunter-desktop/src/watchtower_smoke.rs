@@ -496,6 +496,15 @@ fn run(
         "Cancelling while an actual WebView2 ExecuteScript callback is outstanding discards the late result and clears the durable checking state.",
     )?;
     download_fixture::check(app, &manager, &server, fixture_root, output, checks)?;
+    let notice_evidence = notices::smoke_check(app, &manager)?;
+    record(
+        checks,
+        output,
+        "native_notification_exact_item_actions",
+        true,
+        "Actual bundled notification buttons recheck and open the exact current page; stale source ownership rejects the click. Private durable deduplication is checked; OS toast display or physical clicking is not claimed.",
+    )?;
+    checks.last_mut().unwrap()["evidence"] = notice_evidence;
     let browser_evidence = browser_data::smoke_check(app)?;
     record(
         checks,

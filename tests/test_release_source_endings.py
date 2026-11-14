@@ -1,8 +1,15 @@
 """Release evidence must hash identical checkout bytes on Windows and Linux."""
 from __future__ import annotations
+import contextlib
+import io
+import os
+import runpy
+import shutil
 import subprocess
 from pathlib import Path
+import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 ATTESTED = (
@@ -42,6 +49,35 @@ class ReleaseCheckoutTests(unittest.TestCase):
                 content = (ROOT / name).read_bytes()
                 self.assertIn(b'\r\n', content)
                 self.assertNotIn(b'\n', content.replace(b'\r\n', b''))
+
+    def test_bundler_keeps_identical_bytes_under_windows_newline_translation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Path(directory)
+            source = fixture / 'mo2_update_arsenal/web'
+            source.mkdir(parents=True)
+            for path in (ROOT / 'mo2_update_arsenal/web').iterdir():
+                if path.is_file() and path.name != 'index.html':
+                    shutil.copyfile(path, source / path.name)
+            shutil.copyfile(ROOT / 'build.py', fixture / 'build.py')
+            outputs = (source / 'index.html', fixture / 'web/Modhunter.html',
+                       fixture / 'artifacts/MO2_Update_Arsenal.html')
+            original = Path.write_text
+            def bundle(default_newline):
+                def platform_write(path, data, encoding=None, errors=None, newline=None):
+                    return original(path, data, encoding=encoding, errors=errors,
+                                    newline=default_newline if newline is None else newline)
+                with patch.object(Path, 'write_text', platform_write), \
+                        patch.dict(os.environ, {'MODHUNTER_ARTIFACT_DIR': str(fixture / 'artifacts')}), \
+                        contextlib.redirect_stdout(io.StringIO()):
+                    runpy.run_path(str(fixture / 'build.py'), run_name='__main__')
+                return [path.read_bytes() for path in outputs]
+            unix = bundle('\n')
+            windows = bundle('\r\n')
+            self.assertTrue(unix == windows, 'The bundled HTML bytes changed with platform newline translation')
+            self.assertTrue(unix[0])
+            self.assertEqual(unix[0], unix[1])
+            self.assertEqual(unix[1], unix[2])
+            self.assertNotIn(b'\r\n', windows[0])
 
 
 if __name__ == '__main__':

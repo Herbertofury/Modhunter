@@ -12,7 +12,7 @@ OVERRIDE = r"""(() => {
  const original=window.__TAURI__.core.invoke;
  window.__TAURI__.core.invoke=async(command,args)=>{
   const f=window.__WATCH_FIX__,v=args.value||{},kind=args.kind;
-  if(!['saveSourceBinding','saveCreator','decideOffer','clearOfferDecision','clearFileDecision'].includes(kind))return original(command,args);
+  if(!['saveSourceBinding','saveCreator','decideOffer','clearOfferDecision','clearFileDecision','resolveFolder'].includes(kind))return original(command,args);
   f.calls.push(structuredClone(args));
   const watch=f.state.watches.find(w=>w.id===(v.watchId||f.state.acquisitions?.offers.find(o=>o.id===v.id)?.watchId));
   if(kind==='saveSourceBinding'){
@@ -26,6 +26,11 @@ OVERRIDE = r"""(() => {
   }
   if(kind==='clearFileDecision'){watch.sourceFiles=watch.sourceFiles.filter(row=>row.sourceFileKey!==v.sourceFileKey);watch.generation++;f.change(()=>{});return {ok:true};}
   const offer=f.state.acquisitions.offers.find(o=>o.id===v.id);
+  if(kind==='resolveFolder'){
+   if(!offer.canResolveFolder||offer.ignored||offer.current===false)throw Error('Folder offer is unavailable');
+   Object.assign(offer,{id:'resolved-child',name:'Exact folder archive.zip',kind:'external',sourceFileKey:'c'.repeat(64),canResolveFolder:false,resolvedFolderFile:true,supported:true,classification:'unclassified',explicitDecision:false,ignored:false});
+   f.state.acquisitions.revision++;f.publish();return {ok:true,state:f.snapshot()};
+  }
   offer.classification=kind==='clearOfferDecision'?'unclassified':v.kind;offer.ignored=kind==='clearOfferDecision'?false:v.ignored;offer.explicitDecision=kind!=='clearOfferDecision';watch.generation++;f.state.acquisitions.revision++;f.change(()=>{});return {ok:true,watchId:watch.id};
  };
 })();"""
@@ -65,6 +70,34 @@ class SourceAccountUiTests(base.WatchtowerBrowserTests):
         self.assertEqual(value['variant'], 'CBBE')
         self.assertTrue(value['compatibilityConfirmed'])
         self.assertEqual(self.calls('saveWatch'), [])
+        # The native rank is authoritative. Keep the user's preferred source,
+        # unknown dates and exact offer identity visible without starting work.
+        self.page.evaluate("""__WATCH_FIX__.change(s=>{
+          const w=s.watches[0],a=s.acquisitions;
+          w.sourceAlternatives=[
+            {watchId:w.id,url:w.url,title:'Preferred compatible source',preferred:true,compatible:true,eligible:true,reason:'Compatible exact source'},
+            {watchId:'watch-alternative',url:'https://mods.example.com/alternative',title:'Compatible alternative',preferred:false,compatible:true,eligible:true,reason:'Compatible exact source'}
+          ];
+          Object.assign(a.offers[0],{classification:'update',selection:{eligible:true,preferred:true,recommended:true,rank:1,publishedAt:null,reason:'Your explicit source preference is retained.'}});
+          a.offers.push({...structuredClone(a.offers[0]),id:'alternative-file',watchId:'watch-alternative',name:'Other compatible archive.zip',selection:{eligible:true,preferred:false,recommended:false,rank:2,publishedAt:1700000000000,reason:'Newest confirmed provider release date.'}});
+          a.revision++;
+        })""")
+        self.page.wait_for_function("document.getElementById('detailBody').textContent.includes('Recommended current file')")
+        choices = self.page.locator('#detailBody .detail-section').filter(has_text='Source identity & choices')
+        rows = choices.locator(':scope > .change-entry')
+        self.assertIn('Preferred compatible source', rows.nth(0).inner_text())
+        self.assertIn('Your explicit source preference is retained.', rows.nth(0).inner_text())
+        self.assertIn('Publication date unknown', rows.nth(0).inner_text())
+        self.assertIn('Compatible alternative', rows.nth(1).inner_text())
+        # Fresh provider metadata may change with no persisted WatchStore write.
+        # The open source drawer must reflect the accepted acquisition revision.
+        self.page.evaluate("""(()=>{const f=__WATCH_FIX__,a=f.state.acquisitions;
+          a.offers[0].selection.reason='Preferred source remains selected after fresh evidence.';
+          a.revision++;f.publish();})()""")
+        self.page.wait_for_function("document.getElementById('detailBody').textContent.includes('after fresh evidence')")
+        self.assertEqual(self.calls('openOffer'), [])
+        self.assertEqual(self.calls('approveDownload'), [])
+        self.assertEqual(self.calls('install'), [])
 
     def test_source_form_refuses_a_changed_generation(self):
         self.open_sources()
@@ -106,6 +139,21 @@ class SourceAccountUiTests(base.WatchtowerBrowserTests):
         self.page.locator('[data-action="download-ignore"]').click()
         self.page.wait_for_function("__WATCH_FIX__.state.acquisitions.offers[0].ignored")
         self.assertTrue(self.page.locator('[data-action="download-offer"]').is_disabled())
+        self.page.evaluate("""(()=>{const f=__WATCH_FIX__,a=f.state.acquisitions;
+          a.offers=[{...a.offers[0],id:'folder-offer',kind:'folder',name:'Creator folder',ignored:false,supported:false,canResolveFolder:true,classification:'unclassified',explicitDecision:false}];
+          a.revision++;f.publish();})()""")
+        inspect = self.page.locator('[data-action="download-resolve-folder"]')
+        self.assertEqual(inspect.inner_text(), 'Inspect folder')
+        self.assertEqual(self.page.locator('[data-action="download-offer"]').count(), 0)
+        self.assertEqual(self.page.locator('[data-action="download-classify-update"]').count(), 0)
+        inspect.click()
+        self.page.wait_for_function("__WATCH_FIX__.state.acquisitions.offers[0].resolvedFolderFile===true")
+        self.assertEqual(self.calls('resolveFolder')[0]['value'], {'id': 'folder-offer'})
+        self.assertIn('folder proved one eligible archive', self.page.locator('.download-row').inner_text())
+        self.assertTrue(self.page.locator('[data-action="download-offer"]').is_disabled())
+        self.assertEqual(self.calls('openOffer'), [])
+        self.assertEqual(self.calls('approveDownload'), [])
+        self.assertEqual(self.calls('install'), [])
 
     def test_saved_file_ignore_can_be_reset_without_discovering_or_downloading_a_file(self):
         self.open_sources()

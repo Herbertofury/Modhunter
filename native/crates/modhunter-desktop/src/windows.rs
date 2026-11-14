@@ -85,7 +85,9 @@ struct Runtime {
 /// A host-owned connection lease; remote content and the Watchtower renderer
 /// never choose an endpoint or receive the native authentication token.
 pub(crate) fn mo2_connection(app: &tauri::AppHandle) -> Result<(BridgeClient, String, u64)> {
-    let runtime = app.state::<Runtime>();
+    let runtime = app
+        .try_state::<Runtime>()
+        .ok_or("No live MO2 desktop connection is available.")?;
     let model = runtime.model.lock().map_err(err)?;
     if !model.connected {
         return Err("Connect Modhunter to MO2 before reviewing an installation.".into());
@@ -102,12 +104,77 @@ pub(crate) fn mo2_connection(app: &tauri::AppHandle) -> Result<(BridgeClient, St
 }
 
 pub(crate) fn mo2_connection_current(app: &tauri::AppHandle, endpoint: &str, epoch: u64) -> bool {
-    let runtime = app.state::<Runtime>();
+    let Some(runtime) = app.try_state::<Runtime>() else {
+        return false;
+    };
     runtime.epoch.load(Ordering::Acquire) == epoch
         && runtime
             .model
             .lock()
             .is_ok_and(|model| model.connected && model.endpoint.as_deref() == Some(endpoint))
+}
+
+/// On-demand catalog and native folder facts for the trusted readiness view.
+/// No connection is selected, no demo is treated as live, and no asset walk is
+/// performed by this read. The caller rechecks the lease before publishing.
+pub(crate) fn inspection_snapshot(app: &tauri::AppHandle) -> Result<Value> {
+    let state = app.state::<Runtime>();
+    let (connected, endpoint, epoch, offline, profile) = {
+        let model = state.model.lock().map_err(err)?;
+        (
+            model.connected,
+            model.endpoint.clone(),
+            state.epoch.load(Ordering::Acquire),
+            model.catalog.clone(),
+            model.prefs.profile.clone(),
+        )
+    };
+    if connected {
+        let endpoint = endpoint.ok_or("The current live connection has no address.")?;
+        let response = state
+            .client
+            .native_content(&endpoint, "snapshot", &json!({}))
+            .map_err(err)?;
+        let catalog = response
+            .get("catalog")
+            .filter(|catalog| catalog["items"].is_array())
+            .ok_or("The live MO2 catalog is unavailable.")?;
+        let context = state
+            .client
+            .native_content(&endpoint, "content-context", &json!({}))
+            .map_err(err)?;
+        if !mo2_connection_current(app, &endpoint, epoch)
+            || catalog["profileId"] != context["profileId"]
+            || catalog["game"] != context["game"]
+            || catalog["gameRuntime"] != context["gameRuntime"]
+            || catalog["executionEpoch"] != context["executionEpoch"]
+        {
+            return Err("MO2 changed while preparing its readiness summary. Refresh the current instance and profile.".into());
+        }
+        Ok(
+            json!({"mode":"live","connectionEpoch":epoch,"endpoint":endpoint,"catalog":catalog,"context":context}),
+        )
+    } else if let Some(catalog) = offline.filter(|_| profile.is_some()) {
+        Ok(
+            json!({"mode":"offline","connectionEpoch":epoch,"catalog":catalog.as_ref(),"import":profile,"scope":"Read-only imported profile. Native installation, accounts and game state have not been verified."}),
+        )
+    } else {
+        Ok(
+            json!({"mode":"disconnected","connectionEpoch":epoch,"scope":"No live MO2 instance or imported profile. Demo content is practice only and is excluded from this readiness summary."}),
+        )
+    }
+}
+
+pub(crate) fn inspect_available_instances() -> Result<Value> {
+    let directory = std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .ok_or("Windows LOCALAPPDATA directory is unavailable")?
+        .join("Modhunter")
+        .join("mo2-sessions");
+    let client = BridgeClient::with_timeout(std::time::Duration::from_millis(800)).map_err(err)?;
+    Ok(json!(
+        crate::discovery::discover(&directory, &client).map_err(err)?
+    ))
 }
 
 impl Runtime {
@@ -603,7 +670,8 @@ pub(crate) fn apply_content_preferences(app: &tauri::AppHandle, value: &Value) -
         )
     };
     let script = format!(
-        "if(!window.ModhunterI18n){{ {} }}window.dispatchEvent(new CustomEvent('modhunter-preferences',{{detail:{value}}}));",
+        "if(!window.ModhunterI18n){{ {} {} }}window.dispatchEvent(new CustomEvent('modhunter-preferences',{{detail:{value}}}));",
+        include_str!("../../../ui/locale-catalogs.js"),
         include_str!("../../../ui/preferences.js")
     );
     for label in labels {
@@ -1016,7 +1084,10 @@ fn import_profile(app: &tauri::AppHandle, refresh: bool, deep: bool) -> Result<V
         let file = app
             .dialog()
             .file()
-            .set_title("Choose an MO2 profile's modlist.txt")
+            .set_title(crate::watchtower_windows::localized(
+                app,
+                "Choose an MO2 profile's modlist.txt",
+            ))
             .add_filter("MO2 modlist", &["txt"])
             .blocking_pick_file();
         let Some(file) = file else {
@@ -1228,6 +1299,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
     match kind {
         "state" => return Ok(json!({"ok": true, "state": state.snapshot()})),
         "watchtower" => crate::watchtower_windows::open(app, None)?,
+        "readiness" => crate::watchtower_windows::open(app, Some(json!({"action":"readiness"})))?,
         "ready" => {
             smoke_event(app, "shell-ready-command", json!({}));
             let restore = {
@@ -1317,7 +1389,10 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
             let picked = app
                 .dialog()
                 .file()
-                .set_title("Choose this instance's ModOrganizer.ini (Cancel keeps current setting)")
+                .set_title(crate::watchtower_windows::localized(
+                    app,
+                    "Choose this instance's ModOrganizer.ini (Cancel keeps current setting)",
+                ))
                 .add_filter("MO2 configuration", &["ini"])
                 .blocking_pick_file();
             if let Some(file) = picked {
@@ -1338,7 +1413,10 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
             if let Some(file) = app
                 .dialog()
                 .file()
-                .set_title("Choose the configured MO2 mods directory")
+                .set_title(crate::watchtower_windows::localized(
+                    app,
+                    "Choose the configured MO2 mods directory",
+                ))
                 .blocking_pick_folder()
             {
                 let path = file.into_path().map_err(err)?;
@@ -1370,7 +1448,10 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
             let picked = app
                 .dialog()
                 .file()
-                .set_title("Choose ESLifier_Data or ESLifier_FO4_Data beside ESLifier's executable")
+                .set_title(crate::watchtower_windows::localized(
+                    app,
+                    "Choose ESLifier_Data or ESLifier_FO4_Data beside ESLifier's executable",
+                ))
                 .blocking_pick_folder();
             if let Some(file) = picked {
                 let path = policy::eslifier_data_directory(&file.into_path().map_err(err)?)?;

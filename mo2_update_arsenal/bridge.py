@@ -1521,8 +1521,10 @@ class ArsenalService:
             return
         with self._guard:
             if download_id in self._downloads:
-                # An old callback cannot reactivate an installing or installed archive.
-                if self._downloads[download_id]["status"] not in ("installing", "installed"):
+                # A delayed download callback cannot renew installation
+                # authority, including an uncertain native outcome that still
+                # requires explicit inspection of its retained backup.
+                if self._downloads[download_id]["status"] not in ("installing", "installed", "needs-review"):
                     self._downloads[download_id]["status"] = state
                     self.journal.record(self._downloads[download_id], download_id)
             elif self._download_dispatches and type(download_id) is int and parse_download_id(download_id) is not None:

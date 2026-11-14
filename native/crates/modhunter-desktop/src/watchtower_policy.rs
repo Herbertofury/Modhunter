@@ -7,6 +7,8 @@ pub const MAX_RESULT_BYTES: usize = 1_200_000;
 
 #[path = "watchtower_download_scope.rs"]
 pub mod download_scope;
+#[path = "watchtower_preparation.rs"]
+pub mod preparation;
 
 /// Readiness belongs to one top-level WebView2 navigation. In particular, the
 /// cancelled initial about:blank must never complete a newer website request.

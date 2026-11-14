@@ -10,6 +10,7 @@ import unittest
 import zipfile
 
 from mo2_update_arsenal.content_recovery import ArchiveRunner, ContentRunner, canonical_json, file_identity
+from mo2_update_arsenal.operation_journal import OperationJournal
 from test_content_recovery import Fixture
 
 
@@ -279,6 +280,29 @@ class SharedQueueTests(unittest.TestCase):
         self.assertTrue(f.service.content.start_install(intent)["alreadyAccepted"])
         self.assertEqual([name for _, name in f.installs], ["Example", "Second"])
         self.assertEqual(f.max_concurrent, 1)
+
+    def test_late_download_callback_cannot_rearm_uncertain_native_install(self):
+        f = self.f
+        f.fail_names.add("Example")
+        f.ticket(901, "Example")
+        self.assertTrue(f.service.install_reviewed_download(901)["ok"])
+        self.until(lambda: f.service.downloads()[901]["status"] == "needs-review")
+        ticket = f.service.downloads()[901]
+        self.assertEqual(f.wait(ticket["contentJobId"])["state"], "unknown")
+        f.service.set_download_status(901, "complete")
+        self.assertEqual(f.service.downloads()[901]["status"], "needs-review")
+        f.service.install_ready_queue()
+        self.assertFalse(f.service.install_queue()["pending"])
+        self.assertEqual([name for _, name in f.installs], ["Example"])
+        self.assertEqual(f.service.downloads()[901]["contentJobId"], ticket["contentJobId"])
+        current = f.service.journal.profile("profile-1")["records"][0]
+        self.assertEqual(current["status"], "needs-review")
+        self.assertTrue(current["needsReview"])
+        reopened = OperationJournal(f.service.journal.path, session_id="fresh-session")
+        recovered = reopened.profile("profile-1")["records"][0]
+        self.assertEqual(recovered["status"], "needs-review")
+        self.assertTrue(recovered["needsReview"])
+        self.assertFalse(recovered["actionable"])
 
     def test_own_completion_cannot_renew_a_changed_reviewed_target(self):
         self.actual_cli()

@@ -738,6 +738,7 @@ impl Drop for PreparedStage<'_> {
 }
 fn prepare(app: &tauri::AppHandle, value: &Value) -> Result<Value> {
     let download = field(value, "downloadId")?.to_string();
+    let download_claim = acquisition::claim_download(app, &download)?;
     let state = app.state::<Reviews>();
     if retained_journals(&state)?.iter().any(|(_, saved)| {
         saved.get("invalidReason").is_some()
@@ -785,7 +786,7 @@ fn prepare(app: &tauri::AppHandle, value: &Value) -> Result<Value> {
         cancel.load(Ordering::Acquire)
             || app.state::<WatchRuntime>().stopping.load(Ordering::Acquire)
     };
-    let (receipt, archive, acquisitions) = acquisition::verified(app, &download, &cancelled)?;
+    let (receipt, archive, acquisitions) = acquisition::verified(app, &download_claim, &cancelled)?;
     let target = value["targetName"].as_str().unwrap_or("");
     let (client, endpoint, epoch) = crate::windows::mo2_connection(app)?;
     let context = client
@@ -941,7 +942,8 @@ fn submit(app: &tauri::AppHandle, value: &Value) -> Result<Value> {
         current.cancel.load(Ordering::Acquire)
             || app.state::<WatchRuntime>().stopping.load(Ordering::Acquire)
     };
-    acquisition::verified(app, &current.receipt.id, &cancel)?;
+    let download_claim = acquisition::claim_download(app, &current.receipt.id)?;
+    acquisition::verified(app, &download_claim, &cancel)?;
     let (client, endpoint, epoch) = crate::windows::mo2_connection(app)?;
     if epoch != current.epoch || endpoint != current.endpoint {
         return Err("The MO2 connection changed. Prepare a new review.".into());
@@ -1052,9 +1054,14 @@ fn forward_cancel(app: &tauri::AppHandle, row: &Review) -> Result<Value> {
         .native_content(
             &endpoint,
             "content-cancel",
-            &json!({"jobId":row.job_id,"reviewId":row.id,"downloadId":row.receipt.id}),
+            &json!({"jobId":cancel_job_id(row.job_id.as_deref(),&row.id),"reviewId":row.id,"downloadId":row.receipt.id}),
         )
         .map_err(err)
+}
+fn cancel_job_id<'a>(acknowledged: Option<&'a str>, review_id: &'a str) -> &'a str {
+    // MO2 persists jobId == reviewId before returning acceptance. An absent
+    // acknowledgement must not erase the exact cancellation identity.
+    acknowledged.unwrap_or(review_id)
 }
 fn operations(app: &tauri::AppHandle) -> Result<Value> {
     let (client, endpoint, _) = crate::windows::mo2_connection(app)?;
@@ -1123,6 +1130,16 @@ fn operations(app: &tauri::AppHandle) -> Result<Value> {
         }
     }
     Ok(json!({"operations":result}))
+}
+pub(super) fn cancel_preparation(app: &tauri::AppHandle) -> usize {
+    let Some(reviews) = app.try_state::<Reviews>() else {
+        return 0;
+    };
+    let preparing = reviews.preparing.lock().unwrap_or_else(|e| e.into_inner());
+    for cancel in preparing.values() {
+        cancel.store(true, Ordering::Release);
+    }
+    preparing.len()
 }
 fn cancel_review(app: &tauri::AppHandle, value: &Value) -> Result<Value> {
     if let Some(download) = value["downloadId"].as_str()
@@ -1290,6 +1307,14 @@ pub(super) fn execute(app: &tauri::AppHandle, kind: &str, value: &Value) -> Resu
 #[cfg(test)]
 mod lifecycle_tests {
     use super::*;
+    #[test]
+    fn lost_acknowledgement_keeps_the_exact_native_cancellation_id() {
+        assert_eq!(cancel_job_id(None, "review-123-1"), "review-123-1");
+        assert_eq!(
+            cancel_job_id(Some("acknowledged-job"), "review-123-1"),
+            "acknowledged-job"
+        );
+    }
     fn state(root: PathBuf) -> Reviews {
         Reviews {
             root,

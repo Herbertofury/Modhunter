@@ -585,6 +585,116 @@ impl WatchStore {
         }
         Ok(())
     }
+    /// Rank only native-resolved exact files. Page readability, user session
+    /// confirmation and the date of a check never assert file availability.
+    pub fn source_offer_choices(
+        &self,
+        evidence: &[crate::watchtower::SourceOfferEvidence],
+        now: u64,
+    ) -> Vec<crate::watchtower::SourceOfferChoice> {
+        use crate::watchtower::source_choice::{SourceOfferChoice, publication_time, rank};
+        let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let doc = &inner.document;
+        let rows = evidence
+            .iter()
+            .map(|offer| {
+                let watch = doc.watches.iter().find(|w| w.id == offer.watch_id);
+                let source = watch.and_then(|w| binding(doc, w));
+                let file = watch.and_then(|w| {
+                    doc.source_preferences.files.iter().find(|f| {
+                        f.watch_id == w.id
+                            && f.source_url == w.url
+                            && f.source_file_key == offer.source_file_key
+                    })
+                });
+                let current = !inner.read_only
+                    && offer.current
+                    && watch.is_some_and(|w| {
+                        w.removed_at.is_none()
+                            && w.generation == offer.watch_generation
+                            && super::eligible(w, &doc.settings)
+                            && eligible(doc, w)
+                            && (!w.requires_session || w.session_id.is_some())
+                    });
+                let compatible = source.is_some_and(|s| {
+                    s.compatibility_confirmed
+                        && !s.game.is_empty()
+                        && !s.runtime.is_empty()
+                        && s.runtime != "unknown"
+                        && s.content_intent == "update"
+                        && s.association.is_some()
+                });
+                let classified = watch.zip(file).is_some_and(|(w, f)| {
+                    f.kind == "update"
+                        && !f.ignored
+                        && same_association(&f.association, &w.association)
+                });
+                let accessible = matches!(
+                    offer.access_evidence.as_str(),
+                    "patreonAttachment" | "loversLabChooser" | "loversLabDirect" | "megaFolderFile"
+                );
+                let group_id = source.filter(|_| compatible).map(|s| {
+                    format!(
+                        "{:x}",
+                        Sha256::digest(
+                            serde_json::to_vec(&(
+                                &s.association.as_ref().unwrap().profile_id,
+                                &s.association.as_ref().unwrap().item_id,
+                                &s.game,
+                                &s.runtime,
+                                &s.variant
+                            ))
+                            .unwrap()
+                        )
+                    )
+                });
+                let host = watch
+                    .and_then(|w| url::Url::parse(&w.url).ok())
+                    .and_then(|url| url.host_str().map(str::to_owned))
+                    .unwrap_or_default();
+                let provider_date = match offer.publication_evidence.as_str() {
+                    "patreonPost" => host == "patreon.com" || host.ends_with(".patreon.com"),
+                    "loversLabAttachment" | "loversLabRelease" => {
+                        host == "loverslab.com" || host.ends_with(".loverslab.com")
+                    }
+                    _ => false,
+                };
+                let published_at = provider_date
+                    .then(|| {
+                        publication_time(&offer.published_at, &offer.publication_evidence, now)
+                    })
+                    .flatten();
+                let reason = if !current {
+                    "File access evidence expired or the source/account changed. Find files again."
+                } else if !compatible {
+                    "Confirm this exact source's game, runtime and variant before comparing it."
+                } else if file.is_some_and(|f| f.ignored) {
+                    "This exact file is ignored."
+                } else if !classified {
+                    "Classify this exact file as an installed update before comparing releases."
+                } else if !accessible {
+                    "A page link is visible, but this exact file's access is not confirmed."
+                } else {
+                    "Current accessible compatible file."
+                };
+                SourceOfferChoice {
+                    id: offer.id.clone(),
+                    watch_id: offer.watch_id.clone(),
+                    group_id,
+                    eligible: current && compatible && classified && accessible,
+                    preferred: source.is_some_and(|s| s.preferred),
+                    recommended: false,
+                    rank: None,
+                    published_at,
+                    publication_evidence: published_at.map(|_| offer.publication_evidence.clone()),
+                    same_day_files: 0,
+                    reason: reason.into(),
+                }
+            })
+            .collect();
+        rank(rows)
+    }
+
     pub fn source_binding(&self, watch_id: &str) -> Option<SourceBinding> {
         let inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         let watch = inner.document.watches.iter().find(|w| w.id == watch_id)?;

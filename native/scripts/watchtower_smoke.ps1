@@ -40,6 +40,7 @@ $required = @(
   'download_stale_source_cancels',
   'download_receipt_survives_reopen',
   'download_exact_file_authority',
+  'native_notification_exact_item_actions',
   'native_privacy_quick_hide_and_capture',
   'native_browser_cache_and_resource_policy'
 )

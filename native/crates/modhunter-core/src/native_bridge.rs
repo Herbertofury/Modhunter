@@ -62,11 +62,13 @@ impl BridgeClient {
         value: &Value,
     ) -> Result<Value, CoreError> {
         let method = match route {
-            "content-context" | "content-jobs" | "content-backups" | "duplicates" => "GET",
+            "snapshot" | "notification-facts" | "install-queue" | "content-context"
+            | "content-jobs" | "content-backups" | "duplicates" => "GET",
             "content-install"
             | "content-cancel"
             | "content-recovery"
             | "content-batch-restore"
+            | "install-queue-control"
             | "duplicate-recovery" => "POST",
             _ => return Err(CoreError::Invalid("Unknown native content route.".into())),
         };

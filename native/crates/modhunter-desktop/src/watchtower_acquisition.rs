@@ -2,7 +2,10 @@
 //! approve a deferred download. Remote HTML never gains native IPC authority.
 use super::*;
 use modhunter_core::acquisition::{Binding, MAX_BYTES, Store, archive_identity};
-use std::{cell::RefCell, collections::HashMap};
+use std::{
+    cell::RefCell,
+    collections::{BTreeSet, HashMap},
+};
 use webview2_com::Microsoft::Web::WebView2::Win32::{
     COREWEBVIEW2_DOWNLOAD_STATE_COMPLETED, COREWEBVIEW2_DOWNLOAD_STATE_IN_PROGRESS, ICoreWebView2,
     ICoreWebView2_4, ICoreWebView2Deferral, ICoreWebView2DownloadOperation,
@@ -12,6 +15,89 @@ use webview2_com::Microsoft::Web::WebView2::Win32::{
 struct Downloads {
     store: Mutex<Store>,
     root: PathBuf,
+    lifecycle: Arc<Mutex<BTreeSet<String>>>,
+}
+/// This capability spans verification and the complete operation using the
+/// bytes. Receipt mutexes stay short-lived; deletion and review share one owner.
+pub(super) struct DownloadClaim {
+    registry: Arc<Mutex<BTreeSet<String>>>,
+    id: String,
+}
+impl Drop for DownloadClaim {
+    fn drop(&mut self) {
+        self.registry
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&self.id);
+    }
+}
+fn claim_ids(
+    registry: &Arc<Mutex<BTreeSet<String>>>,
+    ids: &[String],
+) -> Result<Vec<DownloadClaim>> {
+    let unique = ids.iter().collect::<BTreeSet<_>>();
+    if ids.len() > 2000
+        || unique.len() != ids.len()
+        || ids.iter().any(|id| {
+            !id.starts_with("download-")
+                || id.len() > 90
+                || !id
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        })
+    {
+        return Err("Invalid or repeated download lifecycle identity.".into());
+    }
+    let mut owned = registry.lock().map_err(err)?;
+    if ids.iter().any(|id| owned.contains(id)) {
+        return Err("A selected download is being reviewed, verified or removed. Wait for that operation to finish.".into());
+    }
+    owned.extend(ids.iter().cloned());
+    Ok(ids
+        .iter()
+        .map(|id| DownloadClaim {
+            registry: registry.clone(),
+            id: id.clone(),
+        })
+        .collect())
+}
+pub(super) fn claim_downloads(
+    app: &tauri::AppHandle,
+    ids: &[String],
+) -> Result<Vec<DownloadClaim>> {
+    claim_ids(&app.state::<Downloads>().lifecycle, ids)
+}
+pub(super) fn claim_download(app: &tauri::AppHandle, id: &str) -> Result<DownloadClaim> {
+    claim_downloads(app, &[id.to_owned()])?
+        .pop()
+        .ok_or("Missing download lifecycle claim.".into())
+}
+fn verify_claim(downloads: &Downloads, claim: &DownloadClaim) -> Result<()> {
+    if !Arc::ptr_eq(&downloads.lifecycle, &claim.registry)
+        || !claim.registry.lock().map_err(err)?.contains(&claim.id)
+    {
+        return Err("Download lifecycle ownership changed.".into());
+    }
+    Ok(())
+}
+pub(super) fn remove_claimed(
+    app: &tauri::AppHandle,
+    claim: &DownloadClaim,
+    confirm: &str,
+    expected: Option<&Value>,
+) -> Result<()> {
+    let downloads = app.state::<Downloads>();
+    verify_claim(&downloads, claim)?;
+    // Preparation cannot register itself between this check and Store::remove:
+    // both paths require the same exclusive per-download capability.
+    super::review::ensure_removable(app, &claim.id)?;
+    let mut store = downloads.store.lock().map_err(err)?;
+    if let Some(expected) = expected
+        && serde_json::to_value(store.row(&claim.id)?).map_err(err)? != *expected
+    {
+        return Err("A previewed download changed. Review cleanup again.".into());
+    }
+    store.remove(&claim.id, confirm)
 }
 struct Held {
     operation: ICoreWebView2DownloadOperation,
@@ -23,11 +109,21 @@ struct Held {
     active: bool,
 }
 thread_local! { static HANDLES:RefCell<HashMap<String,Held>>=RefCell::new(HashMap::new()); }
+struct FolderValidation {
+    view: ICoreWebView2,
+    args: ICoreWebView2DownloadStartingEventArgs,
+    deferral: ICoreWebView2Deferral,
+    context: SiteContext,
+    label: String,
+    created: Instant,
+}
+thread_local! { static FOLDER_VALIDATIONS:RefCell<HashMap<String,FolderValidation>>=RefCell::new(HashMap::new()); }
 
 pub(super) fn setup(app: &tauri::AppHandle, path: PathBuf) {
     app.manage(Downloads {
         store: Mutex::new(Store::open(path.clone())),
         root: path,
+        lifecycle: Arc::new(Mutex::new(BTreeSet::new())),
     });
     offers::setup(app);
     let a = app.clone();
@@ -51,6 +147,7 @@ pub(super) fn snapshot(app: &tauri::AppHandle) -> Value {
         .unwrap_or_else(|| json!({"revision":0,"jobs":[],"warning":"Downloads unavailable"}));
     let offers = offers::snapshot(app);
     data["offers"] = offers["offers"].clone();
+    data["discoveries"] = offers["discoveries"].clone();
     data["revision"] = json!(
         data["revision"]
             .as_u64()
@@ -205,84 +302,26 @@ pub(super) fn install(
                 return Ok(());
             }
             let requested = (|| -> Result<()> {
-                let b = binding(&app, &context)?;
-                let operation = unsafe { args.DownloadOperation() }.map_err(err)?;
-                let mut uri = windows_core::PWSTR::null();
-                unsafe { operation.Uri(&mut uri) }.map_err(err)?;
-                let uri = webview2_com::take_pwstr(uri);
-                let mut allowed_origin = b.source_origin.clone();
-                if context.download_file_key.is_some() {
-                    let scope = context.download_scope.as_ref().ok_or(
-                        "This exact file has no live browser authority. Find files again.",
-                    )?;
-                    let mut source = windows_core::PWSTR::null();
-                    unsafe {
-                        sender
-                            .as_ref()
-                            .ok_or("The download owner disappeared.")?
-                            .Source(&mut source)
-                    }
-                    .map_err(err)?;
-                    let source = Url::parse(&webview2_com::take_pwstr(source))
-                        .map_err(|_| "The browser did not expose an exact current page.")?;
-                    scope
-                        .lock()
-                        .map_err(err)?
-                        .claim(&Url::parse(&uri).map_err(err)?, &source)?;
-                    if matches!(source.scheme(), "https" | "http") {
-                        allowed_origin = source.origin().ascii_serialization();
-                    }
-                }
-                if !allowed_download(&uri, &allowed_origin, context.fixture_origin.as_deref()) {
-                    return Err(
-                        "This download left the tracked site for an unsupported host.".into(),
+                let sender = sender.as_ref().ok_or("The download owner disappeared.")?;
+                binding(&app, &context)?;
+                let folder = context
+                    .download_scope
+                    .as_ref()
+                    .map(|scope| scope.lock().map(|s| s.mega_folder()).map_err(err))
+                    .transpose()?
+                    .flatten();
+                let deferral = unsafe { args.GetDeferral() }.map_err(err)?;
+                if let Some((_, key, _)) = folder {
+                    return validate_folder_download(
+                        &app, sender, &args, &deferral, &context, &label, &key,
                     );
                 }
-                let mut name = windows_core::PWSTR::null();
-                unsafe { args.ResultFilePath(&mut name) }.map_err(err)?;
-                let name = webview2_com::take_pwstr(name);
-                let name = Path::new(&name)
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .ok_or("Missing archive filename.")?;
-                let mut total = 0;
-                unsafe { operation.TotalBytesToReceive(&mut total) }.map_err(err)?;
-                let total = if total > 0 { Some(total as u64) } else { None };
-                let deferral = unsafe { args.GetDeferral() }.map_err(err)?;
-                let result = app.state::<Downloads>().store.lock().map_err(err)?.request(
-                    name,
-                    b,
-                    total,
-                    now(),
-                );
-                let row = match result {
-                    Ok(r) => r,
-                    Err(e) => {
-                        let _ = unsafe { deferral.Complete() };
-                        return Err(e);
-                    }
-                };
-                HANDLES.with(|h| {
-                    h.borrow_mut().insert(
-                        row.id,
-                        Held {
-                            operation,
-                            args: args.clone(),
-                            deferral: Some(deferral),
-                            context: context.clone(),
-                            label: label.clone(),
-                            created: Instant::now(),
-                            active: false,
-                        },
-                    )
-                });
-                notify(&app);
-                if let Some(manager) = app.get_webview_window("watchtower")
-                    && let Some(window) = app.get_window(manager.label())
-                {
-                    let _ = super::privacy::guarded_show(&app, &window, true);
+                let result =
+                    request_download(&app, sender, &args, &deferral, &context, &label, None);
+                if result.is_err() {
+                    let _ = unsafe { deferral.Complete() };
                 }
-                Ok(())
+                result
             })();
             if let Err(message) = requested {
                 let _ = app.emit_to(
@@ -297,6 +336,161 @@ pub(super) fn install(
     unsafe { view.add_DownloadStarting(&callback, &mut token) }?;
     Ok(())
 }
+
+fn report_download_error(app: &tauri::AppHandle, message: String) {
+    let _ = app.emit_to(
+        "watchtower",
+        "watchtower-download-error",
+        json!({"message":message}),
+    );
+}
+/// A folder URL alone never authorizes a transfer. Read the provider's observed
+/// exact node/blob handoff while DownloadStarting remains cancelled and deferred.
+fn validate_folder_download(
+    app: &tauri::AppHandle,
+    view: &ICoreWebView2,
+    args: &ICoreWebView2DownloadStartingEventArgs,
+    deferral: &ICoreWebView2Deferral,
+    context: &SiteContext,
+    label: &str,
+    key: &str,
+) -> Result<()> {
+    let Some(window) = app.get_webview_window(label) else {
+        let _ = unsafe { deferral.Complete() };
+        return Err("The folder download window closed.".into());
+    };
+    if FOLDER_VALIDATIONS.with(|pending| pending.borrow().len() >= 16) {
+        let _ = unsafe { deferral.Complete() };
+        return Err(
+            "Too many pending browser download validations. Retry the intended archive.".into(),
+        );
+    }
+    let id = format!(
+        "folder-validation-{}",
+        app.state::<WatchRuntime>()
+            .sequence
+            .fetch_add(1, Ordering::AcqRel)
+    );
+    FOLDER_VALIDATIONS.with(|pending| {
+        pending.borrow_mut().insert(
+            id.clone(),
+            FolderValidation {
+                view: view.clone(),
+                args: args.clone(),
+                deferral: deferral.clone(),
+                context: context.clone(),
+                label: label.into(),
+                created: Instant::now(),
+            },
+        )
+    });
+    let a = app.clone();
+    let token = id.clone();
+    let script = format!(
+        "window[{}]?.proof||null",
+        serde_json::to_string(key).map_err(err)?
+    );
+    let result=window.eval_with_callback(script,move|data|{
+        let gui=a.clone();let token=token.clone();let _=a.run_on_main_thread(move||{
+            let Some(held)=FOLDER_VALIDATIONS.with(|pending|pending.borrow_mut().remove(&token)) else{return};
+            let outcome=(||{
+                if held.created.elapsed()>Duration::from_secs(15)||gui.get_webview_window(&held.label).is_none(){return Err("Folder download verification expired or its browser closed.".into())}
+                if data.len()>8192{return Err("The folder download returned oversized verification metadata.".into())}
+                let proof:policy::download_scope::MegaBlobProof=serde_json::from_str(&data).map_err(|_|"The provider did not confirm this exact file-to-blob download. Use the selected archive's normal browser download.".to_owned())?;
+                request_download(&gui,&held.view,&held.args,&held.deferral,&held.context,&held.label,Some(&proof))
+            })();
+            if let Err(error)=outcome{
+                if let Some(scope)=&held.context.download_scope&&let Ok(mut scope)=scope.lock(){scope.invalidate();}
+                let _=unsafe{held.args.SetCancel(true)};let _=unsafe{held.deferral.Complete()};report_download_error(&gui,error);
+            }
+        });
+    });
+    if let Err(error) = result {
+        FOLDER_VALIDATIONS.with(|pending| pending.borrow_mut().remove(&id));
+        let _ = unsafe { deferral.Complete() };
+        return Err(err(error));
+    }
+    Ok(())
+}
+fn request_download(
+    app: &tauri::AppHandle,
+    sender: &ICoreWebView2,
+    args: &ICoreWebView2DownloadStartingEventArgs,
+    deferral: &ICoreWebView2Deferral,
+    context: &SiteContext,
+    label: &str,
+    folder_proof: Option<&policy::download_scope::MegaBlobProof>,
+) -> Result<()> {
+    let b = binding(app, context)?;
+    let operation = unsafe { args.DownloadOperation() }.map_err(err)?;
+    let mut uri = windows_core::PWSTR::null();
+    unsafe { operation.Uri(&mut uri) }.map_err(err)?;
+    let uri = webview2_com::take_pwstr(uri);
+    let mut name = windows_core::PWSTR::null();
+    unsafe { args.ResultFilePath(&mut name) }.map_err(err)?;
+    let path = webview2_com::take_pwstr(name);
+    let name = Path::new(&path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or("Missing archive filename.")?;
+    let mut total = 0;
+    unsafe { operation.TotalBytesToReceive(&mut total) }.map_err(err)?;
+    let total = (total > 0).then_some(total as u64);
+    let mut allowed_origin = b.source_origin.clone();
+    if context.download_file_key.is_some() {
+        let scope = context
+            .download_scope
+            .as_ref()
+            .ok_or("This exact file has no live browser authority. Find files again.")?;
+        let mut current = windows_core::PWSTR::null();
+        unsafe { sender.Source(&mut current) }.map_err(err)?;
+        let current = Url::parse(&webview2_com::take_pwstr(current))
+            .map_err(|_| "The browser did not expose an exact current page.")?;
+        let mut scope = scope.lock().map_err(err)?;
+        if let Some(proof) = folder_proof {
+            if proof.file.name != name || total != Some(proof.file.bytes) {
+                scope.invalidate();
+                return Err("The browser download filename or byte count changed from the reviewed folder file.".into());
+            }
+            scope.claim_mega_blob(&Url::parse(&uri).map_err(err)?, &current, proof, now())?;
+        } else {
+            scope.claim(&Url::parse(&uri).map_err(err)?, &current)?;
+        }
+        if matches!(current.scheme(), "https" | "http") {
+            allowed_origin = current.origin().ascii_serialization();
+        }
+    }
+    if !allowed_download(&uri, &allowed_origin, context.fixture_origin.as_deref()) {
+        return Err("This download left the tracked site for an unsupported host.".into());
+    }
+    let row = app
+        .state::<Downloads>()
+        .store
+        .lock()
+        .map_err(err)?
+        .request(name, b, total, now())?;
+    HANDLES.with(|handles| {
+        handles.borrow_mut().insert(
+            row.id,
+            Held {
+                operation,
+                args: args.clone(),
+                deferral: Some(deferral.clone()),
+                context: context.clone(),
+                label: label.into(),
+                created: Instant::now(),
+                active: false,
+            },
+        )
+    });
+    notify(app);
+    if let Some(manager) = app.get_webview_window("watchtower")
+        && let Some(window) = app.get_window(manager.label())
+    {
+        let _ = super::privacy::guarded_show(app, &window, true);
+    }
+    Ok(())
+}
 fn cancel_handle(h: &mut Held) {
     unsafe {
         let _ = h.args.SetCancel(true);
@@ -307,6 +501,18 @@ fn cancel_handle(h: &mut Held) {
     }
 }
 fn tick(app: &tauri::AppHandle) {
+    FOLDER_VALIDATIONS.with(|pending| {
+        pending.borrow_mut().retain(|_, held| {
+            let current = held.created.elapsed() <= Duration::from_secs(15)
+                && app.get_webview_window(&held.label).is_some()
+                && binding(app, &held.context).is_ok();
+            if !current {
+                let _ = unsafe { held.args.SetCancel(true) };
+                let _ = unsafe { held.deferral.Complete() };
+            }
+            current
+        })
+    });
     let mut validations = Vec::new();
     let mut changed = false;
     HANDLES.with(|handles| {
@@ -411,7 +617,15 @@ fn tick(app: &tauri::AppHandle) {
     for (id, b, context, path) in validations {
         let a = app.clone();
         std::thread::spawn(move || {
-            let result = archive_identity(&path, || !context.current(&a.state::<WatchRuntime>()));
+            let result = archive_identity(&path, || {
+                !context.current(&a.state::<WatchRuntime>())
+                    || a.state::<Downloads>()
+                        .store
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .row(&id)
+                        .map_or(true, |row| row.state != "validating")
+            });
             let downloads = a.state::<Downloads>();
             let mut store = downloads.store.lock().unwrap_or_else(|e| e.into_inner());
             let outcome = result.and_then(|identity| {
@@ -477,6 +691,9 @@ pub(super) fn execute(app: &tauri::AppHandle, kind: &str, value: &Value) -> Resu
     if kind == "resolveFiles" {
         return resolve_files(app, value);
     }
+    if kind == "resolveFolder" {
+        return offers::resolve_folder(app, value);
+    }
     if kind == "openOffer" {
         return open_offer(app, value);
     }
@@ -518,14 +735,17 @@ pub(super) fn execute(app: &tauri::AppHandle, kind: &str, value: &Value) -> Resu
             })
         }
         "removeDownload" => {
-            super::review::ensure_removable(app, &id)?;
-            app.state::<Downloads>().store.lock().map_err(err)?.remove(
-                &id,
+            let claim = claim_download(app, &id)?;
+            remove_claimed(
+                app,
+                &claim,
                 value.get("confirm").and_then(Value::as_str).unwrap_or(""),
+                None,
             )?;
             Ok(json!({}))
         }
         "verifyDownload" | "showDownload" => {
+            let _claim = claim_download(app, &id)?;
             let (row, path) = {
                 let d = app.state::<Downloads>();
                 let s = d.store.lock().map_err(err)?;
@@ -556,20 +776,21 @@ pub(super) fn execute(app: &tauri::AppHandle, kind: &str, value: &Value) -> Resu
 /// Resolve host-owned bytes without holding the receipt mutex during hashing.
 pub(super) fn verified(
     app: &tauri::AppHandle,
-    id: &str,
+    claim: &DownloadClaim,
     cancel: &impl Fn() -> bool,
 ) -> Result<(modhunter_core::acquisition::Receipt, PathBuf, PathBuf)> {
     let (row, path, root) = {
         let downloads = app.state::<Downloads>();
+        verify_claim(&downloads, claim)?;
         let store = downloads.store.lock().map_err(err)?;
-        let row = store.row(id)?;
+        let row = store.row(&claim.id)?;
         let extension = row
             .extension
             .as_deref()
             .filter(|ext| matches!(*ext, "zip" | "7z" | "rar"))
             .ok_or("Download is not a verified archive.")?;
         let path = store
-            .staging(id)?
+            .staging(&claim.id)?
             .with_file_name(format!("archive.{extension}"));
         (row, path, downloads.root.clone())
     };
@@ -583,7 +804,7 @@ pub(super) fn verified(
         .store
         .lock()
         .map_err(err)?
-        .row(id)?;
+        .row(&claim.id)?;
     if current.state != row.state
         || current.binding != row.binding
         || current.sha256 != row.sha256
@@ -622,23 +843,148 @@ pub(super) fn source_current(app: &tauri::AppHandle, saved: &Binding) -> Result<
     }
     Ok(())
 }
+fn cancel_folder_validations() -> usize {
+    FOLDER_VALIDATIONS.with(|pending| {
+        let mut pending = pending.borrow_mut();
+        let count = pending.len();
+        for (_, held) in pending.drain() {
+            let _ = unsafe { held.args.SetCancel(true) };
+            let _ = unsafe { held.deferral.Complete() };
+        }
+        count
+    })
+}
+fn cancel_transfers(app: &tauri::AppHandle, outcome: &str, message: &str) -> Value {
+    let preparation = offers::cancel_preparations(app);
+    let deferred = cancel_folder_validations();
+    let mut failures = Vec::new();
+    let requested = {
+        let downloads = app.state::<Downloads>();
+        let mut store = downloads.store.lock().unwrap_or_else(|e| e.into_inner());
+        let ids = store.snapshot()["jobs"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|row| {
+                matches!(
+                    row["state"].as_str(),
+                    Some("pending" | "downloading" | "validating")
+                )
+            })
+            .filter_map(|row| row["id"].as_str().map(str::to_owned))
+            .collect::<Vec<_>>();
+        for id in &ids {
+            if let Err(error) = store.finish_error(id, outcome, message) {
+                // A browser file may still be locked, but its durable cancelled
+                // state stops validation and the terminal cleanup retries later.
+                if store.row(id).map_or(true, |row| row.state != outcome) {
+                    failures.push(error);
+                }
+            }
+        }
+        ids.len()
+    };
+    HANDLES.with(|handles| {
+        for (_, mut held) in handles.borrow_mut().drain() {
+            cancel_handle(&mut held);
+        }
+    });
+    // Preserve the explicit durable cancellation outcome before closing a
+    // browser can produce its own interruption callback.
+    for label in &preparation.windows {
+        if let Some(window) = app.get_webview_window(label)
+            && let Err(error) = window.close()
+        {
+            failures.push(format!(
+                "A cancelled transfer window could not close: {error}"
+            ));
+        }
+    }
+    notify(app);
+    json!({"requested":requested,"deferredOffers":deferred,"preparation":{"operations":preparation.operations,"windows":preparation.windows.len()},"errors":failures,
+        "message":"Cancellation requested for active browser transfers and archive validation."})
+}
+pub(super) fn cancel_preparation(app: &tauri::AppHandle) -> Result<Value> {
+    let a = app.clone();
+    on_gui(app, move || {
+        Ok(cancel_transfers(
+            &a,
+            "cancelled",
+            "Cancelled by the user from the preparation queue.",
+        ))
+    })
+}
 pub(super) fn cancel_all(app: &tauri::AppHandle) {
     let a = app.clone();
     let _ = app.run_on_main_thread(move || {
-        HANDLES.with(|handles| {
-            for (id, mut h) in handles.borrow_mut().drain() {
-                cancel_handle(&mut h);
-                let _ = a
-                    .state::<Downloads>()
-                    .store
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .finish_error(&id, "interrupted", "Application closed.");
-            }
-        })
+        cancel_transfers(&a, "interrupted", "Application closed.");
     });
 }
 
+#[path = "watchtower_mega.rs"]
+mod mega;
 #[path = "watchtower_offers.rs"]
 mod offers;
+pub(super) use offers::begin_preparation;
 use offers::{open_offer, resolve_files};
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+    #[test]
+    fn preparation_and_removal_cannot_both_own_the_same_download() {
+        let registry = Arc::new(Mutex::new(BTreeSet::new()));
+        let start = Arc::new(std::sync::Barrier::new(2));
+        let held = Arc::new(std::sync::Barrier::new(2));
+        let contenders = (0..2)
+            .map(|_| {
+                let registry = registry.clone();
+                let start = start.clone();
+                let held = held.clone();
+                std::thread::spawn(move || {
+                    start.wait();
+                    let claim = claim_ids(&registry, &["download-exact".into()]);
+                    held.wait();
+                    claim.is_ok()
+                })
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            contenders
+                .into_iter()
+                .map(|thread| usize::from(thread.join().unwrap()))
+                .sum::<usize>(),
+            1
+        );
+        assert!(claim_ids(&registry, &["download-exact".into()]).is_ok());
+    }
+    #[test]
+    fn contested_cleanup_batch_claims_nothing_and_releases_every_claim_on_drop() {
+        let registry = Arc::new(Mutex::new(BTreeSet::new()));
+        let review = claim_ids(&registry, &["download-reviewed".into()]).unwrap();
+        assert!(
+            claim_ids(
+                &registry,
+                &["download-free".into(), "download-reviewed".into()]
+            )
+            .is_err()
+        );
+        assert!(!registry.lock().unwrap().contains("download-free"));
+        drop(review);
+        let batch = claim_ids(
+            &registry,
+            &["download-free".into(), "download-reviewed".into()],
+        )
+        .unwrap();
+        assert!(claim_ids(&registry, &["download-free".into()]).is_err());
+        drop(batch);
+        assert!(registry.lock().unwrap().is_empty());
+        assert!(
+            claim_ids(
+                &registry,
+                &["download-duplicate".into(), "download-duplicate".into()]
+            )
+            .is_err()
+        );
+    }
+}

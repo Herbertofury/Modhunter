@@ -15,7 +15,7 @@
  <button id="pluginAudit" title="Read plugin records and check recorded ESLifier output for the imported profile">PLUGIN AUDIT</button>
  <button id="cancelImport" title="Stop the current local import or audit; retain the last complete profile" hidden>CANCEL</button>
  <div class="connect"><input id="endpoint" list="mo2Sessions" aria-label="MO2 loopback address" placeholder="http://127.0.0.1:PORT/" spellcheck="false" autocomplete="off"><datalist id="mo2Sessions"></datalist><button id="discover" title="Find and validate running Modhunter MO2 sessions">FIND MO2</button><button id="connect">CONNECT</button><button id="disconnect">UNLINK</button></div>
- <button id="diagnostics" title="Show the live plugin, runtime, and helper status">DETAILS</button>
+ <button id="openReadiness" title="Review the actual instance, profile, runtime, sources and accounts">READINESS</button><button id="diagnostics" title="Show the live plugin, runtime, and helper status">DETAILS</button>
  <button id="open" title="Open in system browser" aria-label="Open in system browser">↗</button><button id="copy" title="Copy active address" aria-label="Copy active address">⧉</button>
 </nav>
 <footer class="performance" aria-label="Rust engine status">
@@ -23,4 +23,4 @@
  <div class="paths"><button id="configureIni" title="Optional: select the instance configuration for separate MO2 data paths">INSTANCE INI</button><button id="configureMods" title="Optional: explicitly select the mods folder">MODS PATH</button><button id="clearPaths" title="Clear path overrides and use automatic detection">AUTO PATHS</button><button id="configureEslifierData" title="Choose ESLifier_Data or ESLifier_FO4_Data for offline conversion history">ESLIFIER DATA</button><button id="clearEslifierData" title="Clear the saved ESLifier data folder" aria-label="Clear saved ESLifier data folder">×</button></div>
  <span id="message" role="status" aria-live="polite"></span>
 </footer>
-<link rel="stylesheet" href="preferences.css"><script src="shell.js"></script><script src="preferences.js"></script></body></html>
+<link rel="stylesheet" href="preferences.css"><script src="shell.js"></script><script src="locale-catalogs.js"></script><script src="preferences.js"></script></body></html>

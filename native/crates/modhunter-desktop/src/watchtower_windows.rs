@@ -23,7 +23,6 @@ use tauri::{
     webview::{NewWindowFeatures, NewWindowResponse, PermissionResponse},
 };
 use tauri_plugin_dialog::DialogExt;
-use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_opener::OpenerExt;
 use url::Url;
 use windows_core::Interface;
@@ -50,6 +49,15 @@ pub(crate) mod privacy;
 #[path = "watchtower_maintenance.rs"]
 mod maintenance;
 
+#[path = "watchtower_inventory.rs"]
+mod inventory;
+
+#[path = "watchtower_queue.rs"]
+mod queue;
+
+#[path = "watchtower_notices.rs"]
+mod notices;
+
 #[path = "watchtower_reset.rs"]
 mod reset;
 pub(crate) use reset::dispatch_helper as dispatch_reset_helper;
@@ -60,6 +68,9 @@ pub use smoke::start as start_smoke;
 
 fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
+}
+pub(crate) fn localized(app: &tauri::AppHandle, key: &str) -> String {
+    crate::locale::text(&maintenance::settings(app).locale, key)
 }
 fn now() -> u64 {
     SystemTime::now()
@@ -173,8 +184,6 @@ pub struct WatchRuntime {
     revision: AtomicU64,
     pumping: AtomicBool,
     stopping: AtomicBool,
-    last_notification: Mutex<Option<Instant>>,
-    notified_hashes: Mutex<BTreeMap<String, String>>,
     retired: Mutex<Vec<PathBuf>>,
     runtime_warning: Mutex<String>,
 }
@@ -331,15 +340,15 @@ fn setup_paths(
         revision: AtomicU64::new(0),
         pumping: AtomicBool::new(false),
         stopping: AtomicBool::new(false),
-        last_notification: Mutex::new(None),
-        notified_hashes: Mutex::new(BTreeMap::new()),
         retired: Mutex::new(Vec::new()),
         runtime_warning: Mutex::new(String::new()),
     });
     privacy::setup(app)?;
     acquisition::setup(app, data.join("watchtower-acquisitions"));
     review::setup(app, data.join("watchtower-prepared"))?;
+    notices::setup(app, config.join("watchtower-notifications.json"));
     maintenance::setup(app, config, data)?;
+    inventory::setup(app);
     recover_retired(&app.state::<WatchRuntime>());
     if !scheduler {
         return Ok(());
@@ -365,6 +374,7 @@ fn setup_paths(
                 }
                 pump(&handle);
                 maintenance::tick(&handle);
+                notices::tick(&handle);
                 cleanup_retired(&state);
             }
             first = false;
@@ -379,6 +389,7 @@ fn notify(app: &tauri::AppHandle) {
     snapshot["acquisitions"] = acquisition::snapshot(app);
     snapshot["reviews"] = review::snapshot(app);
     snapshot["maintenance"] = maintenance::snapshot(app);
+    snapshot["notices"] = notices::snapshot(app);
     let _ = app.emit_to("watchtower", "watchtower-state", snapshot);
 }
 
@@ -1293,37 +1304,8 @@ fn finish_check(
             false
         }
     };
-    let latest = store.latest_hash(&job.watch_id);
-    if accepted
-        && previous.is_some()
-        && previous != latest
-        && store.settings().notifications
-        && let Some(hash) = latest
-    {
-        let mut hashes = state
-            .notified_hashes
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        if hashes.get(&job.watch_id) == Some(&hash) {
-            return;
-        }
-        hashes.insert(job.watch_id.clone(), hash);
-        drop(hashes);
-        let mut last = state
-            .last_notification
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        if last.is_none_or(|time| time.elapsed() >= Duration::from_secs(60))
-            && app
-                .notification()
-                .builder()
-                .title("Modhunter Watchtower")
-                .body("A watched page has new content. Open Watchtower to review it.")
-                .show()
-                .is_ok()
-        {
-            *last = Some(Instant::now());
-        }
+    if accepted {
+        notices::page_changed(app, job, previous.as_deref());
     }
 }
 
@@ -1585,6 +1567,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
         snapshot["acquisitions"] = acquisition::snapshot(app);
         snapshot["reviews"] = review::snapshot(app);
         snapshot["maintenance"] = maintenance::snapshot(app);
+        snapshot["notices"] = notices::snapshot(app);
         return Ok(json!({"ok":true,"state":snapshot}));
     }
     if kind == "close" {
@@ -1596,11 +1579,33 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
     if reset::pending(app) {
         return Err("Modhunter is closing for an approved application reset.".into());
     }
-    if !matches!(kind, "detail" | "export" | "exportFile") {
+    if !matches!(
+        kind,
+        "detail"
+            | "export"
+            | "exportFile"
+            | "readiness"
+            | "unattributedInventory"
+            | "installQueue"
+            | "notices"
+    ) {
         state.writable()?;
     }
     let mut result = json!({});
     match kind {
+        "notices" | "refreshNotices" | "activateNotice" | "dismissNotice" => {
+            result = notices::execute(app, kind, &value)?;
+        }
+        "installQueue" | "installQueueControl" => {
+            result = queue::execute(app, kind, &value)?;
+        }
+        "readiness"
+        | "scanUnattributed"
+        | "cancelUnattributed"
+        | "unattributedInventory"
+        | "revealUnattributed" => {
+            result = inventory::execute(app, kind, &value)?;
+        }
         "previewAppReset" | "applyAppReset" => {
             result = reset::execute(app, kind, &value)?;
         }
@@ -1637,8 +1642,8 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
             result = review::execute(app, kind, &value)?;
         }
         "approveDownload" | "rejectDownload" | "cancelDownload" | "removeDownload"
-        | "verifyDownload" | "showDownload" | "resolveFiles" | "openOffer" | "decideOffer"
-        | "clearOfferDecision" => {
+        | "verifyDownload" | "showDownload" | "resolveFiles" | "resolveFolder" | "openOffer"
+        | "decideOffer" | "clearOfferDecision" => {
             result = acquisition::execute(app, kind, &value)?;
             if matches!(kind, "decideOffer" | "clearOfferDecision")
                 && let Some(id) = result["watchId"].as_str()
@@ -1751,7 +1756,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
             if let Some(file) = app
                 .dialog()
                 .file()
-                .set_title("Preview a Watchtower JSON import")
+                .set_title(localized(app, "Preview a Watchtower JSON import"))
                 .add_filter("Watchtower export", &["json"])
                 .blocking_pick_file()
             {
@@ -1853,6 +1858,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
     result["state"]["acquisitions"] = acquisition::snapshot(app);
     result["state"]["reviews"] = review::snapshot(app);
     result["state"]["maintenance"] = maintenance::snapshot(app);
+    result["state"]["notices"] = notices::snapshot(app);
     notify(app);
     Ok(result)
 }

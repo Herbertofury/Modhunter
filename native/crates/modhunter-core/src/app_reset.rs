@@ -230,6 +230,7 @@ fn approved_top(name: &str, directory: bool, roles: &[String]) -> bool {
             name,
             OWNER_FILE
                 | "watchtower.json"
+                | "watchtower-notifications.json"
                 | "watchtower.lock"
                 | "maintenance.json"
                 | "native-preferences.json"

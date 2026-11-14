@@ -40,8 +40,8 @@
   return [w.state==='baseline'?'Baseline saved':'No unread changes',''];
  }
  function enabled(){return ready&&!state.readOnly}
- function showToast(message,action,label='Undo'){
-  clearTimeout(toastTimer);text('toastText',message);$('toast').hidden=false;$('toastAction').hidden=!action;$('toastAction').textContent=label;$('toastAction').onclick=action?()=>{hideToast();void action()}:null;
+ function showToast(message,action,label='Undo',failure=false){
+  $('toastText').toggleAttribute('data-i18n-feedback',failure);clearTimeout(toastTimer);text('toastText',message);$('toast').hidden=false;$('toastAction').hidden=!action;$('toastAction').textContent=label;$('toastAction').onclick=action?()=>{hideToast();void action()}:null;
   toastTimer=setTimeout(hideToast,action?12000:8000);
  }
  function hideToast(){clearTimeout(toastTimer);$('toast').hidden=true}
@@ -52,7 +52,7 @@
   const previous=node.value,signature=JSON.stringify(values);
   if(node.dataset.options===signature)return;node.dataset.options=signature;node.replaceChildren();
   const first=document.createElement('option');first.value='';first.textContent=placeholder;node.append(first);
-  for(const value of values){const option=document.createElement('option');option.value=value;option.textContent=value;node.append(option)}
+  for(const value of values){const option=document.createElement('option');option.value=value;option.textContent=value;option.dataset.noTranslate='';node.append(option)}
   node.value=values.includes(previous)?previous:'';
  }
  function replaceNode(old,next){
@@ -94,7 +94,7 @@
   const actions=isRemoved?button('restore',w.id,'Restore','primary',!canChange):
    (isBusy||stopped(w)?button('cancel',w.id,stopped(w)?'Clear stopped check':'Cancel','quiet',!canChange):button('check',w.id,'Check','',!canChange||needsSession(w)||!w.enabled||w.muted))+button('open',w.id,'Open page','quiet',!ready)+button('detail',w.id,'Details','quiet',!ready)+(w.hasChanges?button('seen',w.id,'Mark seen','primary',!canChange,w.latest?.id):'');
   const secondary=state.settings.hideTitles?'':w.notes;
-  return {key,html:'<article class="watch-row'+(checked?' selected':'')+(isRemoved?' removed':'')+'" data-watch-id="'+esc(w.id)+'"><input class="watch-check" type="checkbox" data-select="'+esc(w.id)+'" aria-label="Select '+esc(displayTitle(w))+'"'+(checked?' checked':'')+'><div class="row-main"><div class="row-title"><button class="page-name" data-action="detail" data-id="'+esc(w.id)+'">'+esc(displayTitle(w))+'</button><span class="badge '+label[1]+'">'+esc(label[0])+'</span></div><div class="row-meta"><span class="site-label">'+esc(host(w.url))+'</span>'+(w.folder?'<span class="meta-separator">/</span><span>'+esc(w.folder)+'</span>':'')+(w.tags||[]).map(tag=>'<span class="tag">'+esc(tag)+'</span>').join('')+'</div><div class="row-detail">'+esc(lastSuccess+' · '+schedule)+(session?' · '+esc(session.label):'')+'</div>'+(w.lastError?'<div class="row-detail error">'+esc(w.lastError)+'</div>':'')+(secondary?'<div class="row-detail">'+esc(secondary)+'</div>':'')+'</div><div class="row-actions">'+actions+'</div></article>'};
+  return {key,html:'<article class="watch-row'+(checked?' selected':'')+(isRemoved?' removed':'')+'" data-watch-id="'+esc(w.id)+'"><input class="watch-check" type="checkbox" data-select="'+esc(w.id)+'" aria-label="Select '+esc(displayTitle(w))+'"'+(checked?' checked':'')+'><div class="row-main"><div class="row-title"><button class="page-name" data-action="detail" data-id="'+esc(w.id)+'">'+esc(displayTitle(w))+'</button><span class="badge '+label[1]+'">'+esc(label[0])+'</span></div><div class="row-meta"><span class="site-label">'+esc(host(w.url))+'</span>'+(w.folder?'<span class="meta-separator">/</span><span>'+esc(w.folder)+'</span>':'')+(w.tags||[]).map(tag=>'<span class="tag">'+esc(tag)+'</span>').join('')+'</div><div class="row-detail">'+esc(lastSuccess+' · '+schedule)+(session?' · '+esc(session.label):'')+'</div>'+(w.lastError?'<div class="row-detail error">'+esc(w.lastError)+'</div>':'')+(secondary?'<div class="row-detail" data-no-translate>'+esc(secondary)+'</div>':'')+'</div><div class="row-actions">'+actions+'</div></article>'};
  }
  function renderPages(){
   const active=state.watches.filter(w=>!w.removedAt),removed=state.watches.filter(w=>w.removedAt),changed=active.filter(w=>w.hasChanges),fresh=active.filter(w=>w.needsCheck||!w.latest),attention=active.filter(w=>needsAttention(w)||needsSession(w)),paused=active.filter(w=>!w.enabled||w.muted||needsSession(w));
@@ -142,6 +142,7 @@
  function acceptAcquisitions(next){if(!next||!Number.isFinite(next.revision))return;const previous=state.acquisitions;if(previous&&next.revision<previous.revision)return;if(previous&&Number.isFinite(next.storeRevision)&&Number.isFinite(previous.storeRevision)&&next.storeRevision<previous.storeRevision)return;state.acquisitions=next;renderDownloads()}
  function offerControls(x,disabled){
   if(x.current===false)return button('download-refresh',x.watchId,'Refresh file choices','',disabled);
+  if(x.canResolveFolder)return button('download-resolve-folder',x.id,'Inspect folder','primary',disabled||x.ignored)+button('download-ignore',x.id,x.ignored?'Restore folder':'Ignore folder','quiet',disabled);
   let html=button('download-offer',x.id,x.kind==='chooser'?'Open file chooser':x.kind==='external'?'Open host':'Open file','primary',disabled||x.ignored||x.supported===false||!['update','newContent'].includes(x.classification));
   html+=button('download-classify-update',x.id,'Installed update','quiet',disabled||!x.canUpdate)+button('download-classify-new',x.id,'Separate content','quiet',disabled||['folder','chooser'].includes(x.kind));
   html+=button('download-ignore',x.id,x.ignored?'Restore file':'Ignore file','quiet',disabled);
@@ -152,25 +153,27 @@
   const a=state.acquisitions||{},pending=(a.jobs||[]).filter(j=>j.state==='pending'),offers=a.offers||[],artifacts=(a.jobs||[]).filter(j=>j.state!=='pending'),running=artifacts.filter(x=>['downloading','validating'].includes(x.state));
   text('navDownloads',pending.length+running.length||artifacts.length);$('downloadBanner').hidden=!pending.length;
   text('downloadBannerText',pending.length+' page download'+(pending.length===1?' needs':'s need')+' your approval. Nothing has been installed.');
-  const resolving=(a.resolving||[]).length;const warning=a.warning||a.error||(resolving?'Inspecting source files in the selected browser session...':a.message)||'';text('downloadWarning',warning);$('downloadWarning').hidden=!warning;
+  const resolving=(a.resolving||[]).length+(a.discoveries||[]).filter(d=>d.state==='resolving').length;const warning=a.warning||a.error||(resolving?'Inspecting source files in the selected browser session...':a.message)||'';text('downloadWarning',warning);$('downloadWarning').hidden=!warning;
   const list=[...pending.map(x=>({...x,pending:true})),...offers.map(x=>({...x,offer:true,filename:x.name})),...artifacts.slice().sort((x,y)=>(y.createdAt||0)-(x.createdAt||0))];
   $('emptyDownloads').hidden=!!list.length;
   reconcile($('pageDownloadList'),list,downloadRows,x=>{
    const context=x.binding||{},session=sessionById.get(context.sessionId),originLabel=x.origin||context.sourceOrigin||'Tracked source',active=['downloading','validating'].includes(x.state);
    const labels={downloading:'Downloading',validating:'Verifying file',ready:'Ready for review',cancelled:'Cancelled',failed:'Failed',interrupted:'Interrupted'};
-   const title=x.pending?'Awaiting your approval':x.offer?(x.ignored?'Ignored exact file':x.classification==='update'?'Classified installed update':x.classification==='newContent'?'Separate new content':'Choose this file’s relationship'):labels[x.state]||'Needs review';
+   const title=x.pending?'Awaiting your approval':x.offer?(x.ignored?'Ignored exact file':x.selection?.recommended?'Recommended compatible update file':x.classification==='update'?'Classified installed update':x.classification==='newContent'?'Separate new content':'Choose this file’s relationship'):labels[x.state]||'Needs review';
    const rowBusy=[...busy].some(k=>k.endsWith(':'+x.id));const key=JSON.stringify([x,session?.label,ready,state.readOnly,state.settings.hideTitles,rowBusy]);
    if(downloadRows.get(x.id)?.key===key)return {key,html:''};
    const disabled=!enabled()||rowBusy;
    const controls=x.offer?offerControls(x,disabled):x.pending?button('download-approve',x.id,'Download','primary',disabled)+button('download-reject',x.id,'Decline','quiet',disabled):
     active?button('download-cancel',x.id,'Cancel','quiet',disabled):
     (x.state==='ready'?'<button type="button" data-native-action="review" data-download-id="'+esc(x.id)+'" class="primary"'+(disabled?' disabled':'')+'>Review contents</button>'+button('download-show',x.id,'Show file','',disabled)+button('download-verify',x.id,'Verify','quiet',disabled):'')+button('download-remove',x.id,'Remove','quiet danger-text',disabled);
-   const progress=x.offer?(x.related?'Linked creator release':'Exact source file')+(!x.newContentOptIn&&x.related?' · creator new releases are not opted in':'')+(x.kind==='folder'?' · choose a direct file link; folder contents are not an exact file':x.supported===false?' · managed download host unsupported':''):!x.pending&&active?fileBytes(x.received||0)+(x.total?' / '+fileBytes(x.total):''):(x.pending?fileBytes(x.total):fileBytes(x.bytes||x.received||0));
-   return {key,html:'<article class="download-row" data-download-id="'+esc(x.id)+'"><div class="download-main"><strong>'+esc(state.settings.hideTitles?'Archive name hidden':x.filename)+'</strong><div class="row-meta">'+esc(originLabel)+(session?' / '+esc(session.label):' / public session')+'</div><div class="row-detail">'+esc(title)+' / '+esc(progress)+'</div>'+(!x.pending&&x.message?'<div class="row-detail">'+esc(x.message)+'</div>':'')+(x.sha256?'<details class="download-hash"><summary>File identity</summary><code>'+esc(x.sha256)+'</code><p>Integrity checked; compatibility and archive contents still require review.</p></details>':'')+'</div><div class="row-actions">'+controls+'</div></article>'};
+   const progress=x.offer?(x.related?'Linked creator release':'Exact source file')+(!x.newContentOptIn&&x.related?' · creator new releases are not opted in':'')+(x.resolvedFolderFile?' · folder proved one eligible archive':x.kind==='folder'?(x.canResolveFolder?' · inspect the complete folder before choosing its archive':' · choose a direct file link; this folder host is unsupported'):x.supported===false?' · managed download host unsupported':''):!x.pending&&active?fileBytes(x.received||0)+(x.total?' / '+fileBytes(x.total):''):(x.pending?fileBytes(x.total):fileBytes(x.bytes||x.received||0));
+   const selection=(x.offer&&x.selection?'<div class="row-detail"><span>'+esc(x.selection.reason)+'</span> <span>'+esc(x.selection.publishedAt?'Provider release date: '+date(x.selection.publishedAt):'Publication date unknown.')+'</span></div>':'')+(x.offer&&x.browserTransferLimitMinutes===30?'<div class="row-detail">MEGA must finish preparing this file in its browser within 30 minutes. If the selection expires, use Find files and open the exact archive again.</div>':'');
+   return {key,html:'<article class="download-row" data-download-id="'+esc(x.id)+'"><div class="download-main"><strong>'+esc(state.settings.hideTitles?'Archive name hidden':x.filename)+'</strong><div class="row-meta">'+esc(originLabel)+(session?' / '+esc(session.label):' / public session')+'</div><div class="row-detail"><span>'+esc(title)+'</span> / <span>'+esc(progress)+'</span></div>'+selection+(!x.pending&&x.message?'<div class="row-detail">'+esc(x.message)+'</div>':'')+(x.sha256?'<details class="download-hash"><summary>File identity</summary><code>'+esc(x.sha256)+'</code><p>Integrity checked; compatibility and archive contents still require review.</p></details>':'')+'</div><div class="row-actions">'+controls+'</div></article>'};
   });
  }
  async function downloadAction(kind,id){
   if(kind==='download-refresh'){await command('resolveFiles',{id});return}
+  if(kind==='download-resolve-folder'){await command('resolveFolder',{id});return}
   if(['download-classify-update','download-classify-new','download-ignore','download-clear-choice'].includes(kind)){
    const offer=(state.acquisitions?.offers||[]).find(o=>o.id===id);if(!offer)return;
    if(kind==='download-classify-update'){
@@ -201,7 +204,7 @@
   if(Number.isFinite(next.storeRevision)&&Number.isFinite(state.storeRevision)&&next.storeRevision<state.storeRevision)return false;
   const fresh=next.prefill&&Number(next.prefill.revision)>prefillRevision;
   const key=JSON.stringify([next.storeRevision??next.revision,next.work,next.readOnly,next.recoveryWarning,next.runtimeWarning,next.version,next.prefill?.revision]);
-  if(key===lastStateKey&&!fresh){state.revision=next.revision;if(next.reviews)state.reviews=next.reviews;if(next.maintenance)state.maintenance=next.maintenance;if(next.acquisitions)acceptAcquisitions(next.acquisitions);window.dispatchEvent(new CustomEvent('modhunter-native-state',{detail:{reviews:state.reviews,maintenance:state.maintenance}}));return true;}
+  if(key===lastStateKey&&!fresh){state.revision=next.revision;if(next.reviews)state.reviews=next.reviews;if(next.maintenance)state.maintenance=next.maintenance;if(next.notices)state.notices=next.notices;if(next.acquisitions)acceptAcquisitions(next.acquisitions);window.dispatchEvent(new CustomEvent('modhunter-native-state',{detail:{reviews:state.reviews,maintenance:state.maintenance}}));return true;}
   lastStateKey=key;const priorAcquisitions=state.acquisitions;state={...next,acquisitions:priorAcquisitions,settings:{...DEFAULTS,...next.settings},work:next.work||{active:[],queued:[]}};rebuildIndexes();if(next.acquisitions)acceptAcquisitions(next.acquisitions);render();window.dispatchEvent(new CustomEvent('modhunter-native-state',{detail:{reviews:state.reviews,maintenance:state.maintenance}}));
   if(fresh){prefillRevision=Number(next.prefill.revision);pendingPrefill=next.prefill;if(document.querySelector('dialog[open]'))$('prefillBanner').hidden=false;else usePrefill()}
   return true;
@@ -210,7 +213,7 @@
   if(!api?.core?.invoke){if(!quiet)showToast('Open Watchtower from WATCH PAGES in Modhunter.exe.');return null}
   const key=kind+':'+(value.id||value.eventId||'');if(kind!=='detail'&&busy.has(key))return null;if(kind!=='detail')busy.add(key);
   try{const result=await api.core.invoke('watchtower_command',{kind,value});if(result?.ok===false)throw new Error(result.error||result.message||'The action could not be completed.');if(result?.state)accept(result.state);if(result?.message&&!quiet)showToast(result.message);return result||{ok:true}}
-  catch(error){if(!quiet)showToast(errorText(error));return {ok:false,error:errorText(error)}}
+  catch(error){if(!quiet)showToast(errorText(error),null,'Undo',true);return {ok:false,error:errorText(error)}}
   finally{if(kind!=='detail')busy.delete(key)}
  }
  function navigate(nextView,nextFilter='all'){
@@ -227,7 +230,7 @@
  function sessionChoices(selectedId){
   const select=$('pageSession'),value=selectedId===undefined?select.value:selectedId;select.replaceChildren();const first=document.createElement('option');first.value='';first.textContent='Public browser · no saved sign-in';select.append(first);
   const pageOrigin=origin(withScheme($('pageUrl').value));
-  for(const s of state.sessions){const option=document.createElement('option');option.value=s.id;option.textContent=s.label+' · '+host(s.origin)+(pageOrigin&&s.origin!==pageOrigin?' (different site)':'');option.disabled=!!pageOrigin&&s.origin!==pageOrigin;select.append(option)}
+  for(const s of state.sessions){const option=document.createElement('option');option.value=s.id;option.textContent=s.label+' · '+host(s.origin)+(pageOrigin&&s.origin!==pageOrigin?' (different site)':'');option.disabled=!!pageOrigin&&s.origin!==pageOrigin;option.dataset.noTranslate='';select.append(option)}
   select.value=value&&state.sessions.some(s=>s.id===value&&(!pageOrigin||s.origin===pageOrigin))?value:'';
   text('sessionHint',editWatch&&needsSession(editWatch)?'This imported page needs an explicit session choice. Choose a saved session or select the public browser, then save.':'Choose a saved session for this exact site. Add one in Site sign-ins if needed.');
  }
@@ -242,7 +245,7 @@
   const folders=[...new Set(state.watches.map(x=>x.folder))].filter(Boolean).sort();$('folderOptions').replaceChildren();for(const folder of folders){const option=document.createElement('option');option.value=folder;$('folderOptions').append(option)}
   formError('pageError','');$('savePage').disabled=!canMutate()||busy.has('saveWatch:'+(w?.id||''));openDialog('pageDialog');$('pageUrl').focus();
  }
- function usePrefill(){if(!pendingPrefill)return;const value=pendingPrefill;pendingPrefill=null;$('prefillBanner').hidden=true;openPageForm(null,value)}
+ function usePrefill(){if(!pendingPrefill)return;const value=pendingPrefill;pendingPrefill=null;$('prefillBanner').hidden=true;if(value.action==='readiness'){navigate('settings');window.dispatchEvent(new Event('modhunter-readiness'));return}openPageForm(null,value)}
  async function savePage(event){
   event.preventDefault();const generation=pageFormGeneration;formError('pageError','');let url;try{url=validPage($('pageUrl').value)}catch(error){formError('pageError',errorText(error));return}
   const payload={url,title:$('pageTitle').value.trim(),folder:$('pageFolder').value.trim(),tags:$('pageTags').value.split(',').map(x=>x.trim()).filter(Boolean),notes:$('pageNotes').value,sessionId:$('pageSession').value||null,selector:$('pageSelector').value.trim(),ignoreSelectors:$('pageIgnore').value.split('\n').map(x=>x.trim()).filter(Boolean),intervalMinutes:Number($('pageInterval').value),enabled:$('pageEnabled').checked,requiresSession:false,association:editWatch?.association||null};
@@ -261,7 +264,7 @@
  function sourceCreatorChoices(selectedId){
   const association=$('sourceAssociation').value===''?null:sourceAssociations[Number($('sourceAssociation').value)],select=$('sourceCreator');select.replaceChildren();
   const none=document.createElement('option');none.value='';none.textContent='No creator group';select.append(none);
-  for(const creator of state.sourcePreferences?.creators||[]){if(creator.profileId!==association?.profileId)continue;const option=document.createElement('option');option.value=creator.id;option.textContent=creator.name;select.append(option)}
+  for(const creator of state.sourcePreferences?.creators||[]){if(creator.profileId!==association?.profileId)continue;const option=document.createElement('option');option.value=creator.id;option.textContent=creator.name;option.dataset.noTranslate='';select.append(option)}
   select.value=selectedId||'';text('sourceIdentity',association?'Profile: '+association.profileId+' · Mod: '+association.itemId:'No installed mod is linked. Separate content needs a new target at installation review.');updateCreatorButton();
  }
  function openSourceForm(w){
@@ -269,7 +272,7 @@
   const unique=new Map();for(const row of state.watches){if(row.association)unique.set(row.association.profileId+'\n'+row.association.itemId,row.association)}
   if(w.association)unique.set(w.association.profileId+'\n'+w.association.itemId,w.association);sourceAssociations=[...unique.values()];
   const select=$('sourceAssociation');select.replaceChildren();const empty=document.createElement('option');empty.value='';empty.textContent='Unlinked · separate content';select.append(empty);
-  sourceAssociations.forEach((a,i)=>{const option=document.createElement('option');option.value=String(i);option.textContent=(state.settings.hideTitles?'Mod name hidden':a.name||a.itemId)+' · '+a.profileId;select.append(option)});
+  sourceAssociations.forEach((a,i)=>{const option=document.createElement('option');option.value=String(i);option.textContent=(state.settings.hideTitles?'Mod name hidden':a.name||a.itemId)+' · '+a.profileId;option.dataset.noTranslate='';select.append(option)});
   const selected=sourceAssociations.findIndex(a=>sameMod(a,w.association));select.value=selected<0?'':String(selected);
   text('sourcePageName',displayTitle(w));$('sourceGame').value=binding.game||'';$('sourceRuntime').value=binding.runtime||'';$('sourceVariant').value=binding.variant||'';$('sourceCompatibility').checked=!!binding.compatibilityConfirmed;$('sourceIntent').value=binding.contentIntent||'unclassified';$('sourcePreferred').checked=!!binding.preferred;sourceCreatorChoices(binding.creatorId);formError('sourceError','');$('saveSource').disabled=!canMutate();openDialog('sourceDialog');
  }
@@ -307,25 +310,34 @@
   const binding=w.sourceBinding,creator=(state.sourcePreferences?.creators||[]).find(c=>c.id===binding?.creatorId),privateNames=state.settings.hideTitles;
   let html='<section class="detail-section"><h3>Source identity &amp; choices</h3><div class="detail-actions">'+button('source-options',w.id,'Source & creator choices','',!canMutate()||!!w.removedAt)+(w.association?button('source-add',w.id,'Add another source','quiet',!canMutate()):'')+'</div>';
   html+='<p>'+(w.association?'Exact installed mod: '+esc(privateNames?'Name hidden':w.association.name||w.association.itemId)+' · profile '+esc(w.association.profileId):'No installed-mod association. Files require a separate content target.')+'</p>';
-  if(binding)html+='<dl><dt>Creator</dt><dd>'+esc(creator?(privateNames?'Name hidden':creator.name):'Not grouped')+'</dd><dt>Game / runtime / variant</dt><dd>'+esc([binding.game||'Game unconfirmed',binding.runtime||'Runtime not specified',binding.variant||'Variant not specified'].join(' / '))+'</dd><dt>Compatibility</dt><dd>'+esc(binding.compatibilityConfirmed?'Confirmed by you':'Needs review')+'</dd><dt>Source choice</dt><dd>'+esc(binding.preferred?'Your preferred source':'Alternative source')+'</dd><dt>New creator content</dt><dd>'+esc(creator?.offerNewContent?'Opted in · always separate from updates':'Not opted in')+'</dd></dl>';
+  if(binding)html+='<dl><dt>Creator</dt><dd'+(creator&&!privateNames?' data-no-translate':'')+'>'+esc(creator?(privateNames?'Name hidden':creator.name):'Not grouped')+'</dd><dt>Game / runtime / variant</dt><dd>'+[[binding.game,'Game unconfirmed'],[binding.runtime,'Runtime not specified'],[binding.variant,'Variant not specified']].map(([value,fallback])=>'<span'+(value?' data-no-translate':'')+'>'+esc(value||fallback)+'</span>').join(' / ')+'</dd><dt>Compatibility</dt><dd>'+esc(binding.compatibilityConfirmed?'Confirmed by you':'Needs review')+'</dd><dt>Source choice</dt><dd>'+esc(binding.preferred?'Your preferred source':'Alternative source')+'</dd><dt>New creator content</dt><dd>'+esc(creator?.offerNewContent?'Opted in · always separate from updates':'Not opted in')+'</dd></dl>';
   else html+='<p>Set the exact game, runtime, variant and source relationship before comparing alternatives. Similar names and newer dates do not establish a match.</p>';
   const alternatives=w.sourceAlternatives||[];
-  if(alternatives.length>1)html+='<h4>Sources for this exact installed mod</h4>'+alternatives.map(row=>'<div class="change-entry"><strong>'+esc(privateNames?host(row.url):row.title||host(row.url))+(row.preferred?' · Preferred':'')+'</strong><p>'+esc(row.reason)+'</p>'+button('detail',row.watchId,'Review source','quiet',!ready)+button('check',row.watchId,'Check access','quiet',!canMutate()||!row.eligible)+'</div>').join('');
+  if(alternatives.length>1){
+   const choice=row=>row.compatible?(state.acquisitions?.offers||[]).filter(file=>file.watchId===row.watchId&&file.selection?.eligible).sort((a,b)=>(a.selection.rank||Infinity)-(b.selection.rank||Infinity))[0]:null;
+   const ordered=alternatives.slice().sort((a,b)=>(choice(a)?.selection.rank||Infinity)-(choice(b)?.selection.rank||Infinity));
+   html+='<h4>Sources for this exact installed mod</h4><p>Find files on each compatible source and classify its exact update files. Current accessible choices are ranked using your preference and provider release evidence. Unknown dates remain unknown; download and installation still require your approval.</p>'+ordered.map(row=>{const best=row.compatible?choice(row):null;return '<div class="change-entry"><strong><span data-no-translate>'+esc(privateNames?host(row.url):row.title||host(row.url))+'</span>'+(row.preferred?' · Preferred':'')+(best?.selection.recommended?' · Recommended current file':'')+'</strong><p>'+esc(best?.selection.reason||row.reason)+'</p>'+(best?'<p><span'+(privateNames?'':' data-no-translate')+'>'+esc(privateNames?'File name hidden':best.name)+'</span> · '+esc(best.selection.publishedAt?date(best.selection.publishedAt):'Publication date unknown')+'</p>':'')+button('detail',row.watchId,'Review source','quiet',!ready)+button('files',row.watchId,'Find files','quiet',!canMutate()||!row.eligible)+(best?button('source-show-files',row.watchId,'Review ranked files','quiet',!ready):'')+'</div>'}).join('');
+  }
   const files=w.sourceFiles||[];
-  if(files.length)html+='<details class="change-entry"><summary>Saved exact file choices ('+files.length+')</summary>'+files.map(file=>'<div class="change-entry"><strong>'+esc(privateNames?'File name hidden':file.name||'Source file')+'</strong><p>'+esc((file.ignored?'Ignored · ':'')+({update:'Installed update',newContent:'Separate new content',unclassified:'Unclassified'}[file.kind]||'Needs review'))+(!sameMod(file.association,w.association)&&file.kind==='update'?' · previous installed-mod association':file.sourceUrl!==w.url?' · previous source address':'')+'</p>'+button('source-forget-file',w.id+'|'+file.sourceFileKey,'Reset this saved choice','quiet',!canMutate())+'</div>').join('')+'</details>';
+  if(files.length)html+='<details class="change-entry"><summary>Saved exact file choices ('+files.length+')</summary>'+files.map(file=>'<div class="change-entry"><strong'+(!privateNames&&file.name?' data-no-translate':'')+'>'+esc(privateNames?'File name hidden':file.name||'Source file')+'</strong><p>'+esc((file.ignored?'Ignored · ':'')+({update:'Installed update',newContent:'Separate new content',unclassified:'Unclassified'}[file.kind]||'Needs review'))+(!sameMod(file.association,w.association)&&file.kind==='update'?' · previous installed-mod association':file.sourceUrl!==w.url?' · previous source address':'')+'</p>'+button('source-forget-file',w.id+'|'+file.sourceFileKey,'Reset this saved choice','quiet',!canMutate())+'</div>').join('')+'</details>';
   return html+'</section>';
  }
+ let sourceChoiceRevision=-1;
+ window.addEventListener('modhunter-native-state',()=>{
+  const revision=state.acquisitions?.revision;
+  if(revision!==sourceChoiceRevision){sourceChoiceRevision=revision;if(detailId&&!$('detailDrawer').hidden)void loadDetail(detailId)}
+ });
  async function loadDetail(id){
   const request=++detailRequest;const result=await command('detail',{id},true);if(request!==detailRequest||detailId!==id||$('detailDrawer').hidden)return;if(!result?.ok){$('detailBody').textContent=result?.error||'Could not load page details.';return}
   const w=result.watch||result.detail?.watch;if(!w){$('detailBody').textContent='This page is no longer available.';return}renderDetail(w);
  }
- function openDetail(id){detailId=id;lastDetailKey=detailKey(watchById.get(id));$('detailDrawer').hidden=false;$('detailBody').textContent='Loading page history…';const w=watchById.get(id);text('detailTitle',w?displayTitle(w):'Page details');$('closeDetail').focus({preventScroll:true});void loadDetail(id)}
+ function openDetail(id){detailId=id;lastDetailKey=detailKey(watchById.get(id));$('detailDrawer').dataset.watchId=id;$('detailDrawer').hidden=false;$('detailBody').textContent='Loading page history…';const w=watchById.get(id);text('detailTitle',w?displayTitle(w):'Page details');$('closeDetail').focus({preventScroll:true});void loadDetail(id)}
  function closeDetail(){detailId=null;detailRequest++;$('detailDrawer').hidden=true}
  function renderDetail(w){
   text('detailTitle',displayTitle(w));const isBusy=working(w.id),label=status(w),latest=w.latest,session=sessionById.get(w.sessionId);const privacy=state.settings.hideTitles;
   const actions=(w.removedAt?button('restore',w.id,'Restore','primary',!canMutate()):button('edit',w.id,'Edit page','',!canMutate())+(isBusy||stopped(w)?button('cancel',w.id,stopped(w)?'Clear stopped check':'Cancel check','quiet',!canMutate()):button('check',w.id,'Check now','primary',!canMutate()||!w.enabled||w.muted||needsSession(w)))+button('pause',w.id,w.enabled?'Pause':'Resume','quiet',!canMutate())+button('remove',w.id,'Remove','quiet danger-text',!canMutate()))+button('open',w.id,'Open in app','quiet',!ready)+button('files',w.id,'Find files','',!canMutate()||needsSession(w)||!!w.removedAt)+button('external',w.id,'External browser','quiet',!ready)+button('private',w.id,'Open privately','quiet',!ready)+button('copy-link',w.id,'Copy link','quiet',!ready)+(w.hasChanges&&latest?button('seen',w.id,'Mark this change seen','primary',!canMutate(),latest.id):'')+(w.sessionId&&['signInRequired','challenge'].includes(w.state)?button('session-open',w.sessionId,'Open sign-in / verify','primary',!canMutate()):'');
   const fields=[['Status',label[0]],['Page',privacy?origin(w.url):w.url],['Read using',session?session.label:'Public browser'],['Folder',w.folder||'None'],['Region',w.selector||'Readable page text'],['Ignore',(w.ignoreSelectors||[]).join(', ')||'None'],['Interval',interval(w.intervalMinutes)],['Last attempt',date(w.lastAttemptAt)],['Last success',date(w.lastSuccessAt)],['Next due',w.enabled&&!w.muted?date(Math.max(w.nextCheckAt||0,w.retryAt||0)):'Paused']];
-  let html='<div class="detail-actions">'+actions+'</div><section class="detail-section"><h3>Tracking details</h3><dl>'+fields.map(([k,v])=>'<dt>'+esc(k)+'</dt><dd>'+esc(v)+'</dd>').join('')+'</dl>'+(w.lastError?'<p class="row-detail error">'+esc(w.lastError)+'</p>':'')+(!privacy&&w.notes?'<p>'+esc(w.notes)+'</p>':'')+(w.association?'<p>Linked mod: '+esc(privacy?'Name hidden':w.association.name||w.association.itemId)+'. Use the Update Workshop for release/file review.</p>':'')+'</section>';
+  let html='<div class="detail-actions">'+actions+'</div><section class="detail-section"><h3>Tracking details</h3><dl>'+fields.map(([k,v])=>'<dt>'+esc(k)+'</dt><dd'+(['Page','Folder','Region','Ignore'].includes(k)||(k==='Read using'&&session)?' data-no-translate':'')+'>'+esc(v)+'</dd>').join('')+'</dl>'+(w.lastError?'<p class="row-detail error">'+esc(w.lastError)+'</p>':'')+(!privacy&&w.notes?'<p data-no-translate>'+esc(w.notes)+'</p>':'')+(w.association?'<p>Linked mod: '+esc(privacy?'Name hidden':w.association.name||w.association.itemId)+'. Use the Update Workshop for release/file review.</p>':'')+'</section>';
   html+=sourceDetails(w);
   if(latest){html+='<section class="detail-section"><h3>Latest successful observation</h3><p>'+esc(date(latest.checkedAt))+' · '+Number(latest.textBytes||0).toLocaleString()+' bytes compared'+(latest.previewTruncated?' · preview shortened; the accepted full text was compared.':'.')+'</p>'+(privacy?'<p>Page content is hidden by your privacy preference.</p>':'<pre class="capture-preview">'+esc(latest.textPreview||'No preview stored.')+'</pre>')+'</section>'}
   const history=[...(w.history||[])].reverse();html+='<section class="detail-section"><h3>Page change history</h3>'+(history.length?history.map(entry=>'<details class="change-entry"><summary>'+esc(entry.kind==='baseline'?'First baseline':entry.summary||'Observed page change')+'<small>'+esc(date(entry.checkedAt))+'</small></summary>'+(privacy?'<p>Change text is hidden.</p>':((entry.added||[]).length?'<p>Added</p><pre class="change-lines added">'+esc(entry.added.join('\n'))+'</pre>':'')+((entry.removed||[]).length?'<p>Removed</p><pre class="change-lines removed">'+esc(entry.removed.join('\n'))+'</pre>':'')+(!(entry.added||[]).length&&!(entry.removed||[]).length?'<p>The accepted content fingerprint changed. Compare the page itself for details outside the retained preview.</p>':''))+'</details>').join(''):'<p>History begins with the first successful check.</p>')+'</section>';
@@ -340,6 +352,7 @@
    await command('clearFileDecision',{watchId,generation:watch.generation,sourceFileKey});return;
   }
   if(kind==='files'){navigate('downloads');await command('resolveFiles',{id});return}
+  if(kind==='source-show-files'){navigate('downloads');return}
   if(kind==='detail'){openDetail(id);return}if(kind==='edit'&&w){openPageForm(w);return}if(kind==='session-edit'&&s){openSessionForm(s);return}
   if(kind==='seen'&&w?.latest&&observationId){const result=await command('markSeen',{id,observationId});if(result?.ok){const eventId=result.eventId||result.seenEventId;showToast('Marked this observation as seen.',eventId?()=>command('undoSeen',{eventId}):null)}return}
   if(kind==='undo-seen'){await command('undoSeen',{eventId:id});return}
@@ -412,7 +425,7 @@ $('settingsForm').onsubmit=savePreferences;$('settingsForm').addEventListener('i
  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!document.querySelector('dialog[open]'))closeDetail();if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='f'&&!document.querySelector('dialog[open]')){event.preventDefault();navigate('pages',filter);$('search').focus()}if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='n'&&!document.querySelector('dialog[open]')&&canMutate()){event.preventDefault();openPageForm()}});
  const unsubscribe=[];window.addEventListener('beforeunload',()=>{disposed=true;clearTimeout(toastTimer);if(searchFrame!==null)cancelAnimationFrame(searchFrame);for(const stop of unsubscribe)stop()},{once:true});
  async function poll(){if(disposed)return;if(ready&&!document.hidden){await command('state',{},true);renderPages()}if(!disposed)setTimeout(poll,15000)}
- window.ModhunterWatchtower={command,confirmAction,showToast,esc,state:()=>state};
+ window.ModhunterWatchtower={command,confirmAction,showToast,esc,openDetail,state:()=>state};
  async function start(){
   render();if(!api?.core?.invoke||!api?.event?.listen){$('connectionBanner').hidden=false;text('connectionBanner','Open WATCH PAGES in the Rust desktop to manage real pages and site sign-ins.');return}
   unsubscribe.push(await api.event.listen('watchtower-state',event=>accept(event.payload)));unsubscribe.push(await api.event.listen('watchtower-download-error',event=>showToast(event.payload?.message||'Download needs review.')));ready=true;const result=await command('state',{},true);if(!result?.ok){ready=false;$('connectionBanner').hidden=false;text('connectionBanner',result?.error||'Watchtower could not connect. Reopen this window from the desktop toolbar.')}else $('connectionBanner').hidden=true;render();poll();

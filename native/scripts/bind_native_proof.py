@@ -25,7 +25,13 @@ def main():
     parser.add_argument('--checkpoint',type=Path,required=True)
     parser.add_argument('--report',type=Path)
     args=parser.parse_args();current=identity(args.executable)
-    if current['sourceDirty']:raise RuntimeError('Native acceptance must start and finish on an unchanged clean source tree')
+    if current['sourceDirty']:
+        changes=subprocess.check_output(['git','status','--porcelain','--untracked-files=all','--',
+            'native','mo2_update_arsenal','desktop','tests','scripts','web','build.py','.github','.gitattributes','.gitignore'],
+            cwd=ROOT,text=True).splitlines()
+        details='; '.join(line[:240] for line in changes[:12]) or 'Other repository content changed; inspect git status.'
+        if len(changes)>12:details+=f'; and {len(changes)-12} more owned source paths'
+        raise RuntimeError('Native acceptance must start and finish on an unchanged clean source tree. '+details)
     if not args.report:
         args.checkpoint.write_text(json.dumps(current,sort_keys=True),encoding='utf-8');return
     before=json.loads(args.checkpoint.read_text('utf-8'))

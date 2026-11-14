@@ -28,7 +28,7 @@
   }
   throw new Error('The view closed while the saved native operation was still running.');
  }
- function failure(error){api().showToast(String(error?.message||error))}
+ function failure(error){api().showToast(String(error?.message||error),null,'Undo',true)}
  function launch(action){Promise.resolve().then(action).catch(failure)}
  function openDialog(id){const dialog=$(id);if(!dialog.open){dialog._return=document.activeElement;dialog.showModal()}}
  function closeDialog(id){const dialog=$(id);dialog.close();dialog._return?.focus?.()}
@@ -59,7 +59,7 @@
   $('nativeFilesPrevious').disabled=page===0;$('nativeFilesNext').disabled=(page+1)*chunk>=visible.length;
   $('nativeReviewFiles').replaceChildren(...shown.map(e=>{
    const tr=document.createElement('tr'),selectCell=document.createElement('td'),check=document.createElement('input');check.type='checkbox';check.checked=selected.has(e.path);check.disabled=!e.selectable||busy||review.submitted;check.setAttribute('aria-label','Include '+e.path);check.addEventListener('change',()=>{if(check.checked)selected.add(e.path);else selected.delete(e.path);$('nativeFileSummary').textContent=selected.size+' incoming files selected · '+all.length+' complete file comparisons';});selectCell.append(check);tr.append(selectCell);
-   for(const value of [e.path,({add:'New',replace:'Changed',unchanged:'Identical',notInArchive:'Installed only'})[e.state]||e.state,bytes(e.bytes)]){const td=document.createElement('td');td.textContent=value;tr.append(td)}
+   for(const [index,value] of [e.path,({add:'New',replace:'Changed',unchanged:'Identical',notInArchive:'Installed only'})[e.state]||e.state,bytes(e.bytes)].entries()){const td=document.createElement('td');td.textContent=value;if(index===0)td.dataset.noTranslate='';tr.append(td)}
    if(e.renameHints?.length)tr.title='Equal content also exists at: '+e.renameHints.join(', ')+'. This does not authorize removal.';return tr;
   }));
   $('nativeInstallReview').disabled=busy||review.submitted||review.identical||!selected.size;

@@ -3,7 +3,7 @@
  const api=()=>window.ModhunterWatchtower,$=id=>document.getElementById(id);
  let current=null,dirty=false,generation=0,reportId=null,cleanup=null,release=null;
  async function call(kind,value={}){const result=await api().command(kind,value,true);if(!result?.ok)throw new Error(result?.error||result?.message||'The action could not be completed.');return result}
- function task(action){Promise.resolve().then(action).catch(error=>api().showToast(error.message||String(error)))}
+ function task(action){Promise.resolve().then(action).catch(error=>api().showToast(error.message||String(error),null,'Undo',true))}
  const bytes=n=>Number.isFinite(n)?n<1048576?(n/1024).toFixed(1)+' KiB':n<1073741824?(n/1048576).toFixed(1)+' MiB':(n/1073741824).toFixed(2)+' GiB':'Unknown';
  function dialog(id){const d=$(id);d._return=document.activeElement;if(!d.open)d.showModal()}
  function close(id){$(id).close();$(id)._return?.focus?.()}

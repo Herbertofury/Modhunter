@@ -59,7 +59,13 @@ not use an installer.
 
 The separate native installation probe creates a small owned ZIP containing an
 inert plugin, a fixture text replacement and a texture-directory marker. The
-production content service verifies the acquisition receipt, makes the actual
+fixture game registers MO2's supported `ModDataChecker` feature for exactly
+those three inert files, including the one expected texture-directory child.
+The real Simple Installer requires this game feature; without it, MO2 routes
+the archive to the manual installer because the game cannot validate its data.
+Unknown files and directories remain invalid and no automatic archive repair
+is defined. The native dialog guard still refuses arbitrary manual dialogs.
+The production content service verifies the acquisition receipt, makes the actual
 mod backup, checks it again, and calls `organizer.installMod` for `Smoke Disabled`.
 The Qt watchdog can click only the exact `SimpleInstallDialog` with that name,
 followed by the `QueryOverwriteDialog` merge button, while the same native job

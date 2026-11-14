@@ -270,7 +270,8 @@ class NativeSmokePlugin(ModUpdateArsenal):
                 return
             labels = [label.text() for label in dialog.findChildren(QtWidgets.QLabel)]
             self._finish({"ok": False, "error": "Unexpected native modal dialog",
-                          "dialog": {"title": dialog.windowTitle(), "text": labels[:12]}})
+                          "dialog": {"title": dialog.windowTitle(), "objectName": dialog.objectName(),
+                                     "className": dialog.metaObject().className(), "text": labels[:12]}})
         elif time.monotonic() - self._start_time > (170 if os.environ.get("MODHUNTER_LIVE_DESKTOP") else 90):
             self._finish({"ok": False, "error": "Native smoke exceeded its bounded deadline"})
 
@@ -557,8 +558,8 @@ class NativeSmokePlugin(ModUpdateArsenal):
                                "ownedGameFiles": False, "accountAuthentication": False},
                    "rustCliProbeRequested": bool(os.environ.get("MODHUNTER_NATIVE_SMOKE_RUST_CLI")),
                    "checks": list(self._checks), "dispatches": list(self._dispatches),
-                   "scopeLimits": ["No Nexus sign-in, remote scan or mod archive download",
-                                   "No installer dialogs, FOMOD choices or game launch"],
+                   "scopeLimits": ["No Nexus sign-in, remote scan or provider archive download",
+                                   "Only exact marked fixture installer dialogs; no arbitrary FOMOD choices or game launch"],
                    **outcome}
         self._receipt_path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self._receipt_path.with_suffix(".tmp")

@@ -28,6 +28,11 @@ fn source(
     );
 }
 fn choice(store: &WatchStore, id: &str, key: &str, kind: &str, ignored: bool, now: u64) {
+    let key = if key.len() == 64 {
+        key.to_owned()
+    } else {
+        format!("{:x}", Sha256::digest(key.as_bytes()))
+    };
     run(
         store,
         "saveFileDecision",
@@ -70,6 +75,183 @@ fn link_session(store: &WatchStore, id: &str, session: &str) {
         "saveWatch",
         json!({"id":id,"url":watch.url,"sessionId":session,"requiresSession":true}),
         30,
+    );
+}
+fn offer(
+    store: &WatchStore,
+    watch: &str,
+    key: &str,
+    date: &str,
+) -> crate::watchtower::SourceOfferEvidence {
+    crate::watchtower::SourceOfferEvidence {
+        id: format!("{watch}-{key}"),
+        watch_id: watch.into(),
+        watch_generation: store.watch(watch).unwrap().generation,
+        source_file_key: if key.len() == 64 {
+            key.to_owned()
+        } else {
+            format!("{:x}", Sha256::digest(key.as_bytes()))
+        },
+        current: true,
+        access_evidence: "patreonAttachment".into(),
+        published_at: date.into(),
+        publication_evidence: "patreonPost".into(),
+    }
+}
+#[test]
+fn release_choice_uses_exact_compatible_accessible_files_and_preserves_preference() {
+    let (_dir, store) = fresh();
+    let a = add(
+        &store,
+        "https://www.patreon.com/posts/old-100",
+        "profile",
+        "mod",
+    );
+    let b = add(
+        &store,
+        "https://www.patreon.com/posts/new-101",
+        "profile",
+        "mod",
+    );
+    let wrong = add(
+        &store,
+        "https://www.patreon.com/posts/edition-102",
+        "profile",
+        "mod",
+    );
+    for id in [&a, &b] {
+        source(&store, id, None, false, "1.6", 20);
+        choice(&store, id, "file", "update", false, 21);
+    }
+    source(&store, &wrong, None, false, "1.5", 20);
+    choice(&store, &wrong, "file", "update", false, 21);
+    let facts = vec![
+        offer(&store, &a, "file", "2026-01-01T00:00:00Z"),
+        offer(&store, &b, "file", "2026-02-01T00:00:00Z"),
+        offer(&store, &wrong, "file", "2026-12-01T00:00:00Z"),
+    ];
+    let ranked = store.source_offer_choices(&facts, 2_000_000_000_000);
+    assert!(!ranked[0].recommended);
+    assert!(ranked[1].recommended);
+    assert_ne!(
+        ranked[0].group_id, ranked[2].group_id,
+        "another runtime never competes by date"
+    );
+    let mut locked = facts.clone();
+    locked[1].access_evidence = "visibleLink".into();
+    let ranked = store.source_offer_choices(&locked, 2_000_000_000_000);
+    assert!(ranked[0].recommended);
+    assert!(!ranked[1].eligible);
+    source(&store, &a, None, true, "1.6", 30);
+    let mut preferred = facts;
+    preferred[0].watch_generation = store.watch(&a).unwrap().generation;
+    let ranked = store.source_offer_choices(&preferred, 2_000_000_000_000);
+    assert!(ranked[0].recommended);
+    assert!(ranked[0].preferred);
+    assert!(!ranked[1].recommended);
+    preferred[0].current = false;
+    let ranked = store.source_offer_choices(&preferred, 2_000_000_000_000);
+    assert!(!ranked[0].eligible);
+    assert!(
+        ranked[0].preferred,
+        "an access failure does not erase explicit preference"
+    );
+    assert!(ranked[1].recommended);
+}
+#[test]
+fn release_choice_never_fabricates_dates_or_classifies_new_content() {
+    let (_dir, store) = fresh();
+    let a = add(
+        &store,
+        "https://www.patreon.com/posts/release-100",
+        "profile",
+        "mod",
+    );
+    source(&store, &a, None, false, "1.6", 20);
+    for (key, kind, ignored) in [
+        ("known", "update", false),
+        ("unknown", "update", false),
+        ("new", "newContent", false),
+        ("ignored", "update", true),
+    ] {
+        choice(&store, &a, key, kind, ignored, 21);
+    }
+    let mut facts = vec![
+        offer(&store, &a, "known", "2026-01-01T00:00:00Z"),
+        offer(&store, &a, "unknown", "not-a-date"),
+        offer(&store, &a, "new", "2026-12-01T00:00:00Z"),
+        offer(&store, &a, "ignored", "2026-12-01T00:00:00Z"),
+        offer(&store, &a, "unclassified", "2026-12-01T00:00:00Z"),
+    ];
+    let ranked = store.source_offer_choices(&facts, 2_000_000_000_000);
+    assert!(ranked[0].recommended);
+    assert_eq!(ranked[0].same_day_files, 1);
+    assert!(ranked[1].eligible);
+    assert!(ranked[1].published_at.is_none());
+    assert_eq!(ranked[1].same_day_files, 0);
+    assert!(ranked[2..].iter().all(|r| !r.eligible && !r.recommended));
+    facts[0].published_at = "2099-01-01T00:00:00Z".into();
+    assert!(
+        store.source_offer_choices(&facts, 2_000_000_000_000)[0]
+            .published_at
+            .is_none()
+    );
+    facts[0].published_at = "2026-01-01T00:00:00Z".into();
+    facts[0].publication_evidence = "checkTime".into();
+    assert!(
+        store.source_offer_choices(&facts, 2_000_000_000_000)[0]
+            .published_at
+            .is_none()
+    );
+    facts[0].current = false;
+    facts[1].watch_generation -= 1;
+    assert!(
+        store
+            .source_offer_choices(&facts, 2_000_000_000_000)
+            .iter()
+            .all(|r| !r.eligible)
+    );
+}
+#[test]
+fn same_day_file_ties_count_only_classified_current_files_before_exact_time() {
+    let (_dir, store) = fresh();
+    let a = add(
+        &store,
+        "https://www.patreon.com/posts/first-100",
+        "profile",
+        "mod",
+    );
+    let b = add(
+        &store,
+        "https://www.patreon.com/posts/second-101",
+        "profile",
+        "mod",
+    );
+    for id in [&a, &b] {
+        source(&store, id, None, false, "1.6", 20);
+        choice(&store, id, "a", "update", false, 21);
+    }
+    choice(&store, &b, "b", "update", false, 22);
+    choice(&store, &a, "unrelated", "newContent", false, 23);
+    let mut facts = vec![
+        offer(&store, &a, "a", "2026-01-01T19:00:00Z"),
+        offer(&store, &b, "a", "2026-01-01T09:00:00Z"),
+        offer(&store, &b, "b", "2026-01-01T10:00:00Z"),
+        offer(&store, &a, "unrelated", "2026-01-01T20:00:00Z"),
+    ];
+    let rows = store.source_offer_choices(&facts, 2_000_000_000_000);
+    assert_eq!(rows[0].same_day_files, 1);
+    assert_eq!(rows[1].same_day_files, 2);
+    assert!(
+        rows[2].recommended,
+        "same-day compatible file count precedes the exact clock time"
+    );
+    assert!(!rows[3].eligible);
+    facts[0].published_at = "2026-01-02T00:00:00Z".into();
+    let rows = store.source_offer_choices(&facts, 2_000_000_000_000);
+    assert!(
+        rows[0].recommended,
+        "a newer provider publication day precedes the tie count"
     );
 }
 #[test]

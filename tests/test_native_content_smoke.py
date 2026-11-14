@@ -35,6 +35,59 @@ class Dialog:
 class Progress: pass
 
 
+class FixtureEntry:
+    def __init__(self, name): self._name = name
+    def name(self): return self._name
+
+
+class FixtureTree(FixtureEntry):
+    def __init__(self, name, entries):
+        super().__init__(name)
+        self.entries = entries
+    def __iter__(self): return iter(self.entries)
+
+
+class FixtureDataCheckerRegistrationTests(unittest.TestCase):
+    def setUp(self):
+        path = Path(__file__).resolve().parents[1] / "native/scripts/mo2_smoke_plugin/game_modhunter_smoke.py"
+        parsed = ast.parse(path.read_text())
+        module = ast.fix_missing_locations(ast.Module(
+            body=[node for node in parsed.body if isinstance(node, ast.ClassDef)], type_ignores=[]))
+        class Feature:
+            INVALID, VALID = 0, 1
+        class Game:
+            def init(self, organizer):
+                self.organizer = organizer
+                return organizer.accept_init
+            def _register_feature(self, feature):
+                self.organizer.features.append(feature)
+                return self.organizer.accept_feature
+        scope = {"mobase": SimpleNamespace(ModDataChecker=Feature, IFileTree=FixtureTree), "BasicGame": Game}
+        exec(compile(module, str(path), "exec"), scope)
+        self.checker = scope["ModhunterSmokeDataChecker"]()
+        self.game = scope["ModhunterSmokeGame"]()
+        self.entries = [FixtureEntry("smoke-fixture.txt"), FixtureEntry("ModhunterSmoke.esp"),
+                        FixtureTree("textures", [FixtureEntry("modhunter-smoke.txt")])]
+
+    def test_registers_the_game_feature_required_by_real_simple_installer(self):
+        organizer = SimpleNamespace(accept_init=True, accept_feature=True, features=[])
+        self.assertTrue(self.game.init(organizer))
+        self.assertEqual(len(organizer.features), 1)
+        self.assertEqual(organizer.features[0].dataLooksValid(FixtureTree("", self.entries)), 1)
+        organizer.accept_feature = False
+        self.assertFalse(self.game.init(organizer))
+
+    def test_content_definition_rejects_unknown_missing_or_directory_aliased_files(self):
+        for entries in (self.entries[:-1], self.entries + [FixtureEntry("other.esp")],
+                        [FixtureTree("smoke-fixture.txt", []), *self.entries[1:]],
+                        [*self.entries[:2], FixtureEntry("textures")],
+                        [*self.entries[:2], FixtureTree("textures", [FixtureEntry("other.dds")])],
+                        [*self.entries[:2], FixtureTree("textures", [FixtureEntry("modhunter-smoke.txt"), FixtureEntry("other.dds")])],
+                        [*self.entries[:2], FixtureTree("textures", [FixtureTree("modhunter-smoke.txt", [])])]):
+            with self.subTest(entries=[entry.name() for entry in entries]):
+                self.assertEqual(self.checker.dataLooksValid(FixtureTree("", entries)), 0)
+
+
 class NativeInstallerSmokeGuardTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

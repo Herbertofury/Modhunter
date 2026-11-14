@@ -73,7 +73,7 @@ $Process = $null
 $Failure = $null
 $StartedAt = [DateTime]::UtcNow
 $CriticalProductionFiles = @('plugin.py', 'version.py', 'download_ids.py', 'bridge.py', 'model.py', 'focus.py', 'scanner.py', 'version_evidence.py', 'gameplay.py', 'native_nexus.py', 'qt_bridge.py',
-    'intelligence.py', 'plugin_intelligence.py', 'mod_health.py', 'content_recovery.py', 'duplicate_report.py',
+    'intelligence.py', 'plugin_intelligence.py', 'mod_health.py', 'content_recovery.py', 'duplicate_report.py', 'notification_facts.py',
     'source_adapters.py', 'source_registry.py', 'update_plan.py', 'quick_update.py',
     'install_brief.py', 'web/index.html')
 $Summary = [ordered]@{

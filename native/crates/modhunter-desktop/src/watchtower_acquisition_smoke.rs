@@ -3,6 +3,8 @@
 use super::*;
 use modhunter_core::acquisition::Store;
 use std::collections::BTreeSet;
+#[path = "watchtower_mega_smoke.rs"]
+mod mega_fixture;
 
 pub(super) fn archive_bytes() -> Vec<u8> {
     let name = b"meshes/fixture.nif";
@@ -283,13 +285,18 @@ fn exact_authority_check(
     }
     let no_receipt = jobs(app).len() == before;
     drop(other);
+    let folder_proof = mega_fixture::check(app, manager, server)?;
     record(
         checks,
         output,
         "download_exact_file_authority",
         no_receipt,
-        "An actual WebView2 redirect from the exact selected file retains its file decision and durable update target; a same-host unrelated download invalidates the native scope and creates no receipt. Durable review validates the saved decision without recreating network authority.",
-    )
+        "An actual WebView2 redirect from the exact selected file retains its file decision and durable update target; a same-host unrelated download invalidates the native scope and creates no receipt. The owned MEGA-shaped folder fixture additionally proves exact node/blob async validation and rejection of ambiguous, wrong-child and wrong-blob transfers. No live MEGA account/decryption is claimed. Durable review validates the saved decision without recreating network authority.",
+    )?;
+    if let Some(check) = checks.last_mut() {
+        check["folderProof"] = folder_proof;
+    }
+    Ok(())
 }
 
 pub(super) fn check(

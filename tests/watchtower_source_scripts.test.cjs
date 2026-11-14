@@ -7,9 +7,10 @@ const path=require('node:path');
 const root=path.resolve(__dirname,'..');
 const resolver=fs.readFileSync(path.join(root,'native/ui/resolve-offers.js'),'utf8');
 const observer=fs.readFileSync(path.join(root,'native/ui/observe-access.js'),'utf8');
-function link(href,text='',download=null){return {textContent:text,innerText:text,getAttribute:key=>({href,download}[key]??null),closest:()=>null,getClientRects:()=>[{}]};}
-function documentFixture({title='Release',links=[],passwords=[],content='A complete public release description with enough meaningful text for a normal readable page observation.',body='',controls=[]}={}){
- return {title,body:{innerText:body||content},querySelectorAll:selector=>selector==='input[type=password]'?passwords:selector==='a[href]'?links:selector==='a[href],button,[role=menuitem]'?[...links,...controls]:selector==='main,article,[role=main]'?[{innerText:content,getClientRects:()=>[{}]}]:[]};
+const megaFolder=fs.readFileSync(path.join(root,'native/ui/mega-folder.js'),'utf8');
+function link(href,text='',download=null,row=null){return {textContent:text,innerText:text,getAttribute:key=>({href,download}[key]??null),closest:()=>row,getClientRects:()=>[{}]};}
+function documentFixture({title='Release',links=[],passwords=[],content='A complete public release description with enough meaningful text for a normal readable page observation.',body='',controls=[],metadata=[]}={}){
+ return {title,body:{innerText:body||content},querySelectorAll:selector=>selector==='input[type=password]'?passwords:selector==='a[href]'?links:selector==='a[href],button,[role=menuitem]'?[...links,...controls]:selector==='main,article,[role=main]'?[{innerText:content,getClientRects:()=>[{}]}]:selector==='script[type="application/ld+json"]'?metadata.map(item=>({textContent:JSON.stringify(item)})):[]};
 }
 const parser=class {parseFromString(html){const links=[...html.matchAll(/href=["']([^"']+)["']/g)].map(match=>link(match[1].replaceAll('&amp;','&')));return documentFixture({links});}};
 async function discover({url='https://www.patreon.com/posts/release-111',source=url,docs={},responses={},document=documentFixture(),includeNewContent=false}={}){
@@ -113,4 +114,66 @@ test('visible Patreon membership restrictions cannot become a new page baseline'
  const document=documentFixture({body:'Join to unlock this post'});document.readyState='complete';document.documentURI=location.href;
  const result=vm.runInNewContext('(()=>{'+body+'})()',{cfg:{url:location.href,selector:'',ignore:[]},location,document,URL,getComputedStyle:()=>({visibility:'visible',display:'block'})});
  assert.equal(result.status,'accessRestricted');assert.equal(result.text,'');
+});
+
+test('provider dates retain their provenance and unknown/future dates never become check time',async()=>{
+ const known=(await discover({docs:{111:post()}})).result.files[0];
+ assert.equal(known.publishedAt,'2026-01-01T00:00:00Z');assert.equal(known.publicationEvidence,'patreonPost');assert.equal(known.accessEvidence,'patreonAttachment');
+ for(const date of ['', 'not a date','2099-01-01T00:00:00Z']){
+  const row=(await discover({docs:{111:post('111',['10'],{published_at:date})}})).result.files[0];assert.equal(row.publishedAt,'');
+ }
+ const data=post('111',[],{content:'<a href="https://mega.nz/file/abcdefgh#private-key">External file</a>'});
+ const row=(await discover({docs:{111:data}})).result.files[0];assert.equal(row.accessEvidence,'visibleLink','post membership cannot assert access to an external file');
+});
+test('LoversLab release metadata must name the exact page and attachment dates are distinct evidence',async()=>{
+ const url='https://www.loverslab.com/files/file/111-mod/';
+ const metadata=[{'@type':'SoftwareApplication',url:'https://www.loverslab.com/files/file/222-other/',dateModified:'2026-03-01T00:00:00Z'},{'@type':'SoftwareApplication',url,dateModified:'2026-01-01T00:00:00Z'}];
+ const first=await discover({url,document:documentFixture({metadata,links:[link('?do=download&r=77','A.zip')]})});
+ assert.equal(first.result.files[0].publishedAt,'2026-01-01T00:00:00Z');assert.equal(first.result.files[0].publicationEvidence,'loversLabRelease');
+ const row={querySelector:selector=>selector==='time[datetime]'?{getAttribute:()=> '2026-02-01T00:00:00Z'}:null};
+ const second=await discover({url,document:documentFixture({metadata,links:[link('?do=download&r=77','A.zip',null,row)]})});
+ assert.equal(second.result.files[0].publishedAt,'2026-02-01T00:00:00Z');assert.equal(second.result.files[0].publicationEvidence,'loversLabAttachment');
+ const undated=await discover({url,document:documentFixture({metadata:metadata.slice(0,1),links:[link('?do=download&r=77','A.zip')]})});assert.equal(undated.result.files[0].publishedAt,'');
+});
+
+function folderFixture(extra={}){
+ const key='abcdefghijklmnopqrstuv',url='https://mega.nz/folder/pub12345#'+key;
+ const file={h:'file1234',p:'root1234',t:0,name:'Release.zip',s:64,ts:100};
+ const rootNode={h:'root1234',t:1,name:'Shared release',tf:1,td:0,tb:64};
+ const M={RootID:'root1234',d:{root1234:rootNode,file1234:file},c:{root1234:{file1234:1}}};
+ const listeners={};const document={addEventListener:(event,listener)=>{listeners[event]=listener}};
+ Object.defineProperty(document,'cookie',{get(){throw Error('Cookies must never be read')}});
+ Object.defineProperty(file,'k',{get(){throw Error('Decryption keys must never be read')}});
+ const window={M,pfid:'pub12345',fminitialized:true,loadfm:{loaded:1,loading:false},$: {},dl_queue:[]};
+ Object.defineProperty(window,'u_sid',{get(){throw Error('Account tokens must never be read')}});
+ const sandbox={window,document,location:new URL(url),URL,Set,cfg:{source:url,key:'proof_record',mode:'inspect',...extra}};
+ const run=()=>JSON.parse(JSON.stringify(vm.runInNewContext(megaFolder,sandbox,{timeout:1000})));
+ return {sandbox,window,M,file,rootNode,listeners,run,url,key};
+}
+test('MEGA folder inspection requires a complete tree and returns one exact child without exporting keys',()=>{
+ const f=folderFixture(),result=f.run();assert.equal(result.state,'ready');assert.equal(result.file.fileId,'file1234');assert.equal(result.url,f.url+'/file/file1234');assert.equal(result.nodeCount,2);assert(!JSON.stringify(result.file).includes(f.key));
+ f.rootNode.tf=2;assert.match(f.run().message,/complete folder inventory/);
+ f.rootNode.tf=1;delete f.M.d.file1234;assert.equal(f.run().state,'error');
+});
+test('MEGA ambiguous, multipart, oversized, undecrypted and still-loading folders never produce an exact offer',()=>{
+ const cases=[
+  f=>{f.M.d.file5678={h:'file5678',p:'root1234',t:0,name:'Other.7z',s:64,ts:100};f.M.c.root1234.file5678=1;f.rootNode.tf=2;f.rootNode.tb=128;},
+  f=>{f.file.name='Release.part1.rar'},
+  f=>{f.file.s=17179869185;f.rootNode.tb=f.file.s},
+  f=>{f.file.a='undecrypted attributes'},
+  f=>{f.window.loadfm.loading=true},
+ ];
+ for(const mutate of cases){const f=folderFixture();mutate(f);assert.notEqual(f.run().state,'ready');}
+});
+test('MEGA exact blob observation rejects another child and rechecks the complete folder at download time',()=>{
+ const f=folderFixture(),expected=f.run().file;f.sandbox.cfg={...f.sandbox.cfg,mode:'arm',expected};assert.equal(f.run().state,'ready');
+ const anchor={id:'dllink',href:'blob:https://mega.nz/exact-blob',download:'Release.zip',closest(){return this}};
+ f.window.$.memIOSaveAttempt='file1234';f.window.dl_queue=[{id:'file1234',n:'Release.zip',size:64}];
+ f.listeners.click({target:anchor});const proof=f.window.proof_record.proof;assert.equal(proof.blobUrl,anchor.href);assert.equal(proof.file.fileId,'file1234');assert(!JSON.stringify(proof).includes(f.key));
+ f.window.$.memIOSaveAttempt='other123';f.window.dl_queue=[{id:'other123',n:'Release.zip',size:64}];f.listeners.click({target:anchor});assert.equal(f.window.proof_record.proof,null);
+ f.window.$.memIOSaveAttempt='file1234';f.window.dl_queue=[{id:'file1234',n:'Release.zip',size:64}];f.rootNode.tf=2;f.listeners.click({target:anchor});assert.equal(f.window.proof_record.proof,null);
+});
+test('MEGA navigation and changed child metadata invalidate a prior selection',()=>{
+ const f=folderFixture();f.sandbox.cfg.expected=f.run().file;f.file.s=65;f.rootNode.tb=65;assert.match(f.run().message,/exact file changed/);
+ f.sandbox.location=new URL('https://mega.nz/folder/other123#'+f.key);assert.match(f.run().message,/different MEGA folder/);
 });

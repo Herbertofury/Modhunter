@@ -467,7 +467,10 @@ fn report_export(app: &tauri::AppHandle, value: &Value, copy: bool) -> Result<Va
     let Some(file) = app
         .dialog()
         .file()
-        .set_title("Save previewed Modhunter support report")
+        .set_title(super::localized(
+            app,
+            "Save previewed Modhunter support report",
+        ))
         .set_file_name("Modhunter-Support.json")
         .add_filter("JSON report", &["json"])
         .blocking_save_file()
@@ -521,6 +524,19 @@ fn cleanup_apply(app: &tauri::AppHandle, value: &Value) -> Result<Value> {
     if value["previewId"] != preview.0 {
         return Err("The cleanup preview changed.".into());
     }
+    let ids = preview
+        .1
+        .iter()
+        .map(|row| {
+            row["id"]
+                .as_str()
+                .map(str::to_owned)
+                .ok_or("Invalid cleanup receipt.".to_owned())
+        })
+        .collect::<Result<Vec<_>>>()?;
+    // Acquire the whole reviewed batch before any eligibility check or deletion;
+    // either every receipt is still unclaimed, or this attempt changes nothing.
+    let claims = super::acquisition::claim_downloads(app, &ids)?;
     let current = super::acquisition::snapshot(app);
     let rows = current["jobs"]
         .as_array()
@@ -533,13 +549,9 @@ fn cleanup_apply(app: &tauri::AppHandle, value: &Value) -> Result<Value> {
     }
     let mut removed = Vec::new();
     let mut failed = Vec::new();
-    for saved in preview.1 {
+    for (saved, claim) in preview.1.into_iter().zip(claims.iter()) {
         let id = saved["id"].as_str().unwrap_or("");
-        match super::acquisition::execute(
-            app,
-            "removeDownload",
-            &json!({"id":id,"confirm":"REMOVE"}),
-        ) {
+        match super::acquisition::remove_claimed(app, claim, "REMOVE", Some(&saved)) {
             Ok(_) => removed.push(id.to_string()),
             Err(error) => failed.push(json!({"id":id,"error":error})),
         }

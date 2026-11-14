@@ -18,7 +18,7 @@ from typing import Any
 
 _ALLOWED_STATES = frozenset((
     "downloading", "paused", "complete", "installing", "installed",
-    "failed", "removed", "attention",
+    "failed", "removed", "attention", "needs-review",
 ))
 _REVIEW_ON_RESTART = frozenset(("downloading", "paused", "complete", "installing", "attention"))
 _STRINGS = {
@@ -179,7 +179,8 @@ class OperationJournal:
                     continue
                 item = deepcopy(raw)
                 item["sessionActive"] = raw["sessionId"] == self.session_id
-                item["needsReview"] = (not item["sessionActive"] and item["status"] in _REVIEW_ON_RESTART)
+                item["needsReview"] = (item["status"] == "needs-review" or
+                                       (not item["sessionActive"] and item["status"] in _REVIEW_ON_RESTART))
                 item["actionable"] = False
                 result.append(item)
             result.sort(key=lambda x: (x["lastAt"], x["key"]), reverse=True)

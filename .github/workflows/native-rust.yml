@@ -49,6 +49,11 @@ jobs:
           node --check native/ui/watchtower.js
           node --check native/ui/watchtower-review.js
           node --check native/ui/watchtower-maintenance.js
+          node --check native/ui/watchtower-inventory.js
+          node --check native/ui/watchtower-queue.js
+          node --check native/ui/watchtower-notices.js
+          node --check native/ui/locale-catalogs.js
+          node --check native/ui/mega-folder.js
           node --check native/ui/preferences.js
           node --test tests/watchtower_source_scripts.test.cjs
           node --check tests/fixtures/watchtower_native_fixture.js

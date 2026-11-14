@@ -39,6 +39,17 @@ class SourceURLTests(unittest.TestCase):
             with self.subTest(url=url):
                 self.assertEqual(canonical_source_url(url), "")
 
+    def test_malformed_or_oversized_urls_are_rejected_not_rewritten(self):
+        for value in ("https://example.com/" + "a" * 1800,
+                      "https://example.com/" + "é" * 900,
+                      "https://exa\tmple.com/mod", "https://example.com/mod\n",
+                      "https://example.com/\\mod", "https://example.com/\x7fmod"):
+            with self.subTest(value=value):
+                self.assertEqual(canonical_source_url(value), "")
+        boundary = "https://example.com/" + "a" * (1800 - len("https://example.com/"))
+        self.assertEqual(canonical_source_url(boundary), boundary)
+        self.assertEqual(canonical_source_url("  https://example.com/mod  "), "https://example.com/mod")
+
     def test_unknown_game_does_not_become_verified_nexus_identity(self):
         self.assertFalse(source_url("unknown", 77)["verified"])
         self.assertEqual(source_url("unknown", 77)["url"], "")

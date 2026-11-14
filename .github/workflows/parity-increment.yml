@@ -1,0 +1,102 @@
+name: Verified parity development increment
+on:
+  push:
+    branches: [upgrade/whimwatch-parity-0110]
+    paths: ['.delivery/increment.json']
+permissions:
+  contents: write
+  actions: write
+concurrency:
+  group: parity-increment
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      commit: ${{ steps.commit.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+      - name: Verify base, digest and allowed source paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json,pathlib,base64,lzma,hashlib,subprocess,tempfile,re
+          v=json.loads(pathlib.Path('.delivery/increment.json').read_text())
+          assert re.fullmatch('[0-9a-f]{40}',v['base'])
+          subprocess.run(['git','diff','--exit-code',v['base'],'HEAD','--','.',':!.delivery',':!.github/workflows/parity-increment.yml'],check=True)
+          x=base64.b64decode(v['data'],validate=True)
+          assert len(x)==v['packedBytes'] and hashlib.sha256(x).hexdigest()==v['packedSha256']
+          d=lzma.LZMADecompressor(); p=d.decompress(x,max_length=1000001)
+          assert d.eof and not d.unused_data and len(p)==v['patchBytes'] and len(p)<=1000000
+          assert hashlib.sha256(p).hexdigest()==v['patchSha256']
+          for a,b in re.findall(rb'^diff --git a/(.*?) b/(.*?)$',p,re.M):
+              assert a==b and not a.startswith(b'.') and b'..' not in a.split(b'/')
+              assert a.startswith((b'native/',b'mo2_update_arsenal/',b'tests/',b'wiki/'))
+          with tempfile.NamedTemporaryFile() as f:
+              f.write(p);f.flush()
+              subprocess.run(['git','apply','--check',f.name],check=True)
+              subprocess.run(['git','apply',f.name],check=True)
+          PY
+          git rm .delivery/increment.json
+          cargo fmt --manifest-path native/Cargo.toml --all -- --check
+          cargo test --manifest-path native/Cargo.toml --workspace --locked
+          cargo clippy --manifest-path native/Cargo.toml --workspace --all-targets --locked -- -D warnings
+          python3 native/scripts/prepare_assets.py
+          git diff --check
+      - name: Commit source checkpoint
+        id: commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add --all
+          git commit -m 'Advance verified parity implementation and regression coverage'
+          git push origin HEAD:refs/heads/upgrade/whimwatch-parity-0110
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          mkdir -p "$RUNNER_TEMP/checkpoint"
+          git bundle create "$RUNNER_TEMP/checkpoint/Modhunter-source.bundle" HEAD
+          git rev-parse HEAD > "$RUNNER_TEMP/checkpoint/COMMIT.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Modhunter-Parity-Increment-Source
+          path: ${{ runner.temp }}/checkpoint/
+          retention-days: 30
+          if-no-files-found: error
+  windows-check:
+    needs: apply
+    runs-on: windows-2025
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.apply.outputs.commit }}
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.99.1'
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+          cache-on-failure: 'true'
+      - name: Compile and test the real Windows source
+        run: |
+          python native/scripts/prepare_assets.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --manifest-path native/Cargo.toml --workspace --locked
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo clippy --manifest-path native/Cargo.toml --workspace --all-targets --locked -- -D warnings
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

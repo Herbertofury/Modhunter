@@ -1,0 +1,47 @@
+name: Apply awaited refresh and isolated native acceptance
+on:
+  push:
+    branches: [repair/refresh-window-0102]
+    paths: ['.delivery/refresh-live.xz', '.github/workflows/apply-refresh-live.yml']
+permissions:
+  contents: write
+jobs:
+  apply:
+    if: github.repository == 'Herbertofury/Modhunter' && github.ref == 'refs/heads/repair/refresh-window-0102'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply exact reviewed source and regenerate matching assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code 17f1dab91f295a1b631bb03a9f37ec21b190956f HEAD -- . ':!.delivery' ':!.github/workflows/apply-refresh-live.yml'
+          python3 - <<'PY'
+          import pathlib,hashlib,lzma,subprocess,tempfile
+          packed=pathlib.Path('.delivery/refresh-live.xz').read_bytes()
+          assert len(packed)==3996
+          assert hashlib.sha256(packed).hexdigest()=='900a6fafd044ffb9a2a30331c5ed57f4fa622807a48d84f16108931f22d32baf'
+          decoder=lzma.LZMADecompressor()
+          patch=decoder.decompress(packed,max_length=12000)
+          assert decoder.eof and not decoder.unused_data and len(patch)==11188
+          assert hashlib.sha256(patch).hexdigest()=='5a8728c634bb969a4d2bf2370f32754f43c8a74dbb27eb229f6330a6048eb194'
+          with tempfile.NamedTemporaryFile() as f:
+              f.write(patch);f.flush()
+              subprocess.run(['git','apply','--check',f.name],check=True)
+              subprocess.run(['git','apply',f.name],check=True)
+          PY
+          git rm .delivery/refresh-live.xz
+          python3 native/scripts/prepare_assets.py
+          node --check native/scripts/verify_live_desktop.cjs
+          node --test tests/frontend_runtime.test.cjs native/crates/modhunter-desktop/tests/shell_runtime.test.cjs
+          python3 native/scripts/prepare_release.py --self-test
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add --all
+          git commit -m 'Await coalesced download refreshes and isolate the native desktop acceptance browser' -m 'Concurrent callers await the latest rendered tickets with one request at a time. Add held-response and zero-ticket coverage while retaining focus checks. Use a unique disposable WebView2 profile for native CDP acceptance, capture failures, and keep all real-app assertions required.'
+          git push origin HEAD:refs/heads/repair/refresh-window-0102

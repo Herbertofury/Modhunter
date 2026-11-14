@@ -96,3 +96,28 @@ test('listed mod symlinks remain catalog entries without reading external DLLs o
  }
  assert.equal(await fs.readFile(path.join(external,'SKSE','Plugins','private.dll'),'utf8'),'private fixture');
 });
+
+test('notes links cannot replace known Nexus identity or verify a dependency as this mod',async t=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'modhunter-m2-notes-'));
+ t.after(()=>fs.rm(root,{recursive:true,force:true}));
+ const profile=path.join(root,'profiles','Notes'),mods=path.join(root,'mods');
+ await fs.mkdir(profile,{recursive:true});
+ for(const name of ['Known','Unlinked','Explicit'])await fs.mkdir(path.join(mods,name),{recursive:true});
+ await fs.writeFile(path.join(root,'ModOrganizer.ini'),'[General]\ngameName=Skyrim Special Edition\n');
+ await fs.writeFile(path.join(profile,'modlist.txt'),'+Known\n+Unlinked\n+Explicit');
+ const notes='notes=Requires https://github.com/dependency/project\n';
+ await fs.writeFile(path.join(mods,'Known','meta.ini'),'[General]\nmodid=77\n'+notes);
+ await fs.writeFile(path.join(mods,'Unlinked','meta.ini'),'[General]\n'+notes);
+ await fs.writeFile(path.join(mods,'Explicit','meta.ini'),'[General]\nurl=https://github.com/actual/project\n'+notes);
+ const c=await readMo2Profile(path.join(profile,'modlist.txt'));
+ const [known,unlinked,explicit]=c.items;
+ assert.equal(known.source.url,'https://www.nexusmods.com/skyrimspecialedition/mods/77?tab=files');
+ assert.equal(known.source.verified,true);
+ assert.equal(unlinked.source.url,'https://github.com/dependency/project');
+ assert.equal(unlinked.source.verified,false);
+ assert.equal(unlinked.source.kind,'advisory');
+ assert.equal(explicit.source.url,'https://github.com/actual/project');
+ assert.equal(explicit.source.verified,true);
+ assert.equal(c.build.verifiedLinks,2);
+ assert.equal(c.build.unresolvedLinks,1);
+});

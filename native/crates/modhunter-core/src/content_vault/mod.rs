@@ -4,6 +4,7 @@
 use crate::acquisition::{atomic_json, file_hash, reject_link};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, HashSet},
     fs,
@@ -33,6 +34,12 @@ pub struct Request {
     pub confirm: Option<String>,
     #[serde(default)]
     pub other: Option<PathBuf>,
+    #[serde(default)]
+    pub selected: Vec<String>,
+    #[serde(default)]
+    pub remove: Vec<String>,
+    #[serde(default)]
+    pub expected_digest: Option<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -66,7 +73,12 @@ pub fn checked_root(path: &Path) -> Result<PathBuf> {
     let mut walked = PathBuf::new();
     for part in path.components() {
         walked.push(part);
-        reject_link(&walked)?;
+        // A Windows prefix (notably \\?\C:) is not an addressable path until
+        // RootDir is appended. Check the complete root and every child, rather
+        // than sending a volume prefix to GetFileAttributes/CreateFile.
+        if !matches!(part, Component::Prefix(_)) {
+            reject_link(&walked)?;
+        }
     }
     let result = fs::canonicalize(path).map_err(err)?;
     if !result.is_dir() || result.parent().is_none() {
@@ -219,12 +231,61 @@ fn load(vault: &Path, id: &str) -> Result<(PathBuf, Record)> {
     }
     Ok((dir, record))
 }
+fn review_digest(request: &Request, installed: &Tree, incoming: &Tree) -> Result<String> {
+    let body=serde_json::to_vec(&json!({"profile":request.profile_id,"game":request.game,"mod":request.mod_name,"installed":installed,"incoming":incoming})).map_err(err)?;
+    Ok(format!("{:x}", Sha256::digest(body)))
+}
+fn copy_selected(
+    source: &Path,
+    dest: &Path,
+    selected: &Tree,
+    cancel: &impl Fn() -> bool,
+) -> Result<()> {
+    for (name, expected) in selected {
+        if cancel() {
+            return Err("Operation cancelled.".into());
+        }
+        let src = relative_file(source, name)?;
+        let dst = relative_file(dest, name)?;
+        reject_link(&src)?;
+        fs::create_dir_all(dst.parent().ok_or("Missing selected parent.")?).map_err(err)?;
+        let mut input = fs::File::open(&src).map_err(err)?;
+        let mut output = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&dst)
+            .map_err(err)?;
+        let mut buf = [0u8; 128 * 1024];
+        loop {
+            if cancel() {
+                return Err("Operation cancelled.".into());
+            }
+            let n = input.read(&mut buf).map_err(err)?;
+            if n == 0 {
+                break;
+            }
+            output.write_all(&buf[..n]).map_err(err)?;
+        }
+        output.sync_all().map_err(err)?;
+        let (bytes, hash) = file_hash(&dst, cancel)?;
+        if bytes != expected.bytes || hash != expected.sha256 {
+            return Err("Selected content changed while copying.".into());
+        }
+    }
+    Ok(())
+}
 fn public(r: &Record) -> Value {
     json!({"id":r.id,"state":r.state,"profileId":r.profile_id,"game":r.game,"modName":r.mod_name,"createdAt":r.created_at,"files":r.before.len(),"bytes":r.before.values().map(|e|e.bytes).sum::<u64>(),"includesModFiles":true,"undoAvailable":r.state=="sealed"})
 }
 
 pub fn execute(request: Request, cancel: impl Fn() -> bool) -> Result<Value> {
-    let root = checked_root(&request.root)?;
+    let root = if request.action == "recover" && !request.root.exists() {
+        let parent = checked_root(request.root.parent().ok_or("Missing target parent.")?)?;
+        let name = request.root.file_name().ok_or("Missing target name.")?;
+        parent.join(name)
+    } else {
+        checked_root(&request.root)?
+    };
     if request.profile_id.is_empty()
         || request.profile_id.len() > 1024
         || request.game.is_empty()
@@ -347,7 +408,10 @@ pub fn execute(request: Request, cancel: impl Fn() -> bool) -> Result<Value> {
             entries.push(json!({"path":name,"state":"notInArchive","removalAuthorized":false}))
         }
         return Ok(
-            json!({"ok":true,"identical":incoming==installed,"entries":entries,"scope":"Unpacked trees only. FOMOD-selected actions require the installer's choices."}),
+            json!({"ok":true,"identical":incoming==installed,"entries":entries,
+                "digest":review_digest(&request, &installed, &incoming)?,
+                "requiresInstaller":incoming.keys().any(|n| n.to_lowercase().ends_with("fomod/moduleconfig.xml")),
+                "scope":"Unpacked trees only. FOMOD-selected actions require the installer's choices."}),
         );
     }
     if request.action == "duplicates" {
@@ -373,6 +437,197 @@ pub fn execute(request: Request, cancel: impl Fn() -> bool) -> Result<Value> {
         return Err("Backup belongs to a different target mod, game or profile.".into());
     }
     match request.action.as_str() {
+        "apply" => {
+            if request.confirm.as_deref() != Some("INSTALL") || record.state != "prepared" {
+                return Err("Confirm INSTALL for the exact reviewed content backup.".into());
+            }
+            let other = checked_root(
+                request
+                    .other
+                    .as_ref()
+                    .ok_or("Missing reviewed incoming tree.")?,
+            )?;
+            let installed = tree(&root, &cancel)?;
+            let incoming = tree(&other, &cancel)?;
+            if incoming
+                .keys()
+                .any(|n| n.to_lowercase().ends_with("fomod/moduleconfig.xml"))
+            {
+                return Err("This archive requires interactive installer choices. Use MO2's installer instead.".into());
+            }
+            if record.before != installed || tree(&dir.join("files"), &cancel)? != installed {
+                return Err("Mod or backup changed after review; installation stopped.".into());
+            }
+            if request.expected_digest.as_deref()
+                != Some(&review_digest(&request, &installed, &incoming)?)
+            {
+                return Err("Incoming content or target changed after file review.".into());
+            }
+            if request.selected.len() > MAX_FILES || request.remove.len() > MAX_FILES {
+                return Err("Too many selected file actions.".into());
+            }
+            let mut selected = Tree::new();
+            let mut removals = HashSet::new();
+            for name in &request.selected {
+                let entry = incoming
+                    .get(name)
+                    .ok_or("Selected incoming file no longer exists.")?;
+                if name.eq_ignore_ascii_case("meta.ini") {
+                    return Err("An archive cannot replace MO2's mod metadata.".into());
+                }
+                if selected.insert(name.clone(), entry.clone()).is_some() {
+                    return Err("Duplicate file selection.".into());
+                }
+            }
+            for name in &request.remove {
+                if !installed.contains_key(name)
+                    || selected.contains_key(name)
+                    || !removals.insert(name)
+                    || name.eq_ignore_ascii_case("meta.ini")
+                {
+                    return Err("Invalid obsolete-file selection.".into());
+                }
+            }
+            if selected.is_empty() && removals.is_empty() {
+                return Err("No file changes were approved.".into());
+            }
+            let parent = root.parent().ok_or("Missing target parent.")?;
+            let stage = tempfile::Builder::new()
+                .prefix(".modhunter-apply-")
+                .tempdir_in(parent)
+                .map_err(err)?;
+            copy_tree(&root, stage.path(), &installed, &cancel)?;
+            for name in selected.keys().chain(request.remove.iter()) {
+                let path = relative_file(stage.path(), name)?;
+                if path.exists() {
+                    reject_link(&path)?;
+                    fs::remove_file(path).map_err(err)?;
+                }
+            }
+            copy_selected(&other, stage.path(), &selected, &cancel)?;
+            let expected = tree(stage.path(), &cancel)?;
+            if tree(&root, &cancel)? != installed || tree(&other, &cancel)? != incoming || cancel()
+            {
+                return Err(
+                    "Files changed or installation cancelled before the atomic swap.".into(),
+                );
+            }
+            let displaced = parent.join(format!(".modhunter-applied-{}", record.id));
+            if displaced.exists() {
+                return Err("An earlier transaction needs recovery; no files changed.".into());
+            }
+            record.state = "applying".into();
+            record.after = Some(expected);
+            record.displaced = Some(displaced.clone());
+            record.staged = Some(stage.path().into());
+            atomic_json(&dir.join("receipt.json"), &record)?;
+            let staged = stage.keep();
+            fs::rename(&root, &displaced).map_err(err)?;
+            if let Err(e) = fs::rename(&staged, &root) {
+                let _ = fs::rename(&displaced, &root);
+                return Err(format!("Install swap failed; both copies preserved: {e}"));
+            }
+            record.state = "sealed".into();
+            atomic_json(&dir.join("receipt.json"), &record)?;
+            Ok(
+                json!({"ok":true,"backup":public(&record),"message":"Reviewed files installed and real previous bytes retained. Refresh MO2 before launching the game."}),
+            )
+        }
+        "recover" => {
+            if request.confirm.as_deref() != Some("RECOVER")
+                || !matches!(record.state.as_str(), "applying" | "restoring")
+            {
+                return Err("Confirm RECOVER for an interrupted file transaction.".into());
+            }
+            let parent = root.parent().ok_or("Missing target parent.")?;
+            let stage = record
+                .staged
+                .as_ref()
+                .ok_or("Missing staged tree identity.")?;
+            let displaced = record
+                .displaced
+                .as_ref()
+                .ok_or("Missing displaced tree identity.")?;
+            let prefix = if record.state == "applying" {
+                ".modhunter-apply-"
+            } else {
+                ".modhunter-restore-"
+            };
+            if stage.parent() != Some(parent)
+                || !stage
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.starts_with(prefix))
+                || displaced
+                    != &parent.join(format!(
+                        "{}{}",
+                        if record.state == "applying" {
+                            ".modhunter-applied-"
+                        } else {
+                            ".modhunter-displaced-"
+                        },
+                        record.id
+                    ))
+            {
+                return Err("Recovery paths do not belong to this transaction.".into());
+            }
+            let after = record
+                .after
+                .as_ref()
+                .ok_or("Missing post-install tree identity.")?;
+            let (old, new) = if record.state == "applying" {
+                (&record.before, after)
+            } else {
+                (after, &record.before)
+            };
+            if tree(&dir.join("files"), &cancel)? != record.before {
+                return Err("Backup changed; recovery stopped.".into());
+            }
+            let current = if root.exists() {
+                Some(tree(&root, &cancel)?)
+            } else {
+                None
+            };
+            let saved = if displaced.exists() {
+                Some(tree(displaced, &cancel)?)
+            } else {
+                None
+            };
+            let staged = if stage.exists() {
+                Some(tree(stage, &cancel)?)
+            } else {
+                None
+            };
+            if current.as_ref() == Some(new) && saved.as_ref() == Some(old) && staged.is_none() {
+                // The directory swap finished before receipt persistence.
+            } else if current.is_none()
+                && saved.as_ref() == Some(old)
+                && staged.as_ref() == Some(new)
+            {
+                fs::rename(stage, &root).map_err(err)?;
+            } else if current.as_ref() == Some(old)
+                && saved.is_none()
+                && staged.as_ref() == Some(new)
+            {
+                fs::rename(&root, displaced).map_err(err)?;
+                if let Err(e) = fs::rename(stage, &root) {
+                    let _ = fs::rename(displaced, &root);
+                    return Err(err(e));
+                }
+            } else {
+                return Err("Recovery found changed or ambiguous files; every copy is preserved for review.".into());
+            }
+            record.state = if record.state == "applying" {
+                "sealed"
+            } else {
+                "restored"
+            }
+            .into();
+            atomic_json(&dir.join("receipt.json"), &record)?;
+            Ok(
+                json!({"ok":true,"backup":public(&record),"message":"Interrupted transaction reconciled from verified file identities."}),
+            )
+        }
         "seal" => {
             if record.state != "prepared" {
                 return Err("Only a new backup may receive its post-install identity.".into());

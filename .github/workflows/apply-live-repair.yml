@@ -1,0 +1,85 @@
+name: Apply reviewed live connection repairs
+on:
+  push:
+    branches: [upgrade/live-repair-0102]
+    paths: ['.delivery/**', '.github/workflows/apply-live-repair.yml']
+permissions:
+  contents: write
+concurrency:
+  group: apply-live-repair-0102
+  cancel-in-progress: false
+jobs:
+  apply:
+    if: github.repository == 'Herbertofury/Modhunter' && github.ref == 'refs/heads/upgrade/live-repair-0102'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.99.1'
+          components: rustfmt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify and apply the exact reviewed source patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code 52d7e7728e9b9c3c855ddc6189568af1632922e0 HEAD -- . ':!.delivery' ':!.github/workflows/apply-live-repair.yml'
+          python3 - <<'PY'
+          import hashlib, lzma, pathlib, subprocess, tempfile
+          parts = [pathlib.Path(f'.delivery/live-repair-{i}.bin') for i in range(1, 7)]
+          packed = b''.join(p.read_bytes() for p in parts)
+          assert len(packed) == 33988
+          assert hashlib.sha256(packed).hexdigest() == 'cc1b7fe48fc507ee68bfc940a70ef80fe006b1ef28d08b018f39012e0cb2eafb'
+          decoder = lzma.LZMADecompressor()
+          patch = decoder.decompress(packed, max_length=250001)
+          assert decoder.eof and not decoder.unused_data
+          assert len(patch) == 130408
+          assert hashlib.sha256(patch).hexdigest() == '81bfd3c9d41264a7566c399b34a61428bb5e22c4b81b4036c2e5e9f4e4853ba1'
+          with tempfile.NamedTemporaryFile() as f:
+              f.write(patch); f.flush()
+              subprocess.run(['git', 'apply', '--check', f.name], check=True)
+              subprocess.run(['git', 'apply', f.name], check=True)
+          pathlib.Path('.delivery/native-rust.yml').write_bytes(pathlib.Path('.github/workflows/native-rust.yml').read_bytes())
+          PY
+          # Actual workflow changes are applied separately by the authorized
+          # repository connector, not by the narrower Actions job token.
+          git restore --source=HEAD --staged --worktree -- .github/workflows
+          git rm -- .delivery/live-repair-1.bin .delivery/live-repair-2.bin .delivery/live-repair-3.bin .delivery/live-repair-4.bin .delivery/live-repair-5.bin .delivery/live-repair-6.bin
+          cargo fmt --manifest-path native/Cargo.toml --all
+          python3 native/scripts/prepare_assets.py
+          git diff --check
+      - name: Run focused release-repair regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(python3 native/scripts/prepare_release.py --print-version)" = '0.10.2'
+          python3 -m unittest discover -s tests -p 'test_download_zero.py' -v
+          python3 -m unittest discover -s tests -p 'test_plugin_autostart.py' -v
+          python3 -m unittest discover -s tests -p 'test_install_brief.py' -v
+          python3 -m unittest discover -s tests -p 'test_operation_journal.py' -v
+          python3 native/scripts/prepare_release.py --self-test
+          node --check native/scripts/verify_live_desktop.cjs
+          node --test native/crates/modhunter-desktop/tests/shell_runtime.test.cjs
+      - name: Save formatted source on the dedicated repair branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add --all
+          git commit -m 'Repair automatic MO2 discovery, native download zero and live desktop controls' -m '0.10.2: explicit callback signatures, automatic service startup, live toolbar routing, honest onboarding and authenticated diagnostics. Add native desktop-to-MO2 end-to-end acceptance and bind it to release artifacts. No exact beta-12 or personal account validation is claimed. Companion workflow is staged as source until applied via the authorized connector.'
+          git push origin HEAD:refs/heads/upgrade/live-repair-0102
+          mkdir -p "$RUNNER_TEMP/repair-checkpoint"
+          git rev-parse HEAD > "$RUNNER_TEMP/repair-checkpoint/COMMIT.txt"
+          git bundle create "$RUNNER_TEMP/repair-checkpoint/Modhunter-source.bundle" HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Modhunter-Repaired-Source
+          path: ${{ runner.temp }}/repair-checkpoint/
+          if-no-files-found: error
+          retention-days: 30

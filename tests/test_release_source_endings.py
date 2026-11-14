@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 ATTESTED = (
+    'native/PROJECT_NOTICE.txt',
     'mo2_update_arsenal/qt_bridge.py', 'tests/test_native_qt_bridge.py',
     'native/scripts/verify_qt_forward.py', 'native/qt_bridge/qt_bridge.cpp',
     'native/qt_bridge/qt_bridge_fixture.cpp',

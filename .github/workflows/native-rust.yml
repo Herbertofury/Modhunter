@@ -2,9 +2,9 @@ name: Rust desktop and MO2 readiness
 on:
   push:
     branches: [main, 'upgrade/**']
-    paths: ['native/**', 'mo2_update_arsenal/**', 'desktop/**', 'tests/**', 'scripts/**', 'build.py', '.github/workflows/native-rust.yml']
+    paths: ['native/**', 'mo2_update_arsenal/**', 'desktop/**', 'tests/**', 'scripts/**', 'build.py', '.gitattributes', '.github/workflows/native-rust.yml']
   pull_request:
-    paths: ['native/**', 'mo2_update_arsenal/**', 'desktop/**', 'tests/**', 'scripts/**', 'build.py', '.github/workflows/native-rust.yml']
+    paths: ['native/**', 'mo2_update_arsenal/**', 'desktop/**', 'tests/**', 'scripts/**', 'build.py', '.gitattributes', '.github/workflows/native-rust.yml']
   workflow_dispatch:
 permissions:
   contents: read

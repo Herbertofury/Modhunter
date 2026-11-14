@@ -13,7 +13,31 @@ const root=path.resolve(__dirname,'../..');
 const hash=f=>crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
 const options=Object.fromEntries(process.argv.slice(2).map(s=>{const at=s.indexOf('=');return[s.slice(0,at),s.slice(at+1)];}));
 const exe=options['--exe'],output=options['--output'],endpoint=options['--endpoint'];
-const checks=[],timings={};let phase='preflight',child,browser,launchError='',attachError='',childOutput='';
+const checks=[],timings={},policyValues=[];let phase='preflight',child,browser,launchError='',attachError='',childOutput='';
+// Runtime 150+ correctly ignores user-controlled debugging overrides in an
+// elevated process. Set only this disposable runner's exact application policy,
+// never a wildcard, HKCU override, runtime downgrade, or shipped app change.
+// Microsoft: WebView2Feedback#5645 and CreateCoreWebView2EnvironmentWithOptions.
+function setCiPolicy(name,value){
+ if(process.platform!=='win32'||process.env.GITHUB_ACTIONS!=='true'||process.env.RUNNER_OS!=='Windows'||process.env.MODHUNTER_NATIVE_SMOKE!=='1')throw Error('Machine policy is restricted to the disposable Windows CI fixture');
+ const app=path.basename(exe);if(app!=='Modhunter.exe'||!['AdditionalBrowserArguments','UserDataFolder'].includes(name))throw Error('Invalid application-scoped test policy');
+ const key='HKLM\\SOFTWARE\\Policies\\Microsoft\\Edge\\WebView2\\'+name;
+ const query=spawnSync('reg.exe',['query',key,'/v',app,'/reg:64'],{windowsHide:true,encoding:'utf8',timeout:10000});
+ if(query.error||query.status!==1)throw Error('Refusing to replace or assume ownership of existing WebView2 policy: '+name);
+ const added=spawnSync('reg.exe',['add',key,'/v',app,'/t','REG_SZ','/d',value,'/f','/reg:64'],{windowsHide:true,encoding:'utf8',timeout:10000});
+ if(added.error||added.status!==0)throw Error('Could not set isolated app policy: '+name);
+ policyValues.push({key,app,value});
+ const verified=spawnSync('reg.exe',['query',key,'/v',app,'/reg:64'],{windowsHide:true,encoding:'utf8',timeout:10000});
+ if(verified.error||verified.status!==0||!verified.stdout.includes(value))throw Error('Could not verify isolated app policy: '+name);
+}
+function clearCiPolicies(){
+ for(const {key,app,value} of policyValues.reverse()){
+  const observed=spawnSync('reg.exe',['query',key,'/v',app,'/reg:64'],{windowsHide:true,encoding:'utf8',timeout:10000});
+  if(observed.error||observed.status!==0||!observed.stdout.includes(value))throw Error('Test policy changed unexpectedly; refusing to delete another value');
+  const removed=spawnSync('reg.exe',['delete',key,'/v',app,'/f','/reg:64'],{windowsHide:true,encoding:'utf8',timeout:10000});
+  if(removed.error||removed.status!==0)throw Error('Could not remove temporary app policy');
+ }
+}
 function check(name,value){checks.push({name,passed:!!value});if(!value)throw Error('Failed: '+name);}
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(fn,ms=20000){const end=Date.now()+ms;while(Date.now()<end){const value=await fn();if(value)return value;await pause(100);}throw Error('Deadline at '+phase);}
@@ -30,6 +54,9 @@ async function main(){
  // data directory or suppress its new loopback debugging arguments. This
  // override is scoped to this disposable child, never the shipped launcher.
  const browserProfile=fs.mkdtempSync(path.join(path.dirname(output),'desktop-profile-'));
+ phase='configure-isolated-webview2';
+ setCiPolicy('UserDataFolder',browserProfile);
+ setCiPolicy('AdditionalBrowserArguments',`--remote-debugging-port=${port} --remote-debugging-address=127.0.0.1`);
  child=spawn(exe,[],{cwd:path.dirname(exe),windowsHide:false,stdio:['ignore','pipe','pipe'],env:{...process.env,
   WEBVIEW2_USER_DATA_FOLDER:browserProfile,
   WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${port} --remote-debugging-address=127.0.0.1`}});
@@ -116,4 +143,8 @@ async function main(){
 main().catch(error=>{if(output)fs.writeFileSync(output,JSON.stringify({schemaVersion:1,ok:false,phase,error:String(error.message),checks,childExitCode:child?.exitCode??null,launchError,attachError,childOutput},null,2));console.error('Live desktop validation failed at '+phase+': '+error.message);process.exitCode=1;}).finally(async()=>{
  if(browser)try{await browser.close();}catch{}
  if(child&&child.exitCode===null)child.kill();
+ try{clearCiPolicies();}catch(error){
+  process.exitCode=1;console.error('Temporary CI policy cleanup failed: '+error.message);
+  if(output){const report=JSON.parse(fs.readFileSync(output,'utf8'));report.ok=false;report.cleanupError=error.message;fs.writeFileSync(output,JSON.stringify(report,null,2));}
+ }
 });

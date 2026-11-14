@@ -124,11 +124,17 @@ async function readMo2Profile(modlistPath){
   const mid=Number(meta.modid||meta.nexusid||meta.mod_id||0);
   const nexusId=Number.isSafeInteger(mid)&&mid>0?mid:0;
   const version=String(meta.version||'?'),latest=String(meta.newestversion||'');
-  let url=meta.url||meta.modurl||meta.homepage||meta.website||'';
+  const url=meta.url||meta.modurl||meta.homepage||meta.website||'';
+  let source=sourceFor(url,nexusId,game);
   const notes=String(meta.notes||'');
-  if(!url){
+  // Notes may describe dependencies or troubleshooting, not this mod's identity.
+  if(!source.verified){
    const found=notes.match(/https:\/\/[^\s<>'"\])]+/iu);
-   if(found)url=found[0];
+   if(found){
+    const advisory=sourceFor(found[0],0,'unknown');
+    if(advisory.verified)source={...advisory,verified:false,kind:'advisory',
+      label:'Unverified link from MO2 notes'};
+   }
   }
   const modPath=path.join(modDir,'SKSE','Plugins');
   let flags=[];
@@ -142,7 +148,7 @@ async function readMo2Profile(modlistPath){
     name:entry.name,installedVersion:version,latestKnownVersion:latest,
     enabled:entry.enabled,nexusId,priority:index,flags,groupId:'',
     group:'Imported load order',screenshotNote:notes.slice(0,4000),author:String(meta.author||''),
-    source:sourceFor(url,nexusId,game),screenshot:0,audit:flags.length?{
+    source,screenshot:0,audit:flags.length?{
       verdict:'check',note:'Native DLL detected; verify game runtime and dependencies',evidence:'Imported MO2 profile metadata'}:{},
     offlineImported:true};
  };

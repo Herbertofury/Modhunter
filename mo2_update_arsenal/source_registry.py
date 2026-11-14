@@ -70,7 +70,13 @@ def _public_query(query: str) -> str:
 def canonical_source_url(raw: str) -> str:
     """Accept public HTTPS page links only; keep passwords and query tokens out."""
     try:
-        raw = str(raw or "").strip()[:1800]
+        raw = str(raw or "")
+        # Match the native source-identity boundary before urlsplit silently
+        # removes controls or truncation invents a different project route.
+        if (len(raw) > 1800 or len(raw.encode("utf-8")) > 1800
+                or any(ord(c) < 32 or 127 <= ord(c) <= 159 or c == "\\" for c in raw)):
+            return ""
+        raw = raw.strip()
         u = urllib.parse.urlsplit(raw)
         host = (u.hostname or "").lower()
         if u.scheme.lower() != "https" or not host or u.username or u.password or u.port:

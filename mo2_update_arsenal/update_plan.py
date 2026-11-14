@@ -22,6 +22,9 @@ def _positive_int(value: Any) -> int:
     # bool is a subclass of int, but is never a valid Nexus identifier.
     if isinstance(value, bool):
         return 0
+    # int(11.9) is 11, but that is a different file than the reviewed ID.
+    if isinstance(value, float) and not value.is_integer():
+        return 0
     try:
         candidate = int(value)
     except (ValueError, TypeError, OverflowError):

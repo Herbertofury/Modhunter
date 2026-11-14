@@ -70,6 +70,24 @@ class UpdateWorkshopTests(unittest.TestCase):
         self.assertEqual(validate_batch_selection(SNAP, packet(choice())),
                          [{"itemId": "live-a", "modId": 101, "fileId": 11, "installedVersion": "1.0"}])
 
+    def test_fractional_ids_cannot_be_truncated_into_reviewed_files(self):
+        original = copy.deepcopy(SNAP)
+        for selection in (choice(mod_id=101.5), choice(file_id=11.9),
+                          choice(file_id=float("nan")), choice(file_id=float("inf"))):
+            with self.subTest(selection=selection), self.assertRaises(PlanError):
+                validate_batch_selection(SNAP, packet(selection))
+        self.assertEqual(SNAP, original)
+        for mod_id, file_id in ((101, 11), ("101", "11"), (101.0, 11.0)):
+            result = validate_batch_selection(SNAP, packet(choice(mod_id=mod_id, file_id=file_id)))
+            self.assertEqual((result[0]["modId"], result[0]["fileId"]), (101, 11))
+
+    def test_fractional_snapshot_identity_stays_unresolved(self):
+        snapshot = copy.deepcopy(SNAP)
+        snapshot["items"][0]["nexusId"] = 101.5
+        self.assertEqual(plan_updates(snapshot)["items"][0]["nexusId"], 0)
+        with self.assertRaises(PlanError):
+            validate_batch_selection(snapshot, packet(choice()))
+
     def test_profile_change_and_no_confirmation_blocked(self):
         for payload in (packet(choice(), profile="other"),
                         packet(choice(), confirm="NONE"),

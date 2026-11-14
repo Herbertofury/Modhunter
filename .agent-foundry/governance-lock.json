@@ -1,0 +1,26 @@
+{
+  "digestFormat": "sha256-utf8-lf",
+  "files": {
+    ".agents/foundry/AGENTS-adapter.md": "15c80d7805f48075fa76fa4d0c5a0394e107e5f5ad1c1ef862d6fbb5a1a9a258",
+    ".agents/foundry/AUTHORIZATION_CONTROL_STANDARD.md": "8835f053671703efd93d4298362e6e36b74498aef518d1f1e0844671f232a256",
+    ".agents/foundry/CHALLENGER_INTEGRATION_STANDARD.md": "99896ab140c00f9b3f3cb2faeee7e6861bf8f405121dd3db207efdb663958ba8",
+    ".agents/foundry/DESIGN_QUALITY_STANDARD.md": "403bf05fa52ff93eab3d8f3ea2d9849bd94b7442ddcef6de2b31659f66755bd4",
+    ".agents/foundry/DISTRIBUTION_STANDARD.md": "2c3d8e11e1c8f80e14493140a1247312e6d601603e8738bf63adee798c8a3f5b",
+    ".agents/foundry/DURABLE_EXECUTION_STANDARD.md": "caa37bb0ec934b4779f7c9888442c6d3f5f3a8b63243679516f3401d85ff227a",
+    ".agents/foundry/EVALUATION_STANDARD.md": "2ee1fe60f4b280d246d21a2169b2b9ec990aa1a91d95c10d60e06cdbaf2b7814",
+    ".agents/foundry/FAILURE_INTELLIGENCE_STANDARD.md": "81dc3d42f6adc8fb8f84472c2de101749c4530f0aa61dbd1e3e3bfad438355a3",
+    ".agents/foundry/INTEROPERABILITY_STANDARD.md": "5b277d8118be1274c42fc619bd713cdd83e4d57874c8ce4267e716801fc5e797",
+    ".agents/foundry/MODERNIZATION_STANDARD.md": "0c0ac11dba865f4fecd0604f911aea84094c300e5231b2a790951d28f9be4fcb",
+    ".agents/foundry/OBSERVABILITY_STANDARD.md": "2ecb83035924f46d55520e4fdca968314b6e840d137e1d98d4e7e15454b83dc1",
+    ".agents/foundry/PERFORMANCE_ACCEPTANCE.md": "6de187e05094f635f7b3a51a16372f0450bba4aa00b8e7e1f888ab055e40e3da",
+    ".agents/foundry/PRODUCT_INVARIANTS.md": "6557f62771230a833d69a53dace8e40992afa93d0ff00e75eef79c9c1c70b565",
+    ".agents/foundry/RUNTIME_PROOF.md": "d3970caf1cbf96100676ca31468f46e3caed53592428c0a8087beba2717fe9e4",
+    ".agents/foundry/SUPPLY_CHAIN_STANDARD.md": "efb1376716f4c1d1fec655d1b16ca8213ce00eca4b6ec501ed1b902652daf74f",
+    ".agents/foundry/THIRD_PARTY_SKILL_SECURITY.md": "0d640f0cfa8da1a3a51199e32a1618d38e6934cca6060c2fd38096cabcd10665"
+  },
+  "schemaVersion": 1,
+  "sourceCommit": "87166b5f6a621c61b90bbbfe90835a3752c1c51b",
+  "sourceRepository": "https://github.com/Herbertofury/Agent-Foundry",
+  "sourceWorkingTreeDirty": false,
+  "version": "1.1.2"
+}

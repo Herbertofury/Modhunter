@@ -5,6 +5,22 @@ use url::Url;
 
 pub const MAX_RESULT_BYTES: usize = 1_200_000;
 
+/// A framework style rewrite must not remove an existing capture-required
+/// layered bit. Preserve only that bit while protection is enabled; all other
+/// style decisions, including an explicitly disabled policy, remain unchanged.
+pub fn preserve_capture_layer(
+    previous: u32,
+    proposed: u32,
+    layered_bit: u32,
+    enabled: bool,
+) -> u32 {
+    if enabled {
+        proposed | (previous & layered_bit)
+    } else {
+        proposed
+    }
+}
+
 #[path = "watchtower_download_scope.rs"]
 pub mod download_scope;
 #[path = "watchtower_preparation.rs"]
@@ -141,6 +157,38 @@ return result;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn capture_style_policy_retains_only_existing_layering_during_framework_rewrites() {
+        const LAYERED: u32 = 0x0008_0000;
+        const TRANSPARENT: u32 = 0x0000_0020;
+        const TOPMOST: u32 = 0x0000_0008;
+        assert_eq!(
+            preserve_capture_layer(LAYERED | TRANSPARENT, TOPMOST, LAYERED, true),
+            LAYERED | TOPMOST
+        );
+        // No other old style may be resurrected; every new style is retained.
+        for bit in 0..32 {
+            let flag = 1_u32 << bit;
+            let value = preserve_capture_layer(u32::MAX, flag, LAYERED, true);
+            assert_eq!(value & !LAYERED, flag & !LAYERED);
+        }
+        assert_eq!(preserve_capture_layer(0, TOPMOST, LAYERED, true), TOPMOST);
+    }
+
+    #[test]
+    fn capture_style_policy_disable_restores_framework_authority_without_clearing_owned_styles() {
+        const LAYERED: u32 = 0x0008_0000;
+        assert_eq!(preserve_capture_layer(LAYERED, 0, LAYERED, false), 0);
+        assert_eq!(
+            preserve_capture_layer(0, LAYERED | 0x20, LAYERED, false),
+            LAYERED | 0x20
+        );
+        let disabled = preserve_capture_layer(LAYERED, 0, LAYERED, false);
+        assert_eq!(preserve_capture_layer(disabled, 0, LAYERED, true), 0);
+        // Re-enabling the guard alone cannot manufacture capture protection;
+        // the native Set+Get affinity path must establish it again first.
+    }
     #[test]
     fn obsolete_blank_completion_cannot_complete_a_website_navigation() {
         let mut load = NavigationProgress::default();

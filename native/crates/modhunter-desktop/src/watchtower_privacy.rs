@@ -4,20 +4,25 @@ use super::*;
 use std::collections::BTreeSet;
 use tauri::Window;
 use windows_sys::Win32::{
+    Foundation::{HWND, LPARAM, LRESULT, WPARAM},
     System::Threading::GetCurrentThreadId,
     UI::{
         Input::KeyboardAndMouse::{
             MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, RegisterHotKey, UnregisterHotKey,
         },
+        Shell::{DefSubclassProc, GetWindowSubclass, RemoveWindowSubclass, SetWindowSubclass},
         WindowsAndMessaging::{
-            GetMessageW, GetWindowDisplayAffinity, MSG, PM_NOREMOVE, PeekMessageW,
-            PostThreadMessageW, SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE, WDA_NONE, WM_APP,
-            WM_HOTKEY,
+            GWL_EXSTYLE, GetMessageW, GetWindowDisplayAffinity, MSG, PM_NOREMOVE, PeekMessageW,
+            PostThreadMessageW, STYLESTRUCT, SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE,
+            WDA_NONE, WM_APP, WM_HOTKEY, WM_NCDESTROY, WM_STYLECHANGING, WS_EX_LAYERED,
         },
     },
 };
 const HOTKEY_ID: i32 = 0x4d48;
 const DRIVER_WAKE: u32 = WM_APP + 0x4d;
+const CAPTURE_STYLE_ID: usize = 0x4d48_4350;
+const AFFINITY_ERROR: &str =
+    "Windows did not confirm the requested capture exclusion for this window.";
 #[derive(Default)]
 struct Model {
     quick_hide: bool,
@@ -175,8 +180,70 @@ pub(crate) fn is_hidden(app: &tauri::AppHandle) -> bool {
     app.try_state::<Privacy>()
         .is_some_and(|s| s.model.lock().unwrap_or_else(|e| e.into_inner()).app_hidden)
 }
+// The pinned window framework reconstructs GWL_EXSTYLE during show/hide and
+// other style changes. Dropping WS_EX_LAYERED can clear Windows display affinity.
+// Keep the already-present bit before that rewrite reaches Windows, rather than
+// briefly exposing a shown window and reapplying protection afterward.
+// Installation, removal and callbacks all belong to the owning GUI thread.
+// No heap state, app locks or window APIs that can reenter this callback are used.
+unsafe extern "system" fn capture_style_proc(
+    hwnd: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    id: usize,
+    enabled: usize,
+) -> LRESULT {
+    if message == WM_NCDESTROY {
+        unsafe {
+            RemoveWindowSubclass(hwnd, Some(capture_style_proc), id);
+            return DefSubclassProc(hwnd, message, wparam, lparam);
+        }
+    }
+    // Let the rest of the subclass chain apply its requested style first. Only
+    // the required existing bit is retained in the final proposed value.
+    let result = unsafe { DefSubclassProc(hwnd, message, wparam, lparam) };
+    if message == WM_STYLECHANGING && wparam as i32 == GWL_EXSTYLE && lparam != 0 {
+        // WM_STYLECHANGING supplies a valid mutable STYLESTRUCT for this call.
+        let styles = unsafe { &mut *(lparam as *mut STYLESTRUCT) };
+        styles.styleNew = policy::preserve_capture_layer(
+            styles.styleOld,
+            styles.styleNew,
+            WS_EX_LAYERED,
+            enabled != 0,
+        );
+    }
+    result
+}
+fn capture_style_guard(hwnd: HWND, enabled: bool) -> Result<()> {
+    if enabled {
+        if unsafe { SetWindowSubclass(hwnd, Some(capture_style_proc), CAPTURE_STYLE_ID, 1) } == 0 {
+            return Err(AFFINITY_ERROR.into());
+        }
+    } else {
+        let mut reference = 0;
+        let installed = unsafe {
+            GetWindowSubclass(
+                hwnd,
+                Some(capture_style_proc),
+                CAPTURE_STYLE_ID,
+                &mut reference,
+            )
+        } != 0;
+        if installed
+            && unsafe { RemoveWindowSubclass(hwnd, Some(capture_style_proc), CAPTURE_STYLE_ID) }
+                == 0
+        {
+            return Err(AFFINITY_ERROR.into());
+        }
+    }
+    Ok(())
+}
 fn affinity(window: &Window, enabled: bool) -> Result<()> {
     let hwnd = window.hwnd().map_err(err)?.0;
+    // Disable removes only our subclass before clearing affinity. It does not
+    // clear WS_EX_LAYERED or overwrite another component's style choices.
+    capture_style_guard(hwnd, enabled)?;
     let expected = if enabled {
         WDA_EXCLUDEFROMCAPTURE
     } else {
@@ -187,9 +254,7 @@ fn affinity(window: &Window, enabled: bool) -> Result<()> {
         || unsafe { GetWindowDisplayAffinity(hwnd, &mut actual) } == 0
         || actual != expected
     {
-        return Err(
-            "Windows did not confirm the requested capture exclusion for this window.".into(),
-        );
+        return Err(AFFINITY_ERROR.into());
     }
     Ok(())
 }

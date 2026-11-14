@@ -524,3 +524,26 @@ test('canceling valid backup restore leaves progress and preferences intact',asy
  await h.api.importJSON({text:async()=>JSON.stringify({catalogId:'a',rows:{'item-0':{note:'Replace'}},prefs:{query:'Changed'}})});
  assert.equal(h.qa.verifyRow('item-0').state.note,'Keep');assert.equal(h.qa.getSnapshot().search,'');assert.equal(h.context.localStorage.getItem('mo2-update-arsenal:v2:a'),saved);
 });
+
+test('Watchtower row cache changes with visible age, not wall-clock minute buckets',()=>{
+ const source=fs.readFileSync(path.join(__dirname,'../native/ui/watchtower.js'),'utf8');
+ const now=Math.floor(1700000000000/60000)*60000+59000;
+ const context={Date:{now:()=>context.now},now,state:{settings:{hideTitles:false,backgroundChecking:false}},
+  rows:new Map(),selected:new Set(),sessionById:new Map(),ready:true,
+  status:()=>['Baseline saved',''],working:()=>false,enabled:()=>true,stopped:()=>false,
+  needsSession:()=>false,button:()=>'',esc:v=>String(v??''),displayTitle:w=>w.title,host:()=> 'example.com'};
+ vm.createContext(context);
+ vm.runInContext(source.slice(source.indexOf(' function relative('),source.indexOf(' function working('))+
+  source.slice(source.indexOf(' function watchMarkup('),source.indexOf(' function renderPages(')),context);
+ const watch={id:'test',title:'Unchanged',url:'https://example.com/',enabled:true,generation:1,
+  latest:{id:'observation'},lastSuccessAt:now,intervalMinutes:60,tags:[]};
+ const initial=context.watchMarkup(watch);
+ context.rows.set(watch.id,{key:initial.key});context.now+=2000;
+ const unchanged=context.watchMarkup(watch);
+ assert.equal(unchanged.key,initial.key);
+ assert.equal(unchanged.html,'');
+ context.now+=60000;
+ const changed=context.watchMarkup(watch);
+ assert.notEqual(changed.key,initial.key);
+ assert.match(changed.html,/Last success 1 min ago/);
+});

@@ -431,6 +431,29 @@ class WatchtowerBrowserTests(unittest.TestCase):
         self.assertFalse(self.page.locator("#addPage").is_disabled())
         self.assertEqual(self.page.evaluate("__WATCH_FIX__.state.watches.length"), 0)
 
+    def test_wall_clock_minute_does_not_rebuild_unchanged_relative_labels(self):
+        now = 1_700_000_000_000 // 60000 * 60000 + 59000
+        self.page.add_init_script(f"window.fixtureNow = {now}; Date.now = () => window.fixtureNow;")
+        state = snapshot()
+        for item in state["watches"]:
+            item["lastSuccessAt"] = now
+        self.open(state)
+        self.page.evaluate("""() => {
+          window.unchangedRow = document.querySelector('[data-watch-id="watch-1"]');
+          window.focusedControl = unchangedRow.querySelector('[data-action="check"]');
+          focusedControl.focus();
+          window.fixtureNow += 2000;
+          __WATCH_FIX__.change(s => {s.watches[0].title = 'Changed sibling'; s.watches[0].generation++});
+        }""")
+        self.assertTrue(self.page.evaluate("unchangedRow === document.querySelector('[data-watch-id=\"watch-1\"]')"))
+        self.assertTrue(self.page.evaluate("document.activeElement === focusedControl"))
+        self.assertIn("Last success Just now", self.page.locator('[data-watch-id="watch-1"]').inner_text())
+        self.page.evaluate("""() => {
+          window.fixtureNow += 60000;
+          __WATCH_FIX__.change(s => {s.watches[0].generation++});
+        }""")
+        self.assertIn("Last success 1 min ago", self.page.locator('[data-watch-id="watch-1"]').inner_text())
+
     def test_stale_state_and_focus(self):
         self.open()
         self.page.evaluate("""() => {

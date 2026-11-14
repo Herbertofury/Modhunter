@@ -2,8 +2,8 @@
 //! message after real OS registration, not a claimed physical keyboard test.
 use super::*;
 use windows_sys::Win32::{
-    Foundation::GetLastError,
-    UI::WindowsAndMessaging::{GetWindowLongPtrW, IsWindow},
+    Foundation::{GetLastError, HWND},
+    UI::WindowsAndMessaging::{GWL_EXSTYLE, GetWindowLongPtrW, IsWindow, WS_EX_LAYERED},
 };
 const VISIBLE: &str = "privacy-smoke-visible";
 const BACKGROUND: &str = "privacy-smoke-background";
@@ -31,20 +31,10 @@ fn observe(
             Some(unsafe { GetLastError() })
         };
         let style = unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) } as u32;
-        let mut reference = 0;
-        let installed = unsafe {
-            GetWindowSubclass(
-                hwnd,
-                Some(capture_style_proc),
-                CAPTURE_STYLE_ID,
-                &mut reference,
-            )
-        } != 0;
         rows.push(
             json!({"label":label,"querySucceeded":succeeded,"affinity":actual,
             "win32Error":error,"extendedStyle":style,"layered":style&WS_EX_LAYERED!=0,
-            "visible":window.is_visible().map_err(err)?,"guardInstalled":installed,
-            "guardEnabled":installed&&reference!=0}),
+            "visible":window.is_visible().map_err(err)?}),
         );
     }
     let state = app.state::<Privacy>();
@@ -59,14 +49,12 @@ fn observe(
         } else {
             WDA_NONE
         };
-        if rows.iter().any(|row| {
-            row["querySucceeded"] != true
-                || row["affinity"] != affinity
-                || row["guardInstalled"] != enabled
-                || row["guardEnabled"] != enabled
-        }) {
+        if rows
+            .iter()
+            .any(|row| row["querySucceeded"] != true || row["affinity"] != affinity)
+        {
             return Err(format!(
-                "Windows did not report the exact capture policy and guard on every fixture window at {stage}."
+                "Windows did not report the exact capture policy on every fixture window at {stage}."
             ));
         }
     }
@@ -223,7 +211,7 @@ pub(super) fn check(app: &tauri::AppHandle) -> Result<Value> {
         Ok(
             json!({"captureAffinityConfirmed":true,"globalShortcutRegistered":true,"conflictingShortcutRejected":true,"guiThreadWindowMutation":true,"allVisibleWindowsHidden":true,"newWindowHeldWhileHidden":true,"backgroundWindowRemainedHidden":true,"intendedWindowsRestored":true,
                 "frameworkStyleTransitionsRetained":true,"unrelatedStyleChoicesRetained":true,
-                "captureDisableRemovedGuard":true,"captureReenableVerified":true,"protectedWindowDestroyed":true,
+                "captureDisabledVerified":true,"captureReenableVerified":true,"protectedWindowDestroyed":true,
                 "affinityStages":observations.lock().map_err(err)?.clone(),
                 "shortcutDelivery":"Synthetic WM_HOTKEY after real RegisterHotKey; physical keyboard behavior is not claimed."}),
         )

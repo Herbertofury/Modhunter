@@ -4,23 +4,20 @@ use super::*;
 use std::collections::BTreeSet;
 use tauri::Window;
 use windows_sys::Win32::{
-    Foundation::{HWND, LPARAM, LRESULT, WPARAM},
     System::Threading::GetCurrentThreadId,
     UI::{
         Input::KeyboardAndMouse::{
             MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, RegisterHotKey, UnregisterHotKey,
         },
-        Shell::{DefSubclassProc, GetWindowSubclass, RemoveWindowSubclass, SetWindowSubclass},
         WindowsAndMessaging::{
-            GWL_EXSTYLE, GetMessageW, GetWindowDisplayAffinity, MSG, PM_NOREMOVE, PeekMessageW,
-            PostThreadMessageW, STYLESTRUCT, SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE,
-            WDA_NONE, WM_APP, WM_HOTKEY, WM_NCDESTROY, WM_STYLECHANGING, WS_EX_LAYERED,
+            GetMessageW, GetWindowDisplayAffinity, MSG, PM_NOREMOVE, PeekMessageW,
+            PostThreadMessageW, SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE, WDA_NONE, WM_APP,
+            WM_HOTKEY,
         },
     },
 };
 const HOTKEY_ID: i32 = 0x4d48;
 const DRIVER_WAKE: u32 = WM_APP + 0x4d;
-const CAPTURE_STYLE_ID: usize = 0x4d48_4350;
 const AFFINITY_ERROR: &str =
     "Windows did not confirm the requested capture exclusion for this window.";
 #[derive(Default)]
@@ -180,70 +177,8 @@ pub(crate) fn is_hidden(app: &tauri::AppHandle) -> bool {
     app.try_state::<Privacy>()
         .is_some_and(|s| s.model.lock().unwrap_or_else(|e| e.into_inner()).app_hidden)
 }
-// The pinned window framework reconstructs GWL_EXSTYLE during show/hide and
-// other style changes. Dropping WS_EX_LAYERED can clear Windows display affinity.
-// Keep the already-present bit before that rewrite reaches Windows, rather than
-// briefly exposing a shown window and reapplying protection afterward.
-// Installation, removal and callbacks all belong to the owning GUI thread.
-// No heap state, app locks or window APIs that can reenter this callback are used.
-unsafe extern "system" fn capture_style_proc(
-    hwnd: HWND,
-    message: u32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-    id: usize,
-    enabled: usize,
-) -> LRESULT {
-    if message == WM_NCDESTROY {
-        unsafe {
-            RemoveWindowSubclass(hwnd, Some(capture_style_proc), id);
-            return DefSubclassProc(hwnd, message, wparam, lparam);
-        }
-    }
-    // Let the rest of the subclass chain apply its requested style first. Only
-    // the required existing bit is retained in the final proposed value.
-    let result = unsafe { DefSubclassProc(hwnd, message, wparam, lparam) };
-    if message == WM_STYLECHANGING && wparam as i32 == GWL_EXSTYLE && lparam != 0 {
-        // WM_STYLECHANGING supplies a valid mutable STYLESTRUCT for this call.
-        let styles = unsafe { &mut *(lparam as *mut STYLESTRUCT) };
-        styles.styleNew = policy::preserve_capture_layer(
-            styles.styleOld,
-            styles.styleNew,
-            WS_EX_LAYERED,
-            enabled != 0,
-        );
-    }
-    result
-}
-fn capture_style_guard(hwnd: HWND, enabled: bool) -> Result<()> {
-    if enabled {
-        if unsafe { SetWindowSubclass(hwnd, Some(capture_style_proc), CAPTURE_STYLE_ID, 1) } == 0 {
-            return Err(AFFINITY_ERROR.into());
-        }
-    } else {
-        let mut reference = 0;
-        let installed = unsafe {
-            GetWindowSubclass(
-                hwnd,
-                Some(capture_style_proc),
-                CAPTURE_STYLE_ID,
-                &mut reference,
-            )
-        } != 0;
-        if installed
-            && unsafe { RemoveWindowSubclass(hwnd, Some(capture_style_proc), CAPTURE_STYLE_ID) }
-                == 0
-        {
-            return Err(AFFINITY_ERROR.into());
-        }
-    }
-    Ok(())
-}
 fn affinity(window: &Window, enabled: bool) -> Result<()> {
     let hwnd = window.hwnd().map_err(err)?.0;
-    // Disable removes only our subclass before clearing affinity. It does not
-    // clear WS_EX_LAYERED or overwrite another component's style choices.
-    capture_style_guard(hwnd, enabled)?;
     let expected = if enabled {
         WDA_EXCLUDEFROMCAPTURE
     } else {
@@ -286,11 +221,22 @@ pub(crate) fn apply_window(app: &tauri::AppHandle, window: &Window) -> Result<()
     let w = window.clone();
     on_gui(app, move || apply_on_gui(&a, &w))
 }
+fn hide_on_gui(app: &tauri::AppHandle, window: &Window) -> Result<()> {
+    // The actual Windows fixture retained affinity through initial show but
+    // cleared it during visible -> hidden. The pinned Tauri/Tao calls run
+    // synchronously on this thread; is_visible reads native IsWindowVisible.
+    // Restore and verify policy only after the window is confirmed invisible.
+    // Every later show still independently applies policy before visibility.
+    policy::hide_before_capture(
+        || window.hide().map_err(err),
+        || window.is_visible().map_err(err),
+        || apply_on_gui(app, window),
+    )
+}
 pub(crate) fn guarded_show(app: &tauri::AppHandle, window: &Window, focus: bool) -> Result<()> {
     let a = app.clone();
     let w = window.clone();
     on_gui(app, move || {
-        apply_on_gui(&a, &w)?;
         let state = a.state::<Privacy>();
         let mut model = state.model.lock().map_err(err)?;
         if model.app_hidden {
@@ -298,10 +244,11 @@ pub(crate) fn guarded_show(app: &tauri::AppHandle, window: &Window, focus: bool)
             if focus {
                 model.focus_intent = Some(w.label().into());
             }
-            w.hide().map_err(err)?;
-            return Ok(());
+            drop(model);
+            return hide_on_gui(&a, &w);
         }
         drop(model);
+        apply_on_gui(&a, &w)?;
         w.show().map_err(err)?;
         if focus {
             w.set_focus().map_err(err)?;
@@ -316,6 +263,7 @@ fn toggle_on_gui(app: &tauri::AppHandle) -> Result<()> {
         return Err("Enable the optional quick-hide shortcut first.".into());
     }
     let windows = app.windows();
+    let mut failures = Vec::new();
     model.visibility_error.clear();
     if !model.app_hidden {
         model.visible_intent.clear();
@@ -329,12 +277,14 @@ fn toggle_on_gui(app: &tauri::AppHandle) -> Result<()> {
             }
         }
         model.app_hidden = true;
+        drop(model);
         for (label, window) in &windows {
-            if let Err(error) = window.hide() {
-                model.visibility_error = format!("Could not hide {label}: {error}");
+            // One failed policy request must not prevent hiding other windows.
+            if let Err(error) = hide_on_gui(app, window) {
+                failures.push(format!("Could not hide {label}: {error}"));
             }
         }
-        drop(model);
+        state.model.lock().map_err(err)?.visibility_error = failures.join(" ");
     } else {
         let wanted = model.visible_intent.clone();
         let focus = model.focus_intent.clone();
@@ -362,7 +312,11 @@ fn toggle_on_gui(app: &tauri::AppHandle) -> Result<()> {
         drop(model);
     }
     let _ = app.emit("modhunter-privacy", snapshot(app));
-    Ok(())
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join(" "))
+    }
 }
 pub(crate) fn toggle(app: &tauri::AppHandle) -> Result<()> {
     let a = app.clone();

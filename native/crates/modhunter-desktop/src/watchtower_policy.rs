@@ -5,20 +5,19 @@ use url::Url;
 
 pub const MAX_RESULT_BYTES: usize = 1_200_000;
 
-/// A framework style rewrite must not remove an existing capture-required
-/// layered bit. Preserve only that bit while protection is enabled; all other
-/// style decisions, including an explicitly disabled policy, remain unchanged.
-pub fn preserve_capture_layer(
-    previous: u32,
-    proposed: u32,
-    layered_bit: u32,
-    enabled: bool,
-) -> u32 {
-    if enabled {
-        proposed | (previous & layered_bit)
-    } else {
-        proposed
+/// A native hide transition may clear capture affinity. Repair only after the
+/// real visibility getter confirms the window is hidden; never show it to fix
+/// the policy. The native caller performs all three operations on its GUI thread.
+pub fn hide_before_capture(
+    hide: impl FnOnce() -> Result<(), String>,
+    is_visible: impl FnOnce() -> Result<bool, String>,
+    apply_capture: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    hide()?;
+    if is_visible()? {
+        return Err("Windows did not confirm that the window was hidden.".into());
     }
+    apply_capture()
 }
 
 #[path = "watchtower_download_scope.rs"]
@@ -159,35 +158,68 @@ mod tests {
     use super::*;
 
     #[test]
-    fn capture_style_policy_retains_only_existing_layering_during_framework_rewrites() {
-        const LAYERED: u32 = 0x0008_0000;
-        const TRANSPARENT: u32 = 0x0000_0020;
-        const TOPMOST: u32 = 0x0000_0008;
-        assert_eq!(
-            preserve_capture_layer(LAYERED | TRANSPARENT, TOPMOST, LAYERED, true),
-            LAYERED | TOPMOST
-        );
-        // No other old style may be resurrected; every new style is retained.
-        for bit in 0..32 {
-            let flag = 1_u32 << bit;
-            let value = preserve_capture_layer(u32::MAX, flag, LAYERED, true);
-            assert_eq!(value & !LAYERED, flag & !LAYERED);
-        }
-        assert_eq!(preserve_capture_layer(0, TOPMOST, LAYERED, true), TOPMOST);
+    fn hidden_capture_transition_repairs_a_reset_only_after_native_visibility_confirmation() {
+        use std::cell::Cell;
+        let visible = Cell::new(true);
+        let affinity = Cell::new(17);
+        let confirmed_hidden = Cell::new(false);
+        hide_before_capture(
+            || {
+                visible.set(false);
+                affinity.set(0); // Actual Windows fixture transition.
+                Ok(())
+            },
+            || {
+                confirmed_hidden.set(!visible.get());
+                Ok(visible.get())
+            },
+            || {
+                assert!(confirmed_hidden.get() && !visible.get());
+                affinity.set(17);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert!(!visible.get());
+        assert_eq!(affinity.get(), 17);
     }
 
     #[test]
-    fn capture_style_policy_disable_restores_framework_authority_without_clearing_owned_styles() {
-        const LAYERED: u32 = 0x0008_0000;
-        assert_eq!(preserve_capture_layer(LAYERED, 0, LAYERED, false), 0);
+    fn hidden_capture_transition_never_repairs_without_a_successful_hide_and_native_query() {
+        for hide_result in [Ok(()), Err("hide failed".to_string())] {
+            for visibility_result in [Ok(true), Err("query failed".to_string())] {
+                let result = hide_before_capture(
+                    || hide_result.clone(),
+                    || visibility_result.clone(),
+                    || panic!("must not repair capture while visibility is unconfirmed"),
+                );
+                assert!(result.is_err());
+            }
+        }
         assert_eq!(
-            preserve_capture_layer(0, LAYERED | 0x20, LAYERED, false),
-            LAYERED | 0x20
+            hide_before_capture(
+                || Err("hide failed".into()),
+                || panic!("hide failed"),
+                || panic!("hide failed")
+            ),
+            Err("hide failed".into())
         );
-        let disabled = preserve_capture_layer(LAYERED, 0, LAYERED, false);
-        assert_eq!(preserve_capture_layer(disabled, 0, LAYERED, true), 0);
-        // Re-enabling the guard alone cannot manufacture capture protection;
-        // the native Set+Get affinity path must establish it again first.
+    }
+
+    #[test]
+    fn hidden_capture_transition_reports_reapply_failure_without_revealing_the_window() {
+        use std::cell::Cell;
+        let visible = Cell::new(true);
+        let result = hide_before_capture(
+            || {
+                visible.set(false);
+                Ok(())
+            },
+            || Ok(visible.get()),
+            || Err("affinity failed".into()),
+        );
+        assert_eq!(result, Err("affinity failed".into()));
+        assert!(!visible.get());
     }
     #[test]
     fn obsolete_blank_completion_cannot_complete_a_website_navigation() {

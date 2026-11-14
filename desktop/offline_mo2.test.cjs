@@ -74,3 +74,25 @@ test('reject the wrong profile file and split-path folder instead of guessing',a
  await assert.rejects(readMo2Profile(path.join(profile,'modlist.txt')),/mods\/ directory/);
  await assert.rejects(readMo2Profile(path.join(profile,'plugins.txt')),/modlist.txt/);
 });
+
+test('listed mod symlinks remain catalog entries without reading external DLLs or metadata',async t=>{
+ const root=await fs.mkdtemp(path.join(os.tmpdir(),'modhunter-m2-link-'));
+ t.after(()=>fs.rm(root,{recursive:true,force:true}));
+ const profile=path.join(root,'profiles','Links'),mods=path.join(root,'mods');
+ const external=path.join(root,'outside-profile');
+ await fs.mkdir(profile,{recursive:true});await fs.mkdir(mods,{recursive:true});
+ await fs.mkdir(path.join(external,'SKSE','Plugins'),{recursive:true});
+ await fs.writeFile(path.join(external,'SKSE','Plugins','private.dll'),'private fixture');
+ await fs.writeFile(path.join(external,'meta.ini'),'[General]\nversion=private-version\n');
+ await fs.symlink(external,path.join(mods,'Linked'),'junction');
+ await fs.writeFile(path.join(profile,'modlist.txt'),'+Linked\n+Missing');
+ const c=await readMo2Profile(path.join(profile,'modlist.txt'));
+ assert.deepEqual(c.items.map(x=>x.name),['Linked','Missing']);
+ for(const item of c.items){
+  assert.deepEqual(item.flags,[]);
+  assert.deepEqual(item.audit,{});
+  assert.equal(item.installedVersion,'?');
+  assert.equal(item.enabled,true);
+ }
+ assert.equal(await fs.readFile(path.join(external,'SKSE','Plugins','private.dll'),'utf8'),'private fixture');
+});

@@ -187,7 +187,12 @@ class ModUpdateArsenal(mobase.IPluginTool):
             return {"ok": False, "error": "MO2 URL download manager unavailable: " + str(exc)}
 
     def _profile_backup(self):
-        profile_path = Path(self.org.profilePath()).resolve()
+        raw_profile_path = self.org.profilePath()
+        if not raw_profile_path:
+            raise OSError("Active MO2 profile path is unavailable; installation stopped")
+        profile_path = Path(raw_profile_path).resolve()
+        if not profile_path.is_dir():
+            raise OSError("Active MO2 profile directory is unavailable; installation stopped")
         profile_id = self.server.profile_id() or "unknown"
         root = Path(self.org.pluginDataPath()) / "MO2UpdateArsenal" / "backups" / profile_id
         path = root / datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%fZ")
@@ -203,6 +208,8 @@ class ModUpdateArsenal(mobase.IPluginTool):
                     os.fsync(output.fileno())
                 shutil.copystat(src, destination)
                 copied.append(name)
+        if not copied:
+            raise OSError("No profile load-order files could be backed up; installation stopped")
         manifest = {"createdAt": datetime.now(timezone.utc).isoformat(), "profileId": profile_id, "profileName": self.org.profileName(), "files": copied, "purpose": "Pre-update text load order safety snapshot"}
         with (path / "manifest.json").open("w", encoding="utf-8") as output:
             json.dump(manifest, output, indent=2)

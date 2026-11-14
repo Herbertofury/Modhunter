@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use url::Url;
 
-pub const BAR_HEIGHT: f64 = 112.0;
+pub const BAR_HEIGHT: f64 = 144.0;
 pub const MAX_TABS: usize = 12;
 
 pub fn eslifier_data_directory(path: &Path) -> Result<PathBuf, String> {
@@ -126,9 +126,66 @@ pub fn export_name(name: &str) -> Option<String> {
     Some(clean.to_owned())
 }
 
+/// Setup links are accepted only from the packaged dashboard, never from sites
+/// or an untrusted loopback page. Their complete grammar has no arguments.
+pub fn setup_command(target: &Url, source: &Url) -> Option<&'static str> {
+    if !local_asset(source, "/Modhunter.html")
+        || target.scheme() != "modhunter-shell"
+        || !target.username().is_empty()
+        || target.password().is_some()
+        || target.port().is_some()
+        || !matches!(target.path(), "" | "/")
+        || target.query().is_some()
+        || target.fragment().is_some()
+    {
+        return None;
+    }
+    match target.host_str()? {
+        "discover" => Some("discover"),
+        "import" => Some("importMo2"),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn setup_actions_are_argument_free_and_packaged_origin_only() {
+        let source = Url::parse("http://tauri.localhost/Modhunter.html").unwrap();
+        assert_eq!(
+            setup_command(&Url::parse("modhunter-shell://discover").unwrap(), &source),
+            Some("discover")
+        );
+        assert_eq!(
+            setup_command(&Url::parse("modhunter-shell://import").unwrap(), &source),
+            Some("importMo2")
+        );
+        for target in [
+            "modhunter-shell://install",
+            "modhunter-shell://discover?endpoint=x",
+            "modhunter-shell://discover/file",
+            "modhunter-shell://discover#x",
+            "modhunter-shell://user@discover",
+            "https://discover/",
+        ] {
+            assert!(setup_command(&Url::parse(target).unwrap(), &source).is_none());
+        }
+        for origin in [
+            "https://example.com/Modhunter.html",
+            "http://127.0.0.1:9999/",
+            "http://tauri.localhost/shell.html",
+            "http://tauri.localhost:91/Modhunter.html",
+        ] {
+            assert!(
+                setup_command(
+                    &Url::parse("modhunter-shell://discover").unwrap(),
+                    &Url::parse(origin).unwrap()
+                )
+                .is_none()
+            );
+        }
+    }
     #[test]
     fn eslifier_picker_accepts_real_data_folders_and_rejects_executable_roots() {
         let root = tempfile::tempdir().unwrap();

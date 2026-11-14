@@ -16,6 +16,7 @@ param(
     [string]$WorkDirectory = '',
     [string]$RustCliPath = '',
     [string]$QtBridgePath = '',
+    [string]$DesktopExecutable = '',
     [ValidateRange(30, 600)][int]$TimeoutSeconds = 150
 )
 
@@ -70,7 +71,7 @@ $PortableRoot = $null
 $Process = $null
 $Failure = $null
 $StartedAt = [DateTime]::UtcNow
-$CriticalProductionFiles = @('plugin.py', 'version.py', 'bridge.py', 'model.py', 'focus.py', 'scanner.py', 'version_evidence.py', 'gameplay.py', 'native_nexus.py', 'qt_bridge.py',
+$CriticalProductionFiles = @('plugin.py', 'version.py', 'download_ids.py', 'bridge.py', 'model.py', 'focus.py', 'scanner.py', 'version_evidence.py', 'gameplay.py', 'native_nexus.py', 'qt_bridge.py',
     'intelligence.py', 'plugin_intelligence.py', 'mod_health.py',
     'source_adapters.py', 'source_registry.py', 'update_plan.py', 'quick_update.py',
     'install_brief.py', 'web/index.html')
@@ -274,6 +275,10 @@ log_level=0
     $StartInfo.Environment['MODHUNTER_NATIVE_SMOKE_QT_BRIDGE_SHA256'] = $Summary.qtBridge.sha256
     if ($RustCliPath) { $StartInfo.Environment['MODHUNTER_NATIVE_SMOKE_RUST_CLI'] = $RustCliPath }
     else { $StartInfo.Environment.Remove('MODHUNTER_NATIVE_SMOKE_RUST_CLI') | Out-Null }
+    if ($DesktopExecutable) {
+        $StartInfo.Environment['MODHUNTER_LIVE_DESKTOP'] = [IO.Path]::GetFullPath($DesktopExecutable)
+        $StartInfo.Environment['MODHUNTER_LIVE_DRIVER'] = Join-Path $PSScriptRoot 'verify_live_desktop.cjs'
+    }
     $StartInfo.Environment['PYTHONNOUSERSITE'] = '1'
     $StartInfo.Environment.Remove('PYTHONHOME') | Out-Null
     $StartInfo.Environment.Remove('PYTHONPATH') | Out-Null
@@ -293,10 +298,11 @@ log_level=0
     }
     $Receipt = ConvertFrom-ReceiptJson (Get-Content -LiteralPath $ReceiptPath -Raw)
     if (!$Receipt.ok -or !$Receipt.nativeMO2) { throw "Native MO2 checks failed: $($Receipt.error)" }
-    $RequiredChecks = @('native_plugin_initialized', 'native_nexus_gateway_created', 'native_nexus_qt_binding', 'native_ui_initialized',
+    $RequiredChecks = @('native_bridge_autostart', 'native_callback_subscriptions', 'native_plugin_initialized', 'native_nexus_gateway_created', 'native_nexus_qt_binding', 'native_ui_initialized',
         'native_profile_snapshot', 'loopback_health', 'protected_snapshot_authentication', 'queued_refresh',
         'queued_focus', 'native_dispatch_thread', 'native_view_selection', 'native_window_screenshot', 'compact_game_response')
     if ($RustCliPath) { $RequiredChecks += @('rust_cli_live_probe', 'rust_plugin_audit') }
+    if ($DesktopExecutable) { $RequiredChecks += 'native_desktop_live_workflow' }
     foreach ($RequiredCheck in $RequiredChecks) {
         if (!(@($Receipt.checks | Where-Object { $_.name -eq $RequiredCheck -and $_.passed }).Count)) {
             throw "Native receipt omitted required passing check: $RequiredCheck"

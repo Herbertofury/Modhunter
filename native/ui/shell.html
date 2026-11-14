@@ -3,7 +3,7 @@
 <title>Modhunter · Rust</title><link rel="stylesheet" href="chrome.css"><link rel="stylesheet" href="native.css"></head>
 <body>
 <header class="top">
- <div class="brand"><span class="glyph" aria-hidden="true">ᛟ</span><span><b>MODHUNTER</b><small>RUST · NATIVE DESKTOP</small></span></div>
+ <div class="brand"><span class="glyph" aria-hidden="true">ᛟ</span><span><b>MODHUNTER</b><small>MOD ORGANIZER COMPANION</small></span></div>
  <div class="tabstrip" id="tabs" role="tablist" aria-label="Mod and game tabs"></div>
  <div class="actions"><button id="openWatchtower" title="Track page changes and manage website sign-ins">◉ WATCH PAGES</button><button id="newDash" title="Open another Mod Vault">＋ MODS</button><button id="newSiege" title="Open Modhunter Siege">⚔ SIEGE</button><button id="newRealm" title="Open Shiverfell">ᛟ REALM</button></div>
 </header>
@@ -15,6 +15,7 @@
  <button id="pluginAudit" title="Read plugin records and check recorded ESLifier output for the imported profile">PLUGIN AUDIT</button>
  <button id="cancelImport" title="Stop the current local import or audit; retain the last complete profile" hidden>CANCEL</button>
  <div class="connect"><input id="endpoint" list="mo2Sessions" aria-label="MO2 loopback address" placeholder="http://127.0.0.1:PORT/" spellcheck="false" autocomplete="off"><datalist id="mo2Sessions"></datalist><button id="discover" title="Find and validate running Modhunter MO2 sessions">FIND MO2</button><button id="connect">CONNECT</button><button id="disconnect">UNLINK</button></div>
+ <button id="diagnostics" title="Show the live plugin, runtime, and helper status">DETAILS</button>
  <button id="open" title="Open in system browser" aria-label="Open in system browser">↗</button><button id="copy" title="Copy active address" aria-label="Copy active address">⧉</button>
 </nav>
 <footer class="performance" aria-label="Rust engine status">

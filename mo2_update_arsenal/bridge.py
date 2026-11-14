@@ -15,6 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
 
+from .download_ids import download_id as parse_download_id
 from .scanner import Cache, MissingAuth, NexusClient, NexusError, UpdateScanner, local_mo2_candidates
 from .gameplay import Chronicle
 from html import unescape
@@ -141,6 +142,7 @@ class ArsenalService:
         self._file_epoch = 0
         self._file_inflight: dict[tuple, dict] = {}
         self._downloads: dict[int, dict] = {}
+        self.native_diagnostics: dict = {}
         # MO2 can emit a download-complete signal before startDownload returns
         # its ID. Keep only events seen during a native start dispatch.
         self._download_dispatches = 0
@@ -747,16 +749,15 @@ class ArsenalService:
         result: dict = {"ok": False, "error": "MO2 did not return a download"}
         try:
             result = self.call_ui(command, native_payload)
+            if result.get("ok") and parse_download_id(result.get("downloadId")) is None:
+                result = {"ok": False, "error": "MO2 did not return a valid download handle; inspect MO2 Downloads before retrying"}
             return result
         finally:
             with self._guard:
                 self._download_dispatches -= 1
                 if result.get("ok"):
-                    try:
-                        download_id = int(result.get("downloadId") or 0)
-                    except (TypeError, ValueError, OverflowError):
-                        download_id = 0
-                    if download_id > 0:
+                    download_id = parse_download_id(result.get("downloadId"))
+                    if download_id is not None:
                         ticket["status"] = self._early_download_events.pop(download_id, "downloading")
                         self._downloads[download_id] = ticket
                         self.journal.record(ticket, download_id)
@@ -1019,7 +1020,7 @@ class ArsenalService:
 
     def retry_failed_download(self, download_id: int) -> dict:
         """Requeue the same previously reviewed archive with no approval screens."""
-        if isinstance(download_id, bool) or not isinstance(download_id, int) or download_id <= 0:
+        if type(download_id) is not int or parse_download_id(download_id) is None:
             return {"ok": False, "error": "Invalid download ID"}
         with self._guard:
             old = deepcopy(self._downloads.get(download_id))
@@ -1220,7 +1221,8 @@ class ArsenalService:
                 "message": f"Queued {len(queued)} reviewed archive(s). Install each separately in MO2."}
 
     def set_download_status(self, download_id: int, state: str) -> None:
-        if state not in ("complete", "downloading", "paused", "failed", "removed"):
+        if (type(download_id) is not int or parse_download_id(download_id) is None
+                or state not in ("complete", "downloading", "paused", "failed", "removed")):
             return
         with self._guard:
             if download_id in self._downloads:
@@ -1228,7 +1230,7 @@ class ArsenalService:
                 if self._downloads[download_id]["status"] not in ("installing", "installed"):
                     self._downloads[download_id]["status"] = state
                     self.journal.record(self._downloads[download_id], download_id)
-            elif self._download_dispatches and isinstance(download_id, int) and download_id > 0:
+            elif self._download_dispatches and type(download_id) is int and parse_download_id(download_id) is not None:
                 # Early native callback raced ahead of startDownload's return ID.
                 self._early_download_events[download_id] = state
         if state == "complete":
@@ -1257,7 +1259,7 @@ class ArsenalService:
         timeout. Keep the global install lease until the Qt callback actually
         finishes, then publish the verified receipt to the download ticket.
         """
-        if isinstance(download_id, bool) or download_id <= 0:
+        if type(download_id) is not int or parse_download_id(download_id) is None:
             return {"ok": False, "error": "Invalid MO2 download ID"}
         if not self._install_lock.acquire(blocking=False):
             return {"ok": False, "error": "Another MO2 installer is already open"}
@@ -1476,10 +1478,7 @@ class ArsenalService:
                     return self._reply(service.activity())
                 if uri.path == "/api/install-preview":
                     query = urllib.parse.parse_qs(uri.query)
-                    try:
-                        did = int(query.get("downloadId", ["0"])[0])
-                    except (ValueError, TypeError):
-                        did = 0
+                    did = parse_download_id(query.get("downloadId", [None])[0])
                     return self._reply(service.preview_install(did))
                 if uri.path == "/api/files":
                     query = urllib.parse.parse_qs(uri.query)
@@ -1489,6 +1488,10 @@ class ArsenalService:
                         mid = 0
                     item_id = query.get("itemId", [""])[0]
                     return self._reply(service.review_files(mid, item_id) if item_id else service.fetch_files(mid))
+                if uri.path == "/api/diagnostics":
+                    return self._reply({"ok": True, "version": VERSION,
+                                        "native": dict(service.native_diagnostics),
+                                        "rustHelperAvailable": service.intelligence.runner.available})
                 if uri.path == "/api/capabilities":
                     return self._reply({"ok": True, "app": "MO2 Update Arsenal", "live": True, "nexusKeySession": bool(service.api_key), "nativeNexusAvailable": bool(service.native_nexus_available), "nativeNexusFilesAvailable": bool(service.native_nexus_available and service.native_nexus_files_available is not False), "nativeNexusFilesError": service.native_nexus_files_error, "keyStorage": "RAM only", "features": ["rust-plugin-audit", "eslifier-provenance", "per-mod-health", "nexus-public-bugs", "master-order-checks", "snapshot", "local-check", "nexus-quick", "nexus-deep", "nexus-files", "native-mo2-nexus-login", "github-release-checks", "gitlab-release-checks", "rust-site-adapters", "modrinth-release-checks", "thunderstore-release-checks", "source-details", "provider-capabilities", "manual-source-review", "github-direct-downloads", "reviewed-provider-downloads", "mixed-source-batch-updates", "reviewed-update-workshop", "one-click-matched-update", "background-bulk-queue", "mo2-download", "mo2-install", "install-preview", "operation-journal", "read-only-recovery-history", "backup", "focus-mod", "chronicle", "verified-achievements", "ranked-full-clear", "persistent-profile-progress", "realm-wallet", "realm-purchase", "realm-save", "siege-targets", "siege-state", "siege-bounties", "siege-mod-focus"]})
                 return self._reply({"ok": False, "error": "Unknown endpoint"}, 404)
@@ -1563,10 +1566,7 @@ class ArsenalService:
                 if uri.path == "/api/install-ready":
                     return self._reply(service.install_ready_queue())
                 if uri.path == "/api/retry-download":
-                    try:
-                        download_id = int(data.get("downloadId") or 0)
-                    except (ValueError, TypeError, OverflowError):
-                        download_id = 0
+                    download_id = parse_download_id(data.get("downloadId"))
                     return self._reply(service.retry_failed_download(download_id))
                 if uri.path == "/api/quick-update":
                     return self._reply(service.quick_update(data))
@@ -1578,10 +1578,7 @@ class ArsenalService:
                         result = {"ok": False, "error": "Invalid Nexus file identifiers"}
                     return self._reply(result)
                 if uri.path == "/api/install":
-                    try:
-                        download_id = int(data.get("downloadId") or 0)
-                    except (ValueError, TypeError):
-                        download_id = 0
+                    download_id = parse_download_id(data.get("downloadId"))
                     if data.get("confirm") != "INSTALL" or not service.downloads().get(download_id, {}).get("status") == "complete":
                         return self._reply({"ok": False, "error": "Download is not complete or install was not confirmed"})
                     return self._reply(service.install_reviewed_download(download_id))

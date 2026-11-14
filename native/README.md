@@ -1,14 +1,18 @@
-# Modhunter 0.10.1 — Rust desktop
+# Modhunter 0.10.2 — Rust desktop
 
 The Windows desktop, profile import/cache engine, connection probing, tab lifecycle and native file dialogs run in Rust. Microsoft Edge WebView2 renders the existing Modhunter dashboard, Questbound, AetherFX, Shiverfell, Siege and Atlas. The shipped desktop does not require Node or Electron.
 
 MO2's Python/Qt plugin remains the supported in-process adapter for MO2's authenticated Nexus bridge, native downloads, FOMOD installer, focus and verified rewards. A small Qt Core C++ helper bridges the protected callback-sender binding needed by MO2 2.5.2's public file-list integration. The dashboard/game presentation remains HTML/CSS/JavaScript. Public site adapters, import/cache and plugin analysis run in Rust.
 
-## MO2 2.5.3b12 / Skyrim SE first test
+## MO2 2.5.3b12 / Skyrim SE setup
 
 Run **Check_MO2_Readiness.bat** before installing and read **START-HERE-MO2-253.md** in the portable folder. The checker is read-only with respect to MO2/game data and can save a credential-free report. This release adds a self-tested Qt 6.11 runtime path, validated version-label strategies and persisted service-outage cooldowns. It retains the actual MO2 2.5.2 acceptance suite and adds separate compiled Qt 6.11.1/PyQt 6.11.0 tests; exact beta-12 application and personal account acceptance are not implied. Do not replace MO2's runtime DLLs.
 
-See the repository [testing guide](../wiki/MO2-253-Testing.md) and [GameSync technique map](../wiki/GameSync-Update-Techniques.md).
+See the repository [setup guide](../wiki/MO2-253-Testing.md) and [GameSync technique map](../wiki/GameSync-Update-Techniques.md).
+
+## Repairs in 0.10.2
+
+Automatic live discovery, current dictionary callbacks, native download handle 0, live toolbar refresh/audit, and credential-free connection details are repaired. The start page distinguishes the optional demo from your actual profile. Publication now requires the compiled desktop connected to actual MO2, not only independent desktop and plugin tests.
 
 ## Run
 
@@ -16,7 +20,7 @@ See the repository [testing guide](../wiki/MO2-253-Testing.md) and [GameSync tec
 2. For a local profile, choose **Import MO2**, then its `modlist.txt`. For a configuration/data directory in another location, select **Instance INI** first. **Mods path** is an explicit override; **Auto paths** clears the overrides. Import is read-only.
 3. Use **Refresh** to reload profile metadata. **Plugin audit** performs deeper record and fresh-hash inspection in the background. **CANCEL** interrupts either operation; **CANCELING…** stays visible while workers settle, preserving the last complete catalog and allowing another refresh/audit afterward. **ESLIFIER DATA** selects the converter data folder for provenance checks. Unchanged `meta.ini` files are cached; DLL folders are checked again. The toolbar displays actual import duration and cache hits. The engine does not recursively traverse mod assets.
 4. For live updates and live Rust analysis, close MO2 and run **Install_MO2_Plugin.bat**. Select the folder containing `ModOrganizer.exe`. The installer preserves the prior plugin in `ModhunterBackups`, carries forward any regular fallback `data` folder, and rolls back the replacement if installation fails.
-5. Start MO2, open **Tools → Update Arsenal – Quest Board**, and click **Find MO2** in Modhunter. One validated running session connects immediately; if several are running, select the intended session. You can also paste its `http://127.0.0.1:PORT/` address into **Connect**. Use MO2's Nexus sign-in. **Update now**, background queueing, retry, and sequential ready installations retain their established workflow. Native MO2 FOMOD/replace decisions remain available.
+5. Start MO2 and wait for its profile to finish loading, then launch Modhunter. The bridge starts automatically; **Find MO2** also reconnects on demand. Opening the legacy Quest Board tool is no longer required. One validated running session connects immediately; if several are running, select the intended session. You can also paste its `http://127.0.0.1:PORT/` address into **Connect**. Use MO2's Nexus sign-in. **Update now**, background queueing, retry, and sequential ready installations retain their established workflow. Native MO2 FOMOD/replace decisions remain available.
 
 Dashboard JSON, CSV and PowerShell exports are saved in your Windows **Downloads** folder with a unique filename. The native toolbar shows the saved path. Use **Export backup** before moving progress from the older Electron edition, then import that backup in the Rust edition.
 

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import time
 import os
 import re
 import shutil
@@ -18,6 +20,9 @@ from .scanner import version_verdict
 from .native_nexus import NativeNexusGateway
 from .plugin_intelligence import attach_native_plugin_state, build_audit_request
 from .version import VERSION
+from .download_ids import download_id as parse_download_id
+
+LOG = logging.getLogger(__name__)
 
 
 class Dispatcher(QtCore.QObject):
@@ -41,6 +46,13 @@ class ModUpdateArsenal(mobase.IPluginTool):
         self._native_nexus = None
         self._native_nexus_error = ''
         self._metadata_cache = LocalMetadataCache()
+        self._ui_initialized = False
+        self._closing = False
+        self._startup_attempts = 0
+        self._subscription_errors = []
+        self._callbacks = []
+        self._snapshot_error = ""
+        self._snapshot_ms = 0.0
 
     def name(self) -> str:
         return "MO2 Update Arsenal"
@@ -81,61 +93,185 @@ class ModUpdateArsenal(mobase.IPluginTool):
             self._runtime = str(organizer.persistent(self.name(), "target-runtime", "unknown"))
         except Exception:
             self._runtime = "unknown"
-        try:
-            organizer.onProfileChanged(lambda *_: self._schedule_refresh())
-            ml = organizer.modList()
-            ml.onModInstalled(lambda *_: self._schedule_refresh())
-            ml.onModRemoved(lambda *_: self._schedule_refresh())
-            ml.onModMoved(lambda *_: self._schedule_refresh())
-            ml.onModStateChanged(lambda *_: self._schedule_refresh())
-            dm = organizer.downloadManager()
-            dm.onDownloadComplete(lambda did: self._download_state(did, "complete"))
-            dm.onDownloadFailed(lambda did: self._download_state(did, "failed"))
-            dm.onDownloadPaused(lambda did: self._download_state(did, "paused"))
-            dm.onDownloadRemoved(lambda did: self._download_state(did, "removed"))
-        except Exception:
-            # Plugin remains usable without change subscriptions; Refresh is always available.
-            pass
-        # Right-pane plugin changes also invalidate winning-copy and master facts.
-        for signal in ("onRefreshed", "onPluginMoved", "onPluginStateChanged"):
+        # Keep independent subscriptions independent. A missing optional callback
+        # must not silently disable all download completion/failure notifications.
+        self._subscribe(organizer, "onProfileChanged", self._on_profile_changed)
+        for factory, hooks in (
+            (organizer.modList, (("onModInstalled", self._on_mod_installed),
+                                ("onModRemoved", self._on_mod_removed),
+                                ("onModMoved", self._on_mod_moved),
+                                ("onModStateChanged", self._on_mod_states_changed))),
+            (organizer.pluginList, (("onRefreshed", self._on_plugins_refreshed),
+                                   ("onPluginMoved", self._on_mod_moved),
+                                   ("onPluginStateChanged", self._on_plugin_states_changed))),
+            (organizer.downloadManager, (("onDownloadComplete", self._on_download_complete),
+                                        ("onDownloadFailed", self._on_download_failed),
+                                        ("onDownloadPaused", self._on_download_paused),
+                                        ("onDownloadRemoved", self._on_download_removed))),
+        ):
             try:
-                getattr(organizer.pluginList(), signal)(lambda *_: self._schedule_refresh())
-            except (AttributeError, RuntimeError, TypeError):
-                pass
+                owner = factory()
+            except Exception as exc:
+                self._subscription_errors.append(getattr(factory, "__name__", "native interface") + ": " + type(exc).__name__)
+                continue
+            for name, callback in hooks:
+                self._subscribe(owner, name, callback)
+        self._subscribe(organizer, "onUserInterfaceInitialized", self._on_ui_initialized)
+        app = QtCore.QCoreApplication.instance()
+        if app is not None:
+            app.aboutToQuit.connect(self._shutdown)
         return True
+
+    def _subscribe(self, owner, name, callback):
+        try:
+            if getattr(owner, name)(callback) is False:
+                raise RuntimeError("callback registration declined")
+            self._callbacks.append(callback)
+        except Exception as exc:
+            self._subscription_errors.append(name + ": " + type(exc).__name__)
+            LOG.warning("Modhunter callback %s unavailable (%s)", name, type(exc).__name__)
+
+    # Exact arities select MO2's current map-based overload, unlike *args which
+    # matches the deprecated per-item overload first and storms large profiles.
+    def _on_mod_states_changed(self, changes):
+        self._schedule_refresh()
+
+    def _on_plugin_states_changed(self, changes):
+        self._schedule_refresh()
+
+    def _on_profile_changed(self, previous, current):
+        self._schedule_refresh()
+
+    def _on_mod_installed(self, mod):
+        self._schedule_refresh()
+
+    def _on_mod_removed(self, name):
+        self._schedule_refresh()
+
+    def _on_mod_moved(self, name, old_priority, new_priority):
+        self._schedule_refresh()
+
+    def _on_plugins_refreshed(self):
+        self._schedule_refresh()
+
+    def _on_download_complete(self, did):
+        self._download_state(did, "complete")
+
+    def _on_download_failed(self, did):
+        self._download_state(did, "failed")
+
+    def _on_download_paused(self, did):
+        self._download_state(did, "paused")
+
+    def _on_download_removed(self, did):
+        self._download_state(did, "removed")
+
+    def _on_ui_initialized(self, window):
+        self._ui_initialized = True
+        # Do not read an incomplete profile in init(), and never open a browser
+        # automatically. Discovery is available after MO2's UI becomes ready.
+        QtCore.QTimer.singleShot(0, self._start_automatically)
+
+    def _start_automatically(self):
+        if self._closing or not self._ui_initialized or self.server is not None:
+            return
+        self._startup_attempts += 1
+        try:
+            self._ensure_service()
+        except Exception as exc:
+            self._snapshot_error = type(exc).__name__
+            LOG.warning("Modhunter bridge startup attempt %d failed (%s)",
+                        self._startup_attempts, type(exc).__name__)
+            if self._startup_attempts < 5:
+                QtCore.QTimer.singleShot(1000, self._start_automatically)
+
+    def _ensure_service(self):
+        if self._closing:
+            raise RuntimeError("MO2 is closing")
+        if self.server is not None:
+            return self.server.start()
+        if not self.org.profileName() or not self.org.profilePath():
+            raise RuntimeError("MO2 has not finished selecting its profile")
+        started = time.perf_counter()
+        snap = take_snapshot(self.org, self._runtime, metadata_cache=self._metadata_cache)
+        attach_native_plugin_state(self.org, snap)
+        doc = (Path(__file__).with_name("web") / "index.html").read_text(encoding="utf-8")
+        try:
+            folder = Path(self.org.pluginDataPath()) / "MO2UpdateArsenal"
+        except Exception:
+            folder = Path(__file__).parent / "data"
+        if self._native_nexus is None:
+            try:
+                self._native_nexus = NativeNexusGateway(self.org)
+                self._native_nexus_error = ""
+            except Exception as exc:
+                self._native_nexus_error = type(exc).__name__
+        service = ArsenalService(doc, folder / "nexus-cache.json", self.dispatcher.submitted.emit, snap)
+        service.native_nexus_available = self._native_nexus is not None
+        service.native_nexus_files_available = bool(self._native_nexus and self._native_nexus.files_available)
+        service.native_nexus_files_error = self._native_nexus.files_error if self._native_nexus else self._native_nexus_error
+        self.server = service
+        try:
+            address = service.start()
+        except Exception:
+            service.stop()
+            self.server = None
+            raise
+        self._snapshot_error = ""
+        self._snapshot_ms = (time.perf_counter() - started) * 1000
+        self._bind_native_selection()
+        self._publish_diagnostics()
+        LOG.info("Modhunter %s ready: %d mods, Qt %s; desktop discovery enabled",
+                 VERSION, len(snap["items"]), QtCore.qVersion())
+        return address
+
+    def _publish_diagnostics(self):
+        if self.server is not None:
+            self.server.native_diagnostics = {
+                "pluginVersion": VERSION, "qtRuntime": QtCore.qVersion(),
+                "automaticStartup": self._ui_initialized,
+                "callbackWarnings": list(self._subscription_errors),
+                "lastSnapshotError": self._snapshot_error,
+                "snapshotMs": round(self._snapshot_ms, 2),
+                "nativeNexus": bool(self._native_nexus),
+                "nativeFiles": bool(self._native_nexus and self._native_nexus.files_available),
+                "fileTransport": self._native_nexus.file_transport if self._native_nexus else "unavailable",
+            }
+
+    def _shutdown(self):
+        self._closing = True
+        if self.server is not None:
+            self.server.stop()
+            self.server = None
 
     def display(self) -> None:
         if not self.org:
-            QtWidgets.QMessageBox.warning(None, "Update Arsenal", "MO2 has not initialized this plugin yet.")
+            QtWidgets.QMessageBox.warning(None, "Modhunter", "MO2 has not initialized this plugin yet.")
             return
         try:
-            if not self.server:
-                snap = take_snapshot(self.org, self._runtime, metadata_cache=self._metadata_cache)
-                attach_native_plugin_state(self.org, snap)
-                page = Path(__file__).with_name("web") / "index.html"
-                doc = page.read_text(encoding="utf-8")
-                try:
-                    folder = Path(self.org.pluginDataPath()) / "MO2UpdateArsenal"
-                except Exception:
-                    folder = Path(__file__).parent / "data"
-                self.server = ArsenalService(doc, folder / "nexus-cache.json", self.dispatcher.submitted.emit, snap)
-                self.server.native_nexus_available = self._native_nexus is not None
-                self.server.native_nexus_files_available = bool(self._native_nexus and self._native_nexus.files_available)
-                self.server.native_nexus_files_error = self._native_nexus.files_error if self._native_nexus else self._native_nexus_error
-            else:
-                self._refresh_snapshot(force_metadata=True)
-            address = self.server.start()
-            self._bind_native_selection()
-            QtGui.QDesktopServices.openUrl(QtCore.QUrl(address))
+            existed = self.server is not None
+            address = self._ensure_service()
+            if existed:
+                refreshed = self._refresh_snapshot(force_metadata=True)
+                if not refreshed.get("ok"):
+                    raise RuntimeError(refreshed.get("error", "Profile refresh failed"))
+            if QtGui.QDesktopServices.openUrl(QtCore.QUrl(address)) is False:
+                QtWidgets.QMessageBox.information(None, "Modhunter is ready",
+                    "The default browser did not open. Launch Modhunter.exe and choose Find MO2.")
         except Exception as exc:
-            QtWidgets.QMessageBox.critical(None, "Update Arsenal", f"Could not open Arsenal: {type(exc).__name__}: {exc}")
+            QtWidgets.QMessageBox.critical(None, "Modhunter", f"Could not open Modhunter: {type(exc).__name__}: {exc}")
 
     def _download_state(self, did: int, state: str):
-        if self.server:
-            self.server.set_download_status(int(did), state)
+        if self.server and type(did) is int and parse_download_id(did) is not None:
+            self.server.set_download_status(did, state)
 
     def _schedule_refresh(self):
-        if self._dirty:
+        if self._dirty or self._closing:
+            return
+        if self.server is None:
+            if self._ui_initialized:
+                self._startup_attempts = 0
+                QtCore.QTimer.singleShot(0, self._start_automatically)
             return
         self._dirty = True
         QtCore.QTimer.singleShot(150, self._refresh_snapshot)
@@ -144,13 +280,20 @@ class ModUpdateArsenal(mobase.IPluginTool):
         self._dirty = False
         if not self.server:
             return {"ok": False, "error": "Launch Arsenal first"}
+        started = time.perf_counter()
         try:
             snapshot = take_snapshot(self.org, self._runtime, metadata_cache=self._metadata_cache,
                                      force_metadata=force_metadata)
             attach_native_plugin_state(self.org, snapshot)
             self.server.set_snapshot(snapshot)
+            self._snapshot_error = ""
+            self._snapshot_ms = (time.perf_counter() - started) * 1000
+            self._publish_diagnostics()
             return {"ok": True, "count": len(snapshot["items"]), "profile": snapshot["profileName"], "catalog": snapshot}
         except Exception as exc:
+            self._snapshot_error = type(exc).__name__
+            self._publish_diagnostics()
+            LOG.warning("Modhunter profile refresh failed (%s)", type(exc).__name__)
             return {"ok": False, "error": f"MO2 profile refresh failed: {exc}"}
 
     def _download(self, mod_id: int, file_id: int):
@@ -160,7 +303,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
             return {"ok": False, "error": "Nexus mod is not in active profile"}
         try:
             result = self.org.downloadManager().startDownloadNexusFile(mod_id, file_id)
-            if int(result) <= 0:
+            if parse_download_id(result) is None:
                 return {"ok": False, "error": "MO2 declined this download. On free Nexus accounts use the Files page and Mod Manager Download."}
             return {"ok": True, "downloadId": int(result), "message": "Sent selected Nexus file to MO2 download manager"}
         except Exception as ex:
@@ -178,8 +321,8 @@ class ModUpdateArsenal(mobase.IPluginTool):
         except PlanError as exc:
             return {"ok": False, "error": str(exc)}
         try:
-            download_id = int(self.org.downloadManager().startDownloadURLs([selected["url"]]))
-            if download_id <= 0:
+            download_id = parse_download_id(self.org.downloadManager().startDownloadURLs([selected["url"]]))
+            if download_id is None:
                 return {"ok": False, "error": "MO2 declined the source archive download"}
             return {"ok": True, "downloadId": download_id,
                     "message": "Verified public release asset queued in MO2 Downloads"}

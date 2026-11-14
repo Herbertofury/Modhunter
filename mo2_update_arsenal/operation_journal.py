@@ -35,7 +35,7 @@ def _stamp() -> str:
 
 def _clean(ticket: dict, download_id: int, state: str) -> dict:
     """Allowlist the fields before touching disk; strip secrets and paths."""
-    if isinstance(download_id, bool) or not isinstance(download_id, int) or download_id <= 0:
+    if isinstance(download_id, bool) or not isinstance(download_id, int) or download_id < 0:
         raise ValueError("Invalid native MO2 download ID")
     if state not in _ALLOWED_STATES:
         raise ValueError("Invalid MO2 operation state")

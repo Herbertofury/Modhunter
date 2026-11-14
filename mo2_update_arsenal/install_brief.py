@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .download_ids import download_id as parse_download_id
 from .update_plan import risk_reasons, validate_release_asset, PlanError
 
 
@@ -30,8 +31,8 @@ def build_install_brief(snapshot: dict, ticket: dict | None, download_id: Any) -
     the originally selected archive and the version observed when queued.
     A changed profile/runtime/version cannot be approved by a browser prompt.
     """
-    did = _positive_int(download_id)
-    if not did or not isinstance(ticket, dict):
+    did = parse_download_id(download_id)
+    if did is None or not isinstance(ticket, dict):
         return {"ok": False, "canInstall": False, "errors": ["Unknown MO2 download ticket"]}
     failures: list[str] = []
     notices: list[str] = []

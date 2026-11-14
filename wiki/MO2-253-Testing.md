@@ -1,6 +1,6 @@
-# Modhunter 0.10.1: MO2 2.5.3b12 / Skyrim SE test guide
+# Modhunter 0.10.2: MO2 2.5.3b12 / Skyrim SE setup guide
 
-## What is ready to test
+## Full release and compatibility
 
 This package retains the full Rust desktop, Watchtower, existing game modes and MO2 plugin. It adds a guarded Qt forward-runtime path, version comparison strategies, service-outage backoff and a local readiness check. Use the **complete portable ZIP**, not a Python-only copy and not the older 0.10.0 package.
 
@@ -13,12 +13,14 @@ The helper accepts only the explicitly covered Qt 6.7 and 6.11 minor lines, refu
 1. Export your existing Modhunter progress backup. Close MO2 before installing the plugin. Extract the entire portable archive into a new folder; leave its checksum manifest, `BUILD_INFO.json`, `MO2` folder and helper binaries together.
 2. Run **Check_MO2_Readiness.bat** and select the folder containing **ModOrganizer.exe**, not the Skyrim folder or the `mods` folder. It checks the executable's version/64-bit header, Qt in the installation root or `dlls` subfolder, and key package checksums. It saves a small JSON report beside the script without credentials, profile names or personal paths. An absent/older Modhunter plugin is expected before installation. The check does not launch MO2 or read game/mod contents.
 3. Run **Install_MO2_Plugin.bat** and select that same MO2 folder. This is an **MO2 application plugin**, not an archive to install in the left-hand Skyrim mod list. The installer verifies the package, preserves the prior plugin under `ModhunterBackups`, carries forward its regular fallback `data` folder, and rolls back a failed replacement. It does not alter your mod archives, load order or saves.
-4. Start your **MO2 2.5.3b12** installation. Check **Help > About** for the beta suffix because Windows file-version resources can omit it. Select the intended **Skyrim Special Edition** instance/profile and open **Tools > Update Arsenal - Quest Board**. Keep Nexus sign-in in MO2. Start **Modhunter.exe**, select **Find MO2**, and choose the correct session when more than one instance is running.
-5. Confirm the game, profile, mod count and runtime shown by the live connection before checking updates. An offline import is read-only and is not proof of an authenticated live connection. Rerun the readiness check after installation to confirm the installed plugin is 0.10.1.
+4. Start your **MO2 2.5.3b12** installation. Check **Help > About** for the beta suffix because Windows file-version resources can omit it. Select the intended **Skyrim Special Edition** instance/profile. The Modhunter bridge starts automatically once the profile is ready; opening the Quest Board tool is optional. Keep Nexus sign-in in MO2. Start **Modhunter.exe**, use automatic discovery or select **Find MO2**, and choose the correct session when more than one instance is running.
+5. Confirm the game, profile, mod count and runtime shown by the live connection before checking updates. An offline import is read-only and is not proof of an authenticated live connection. Rerun the readiness check after installation to confirm the installed plugin is 0.10.2.
+
+**Details** in the desktop toolbar shows the connected plugin version, Qt runtime, callback status and native/helper readiness without credentials. **Refresh** and **Plugin audit** now operate on the live dashboard when connected.
 
 The compiled desktop uses WebView2. The separate Windows installer can bootstrap WebView2 when missing; it does not replace the MO2 plugin installation step. There is no need to install Node, Rust, Qt SDKs or Python packages to use the release ZIP.
 
-## First-use acceptance checklist
+## Verify your connection and updates
 
 | Test | Expected result |
 | --- | --- |

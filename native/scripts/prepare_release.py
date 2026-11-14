@@ -32,7 +32,7 @@ PORTABLE_NAME = "Modhunter-Rust-Windows.zip"
 JSON_LIMIT = 4 * 1024 * 1024
 PNG_LIMIT = 32 * 1024 * 1024
 PORTABLE_EXPANDED_LIMIT = 512 * 1024 * 1024
-PRODUCTION_FILES = ("plugin.py", "version.py", "bridge.py", "gameplay.py", "model.py", "focus.py", "scanner.py", "version_evidence.py", "native_nexus.py", "qt_bridge.py", "intelligence.py",
+PRODUCTION_FILES = ("plugin.py", "version.py", "download_ids.py", "bridge.py", "gameplay.py", "model.py", "focus.py", "scanner.py", "version_evidence.py", "native_nexus.py", "qt_bridge.py", "intelligence.py",
                     "plugin_intelligence.py", "mod_health.py", "source_adapters.py",
                     "source_registry.py", "update_plan.py", "quick_update.py",
                     "install_brief.py", "web/index.html")
@@ -53,11 +53,14 @@ FIXTURE_PLUGIN_SHA256 = hashlib.sha256(
     + b"HEDR" + struct.pack("<HfII", 12, 1.7, 0, 0x800)
 ).hexdigest()
 REQUIRED_MO2_CHECKS = {
+    "native_bridge_autostart", "native_callback_subscriptions",
     "native_plugin_initialized", "native_nexus_gateway_created", "native_nexus_qt_binding", "native_ui_initialized",
     "native_profile_snapshot", "loopback_health", "protected_snapshot_authentication",
     "queued_refresh", "queued_focus", "native_dispatch_thread", "native_view_selection",
     "native_window_screenshot", "compact_game_response", "rust_cli_live_probe", "rust_plugin_audit",
 }
+LIVE_DESKTOP_SOURCES = ('native/scripts/verify_live_desktop.cjs', 'native/ui/shell.js', 'native/ui/shell.html', 'native/ui/native.css', 'native/crates/modhunter-desktop/src/windows.rs', 'native/crates/modhunter-desktop/src/policy.rs', 'mo2_update_arsenal/plugin.py', 'mo2_update_arsenal/bridge.py', 'mo2_update_arsenal/download_ids.py', 'mo2_update_arsenal/web/app.js', 'mo2_update_arsenal/web/app.template.html')
+LIVE_DESKTOP_CHECKS = {"automatic_discovery", "live_catalog_not_demo", "toolbar_refresh", "toolbar_plugin_audit", "connection_details", "content_native_ipc_denied", "manual_rediscovery", "disconnected_welcome", "setup_reconnect"}
 REQUIRED_WATCHTOWER_CHECKS = {
     "trusted_manager_ipc", "remote_ipc_denied", "session_persistent_reopen",
     "session_account_isolation", "session_reset_generation", "authenticated_page_capture",
@@ -406,7 +409,27 @@ def portable_checksums(archive: ZipFile, index: dict) -> dict[str, str]:
     return expected
 
 
-def portable_contents(path: Path, commit: str, run_url: str, native_report: dict, watchtower_report: dict, mo2_result: dict, qt_helper_hash: str, qt_forward_report: dict) -> dict[str, bytes]:
+def validate_live_desktop(report: dict, commit: str, executable_hash: str) -> None:
+    require(report.get("ok") is True and report.get("nativeDesktop") is True
+            and report.get("nativeMO2") is True and report.get("nativeWebView2") is True,
+            "Live desktop acceptance did not execute successfully with native MO2")
+    require(report.get("candidateCommit") == commit and report.get("sourceDirty") is False,
+            "Live desktop acceptance identifies different or dirty source")
+    require(report.get("executableSha256") == executable_hash,
+            "Live desktop acceptance tested a different packaged executable")
+    checks = report.get("checks")
+    require(isinstance(checks, list) and len(checks) == len(LIVE_DESKTOP_CHECKS)
+            and all(isinstance(c, dict) and c.get("passed") is True for c in checks)
+            and {c.get("name") for c in checks} == LIVE_DESKTOP_CHECKS,
+            "Live desktop acceptance has missing, failed or duplicate required checks")
+    sources = report.get("sourceFiles")
+    require(isinstance(sources, dict) and set(sources) == set(LIVE_DESKTOP_SOURCES)
+            and all(sources[name] == file_hash(ROOT / name) for name in LIVE_DESKTOP_SOURCES),
+            "Live desktop source hashes do not match this release")
+    public_json(report)
+
+
+def portable_contents(path: Path, commit: str, run_url: str, native_report: dict, watchtower_report: dict, mo2_result: dict, qt_helper_hash: str, qt_forward_report: dict, live_report: dict) -> dict[str, bytes]:
     public: dict[str, bytes] = {}
     try:
         with ZipFile(path) as archive:
@@ -422,7 +445,7 @@ def portable_contents(path: Path, commit: str, run_url: str, native_report: dict
                 require(not stat.S_ISLNK(entry.external_attr >> 16), "Linked member in portable archive")
                 index[name] = entry
                 windows_names.add(name.casefold())
-            for name in ("BUILD_INFO.json", "Modhunter.exe", "modhunter-cli.exe", BUNDLED_HELPER, BUNDLED_QT_HELPER, "Install_MO2_Plugin.ps1", "Install_MO2_Plugin.bat", "Evidence/native-smoke.json", "Evidence/watchtower-smoke.json", "Evidence/qt-forward.json", "Check_MO2_Readiness.ps1", "Check_MO2_Readiness.bat", "START-HERE-MO2-253.md", "GameSync-Update-Techniques.md"):
+            for name in ("BUILD_INFO.json", "Modhunter.exe", "modhunter-cli.exe", BUNDLED_HELPER, BUNDLED_QT_HELPER, "Install_MO2_Plugin.ps1", "Install_MO2_Plugin.bat", "Evidence/native-smoke.json", "Evidence/watchtower-smoke.json", "Evidence/qt-forward.json", "Evidence/desktop-live.json", "Check_MO2_Readiness.ps1", "Check_MO2_Readiness.bat", "START-HERE-MO2-253.md", "GameSync-Update-Techniques.md"):
                 require(name in index and not index[name].is_dir() and index[name].file_size > 0, f"Portable package is missing {name}")
             require(archive.testzip() is None, "Portable ZIP failed its CRC check")
             digests = portable_checksums(archive, index)
@@ -430,6 +453,9 @@ def portable_contents(path: Path, commit: str, run_url: str, native_report: dict
             require(build.get("version") == VERSION, f"Portable version must be {VERSION}")
             require(str(build.get("commit", "")).lower() == commit, "Portable BUILD_INFO commit does not match the requested build")
             require(str(build.get("workflow", "")).rstrip("/") == run_url.rstrip("/"), "Portable BUILD_INFO identifies a different workflow run")
+            embedded_live = json_object(archive.read(index["Evidence/desktop-live.json"]), "portable desktop-live.json")
+            require(embedded_live == live_report, "Portable live desktop evidence differs from its native run")
+            validate_live_desktop(live_report, commit, digests["Modhunter.exe"])
             embedded_native = json_object(archive.read(index["Evidence/native-smoke.json"]), "portable native-smoke.json")
             require(embedded_native == native_report, "Portable native smoke differs from the Windows job receipt")
             embedded_watchtower = json_object(archive.read(index["Evidence/watchtower-smoke.json"]), "portable watchtower-smoke.json")
@@ -473,7 +499,17 @@ The Windows desktop, MO2 profile import/cache engine, connection checks, tab lif
 
 MO2's Python/Qt plugin remains the in-process adapter for MO2's authenticated Nexus connection, native downloads, interactive FOMOD installer, focus and verified rewards. Dashboard/game presentation remains HTML/CSS/JavaScript.
 
-## MO2 2.5.3b12 testing and GameSync-inspired checking
+## 0.10.2: live connection and first-download repair
+
+This maintenance release fixes confirmed problems in 0.10.1 rather than treating successful isolated tests as complete real-world acceptance.
+
+- The MO2 bridge starts after MO2 finishes initializing its interface, without opening the legacy Quest Board tool or a browser. Callback registration uses current dictionary signatures, isolates optional-hook failures, coalesces refreshes and shuts down cleanly.
+- Native download handle **0** is valid throughout reviewed queueing, early completion, retry, installation preview, installation and history. Missing or malformed IDs cannot accidentally select handle 0. Nexus project/file IDs remain strictly positive.
+- Desktop **Refresh** and **Plugin audit** use the active live dashboard instead of disabled or offline-only paths. Startup rediscovers MO2 after its local port changes. **Details** shows credential-free plugin/runtime/helper status.
+- The disconnected start page clearly separates connecting MO2, read-only local imports and the optional demo. The native toolbar is clearer and more legible; existing game modes and Watchtower remain available.
+- Publication requires the compiled Windows desktop to connect to an actual MO2 fixture and execute discovery, live catalog loading, Refresh, Plugin audit and Details. The evidence is bound to the packaged executable hash, exact source and commit.
+
+## MO2 2.5.3b12 compatibility and GameSync-inspired checking
 
 This build adds a live, GUI-thread-only sender self-test and a qualified forward-runtime path for the baseline Qt 6.7.1 helper on Qt 6.11.1/PyQt 6.11.0. The release requires real C++ receiver/callback tests on that newer runtime using the exact DLL in this ZIP, as well as the existing actual MO2 2.5.2 suite. It does **not** claim that the unavailable beta-12 binary or your personal Skyrim/Nexus setup was executed in CI. No Qt or Python runtime DLLs are replaced in MO2.
 
@@ -566,7 +602,10 @@ def prepare(artifacts_dir: Path, output_dir: Path, commit: str, run_url: str) ->
     require(qt_helper.stat().st_size > 0, "The same Windows job's compiled Qt helper is empty")
     qt_forward_report = read_json(windows / "qt-forward/qt-forward.json")
     validate_qt_forward(qt_forward_report, commit, file_hash(qt_helper))
-    public = portable_contents(portable, commit, run_url, native_report, watchtower_report, mo2_result, file_hash(qt_helper), qt_forward_report)
+    live_report = read_json(windows / "live-mo2-smoke/desktop-live.json")
+    public = portable_contents(portable, commit, run_url, native_report, watchtower_report, mo2_result, file_hash(qt_helper), qt_forward_report, live_report)
+    public["windows/desktop-live.json"] = public_json(live_report)
+    public["windows/desktop-live.png"] = png_bytes(windows / "live-mo2-smoke/desktop-live.png")
     public["windows/qt-forward.json"] = public_json(qt_forward_report)
     public.update({"windows/native-smoke.json": public_json(native_report), "windows/watchtower-smoke.json": public_json(watchtower_report), "mo2/result.json": public_json(mo2_result), "mo2/native-receipt.json": public_json(mo2_receipt), "mo2/mo2-fixture.png": png_bytes(mo2 / "mo2-fixture.png")})
     watchtower_browser = read_json(browser / "watchtower-browser.json")
@@ -628,7 +667,7 @@ def self_test() -> None:
             self.windows = self.artifacts / "Modhunter-Rust-Windows"
             self.mo2 = self.artifacts / "Modhunter-MO2-Native-Proof"
             self.browser = self.artifacts / "Modhunter-Rust-Browser-Proof"
-            for path in (self.windows / "release/bundle/nsis", self.windows / "native-smoke", self.windows / "watchtower-smoke", self.windows / "qt-bridge/Release", self.windows / "qt-forward", self.mo2, self.browser):
+            for path in (self.windows / "release/bundle/nsis", self.windows / "native-smoke", self.windows / "watchtower-smoke", self.windows / "qt-bridge/Release", self.windows / "qt-forward", self.windows / "live-mo2-smoke", self.mo2, self.browser):
                 path.mkdir(parents=True)
             self.native = {"ok": True, "nativeWebView2": True, "shellIpc": True, "exportDownloadVerified": True, "gameViewNativeIpcDenied": "1"}
             self.watchtower = {"ok": True, "nativeWebView2": True, "watchtowerSchema": 1,
@@ -642,6 +681,13 @@ def self_test() -> None:
                                       "screenshots": sorted(WATCHTOWER_SCREENSHOTS)}
             self.cli_bytes = b"non-executable synthetic test fixture"
             self.cli_hash = hashlib.sha256(self.cli_bytes).hexdigest()
+            self.live = {"schemaVersion": 1, "ok": True, "nativeDesktop": True, "nativeMO2": True, "nativeWebView2": True,
+                "candidateCommit": self.commit, "sourceDirty": False, "executableSha256": self.cli_hash,
+                "sourceFiles": {name: file_hash(ROOT / name) for name in LIVE_DESKTOP_SOURCES},
+                "scope": "Synthetic validator fixture only; no native execution",
+                "checks": [{"name": name, "passed": True} for name in sorted(LIVE_DESKTOP_CHECKS)]}
+            self.write_json(self.windows / "live-mo2-smoke/desktop-live.json", self.live)
+            (self.windows / "live-mo2-smoke/desktop-live.png").write_bytes(self.png())
             self.qt_bytes = b"non-loadable synthetic Qt bridge fixture"
             self.qt_hash = hashlib.sha256(self.qt_bytes).hexdigest()
             (self.windows / "qt-bridge/Release/modhunter-qt-bridge.dll").write_bytes(self.qt_bytes)
@@ -711,6 +757,7 @@ def self_test() -> None:
                 archive.writestr("Evidence/native-smoke.json", public_json(self.native))
                 archive.writestr("Evidence/watchtower-smoke.json", public_json(self.watchtower))
                 archive.writestr("Evidence/qt-forward.json", public_json(self.qt_forward))
+                archive.writestr("Evidence/desktop-live.json", public_json(self.live))
                 for name, body in self.sources.items():
                     archive.writestr("MO2/mo2_update_arsenal/" + name, body)
             self.refresh_portable_manifest()
@@ -841,6 +888,18 @@ def self_test() -> None:
                 prepare(self.artifacts, rejected, self.commit, self.run)
             self.assertFalse(rejected.exists())
 
+        def test_live_desktop_gate_rejects_missing_wrong_binary_and_failed_checks(self):
+            for changes in ({"ok": False}, {"nativeMO2": False}, {"sourceDirty": True},
+                            {"candidateCommit": "b" * 40}, {"executableSha256": "0" * 64},
+                            {"checks": []}, {"sourceFiles": {}}):
+                with self.subTest(changes=changes), self.assertRaises(ReleaseError):
+                    validate_live_desktop({**self.live, **changes}, self.commit, self.cli_hash)
+            validate_live_desktop(self.live, self.commit, self.cli_hash)
+            (self.windows / "live-mo2-smoke/desktop-live.json").unlink()
+            with self.assertRaises(ReleaseError):
+                prepare(self.artifacts, self.output, self.commit, self.run)
+            self.assertFalse(self.output.exists())
+
         def test_success_keeps_binaries_and_checksums_and_public_allowlist(self):
             portable_digest = file_hash(self.zip_path)
             prepare(self.artifacts, self.output, self.commit, self.run)
@@ -851,7 +910,7 @@ def self_test() -> None:
             self.assertNotIn("release-notes.md", (self.output / "SHA256SUMS.txt").read_text())
             with ZipFile(self.output / VERIFICATION_NAME) as archive:
                 names = archive.namelist()
-                expected = {"BUILD_INFO.json", "windows/qt-forward.json", "windows/native-smoke.json", "windows/watchtower-smoke.json", "mo2/result.json", "mo2/native-receipt.json", "mo2/mo2-fixture.png", "browser/review.png", "browser/watchtower-browser.json"}
+                expected = {"windows/desktop-live.json", "windows/desktop-live.png", "BUILD_INFO.json", "windows/qt-forward.json", "windows/native-smoke.json", "windows/watchtower-smoke.json", "mo2/result.json", "mo2/native-receipt.json", "mo2/mo2-fixture.png", "browser/review.png", "browser/watchtower-browser.json"}
                 expected.update("browser/" + name for name in WATCHTOWER_SCREENSHOTS)
                 self.assertEqual(set(names), expected)
                 self.assertTrue(all(PurePosixPath(name).suffix in (".json", ".png") for name in names))

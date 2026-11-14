@@ -2308,7 +2308,7 @@ dependencies = [
 
 [[package]]
 name = "modhunter-core"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "chrono",
  "libc",
@@ -2324,7 +2324,7 @@ dependencies = [
 
 [[package]]
 name = "modhunter-desktop"
-version = "0.10.1"
+version = "0.10.2"
 dependencies = [
  "modhunter-core",
  "serde",

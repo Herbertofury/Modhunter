@@ -202,3 +202,15 @@ test('Watchtower opening coalesces repeated clicks without blocking MO2 navigati
   h.resolve('watchtower', snapshot()); await Promise.all([first, second]);
   assert.equal(h.nodes.get('openWatchtower').disabled, false);
 });
+
+
+test('live Refresh and Details are enabled and send the real live commands', async () => {
+ const h=await harness(snapshot({endpoint:'http://127.0.0.1:50000/',connected:true,offlineProfile:null}));
+ for(const id of ['refreshProfile','pluginAudit','diagnostics']){
+  assert.equal(h.nodes.get(id).disabled,false,id);
+  await h.nodes.get(id).onclick();
+  assert.equal(h.calls.filter(c=>c.kind===id).length,1);
+ }
+ h.emit(snapshot({epoch:2,endpoint:'http://127.0.0.1:50000/',connected:false,offlineProfile:null}));
+ for(const id of ['refreshProfile','pluginAudit','diagnostics'])assert.equal(h.nodes.get(id).disabled,true,id);
+});

@@ -630,6 +630,24 @@ fn open_tab(app: &tauri::AppHandle, mode: Mode) -> Result<u64> {
                 smoke_result(&nav_app, url, &nav_label);
                 return false;
             }
+            if url.scheme() == "modhunter-shell" {
+                let action = nav_app
+                    .get_webview(&nav_label)
+                    .and_then(|view| view.url().ok())
+                    .and_then(|source| policy::setup_command(url, &source));
+                if let Some(action) = action {
+                    let app = nav_app.clone();
+                    tauri::async_runtime::spawn_blocking(move || {
+                        match execute(&app, action, Value::Null) {
+                            Ok(result) => {
+                                let _ = app.emit_to("chrome", "modhunter-command-result", result);
+                            }
+                            Err(error) => alert(&app, error),
+                        }
+                    });
+                }
+                return false;
+            }
             if url.scheme() == "modhunter-watch" {
                 watchtower_handoff(&nav_app, &nav_label, url);
                 return false;
@@ -1095,6 +1113,51 @@ fn probe(app: &tauri::AppHandle) -> Result<Value> {
     Ok(json!({"ok": true, "state": state.snapshot()}))
 }
 
+/// Route a toolbar click to a live dashboard's existing authenticated action.
+/// The offline import path must never handle a connected profile's audit.
+fn live_dashboard_action(app: &tauri::AppHandle, action: &str) -> Result<Value> {
+    let state = app.state::<Runtime>();
+    let (endpoint, selected) = {
+        let model = state.model.lock().map_err(err)?;
+        if !model.connected {
+            return Err("MO2 is disconnected. Choose Find MO2 to reconnect.".into());
+        }
+        let tab = model
+            .tabs
+            .iter()
+            .find(|tab| Some(tab.id) == model.active_id && tab.mode == Mode::Dashboard)
+            .or_else(|| model.tabs.iter().find(|tab| tab.mode == Mode::Dashboard));
+        (
+            model.endpoint.clone(),
+            tab.map(|tab| (tab.id, tab.label.clone(), tab.loading)),
+        )
+    };
+    let Some((id, label, loading)) = selected else {
+        open_tab(app, Mode::Dashboard)?;
+        return Err("The live dashboard is opening. Use the action again after it loads.".into());
+    };
+    activate(app, id)?;
+    let view = app
+        .get_webview(&label)
+        .ok_or("Live dashboard is unavailable")?;
+    let current = view.url().map_err(err)?;
+    if loading
+        || !policy::owned_page(&current, endpoint.as_deref())
+        || policy::local_asset(&current, "/Modhunter.html")
+    {
+        return Err("The live profile is still loading. Retry after its mod list appears.".into());
+    }
+    let script = match action {
+        "refresh" => "window.modhunterDesktopAction?.('refresh');",
+        "audit" => "window.modhunterDesktopAction?.('audit');",
+        "diagnostics" => "window.modhunterDesktopAction?.('diagnostics');",
+        _ => return Err("Unknown live dashboard action".into()),
+    };
+    view.eval(script).map_err(err)?;
+    Ok(json!({"ok":true,"state":state.snapshot(),
+        "message":"Action sent to the live MO2 dashboard; its result appears there."}))
+}
+
 fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
     let state = app.state::<Runtime>();
     match kind {
@@ -1110,15 +1173,22 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
                 m.shell_ready = true;
                 (m.prefs.endpoint.clone(), m.prefs.profile.is_some())
             };
-            if restore.1
-                && let Err(e) = import_profile(app, true, false)
-            {
-                alert(app, e);
+            if let Some(endpoint) = restore.0 {
+                if let Ok(result) = connect(app, &endpoint) {
+                    return Ok(result);
+                }
+                // MO2 assigns a fresh local port after restart. A stale saved
+                // address must not prevent discovery of the new live session.
             }
-            if let Some(endpoint) = restore.0
-                && let Err(e) = connect(app, &endpoint)
+            if state.smoke_output.is_none()
+                && let Ok(result) = execute(app, "discover", Value::Null)
             {
-                alert(app, format!("Saved MO2 session is unavailable: {e}"));
+                return Ok(result);
+            }
+            if restore.1
+                && let Err(error) = import_profile(app, true, false)
+            {
+                alert(app, error);
             }
         }
         "new" => {
@@ -1157,8 +1227,19 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
             }
         }
         "importMo2" => return import_profile(app, false, false),
-        "refreshProfile" => return import_profile(app, true, false),
-        "pluginAudit" => return import_profile(app, true, true),
+        "refreshProfile" | "pluginAudit" => {
+            let live = { state.model.lock().map_err(err)?.endpoint.is_some() };
+            if live {
+                let action = if kind == "refreshProfile" {
+                    "refresh"
+                } else {
+                    "audit"
+                };
+                return live_dashboard_action(app, action);
+            }
+            return import_profile(app, true, kind == "pluginAudit");
+        }
+        "diagnostics" => return live_dashboard_action(app, "diagnostics"),
         "cancelImport" => {
             let _model = state.model.lock().map_err(err)?;
             state.import_operation.cancel(
@@ -1268,7 +1349,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
                 return Err("A newer connection request replaced this discovery.".into());
             }
             match sessions.len() {
-                0 => return Err("No live Modhunter session found. Start MO2 and open Tools → Update Arsenal, then use Find MO2 again.".into()),
+                0 => return Err("No live Modhunter session found. Start MO2 with the matching plugin installed and let its profile finish loading. Then choose Find MO2. Tools > Update Arsenal is also available to retry startup.".into()),
                 1 => {
                     // Discovery already validated this endpoint's health
                     // contract. Reuse that result instead of a second probe.

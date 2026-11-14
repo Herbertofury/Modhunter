@@ -254,13 +254,17 @@ class NativeSmokePlugin(ModUpdateArsenal):
             labels = [label.text() for label in dialog.findChildren(QtWidgets.QLabel)]
             self._finish({"ok": False, "error": "Unexpected native modal dialog",
                           "dialog": {"title": dialog.windowTitle(), "text": labels[:12]}})
-        elif time.monotonic() - self._start_time > 90:
-            self._finish({"ok": False, "error": "Native smoke exceeded its 90 second deadline"})
+        elif time.monotonic() - self._start_time > (170 if os.environ.get("MODHUNTER_LIVE_DESKTOP") else 90):
+            self._finish({"ok": False, "error": "Native smoke exceeded its bounded deadline"})
 
     def _begin(self):
         if self._begun or self._finished:
             return
         try:
+            self._check("native_bridge_autostart", self.server is not None
+                        and self._ui_initialized and self._startup_attempts == 1)
+            self._check("native_callback_subscriptions", not self._subscription_errors,
+                        warnings=list(self._subscription_errors))
             self._check("native_ui_initialized", self._on_qt_thread()
                         and self._main_window is not None)
             self._check("native_nexus_qt_binding", True,
@@ -397,6 +401,19 @@ class NativeSmokePlugin(ModUpdateArsenal):
                 audit = exercise_plugin_audit(api, catalog["profileId"], by_name,
                                               installed_cli, Path(rust_cli).resolve())
                 self._check("rust_plugin_audit", True, **audit)
+            desktop = os.environ.get("MODHUNTER_LIVE_DESKTOP")
+            if desktop:
+                report_path = self._receipt_path.with_name("desktop-live.json")
+                driver = os.environ["MODHUNTER_LIVE_DRIVER"]
+                completed = subprocess.run(["node", driver, "--exe=" + desktop,
+                    "--output=" + str(report_path), "--endpoint=" + address],
+                    stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                    encoding="utf-8", errors="replace", timeout=110, check=False,
+                    creationflags=subprocess.CREATE_NO_WINDOW)
+                report = json.loads(report_path.read_text("utf-8")) if report_path.is_file() else {}
+                self._check("native_desktop_live_workflow", completed.returncode == 0
+                            and report.get("ok") is True, driverExitCode=completed.returncode,
+                            failurePhase=report.get("phase"), error=completed.stderr[-1800:])
             self._signals.finished.emit({"ok": True, "timingsMs": timings,
                                          "targetName": target["name"],
                                          "profileId": catalog["profileId"]})

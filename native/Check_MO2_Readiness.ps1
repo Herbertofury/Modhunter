@@ -94,13 +94,13 @@ try {
         $Source = [IO.File]::ReadAllText($Installed)
         if ($Source -match 'VERSION\s*=\s*["'']([0-9]+\.[0-9]+\.[0-9]+)["'']') { $InstalledVersion = $Matches[1] }
     }
-    $InstalledGood = $InstalledVersion -eq '0.10.1'
+    $InstalledGood = $InstalledVersion -eq '0.10.2'
     Add-Check 'plugin_installed' $InstalledGood ('Installed plugin version: ' + $InstalledVersion + '. Use Install_MO2_Plugin.bat with MO2 closed when missing or older.')
     $Ready = $MO2Family -and $X64 -and $QtGood -and $PackageGood
     $Report = [ordered]@{
         schemaVersion = 1; requestedTarget = 'MO2 2.5.3b12 / Skyrim Special Edition';
         observedMO2Version = $MO2Version; exactBetaSuffixObserved = [bool]$ExactTarget;
-        observedQtVersions = $QtVersions; modhunterVersion = '0.10.1';
+        observedQtVersions = $QtVersions; modhunterVersion = '0.10.2';
         readyToInstall = [bool]$Ready; readyForConnectionTest = [bool]($Ready -and $InstalledGood);
         scope = 'Static file/version/package checks only. The plugin separately verifies the actually loaded Qt runtime and a live owned signal. No game, mod, save, load order or sign-in data was read or modified.';
         checks = @($Checks.ToArray());
@@ -116,7 +116,7 @@ try {
     }
     if ($Json) { Write-Output $ReportJson }
     else {
-        Write-Host 'Modhunter 0.10.1 - MO2 readiness check'
+        Write-Host 'Modhunter 0.10.2 - MO2 readiness check'
         foreach ($Check in $Checks) { $Prefix = if ($Check.passed) { 'PASS' } else { 'REVIEW' }; Write-Host ($Prefix + ' ' + $Check.name + ': ' + $Check.detail) }
         Write-Host 'After installation: start MO2, open Tools > Update Arsenal - Quest Board, then Find MO2 in Modhunter. Check the active Skyrim profile before scanning.'
         Write-Host 'Exact beta-12 execution and your real account/mod setup still require your connection test. No mod updates were executed.'

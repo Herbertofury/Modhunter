@@ -6,6 +6,31 @@
 <style>/*__STYLE__*/</style>
 </head>
 <body data-theme="night" data-density="compact">
+<section id="nativeWelcome" class="native-welcome" hidden aria-labelledby="nativeWelcomeTitle">
+ <div class="welcome-grid" aria-hidden="true"></div>
+ <div class="welcome-body">
+  <div class="welcome-eyebrow"><span class="welcome-orb"></span> MODHUNTER / CONNECT YOUR LOAD ORDER</div>
+  <h1 id="nativeWelcomeTitle">Your mods.<br><em>One clear view.</em></h1>
+  <p class="welcome-lead">Connect your running Mod Organizer 2 to inspect your actual load order, check release changes, and review updates without leaving your workflow.</p>
+  <div class="welcome-actions">
+   <a href="modhunter-shell://discover" class="welcome-primary">Find my MO2 <span aria-hidden="true">&#8594;</span></a>
+   <a href="modhunter-shell://import" class="welcome-secondary">Import a read-only profile</a>
+  </div>
+  <p class="welcome-safety">No sample mods are your installed mods. Nothing is installed, removed, or enabled by connecting.</p>
+  <div class="welcome-steps">
+   <article><span>01 / CONNECT</span><h2>Open your MO2 instance</h2><p>The included plugin starts its local connection automatically after MO2 finishes loading. No browser or port hunting required.</p></article>
+   <article><span>02 / REVIEW</span><h2>Know what changed</h2><p>Check exact sources, version evidence, dependencies, and plugin conversion history before choosing an archive.</p></article>
+   <article><span>03 / UPDATE</span><h2>Keep MO2 in control</h2><p>Your Nexus sign-in, downloads, installer choices, and load order stay under MO2's control.</p></article>
+  </div>
+  <div class="welcome-bottom"><span>First use? Run Install_MO2_Plugin.bat from the full release ZIP, then restart MO2.</span><button id="nativeWelcomeDemo" type="button">Open demo &#8599;</button></div>
+ </div>
+</section>
+<dialog id="connectionDetails" class="connection-details" aria-labelledby="connectionDetailsTitle">
+ <div><h2 id="connectionDetailsTitle">Live connection details</h2><button id="connectionDetailsClose" type="button" aria-label="Close connection details">Close</button></div>
+ <p>Plugin and helper status only. This report excludes account credentials and personal file paths.</p>
+ <pre id="connectionDetailsText"></pre>
+</dialog>
+
 <a class="skip-link" href="#updateWorkshop">Skip to Update Workshop</a>
 <div class="shell">
  <aside class="sidebar" id="sidebar" aria-label="Navigation and collections">

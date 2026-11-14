@@ -44,7 +44,9 @@ class CompactWorkspaceTests(unittest.TestCase):
             result={ok:true,started:true,profileId:c.profileId,scan:structuredClone(x.scan)};
           }
         }else if(path==='cancel-scan'){
-          x.cancelBody=body;x.scan.state='cancelled';result={ok:true,scan:structuredClone(x.scan)};
+          x.cancelBody=body;
+          if(x.holdCancel)await new Promise(resolve=>{x.releaseCancel=resolve});
+          x.scan.state='cancelled';result={ok:true,scan:structuredClone(x.scan)};
         }else if(path==='downloads')""".replace('__FAIL_START__',str(fail).lower()).replace('__RUNNING__',str(running).lower())
         boot=boot.replace("else if(path==='downloads')",addition)
         boot=boot.replace("window.__RESP__.release=",("window.__RESP__.defer.progress=true;\n" if deferred else '')+"window.__RESP__.release=")
@@ -126,10 +128,19 @@ class CompactWorkspaceTests(unittest.TestCase):
 
     def test_cancel_targets_the_observed_job_without_installing(self):
         self.open_workspace(running=True)
+        # The click dispatches a request; it does not synchronously update the UI.
+        # Keep the server running until explicitly acknowledging cancellation.
+        self.page.evaluate('__RESP__.holdCancel=true')
         self.page.locator('#workspaceCancel').click()
-        self.page.wait_for_function("__RESP__.cancelBody?.jobId===3")
+        self.page.wait_for_function("typeof __RESP__.releaseCancel==='function'")
+        self.assertTrue(self.page.locator('#workspaceCancel').is_disabled())
+        self.assertTrue(self.page.locator('#workspaceCancel').is_visible())
         self.assertEqual(self.page.evaluate('__RESP__.cancelBody'),{'profileId':'profile-a','jobId':3,'executionEpoch':7})
+        self.page.evaluate('__RESP__.holdCancel=false;__RESP__.releaseCancel()')
+        self.page.wait_for_function("document.getElementById('workspaceCancel').hidden && document.getElementById('workspaceCheckStatus').textContent.toLowerCase().includes('cancelled')")
         self.assertTrue(self.page.locator('#workspaceCancel').is_hidden())
         self.assertIn('cancelled',self.page.locator('#workspaceCheckStatus').inner_text().lower())
+        for key in ('POST download','POST install','POST quick-update','POST update-queue'):
+            self.assertEqual(self.page.evaluate('k=>__RESP__.counts[k]||0',key),0)
 
 if __name__=='__main__':unittest.main()

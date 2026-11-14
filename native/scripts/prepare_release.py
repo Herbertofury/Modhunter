@@ -36,7 +36,7 @@ PORTABLE_EXPANDED_LIMIT = 512 * 1024 * 1024
 PRODUCTION_FILES = ("plugin.py", "version.py", "download_ids.py", "bridge.py", "gameplay.py", "model.py", "focus.py", "scanner.py", "version_evidence.py", "native_nexus.py", "qt_bridge.py", "intelligence.py",
                     "plugin_intelligence.py", "mod_health.py", "source_adapters.py",
                     "source_registry.py", "update_plan.py", "quick_update.py",
-                    "install_brief.py", "content_recovery.py", "duplicate_report.py", "notification_facts.py", "web/index.html")
+                    "install_brief.py", "content_recovery.py", "duplicate_report.py", "notification_facts.py", "operation_journal.py", "web/index.html")
 # Historical evidence retains its original filename and baseline. Packaging and
 # public release staging share this list so a version bump cannot silently drop
 # earlier measurements or relabel them as evidence from a newer implementation.

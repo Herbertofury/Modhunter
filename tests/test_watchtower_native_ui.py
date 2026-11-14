@@ -178,7 +178,11 @@ class NativeUiTests(base.WatchtowerBrowserTests):
     def test_global_preferences_preserve_unsaved_edits_and_switch_language(self):
         self.open_native();self.navigate('settings');self.page.wait_for_function('document.getElementById("globalTheme").value==="system"');self.page.evaluate('__WATCH_FIX__.defer.globalSettings=true')
         self.page.locator('#globalTheme').select_option('light');self.page.locator('#globalPreferencesSave').click();self.page.wait_for_function('__WATCH_FIX__.calls.some(c=>c.kind==="globalSettings")');self.page.locator('#globalLocale').select_option('es');self.page.evaluate('__WATCH_FIX__.release("globalSettings")');self.page.wait_for_function('document.getElementById("globalPreferencesStatus").textContent.includes("Newer edits")')
-        self.assertEqual(self.page.locator('#globalLocale').input_value(),'es');self.page.locator('#globalPreferencesSave').click();self.page.wait_for_function('document.documentElement.lang==="es"');self.assertEqual(self.page.locator('#globalPreferencesSave').inner_text(),'Guardar preferencias de la app');self.assertEqual(self.page.locator('html').get_attribute('data-theme'),'light')
+        self.assertEqual(self.page.locator('#globalLocale').input_value(),'es');self.page.locator('#globalPreferencesSave').click()
+        # The locale attribute changes before the next-frame DOM translation.
+        # Await the actual visible control, rather than the scheduling signal.
+        self.page.wait_for_function('document.documentElement.lang==="es" && document.getElementById("globalPreferencesSave").textContent==="Guardar preferencias de la app"')
+        self.assertEqual(self.page.locator('#globalPreferencesSave').inner_text(),'Guardar preferencias de la app');self.assertEqual(self.page.locator('html').get_attribute('data-theme'),'light')
         self.page.set_viewport_size({'width':780,'height':1000});self.assertFalse(self.page.evaluate('document.documentElement.scrollWidth>innerWidth'));self.screenshot('watchtower-preferences-es.png')
     def test_duplicate_report_preserves_whole_mod_and_file_ownership(self):
         self.open_native();self.page.locator('#nativeOpenDuplicates').click();self.page.wait_for_selector('#nativeDuplicateDialog[open]');self.page.locator('#nativeDuplicateList details summary').first.click();self.page.wait_for_function('document.getElementById("nativeDuplicateList").textContent.includes("Retained original")')
@@ -214,7 +218,9 @@ class NativeUiTests(base.WatchtowerBrowserTests):
         self.open_native();self.navigate('settings');self.page.locator('#readinessRefresh').click()
         self.page.wait_for_function("document.getElementById('readinessCounts').textContent.includes('11207')")
         self.assertIn('Exact profile',self.page.locator('#readinessFacts').inner_text());self.assertIn('1.6.1170',self.page.locator('#readinessFacts').inner_text())
-        self.assertIn('D:/Redirected/Mods',self.page.locator('#readinessFacts').inner_text());self.assertIn('Separate MO2 instance',self.page.locator('#readinessInstanceList').inner_text())
+        self.assertIn('D:/Redirected/Mods',self.page.locator('#readinessFacts').inner_text())
+        self.page.locator('#readinessInstances > summary').click();self.assertTrue(self.page.locator('#readinessInstanceList').is_visible())
+        self.assertIn('Separate MO2 instance',self.page.locator('#readinessInstanceList').inner_text())
         self.assertEqual(self.calls('scanUnattributed'),[]);self.assertIn('not proof',self.page.locator('#readinessScope').inner_text())
         self.page.evaluate('__WATCH_FIX__.native.offline=true');self.page.locator('#readinessRefresh').click();self.page.wait_for_function("document.getElementById('readinessStatus').textContent.includes('Read-only')")
         self.page.locator('#inventoryOpen').click();self.page.wait_for_selector('#unattributedDialog[open]');self.assertTrue(self.page.locator('#inventoryScan').is_disabled());self.assertEqual(self.calls('scanUnattributed'),[])
@@ -241,10 +247,14 @@ class NativeUiTests(base.WatchtowerBrowserTests):
         self.page.locator('#confirmProceed').click();self.page.wait_for_function('__WATCH_FIX__.native.queue.pending.length===0')
         self.page.locator('#installQueueResume').click();self.page.wait_for_function('__WATCH_FIX__.native.queue.mode==="running"')
         self.assertEqual([x['value'] for x in self.calls('installQueueControl')],[{'action':'stopAfterCurrent'},{'action':'cancelPreparation'},{'action':'resume'}])
-        self.assertEqual(self.page.evaluate('__WATCH_FIX__.native.queue.active.jobId'),'api-exact');self.assertIn('cancelled',self.page.locator('#installQueueHistory').inner_text())
+        self.assertEqual(self.page.evaluate('__WATCH_FIX__.native.queue.active.jobId'),'api-exact')
+        self.page.get_by_text('Recent queue outcomes',exact=True).click();self.assertTrue(self.page.locator('#installQueueHistory').is_visible())
+        self.assertIn('cancelled',self.page.locator('#installQueueHistory').inner_text())
 
     def test_four_locales_preserve_names_focus_and_theme(self):
-        self.open_native();self.navigate('settings');self.page.locator('#globalBackupDays').focus()
+        self.open_native();self.navigate('settings');self.page.get_by_text('Recovery snapshot retention',exact=True).click()
+        self.assertTrue(self.page.locator('#globalBackupDays').is_visible());self.page.locator('#globalBackupDays').click()
+        self.assertEqual(self.page.evaluate('document.activeElement.id'),'globalBackupDays')
         for locale,label in [('es','Guardar preferencias de la app'),('it','Salva preferenze dell’app'),('zh-TW','儲存應用程式設定'),('en','Save app preferences')]:
             self.page.evaluate('(locale)=>ModhunterI18n.apply({locale,theme:"light"})',locale)
             self.page.wait_for_function('(label)=>document.getElementById("globalPreferencesSave").textContent===label',arg=label)
@@ -252,10 +262,10 @@ class NativeUiTests(base.WatchtowerBrowserTests):
             self.assertEqual(self.page.locator('html').get_attribute('data-theme'),'light')
             self.assertEqual(self.page.evaluate('ModhunterI18n.translate("{count} files",{count:1205}).includes("1205")'),True)
         self.page.evaluate('async()=>{await ModhunterWatchtower.command("globalSettings",{...ModhunterWatchtower.state().maintenance.settings,locale:"zh-TW",theme:"system"})}');self.page.emulate_media(color_scheme='dark',forced_colors='active')
-        self.page.wait_for_function('document.documentElement.dataset.theme==="dark"');self.assertEqual(self.page.locator('#globalBackupDays').input_value(),'30')
+        self.page.wait_for_function('document.documentElement.dataset.theme==="dark" && document.getElementById("globalPreferencesSave").textContent==="儲存應用程式設定"');self.assertEqual(self.page.locator('#globalBackupDays').input_value(),'30')
+        self.page.emulate_media(forced_colors='none');self.page.locator('#globalTheme').scroll_into_view_if_needed();self.screenshot('watchtower-preferences-zh.png')
         self.page.evaluate('__WATCH_FIX__.change(s=>{s.watches[0].title="Storage";s.watches[0].notes="Preferences"})');self.navigate('pages');self.assertEqual(self.page.locator('.page-name').first.inner_text(),'Storage');self.page.locator('.page-name').first.click();self.page.wait_for_function('document.getElementById("detailTitle").textContent==="Storage"');self.assertIn('Preferences',self.page.locator('#detailBody [data-no-translate]').all_text_contents())
         self.page.evaluate('ModhunterWatchtower.showToast("OS diagnostic 12345",null,"Undo",true)');self.page.wait_for_function('document.getElementById("toastText").textContent.includes("技術詳細資料")');self.assertIn('OS diagnostic 12345',self.page.locator('#toastText').inner_text())
-        self.page.emulate_media(forced_colors='none');self.screenshot('watchtower-preferences-zh.png')
 
     def test_native_substates_update_without_watchstore_revision(self):
         self.open_native()

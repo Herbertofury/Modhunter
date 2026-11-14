@@ -3,7 +3,7 @@
  const api=()=>window.ModhunterWatchtower,$=id=>document.getElementById(id);
  let readiness=null,inventory=null,page=0,scanning=false,returnFocus=null,refreshing=null,contextFresh=false;
  const PAGE=100,privateNames=()=>!!api().state().settings?.hideTitles;
- const bytes=n=>new Intl.NumberFormat(document.documentElement.lang,{maximumFractionDigits:1}).format((n||0)/1048576)+' MiB';
+ const bytes=n=>{if(!Number.isFinite(n)||n<0)return 'Unknown';const [unit,scale]=n<1024?['B',1]:n<1048576?['KiB',1024]:n<1073741824?['MiB',1048576]:['GiB',1073741824];return new Intl.NumberFormat(document.documentElement.lang,{maximumFractionDigits:scale===1?0:1}).format(n/scale)+' '+unit};
  const date=n=>n?new Date(n).toLocaleString(document.documentElement.lang):'Not checked';
  async function call(kind,value={}){const result=await api().command(kind,value,true);if(!result?.ok)throw Error(result?.error||result?.message||'The inspection could not be completed.');return result}
  function task(action){Promise.resolve().then(action).catch(error=>api().showToast(error.message||String(error),null,'Undo',true))}

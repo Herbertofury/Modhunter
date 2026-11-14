@@ -530,7 +530,20 @@
     "The folder preparation has no cancellation owner.": "La preparación de la carpeta no tiene un responsable de cancelación.",
     "A newer folder discovery replaced this result.": "Una búsqueda de carpeta más reciente reemplazó este resultado.",
     "The folder offer changed during inspection.": "La opción de la carpeta cambió durante la inspección.",
-    "A cancelled transfer window could not close: {detail}": "No se pudo cerrar una ventana de transferencia cancelada: {detail}"
+    "A cancelled transfer window could not close: {detail}": "No se pudo cerrar una ventana de transferencia cancelada: {detail}",
+    "Choose when to check, which sources to contact, and what stays visible.": "Elige cuándo comprobar, qué fuentes consultar y qué información mostrar.",
+    "Downloads you explicitly choose, kept separate from installation.": "Descargas que eliges explícitamente, separadas de la instalación.",
+    "Separate browser profiles, clear ownership, and a direct route back to your pages.": "Perfiles de navegador separados, cuentas claramente identificadas y acceso directo a tus páginas.",
+    "Review and undo the page changes you acknowledged.": "Revisa y deshaz los cambios de página que marcaste como revisados.",
+    "Found: {browsers}": "Detectados: {browsers}",
+    "Installed {version}": "Instalado {version}",
+    "Latest stable {version}": "Última versión estable {version}",
+    "No successful release check yet.": "Aún no se ha completado una comprobación de versiones.",
+    "No newer stable release found": "No se encontró una versión estable más reciente",
+    "Dismissed here, still available": "Descartada aquí, pero sigue disponible",
+    "Release check failed: {detail}": "La comprobación de versiones falló: {detail}",
+    "Last verified release: {version}": "Última versión verificada: {version}",
+    "Checked {date}": "Comprobado {date}"
   },
   "it": {
     "Preferences": "Preferenze",
@@ -1063,7 +1076,20 @@
     "The folder preparation has no cancellation owner.": "La preparazione della cartella non ha un responsabile dell’annullamento.",
     "A newer folder discovery replaced this result.": "Una ricerca della cartella più recente ha sostituito questo risultato.",
     "The folder offer changed during inspection.": "La scelta della cartella è cambiata durante l’ispezione.",
-    "A cancelled transfer window could not close: {detail}": "Impossibile chiudere una finestra di trasferimento annullata: {detail}"
+    "A cancelled transfer window could not close: {detail}": "Impossibile chiudere una finestra di trasferimento annullata: {detail}",
+    "Choose when to check, which sources to contact, and what stays visible.": "Scegli quando controllare, quali fonti consultare e quali informazioni mostrare.",
+    "Downloads you explicitly choose, kept separate from installation.": "Download scelti esplicitamente da te, separati dall’installazione.",
+    "Separate browser profiles, clear ownership, and a direct route back to your pages.": "Profili del browser separati, account ben identificati e accesso diretto alle tue pagine.",
+    "Review and undo the page changes you acknowledged.": "Rivedi e annulla le modifiche delle pagine che hai contrassegnato come viste.",
+    "Found: {browsers}": "Rilevati: {browsers}",
+    "Installed {version}": "Installato {version}",
+    "Latest stable {version}": "Ultima versione stabile {version}",
+    "No successful release check yet.": "Nessun controllo delle versioni completato finora.",
+    "No newer stable release found": "Non è stata trovata una versione stabile più recente",
+    "Dismissed here, still available": "Ignorata qui, ma ancora disponibile",
+    "Release check failed: {detail}": "Controllo delle versioni non riuscito: {detail}",
+    "Last verified release: {version}": "Ultima versione verificata: {version}",
+    "Checked {date}": "Controllato {date}"
   },
   "zh-TW": {
     "Preferences": "偏好設定",
@@ -1596,7 +1622,20 @@
     "The folder preparation has no cancellation owner.": "資料夾準備作業缺少可取消此作業的擁有者。",
     "A newer folder discovery replaced this result.": "較新的資料夾探索已取代此結果。",
     "The folder offer changed during inspection.": "資料夾檔案選項已在檢查期間變更。",
-    "A cancelled transfer window could not close: {detail}": "無法關閉已取消的傳輸視窗：{detail}"
+    "A cancelled transfer window could not close: {detail}": "無法關閉已取消的傳輸視窗：{detail}",
+    "Choose when to check, which sources to contact, and what stays visible.": "選擇檢查時間、要查詢的來源，以及要顯示的資訊。",
+    "Downloads you explicitly choose, kept separate from installation.": "僅下載您明確選擇的檔案，並與安裝作業分開處理。",
+    "Separate browser profiles, clear ownership, and a direct route back to your pages.": "使用獨立的瀏覽器設定檔、清楚的帳戶歸屬，以及直接返回頁面的方式。",
+    "Review and undo the page changes you acknowledged.": "檢視並撤銷您已確認的頁面變更。",
+    "Found: {browsers}": "已找到：{browsers}",
+    "Installed {version}": "已安裝 {version}",
+    "Latest stable {version}": "最新穩定版 {version}",
+    "No successful release check yet.": "尚未成功檢查過版本。",
+    "No newer stable release found": "未找到更新的穩定版",
+    "Dismissed here, still available": "已在此略過，仍可取得",
+    "Release check failed: {detail}": "版本檢查失敗：{detail}",
+    "Last verified release: {version}": "上次驗證的版本：{version}",
+    "Checked {date}": "檢查時間：{date}"
   },
   "en": {
     "Preferences": "Preferences",
@@ -2129,6 +2168,19 @@
     "The folder preparation has no cancellation owner.": "The folder preparation has no cancellation owner.",
     "A newer folder discovery replaced this result.": "A newer folder discovery replaced this result.",
     "The folder offer changed during inspection.": "The folder offer changed during inspection.",
-    "A cancelled transfer window could not close: {detail}": "A cancelled transfer window could not close: {detail}"
+    "A cancelled transfer window could not close: {detail}": "A cancelled transfer window could not close: {detail}",
+    "Choose when to check, which sources to contact, and what stays visible.": "Choose when to check, which sources to contact, and what stays visible.",
+    "Downloads you explicitly choose, kept separate from installation.": "Downloads you explicitly choose, kept separate from installation.",
+    "Separate browser profiles, clear ownership, and a direct route back to your pages.": "Separate browser profiles, clear ownership, and a direct route back to your pages.",
+    "Review and undo the page changes you acknowledged.": "Review and undo the page changes you acknowledged.",
+    "Found: {browsers}": "Found: {browsers}",
+    "Installed {version}": "Installed {version}",
+    "Latest stable {version}": "Latest stable {version}",
+    "No successful release check yet.": "No successful release check yet.",
+    "No newer stable release found": "No newer stable release found",
+    "Dismissed here, still available": "Dismissed here, still available",
+    "Release check failed: {detail}": "Release check failed: {detail}",
+    "Last verified release: {version}": "Last verified release: {version}",
+    "Checked {date}": "Checked {date}"
   }
 }

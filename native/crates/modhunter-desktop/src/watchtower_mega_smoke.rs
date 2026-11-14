@@ -33,6 +33,9 @@ fn folder_view(
     preparation.scope(scope.clone())?;
     let (window, _) = fixture_view(app, context.clone(), url.clone(), true)?;
     preparation.window(&window.0)?;
+    if !scope.lock().map_err(err)?.live() {
+        return Err("The exact owned folder navigation revoked its native scope before the observer was armed.".into());
+    }
     let file_json = serde_json::to_value(&file).map_err(err)?;
     let setup = format!(
         "(()=>{{const file={file_json};window.M={{RootID:file.rootId,d:{{[file.rootId]:{{h:file.rootId,t:1,name:'Owned folder',tf:1,td:0,tb:file.bytes}},[file.fileId]:{{h:file.fileId,p:file.parentId,t:0,name:file.name,s:file.bytes,ts:file.modifiedAt}}}},c:{{[file.rootId]:{{[file.fileId]:1}}}}}};window.pfid=file.publicId;window.fminitialized=true;window.loadfm={{loaded:1,loading:false}};window.$={{}};window.dl_queue=[];const a=document.createElement('a');a.id='dllink';a.download=file.name;document.body.append(a);}})()"
@@ -72,7 +75,8 @@ fn blob_script(case: &str) -> String {
         _ => "",
     };
     format!(
-        "(async()=>{{const response=await fetch('/download.zip',{{credentials:'include'}}),blob=await response.blob();window.$.memIOSaveAttempt='file1234';window.dl_queue=[{{id:'file1234',n:'fixture.zip',size:blob.size}}];{mutation}const a=document.getElementById('dllink');a.href=URL.createObjectURL(blob);a.click();window.__folderClicked=true;}})().catch(e=>window.__folderError=String(e));"
+        "(async()=>{{const response=await fetch('/download.zip',{{credentials:'include'}}),blob=await response.blob();window.__folderResponse={{status:response.status,bytes:blob.size,expectedBytes:{expected_bytes}}};if(!response.ok||blob.size!=={expected_bytes})throw Error('The owned authenticated archive response did not contain the complete expected bytes.');window.$.memIOSaveAttempt='file1234';window.dl_queue=[{{id:'file1234',n:'fixture.zip',size:blob.size}}];{mutation}const a=document.getElementById('dllink');a.href=URL.createObjectURL(blob);a.click();window.__folderClicked=true;}})().catch(e=>window.__folderError=String(e));",
+        expected_bytes = archive_bytes().len(),
     )
 }
 pub(super) fn check(
@@ -80,8 +84,13 @@ pub(super) fn check(
     manager: &WebviewWindow,
     server: &FixtureServer,
 ) -> Result<Value> {
-    let (window, _) = folder_view(app, server, "mega-folder-valid")?;
-    let id = new_pending(app, &window.0, &blob_script("valid"))?;
+    let (window, scope) = folder_view(app, server, "mega-folder-valid")?;
+    let id = new_pending(app, &window.0, &blob_script("valid")).map_err(|error| {
+        format!(
+            "Valid owned MEGA blob: {error}; native scope live: {}",
+            scope.lock().map(|scope| scope.live()).unwrap_or(false)
+        )
+    })?;
     if command(
         manager,
         "approveDownload",

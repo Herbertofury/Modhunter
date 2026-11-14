@@ -433,9 +433,9 @@ fn request_download(
         .file_name()
         .and_then(|n| n.to_str())
         .ok_or("Missing archive filename.")?;
-    let mut total = 0;
-    unsafe { operation.TotalBytesToReceive(&mut total) }.map_err(err)?;
-    let total = (total > 0).then_some(total as u64);
+    let mut reported_total = 0;
+    unsafe { operation.TotalBytesToReceive(&mut reported_total) }.map_err(err)?;
+    let total = (reported_total > 0).then_some(reported_total as u64);
     let mut allowed_origin = b.source_origin.clone();
     if context.download_file_key.is_some() {
         let scope = context
@@ -450,6 +450,13 @@ fn request_download(
         if let Some(proof) = folder_proof {
             if proof.file.name != name || total != Some(proof.file.bytes) {
                 scope.invalidate();
+                if context.fixture_origin.is_some() {
+                    return Err(format!(
+                        "The browser download filename or byte count changed from the reviewed folder file. Owned fixture: name_matches={}, reported_total={reported_total}, browser_total={total:?}, expected_bytes={}.",
+                        proof.file.name == name,
+                        proof.file.bytes
+                    ));
+                }
                 return Err("The browser download filename or byte count changed from the reviewed folder file.".into());
             }
             scope.claim_mega_blob(&Url::parse(&uri).map_err(err)?, &current, proof, now())?;

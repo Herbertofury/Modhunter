@@ -3,6 +3,7 @@
 use super::*;
 use modhunter_core::acquisition::Store;
 use std::collections::BTreeSet;
+use tauri::Listener;
 #[path = "watchtower_mega_smoke.rs"]
 mod mega_fixture;
 
@@ -93,25 +94,56 @@ fn new_pending(app: &tauri::AppHandle, window: &WebviewWindow, script: &str) -> 
         .into_iter()
         .filter_map(|v| v["id"].as_str().map(str::to_owned))
         .collect();
-    window.eval(script).map_err(err)?;
-    let deadline = Instant::now() + Duration::from_secs(15);
-    while Instant::now() < deadline {
-        for row in jobs(app) {
-            if let Some(id) = row["id"].as_str()
-                && !old.contains(id)
-            {
-                if row["state"] != "pending" {
-                    return Err(format!(
-                        "Download did not defer for consent: {}",
-                        row["state"]
-                    ));
-                }
-                return Ok(id.into());
+    // Keep the actual native denial when a consent receipt is never created.
+    // This observer exists only in the owned acceptance fixture; it reads no
+    // cookie, source address, share fragment or decrypted archive contents.
+    let messages = Arc::new(Mutex::new(Vec::<String>::new()));
+    let observed = messages.clone();
+    let listener = app.listen_any("watchtower-download-error", move |event| {
+        if let Ok(value) = serde_json::from_str::<Value>(event.payload())
+            && let Some(message) = value["message"].as_str()
+        {
+            let mut rows = observed.lock().unwrap_or_else(|e| e.into_inner());
+            if rows.len() < 8 {
+                rows.push(message.chars().take(500).collect());
             }
         }
-        std::thread::sleep(Duration::from_millis(40));
+    });
+    let result = (|| {
+        window.eval(script).map_err(err)?;
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while Instant::now() < deadline {
+            for row in jobs(app) {
+                if let Some(id) = row["id"].as_str()
+                    && !old.contains(id)
+                {
+                    if row["state"] != "pending" {
+                        return Err(format!(
+                            "Download did not defer for consent: {}",
+                            row["state"]
+                        ));
+                    }
+                    return Ok(id.into());
+                }
+            }
+            std::thread::sleep(Duration::from_millis(40));
+        }
+        Err("The real WebView2 DownloadStarting event did not create a deferred receipt.".into())
+    })();
+    if let Err(error) = result {
+        let browser = eval_json(window,
+            "(()=>{const observer=window.__modhunterMegaFixture,proof=observer?.proof;return {clicked:window.__folderClicked===true,scriptError:String(window.__folderError||'').slice(0,500),response:window.__folderResponse||null,observerArmed:observer?.armed===true,observerError:String(observer?.error||'').slice(0,500),proofPresent:!!proof,proofBytes:proof?.file?.bytes??null,proofNode:proof?.file?.fileId??null,proofMatchesClickedBlob:!!proof&&proof.blobUrl===document.getElementById('dllink')?.href};})()".into(),
+            &AtomicBool::new(false),Instant::now()+Duration::from_secs(3))
+            .unwrap_or_else(|error| json!({"diagnosticError":error}));
+        app.unlisten(listener);
+        let native = messages.lock().unwrap_or_else(|e| e.into_inner());
+        return Err(format!(
+            "{error} Native download errors: {}. Owned browser state: {browser}",
+            json!(*native)
+        ));
     }
-    Err("The real WebView2 DownloadStarting event did not create a deferred receipt.".into())
+    app.unlisten(listener);
+    result
 }
 fn click(path: &str) -> String {
     format!(

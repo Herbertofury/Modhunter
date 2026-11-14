@@ -16,6 +16,7 @@
     <button class="nav-item" data-view="pages" data-filter="attention"><span>Needs attention</span><b id="navAttention">0</b></button>
     <button class="nav-item" data-view="pages" data-filter="paused"><span>Paused & muted</span><b id="navPaused">0</b></button>
     <div class="nav-divider"></div>
+    <button class="nav-item" data-view="downloads"><span>Page downloads</span><b id="navDownloads">0</b></button>
     <button class="nav-item" data-view="sessions"><span>Site sign-ins</span><b id="navSessions">0</b></button>
     <button class="nav-item" data-view="history"><span>Seen history</span><span aria-hidden="true">↶</span></button>
     <button class="nav-item" data-view="pages" data-filter="removed"><span>Removed pages</span><b id="navRemoved">0</b></button>
@@ -32,6 +33,8 @@
    <div id="runtimeBanner" class="notice warning" role="status" hidden></div>
    <div id="recoveryBanner" class="notice warning" role="alert" hidden><span id="recoveryText"></span><button id="recoverStore">Preserve file & start fresh</button></div>
    <div id="prefillBanner" class="notice" hidden><span>A source page is ready to track.</span><button id="usePrefill">Add this page</button></div>
+   <div id="downloadBanner" class="notice" role="status" hidden><span id="downloadBannerText"></span><button id="reviewPageDownloads">Review downloads</button></div>
+   <section id="downloadsView" aria-label="Page downloads" hidden><p class="download-intro">Open a tracked page and choose its download. Approve the archive here. Page checks never download or install anything.</p><div id="downloadWarning" class="notice warning" role="status" hidden></div><div id="pageDownloadList" class="download-list"></div><p id="emptyDownloads" class="scope-note">No page downloads yet. ZIP, 7z and RAR archives use the same site session as their source page.</p></section>
    <section id="pagesView" aria-label="Tracked pages">
     <div class="summary-strip">
      <div><span class="summary-number" id="summaryTotal">0</span><span>tracked pages</span></div><div><span class="summary-number accent" id="summaryChanged">0</span><span>changes to review</span></div><div><span class="summary-number" id="summaryAttention">0</span><span>need attention</span></div>

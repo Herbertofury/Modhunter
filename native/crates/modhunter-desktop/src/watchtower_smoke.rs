@@ -61,6 +61,7 @@ impl FixtureServer {
             origin: self.origin.clone(),
             fixture_origin: Some(self.origin.clone()),
             lease: None,
+            download_watch: None,
             cancellation: None,
         }
     }

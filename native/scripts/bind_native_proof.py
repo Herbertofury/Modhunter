@@ -15,23 +15,28 @@ def sha(path):
 def source_names():
     paths=subprocess.check_output(['git','ls-files','-z','native/crates','native/ui','native/scripts/bind_native_proof.py','native/scripts/watchtower_smoke.ps1','native/scripts/windows_smoke.ps1','native/Cargo.toml','native/Cargo.lock'],cwd=ROOT).decode().split('\0')
     return sorted(p for p in paths if p and (p.endswith(('.rs','.js','.css','.html','.toml','.json','.ps1','.py')) or p=='native/Cargo.lock'))
+def capture_identity(executable):
+    commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
+    # Keep the exact all-repository status that decided this identity. A later
+    # filtered query can hide a root-level build output or observe a new state.
+    porcelain=subprocess.check_output(['git','status','--porcelain','--untracked-files=all'],cwd=ROOT)
+    return ({'schema':1,'candidateCommit':commit,'sourceDirty':bool(porcelain),
+        'executableSha256':sha(executable),'sourceFiles':{p:sha(ROOT/p) for p in source_names()}},porcelain)
 def identity(executable):
-    return {'schema':1,'candidateCommit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
-        'sourceDirty':bool(subprocess.check_output(['git','status','--porcelain','--untracked-files=all'],cwd=ROOT)),
-        'executableSha256':sha(executable),'sourceFiles':{p:sha(ROOT/p) for p in source_names()}}
+    return capture_identity(executable)[0]
+def dirty_details(porcelain):
+    changes=porcelain.decode('utf-8',errors='backslashreplace').splitlines()
+    details='; '.join(line[:240] for line in changes[:12])
+    if len(changes)>12:details+=f'; and {len(changes)-12} more repository paths'
+    return details or 'Git returned a nonempty status; no clean source identity was accepted.'
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--executable',type=Path,required=True)
     parser.add_argument('--checkpoint',type=Path,required=True)
     parser.add_argument('--report',type=Path)
-    args=parser.parse_args();current=identity(args.executable)
+    args=parser.parse_args();current,porcelain=capture_identity(args.executable)
     if current['sourceDirty']:
-        changes=subprocess.check_output(['git','status','--porcelain','--untracked-files=all','--',
-            'native','mo2_update_arsenal','desktop','tests','scripts','web','build.py','.github','.gitattributes','.gitignore'],
-            cwd=ROOT,text=True).splitlines()
-        details='; '.join(line[:240] for line in changes[:12]) or 'Other repository content changed; inspect git status.'
-        if len(changes)>12:details+=f'; and {len(changes)-12} more owned source paths'
-        raise RuntimeError('Native acceptance must start and finish on an unchanged clean source tree. '+details)
+        raise RuntimeError('Native acceptance must start and finish on an unchanged clean source tree. '+dirty_details(porcelain))
     if not args.report:
         args.checkpoint.write_text(json.dumps(current,sort_keys=True),encoding='utf-8');return
     before=json.loads(args.checkpoint.read_text('utf-8'))

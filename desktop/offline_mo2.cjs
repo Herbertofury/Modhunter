@@ -124,7 +124,8 @@ async function readMo2Profile(modlistPath){
   const mid=Number(meta.modid||meta.nexusid||meta.mod_id||0);
   const nexusId=Number.isSafeInteger(mid)&&mid>0?mid:0;
   const version=String(meta.version||'?'),latest=String(meta.newestversion||'');
-  const url=meta.url||meta.modurl||meta.homepage||meta.website||'';
+  const customDisabled=['false','0'].includes(String(meta.hascustomurl||'').toLowerCase());
+  const url=customDisabled?'':(meta.url||meta.customurl||meta.modurl||meta.homepage||meta.website||'');
   let source=sourceFor(url,nexusId,game);
   const notes=String(meta.notes||'');
   // Notes may describe dependencies or troubleshooting, not this mod's identity.

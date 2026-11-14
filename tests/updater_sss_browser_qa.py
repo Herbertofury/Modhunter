@@ -89,6 +89,7 @@ window.fetch=async(url,opts={})=>{
  else if(endpoint==='scan')result={ok:true,profileId:x.data.catalog.profileId,scan:{state:'completed',mode:'deep',queried:2}};
  else if(endpoint==='progress')result={ok:true,profileId:x.data.catalog.profileId,progress:{rows:{},prefs:{}}};
  else if(endpoint.startsWith('install-preview?')){
+  if(x.holdInstallPreview)await new Promise(resolve=>{x.releaseInstallPreview=resolve});
   const id=String(new URLSearchParams(endpoint.split('?')[1]).get('downloadId'));
   const ticket=x.tickets[id],active=x.data.catalog;
   const blocked=ticket?.gameRuntime&&ticket.gameRuntime!==active.gameRuntime;
@@ -340,10 +341,18 @@ with sync_playwright() as pw:
     page.locator('#workshopFilter').select_option('ready')
     assert '1 of 3 mods shown' in page.locator('#workshopVisibleCount').inner_text()
     show(page, 'downloads')
+    # The dialog opens immediately, but installation remains unavailable until
+    # the asynchronous profile/file verification finishes. Hold that response
+    # explicitly instead of relying on machine speed or an arbitrary sleep.
+    page.evaluate('window.__SSS_MOCK__.holdInstallPreview=true')
     page.locator('button[data-download-details]').click()
     page.locator('#installPreviewVeil').wait_for(state='visible')
-    page.locator('#installPreviewConfirm').wait_for(state='attached')
-    assert page.locator('#installBriefTitle').inner_text()=='Arcane Example'
+    page.wait_for_function('typeof window.__SSS_MOCK__.releaseInstallPreview === "function"')
+    expect(page.locator('#installBriefTitle')).to_have_text('Preparing installation briefing…')
+    expect(page.locator('#installPreviewConfirm')).to_be_disabled()
+    page.evaluate('window.__SSS_MOCK__.holdInstallPreview=false;window.__SSS_MOCK__.releaseInstallPreview()')
+    expect(page.locator('#installBriefTitle')).to_have_text('Arcane Example')
+    expect(page.locator('#installPreviewConfirm')).to_be_enabled()
     assert 'latest-se.zip' in page.locator('#installBriefDetails').inner_text()
     assert 'mod folders are not backed up' in page.locator('#installBriefBackup').inner_text()
     page.screenshot(path=str(OUTPUT/'install-brief.png'),full_page=False)

@@ -1,0 +1,23 @@
+name: Shared guidance acceptance
+on:
+  push:
+    paths: ['AGENTS.md', '.agents/**', '.athena/**', '.agent-foundry/**', 'CLAUDE.md', '.github/workflows/shared-guidance.yml']
+  pull_request:
+    paths: ['AGENTS.md', '.agents/**', '.athena/**', '.agent-foundry/**', 'CLAUDE.md', '.github/workflows/shared-guidance.yml']
+permissions:
+  contents: read
+jobs:
+  verify:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s .agents/acceptance -v

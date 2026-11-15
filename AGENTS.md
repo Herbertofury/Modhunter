@@ -1,6 +1,6 @@
 # Repository instructions
 
-Read `.agents/foundry/AGENTS-adapter.md` for the pinned shared engineering core.
+Read `.agents/athena/AGENTS-adapter.md` for the pinned shared engineering core.
 Keep this file and nested instructions project-owned: setup, commands, constraints and acceptance belong here.
 
 ## Modhunter-local engineering contract

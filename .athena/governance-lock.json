@@ -1,0 +1,26 @@
+{
+  "digestFormat": "sha256-utf8-lf",
+  "files": {
+    ".agents/athena/AGENTS-adapter.md": "b0884785208d594454dd9ea35e5701cbce2df85f6328b2ee3bcff5a84c3908d8",
+    ".agents/athena/AUTHORIZATION_CONTROL_STANDARD.md": "9ad50fbc2b1d82af1a528ac0f4186740f310e7755a70bb033a265c3d6766c8ca",
+    ".agents/athena/CHALLENGER_INTEGRATION_STANDARD.md": "99896ab140c00f9b3f3cb2faeee7e6861bf8f405121dd3db207efdb663958ba8",
+    ".agents/athena/DESIGN_QUALITY_STANDARD.md": "403bf05fa52ff93eab3d8f3ea2d9849bd94b7442ddcef6de2b31659f66755bd4",
+    ".agents/athena/DISTRIBUTION_STANDARD.md": "0c4e8b2790738f46e445664d62ef8706065c9a45ec695d63add93372246e8afc",
+    ".agents/athena/DURABLE_EXECUTION_STANDARD.md": "6da5a7d93dc5af9b7364e584efb32cc47773ea0da248e3ae69c36ced08ced22d",
+    ".agents/athena/EVALUATION_STANDARD.md": "52039bfe00137c3f878c69e30e2404d1a7230411e58a8052a76b822ae094190c",
+    ".agents/athena/FAILURE_INTELLIGENCE_STANDARD.md": "81dc3d42f6adc8fb8f84472c2de101749c4530f0aa61dbd1e3e3bfad438355a3",
+    ".agents/athena/INTEROPERABILITY_STANDARD.md": "4490366e63a7ce096ad50456cf4301c41127491d0a5eee968bb193cb36797cf3",
+    ".agents/athena/MODERNIZATION_STANDARD.md": "4fcdb3683fd5c7e2d44aa94e04ac9271986616e410ce9047b9810d726ffd0d7a",
+    ".agents/athena/OBSERVABILITY_STANDARD.md": "2ecb83035924f46d55520e4fdca968314b6e840d137e1d98d4e7e15454b83dc1",
+    ".agents/athena/PERFORMANCE_ACCEPTANCE.md": "23e7c95eeee89c1540b49b57b87010f8e84defd34f21c50c2de2d70ac7dea7d6",
+    ".agents/athena/PRODUCT_INVARIANTS.md": "2aa314e0fa97257800efedea3255c37d967e9f60d37e97ec5ff1b7f0a22624ff",
+    ".agents/athena/RUNTIME_PROOF.md": "d3970caf1cbf96100676ca31468f46e3caed53592428c0a8087beba2717fe9e4",
+    ".agents/athena/SUPPLY_CHAIN_STANDARD.md": "f5a68ceb55fb11b03b9ce60b23e6b0e37e16aa47c8653b36730339cbfb8b6a12",
+    ".agents/athena/THIRD_PARTY_SKILL_SECURITY.md": "0d640f0cfa8da1a3a51199e32a1618d38e6934cca6060c2fd38096cabcd10665"
+  },
+  "schemaVersion": 1,
+  "sourceCommit": "11e212bb88abd7e010c8974f35ec629032a2a843",
+  "sourceRepository": "https://github.com/Herbertofury/Athena",
+  "sourceWorkingTreeDirty": false,
+  "version": "2.0.1"
+}

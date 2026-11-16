@@ -26,6 +26,7 @@ let SEARCH_FRAME=null,WORKSHOP_SEARCH_FRAME=null,SAVE_TIMER=null,SAVE_REVISION=0
 let RENDER_COUNTS=null,LOCAL_PLAN_CACHE=null,CATALOG_RENDER_REVISION=0;
 let APPLIED_FX_KEY='';
 let APPLIED_LIBRARY_APPEARANCE=null,LIBRARY_LAYOUT_CHANGE=null,LIBRARY_LAYOUT_GENERATION=0;
+let GALLERY_OBSERVED_BOX=null;
 let SOURCE_EDIT_REVISION=0,SOURCE_SYNCED_REVISION=0;
 const BRIDGE_READS=new Map(),SOURCE_CACHE=new WeakMap(),SEARCH_CACHE=new WeakMap(),HTML_CACHE=new WeakMap();
 const ROW_RENDER_CACHE=new WeakMap();
@@ -113,6 +114,7 @@ function detectedStatus(mod){
 function detectedMarkup(mod){const d=detectedStatus(mod);return '<span class="detected-status '+d.kind+'" title="'+escapeHTML(d.reason)+'">'+escapeHTML(d.label)+'</span>'+(d.maintenance?'<button class="maintenance-status" type="button" data-act="inspect" data-id="'+escapeHTML(mod.id)+'" title="Detected plugin, conversion, master or explicit compatibility issue. Open Details for evidence.">Maintenance</button>':'')}
 function selectWorkspace(panel){
  if(!['mods','updates','downloads','history','tools','extras'].includes(panel))return;
+ if(document.body.dataset.workspace!==panel)invalidateGalleryWidth();
  document.body.dataset.workspace=panel;
  SET('workspaceTitle',({mods:'The mod library',updates:'Update Workshop',downloads:'Downloads & installs',history:'Your update history',tools:'Tools & connection',extras:'Beyond the workshop'})[panel]);
  closeModContextMenu(false);
@@ -162,7 +164,7 @@ function save(invalidatePlan=true){clearTimeout(SAVE_TIMER);SAVE_TIMER=null;SAVE
 function saveSoon(){clearTimeout(SAVE_TIMER);SAVE_TIMER=setTimeout(()=>save(false),180)}
 function profileContext(){return{profile:LIVE_CATALOG?.profileId,epoch:PROFILE_EPOCH}}
 function contextIsCurrent(context){return context.epoch===PROFILE_EPOCH&&context.profile===LIVE_CATALOG?.profileId}
-function setHTML(node,html){if(node&&HTML_CACHE.get(node)!==html){node.innerHTML=html;HTML_CACHE.set(node,html)}}
+function setHTML(node,html){if(node&&HTML_CACHE.get(node)!==html){if(node.id==='modList')invalidateGalleryWidth();node.innerHTML=html;HTML_CACHE.set(node,html)}}
 // A catalog replacement invalidates all presentation metadata. Local row edits
 // and asynchronously replaced analysis objects invalidate only their own row.
 // Provider deadlines remain live even when no response or object has changed.
@@ -181,6 +183,7 @@ function replaceRenderedRow(previous,entry,template){
  const actionValue=action?focused.getAttribute(action):null;
  template.innerHTML=entry.html;
  const next=template.content.firstElementChild;
+ if(old.parentElement?.id==='modList')invalidateGalleryWidth();
  old.replaceWith(next);
  if(action){const control=[...next.querySelectorAll('['+action+']')].find(el=>el.getAttribute(action)===actionValue);if(control&&!control.disabled)control.focus({preventScroll:true});}
  return {...entry,node:next};
@@ -193,6 +196,7 @@ function setRows(node,entries,empty,preserveMoves=false){
  const currentChildren=previous?[...node.children]:null;
  const intact=previous&&currentChildren.length===previous.length&&previous.every((entry,i)=>entry.node===currentChildren[i]);
  if(preserveMoves&&entries.length&&intact&&new Set(entries.map(entry=>entry.key)).size===entries.length){
+  if(node.id==='modList')invalidateGalleryWidth();
   const byKey=new Map(previous.map(entry=>[entry.key,entry])),template=document.createElement('template');
   const next=entries.map(entry=>{
    const prior=byKey.get(entry.key);byKey.delete(entry.key);
@@ -236,6 +240,7 @@ function setRows(node,entries,empty,preserveMoves=false){
    // Remove only absent/changed records, then move only nodes whose order has
    // changed. Switching list to a flat priority gallery usually removes just
    // chapter headers; detaching all surviving cards would force needless work.
+   invalidateGalleryWidth();
    const focused=document.activeElement,retained=new Set(next.map(entry=>entry.node));
    const removed=previous.filter(entry=>!retained.has(entry.node));
    if(missing.length+removed.length>Math.max(32,Math.max(previous.length,next.length)/3)){
@@ -769,10 +774,16 @@ function thumbnailMarkup(mod,large=false,source=getSrc(mod)){
  return large?'<div class="mod-art mod-art-large'+artClass+'"'+metadata+'>'+inside+'</div>':'<button class="mod-art'+artClass+'" type="button" data-act="preview" data-id="'+id+'"'+metadata+' title="'+escapeHTML('Inspect '+mod.name)+'" aria-label="'+escapeHTML('Preview and inspect '+mod.name)+'">'+inside+'</button>';
 }
 let GALLERY_GEOMETRY_RULE=null;
+function invalidateGalleryWidth(){if(GALLERY_OBSERVED_BOX)GALLERY_OBSERVED_BOX.valid=false}
+function galleryWidthContext(){const d=document.body.dataset;return [innerWidth,innerHeight,d.layout,d.nav,d.workspace,d.density,d.focus].join(':')}
 function updateGalleryColumns(width){
  if(STORE.prefs.libraryView!=='gallery')return;
  const list=$('modList');if(!list)return;
- const available=width??list.clientWidth;if(!(available>0))return;
+ const observed=GALLERY_OBSERVED_BOX;
+ // Reuse the already delivered box before a bulk appearance change. Reading
+ // clientWidth after the transition guard would flush the old row styles first.
+ const cached=observed?.valid&&observed.list===list&&list.isConnected&&observed.context===galleryWidthContext()&&Number.isFinite(observed.clientWidth)&&observed.clientWidth>0;
+ const available=width??(cached?observed.clientWidth:list.clientWidth);if(!(available>0))return;
  const comfy=STORE.prefs.density==='comfy',narrow=innerWidth<=580,gap=comfy?18:narrow?10:14;
  const columns=narrow?(comfy?1:2):Math.max(1,Math.floor((available+gap)/((comfy?260:200)+gap)));
  const key=columns+':'+gap;if(list.dataset.galleryGeometry===key)return;
@@ -792,7 +803,7 @@ function updateGalleryColumns(width){
  list.dataset.galleryGeometry=key;
 }
 function applyLibraryAppearance(){
- // Read one existing container width before changing the view. The outer
+ // Use the last valid container measurement before changing the view. The outer
  // gallery wraps complete cards instead of sizing thousands of grid tracks.
  updateGalleryColumns();
  setBodyPreference('libraryView',STORE.prefs.libraryView==='gallery'?'gallery':'list');
@@ -828,7 +839,25 @@ $('libraryList').onclick=()=>updatePrefs({libraryView:'list'});
 $('libraryGallery').onclick=()=>updatePrefs({libraryView:'gallery'});
 $('galleryGrouping').onchange=event=>updatePrefs({galleryGrouping:event.target.value==='chapters'?'chapters':'all'});
 let GALLERY_RESIZE_FRAME=null,GALLERY_OBSERVED_WIDTH=0;
-if(typeof ResizeObserver==='function')new ResizeObserver(entries=>{for(const entry of entries)if(entry.target===$('modList')&&entry.contentRect.width!==GALLERY_OBSERVED_WIDTH){GALLERY_OBSERVED_WIDTH=entry.contentRect.width;if(GALLERY_RESIZE_FRAME===null)GALLERY_RESIZE_FRAME=requestAnimationFrame(()=>{GALLERY_RESIZE_FRAME=null;updateGalleryColumns(GALLERY_OBSERVED_WIDTH)})}}).observe($('modList'));
+if(typeof ResizeObserver==='function')new ResizeObserver(entries=>{for(const entry of entries){
+ const list=$('modList');if(entry.target!==list)continue;
+ const width=entry.contentRect.width,context=galleryWidthContext(),previous=GALLERY_OBSERVED_BOX;
+ const changed=!previous?.valid||previous.list!==list||previous.width!==width||previous.context!==context;
+ const resized=width!==GALLERY_OBSERVED_WIDTH;GALLERY_OBSERVED_WIDTH=width;
+ // Capture the actual integer client width after layout, before any writes.
+ // Keep the fractional content width for the existing observer-resize path;
+ // guessing its pixel snapping would change card counts at width thresholds.
+ const clientWidth=width>0?(changed?list.clientWidth:previous.clientWidth):0;
+ GALLERY_OBSERVED_BOX={list,width,clientWidth,context,valid:Number.isFinite(width)&&width>=0};
+ // Cache invalidation alone is not a resize: a header/row replacement must
+ // not introduce a new fractional-width correction after the second frame.
+ if(resized&&GALLERY_RESIZE_FRAME===null)GALLERY_RESIZE_FRAME=requestAnimationFrame(()=>{
+  GALLERY_RESIZE_FRAME=null;
+  const current=GALLERY_OBSERVED_BOX;
+  const owned=current?.valid&&current.list===$('modList')&&current.list.isConnected&&current.context===galleryWidthContext();
+  updateGalleryColumns(owned?current.width:undefined);
+ });
+}}).observe($('modList'));
 else window.addEventListener('resize',()=>updateGalleryColumns());
 $('providerFilter').onchange=event=>updatePrefs({provider:event.target.value});
 $('railToggle').onclick=()=>updatePrefs({navExpanded:!STORE.prefs.navExpanded});

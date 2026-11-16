@@ -3,16 +3,16 @@ on:
   workflow_dispatch:
   push:
     branches: ['diagnostics/atelier-style']
-    paths: ['tests/prepare_ci_fonts.py', 'tests/ci_font_rendering_qa.py', 'tests/test_watchtower_native_ui.py', '.github/workflows/atelier-style-profile.yml']
+    paths: ['mo2_update_arsenal/web/app.js', 'tests/visual_width_comparison.py', 'tests/frontend_runtime.test.cjs', '.github/workflows/atelier-style-profile.yml']
 permissions:
   contents: read
 concurrency:
   group: modhunter-style-profile-${{ github.sha }}
   cancel-in-progress: true
 jobs:
-  cjk-rendering:
+  width-comparison:
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -20,24 +20,26 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Verify pinned fonts and actual translated interface
+      - name: Compare exact C7 and candidate source with the complete library
         env:
           MODHUNTER_REQUIRE_BROWSER: '1'
         run: |
-          python3 -m venv /tmp/modhunter-cjk
-          /tmp/modhunter-cjk/bin/pip install -q playwright==1.57.0
-          if ! command -v chromium >/dev/null && ! command -v chromium-browser >/dev/null; then
-            echo '::error::The preinstalled Chromium engine is unavailable.'
-            exit 1
-          fi
-          /tmp/modhunter-cjk/bin/python tests/prepare_ci_fonts.py --output native/target/cjk-proof/ci-fonts.json
-          PYTHONPATH=. MODHUNTER_QA_OUTPUT="$PWD/native/target/cjk-proof" /tmp/modhunter-cjk/bin/python tests/test_watchtower_native_ui.py
-          PYTHONPATH=. /tmp/modhunter-cjk/bin/python tests/ci_font_rendering_qa.py --output native/target/cjk-proof
-      - name: Preserve font provenance and actual rendered glyph proof
+          git fetch --no-tags origin 18883b32e0683dad8aed1dc87c6fe9ec577e12f2
+          python3 -m venv /tmp/modhunter-width
+          /tmp/modhunter-width/bin/pip install -q playwright==1.57.0
+          test -x /usr/local/share/chromium/chrome-linux/chrome
+          /tmp/modhunter-width/bin/python tests/prepare_ci_fonts.py --output native/target/width-comparison/ci-fonts.json
+          node --test tests/frontend_runtime.test.cjs
+          /tmp/modhunter-width/bin/python tests/visual_width_comparison.py --self-test
+      - name: Measure four fresh complete-library contexts
+        timeout-minutes: 12
+        run: |
+          PYTHONPATH=. /tmp/modhunter-width/bin/python tests/visual_width_comparison.py --output native/target/width-comparison --control-ref 18883b32e0683dad8aed1dc87c6fe9ec577e12f2 --executable-path /usr/local/share/chromium/chrome-linux/chrome
+      - name: Preserve every timing, complete geometry and source identity
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Modhunter-CJK-Font-Proof
-          path: native/target/cjk-proof/
+          name: Modhunter-Width-Comparison
+          path: native/target/width-comparison/
           if-no-files-found: error
           retention-days: 90

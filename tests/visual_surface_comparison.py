@@ -2,7 +2,10 @@
 
 Four fresh page contexts alternate immutable OLED control -> candidate, candidate -> immutable OLED control in one
 browser. Every measured arm imports the exact complete 11,207-record native
-fixture. No CSS override, tracing, sampled geometry, warm-up exclusion, result
+fixture by default. The separately declared chapters-115 workload retains all
+records and fields except their chapter assignment, using the 115 actual authored
+chapters on both arms. Neither workload substitutes for native release acceptance.
+No CSS override, tracing, sampled geometry, warm-up exclusion, result
 limit, or virtualization is used. Preview-stretch and gallery-layout-containment change only atelier.css;
 gallery-label-cache changes only app.js;
 flat-fill changes only app.js and atelier.css. Each immutable source candidate
@@ -14,6 +17,7 @@ all four planned arms are recorded; geometry/markup/state failures still abort.
 from __future__ import annotations
 
 import argparse
+import ast
 import gzip
 import hashlib
 import io
@@ -37,6 +41,9 @@ CONTROL_REF = "6ca747be97b98e17ea66c0fea9ef51be9b934e30"
 COUNT = 11207
 FIXTURE_SHA = "afd855e4ac76f284630ffb4ed6d9dc37280113c9559aef4402516795b7fef0a0"
 FIXTURE_BYTES = 4696493
+FIXTURE_LAYOUTS = ("canonical", "chapters-115")
+EXPECTED_LABEL_RULES = None
+LABEL_RULE_INVENTORY_JS = None
 WORKER_SECONDS = 690
 REPORT_NAME = "surface-comparison.json"
 VIEWPORT = {"width": 1028, "height": 633}
@@ -171,6 +178,11 @@ def capture_state(page, output: Path, label: str, state: str, references: dict) 
     receipt["viewportScreenshot"] = capture_viewport(page, output, label, state, references)
     receipt["ok"] = receipt["viewportScreenshot"]["comparison"]["identical"] and (
         "comparison" not in receipt or state_passed(receipt["comparison"]))
+    if EXPECTED_LABEL_RULES is not None:
+        # CSSOM only, after the existing screenshot/geometry boundary and
+        # outside every interaction clock. The shared decoder is source-bound.
+        assert isinstance(LABEL_RULE_INVENTORY_JS, str)
+        receipt["literalLabelRules"] = page.evaluate(LABEL_RULE_INVENTORY_JS)
     return receipt
 
 
@@ -290,8 +302,13 @@ def run_arm(browser, html: str, fixture: dict, output: Path, round_number: int, 
 
 
 def worker(args) -> int:
+    global EXPECTED_LABEL_RULES, LABEL_RULE_INVENTORY_JS
+    EXPECTED_LABEL_RULES = 116 if args.fixture_layout == "chapters-115" else None
+    LABEL_RULE_INVENTORY_JS = None
+    expected_label_values = None
     report_path = args.output / REPORT_NAME
     report = {"ok": False, "phase": "compiling-actual-sources", "runId": args.run_id,
+        "fixtureLayout": args.fixture_layout,
         "mode": args.mode, "expectedChangedCompiledAssets": sorted(EXPECTED_ASSETS[args.mode]),
         "scopeAcceptance": False, "errors": [], "tracing": False, "cssOverrides": False,
         "measurementsComplete": False, "strictComparisonPassed": False,
@@ -332,7 +349,71 @@ def worker(args) -> int:
         fixture["offline"] = True
         encoded = json.dumps(fixture, sort_keys=True).encode()
         assert len(encoded) == FIXTURE_BYTES and hashlib.sha256(encoded).hexdigest() == FIXTURE_SHA
-        report.update(records=COUNT, fixtureSha256=FIXTURE_SHA, fixtureBytes=len(encoded))
+        if args.fixture_layout == "chapters-115":
+            from visual_multi_label_fixture import build_fixture, EXPECTED_BYTES, EXPECTED_SHA256, SOURCE_CATALOG_SHA256
+            assert args.mode == "gallery-label-cache"
+            fixture = build_fixture(ROOT)
+            encoded = json.dumps(fixture, sort_keys=True).encode()
+            assert len(encoded) == EXPECTED_BYTES and hashlib.sha256(encoded).hexdigest() == EXPECTED_SHA256
+            def attribute_text(value):
+                return str(value).replace("\r\n", "\n").replace("\r", "\n").replace("\0", "\ufffd")
+            assert {item["source"]["type"] for item in fixture["items"]} == {"nexus"}
+            chapter_labels = sorted({attribute_text(item["group"]) for item in fixture["items"]})
+            assert len(chapter_labels) == 115
+            assert chapter_labels == sorted({attribute_text(group["name"]) for group in fixture["groups"]})
+            expected_label_values = {"providerLabels": ["Nexus Mods"], "chapterLabels": chapter_labels}
+            report["fixtureExpectedLiteralLabels"] = expected_label_values
+            # Reuse the reviewed decoder without the preflight's reverse import.
+            decoder_path = ROOT / "tests/visual_gallery_labels_qa.py"
+            decoder_bytes = decoder_path.read_bytes()
+            decoder_nodes = [node for node in ast.parse(decoder_bytes, filename=str(decoder_path)).body
+                if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name)
+                    and target.id == "CSS_STRING_DECODER" for target in node.targets)]
+            assert len(decoder_nodes) == 1
+            decoder = ast.literal_eval(decoder_nodes[0].value)
+            assert isinstance(decoder, str) and decoder
+            report["harnessFiles"][str(decoder_path.relative_to(ROOT))] = hashlib.sha256(decoder_bytes).hexdigest()
+            LABEL_RULE_INVENTORY_JS = "() => {" + decoder + r"""
+ const sheet=document.querySelector('style').sheet;
+ const groups=[...sheet.cssRules].filter(rule=>
+   rule instanceof CSSMediaRule&&[...rule.cssRules].some(child=>
+     child.selectorText?.includes('#modList > .mod-row .mod-art[data-provider-label=')));
+ const entries=groups.flatMap(group=>[...group.cssRules].map(rule=>{
+   const selector=rule.selectorText;
+   const kind=selector?.includes('.mod-art[data-provider-label=')?'provider':'chapter';
+   const prefix=kind==='provider'
+     ?'body[data-layout="compact"][data-library-view="gallery"] #modList > .mod-row .mod-art[data-provider-label='
+     :'body[data-layout="compact"][data-library-view="gallery"][data-gallery-grouping="all"] #modList > .mod-row .mod-primary[data-chapter-label=';
+   const suffix=kind==='provider'?']::after':']::before';
+   if(!selector?.startsWith(prefix)||!selector.endsWith(suffix)||
+      rule.style.length!==1||rule.style[0]!=='content')
+     throw new Error('Label cache rule escaped its exact selector/content scope');
+   const content=rule.style.content,label=decodeCssString(content);
+   const selectorLabel=decodeCssString(selector.slice(prefix.length,-suffix.length));
+   if(selectorLabel!==label)throw new Error('Selector and literal label differ');
+   return {kind,selector,content,label};
+ }));
+ const providerLabels=entries.filter(entry=>entry.kind==='provider').map(entry=>entry.label);
+ const chapterLabels=entries.filter(entry=>entry.kind==='chapter').map(entry=>entry.label);
+ return {groups:groups.length,groupConditions:groups.map(group=>group.conditionText),rules:entries.length,
+   providers:providerLabels.length,chapters:chapterLabels.length,providerLabels,chapterLabels,entries};
+}"""
+            report["fixtureDerivation"] = {
+                "canonicalBytes": FIXTURE_BYTES, "canonicalSha256": FIXTURE_SHA,
+                "chapterSource": "mo2_update_arsenal/web/catalog.json", "chapterSourceSha256": SOURCE_CATALOG_SHA256,
+                "groups": 115, "providerLiterals": 1, "chapterLiterals": 115, "expectedLiteralRules": 116,
+                "assignment": "All 115 actual chapter names/ids/colors in original order; contiguous balanced groups, first 52 with 98 records and remaining 63 with 97",
+                "permittedChanges": ["items[*].group", "items[*].groupId", "groups"],
+                "preserved": "All 11,207 ordered records, ids, priorities, sources, versions, updates and every other record/top-level field",
+                "scope": "Additional declared many-chapter comparison; do not compare its clocks against the one-chapter fixture or substitute it for native acceptance"}
+            path = ROOT / "tests/visual_multi_label_fixture.py"
+            report["harnessFiles"][str(path.relative_to(ROOT))] = hashlib.sha256(path.read_bytes()).hexdigest()
+            report["fixtureRuleInventoryScope"] = (
+                "Read-only CSSOM selector/content inventory after each existing state capture, "
+                "outside clocks; exact scoped selectors and decoded literal contents must match "
+                "all 115 fixture chapter labels and its Nexus Mods provider label, without "
+                "duplicates; no computed-style/geometry read, mutation, delay or warm-up")
+        report.update(records=COUNT, fixtureSha256=hashlib.sha256(encoded).hexdigest(), fixtureBytes=len(encoded))
         save()
         from playwright.sync_api import sync_playwright
         with sync_playwright() as runtime:
@@ -359,6 +440,21 @@ def worker(args) -> int:
                                   fixture, args.output, round_number, variant, references, checkpoint)
                     if not arm["measurementsComplete"]:
                         raise AssertionError("Actual-source measurement arm failed: " + arm["label"])
+                    if EXPECTED_LABEL_RULES is not None:
+                        assert expected_label_values is not None
+                        expected_counts = {"groups": 1, "rules": 116, "providers": 1, "chapters": 115} if variant == "candidate" else {
+                            "groups": 0, "rules": 0, "providers": 0, "chapters": 0}
+                        for state_name, state in arm["states"].items():
+                            inventory = state["literalLabelRules"]
+                            actual_counts = {key: inventory[key] for key in expected_counts}
+                            assert actual_counts == expected_counts, (
+                                "Literal-rule count mismatch", arm["label"], state_name, actual_counts)
+                            assert inventory["groupConditions"] == (["all"] if variant == "candidate" else []), (
+                                "Unexpected label-rule media owner", arm["label"], state_name)
+                            for key in ("providerLabels", "chapterLabels"):
+                                expected_values = expected_label_values[key] if variant == "candidate" else []
+                                assert sorted(inventory[key]) == expected_values, (
+                                    "Literal-rule label mismatch", arm["label"], state_name, key)
                 report["pairedTimings"] = []
                 for round_number in (1, 2):
                     pair = {arm["variant"]: arm for arm in report["trials"] if arm["round"] == round_number}
@@ -392,6 +488,7 @@ def supervise(args) -> int:
     run_id = uuid.uuid4().hex
     command = [sys.executable, str(Path(__file__).resolve()), "--worker", "--run-id", run_id,
                "--output", str(args.output), "--control-ref", args.control_ref, "--mode", args.mode,
+               "--fixture-layout", args.fixture_layout,
                "--executable-path", str(args.executable_path)]
     profile.write_json(report_path, {"ok": False, "phase": "starting-owned-worker", "runId": run_id,
                                    "mode": args.mode, "errors": []})
@@ -520,6 +617,7 @@ def main() -> int:
     parser.add_argument("--output", type=Path, default=ROOT / "native/target/surface-comparison")
     parser.add_argument("--control-ref", default=CONTROL_REF)
     parser.add_argument("--mode", choices=tuple(EXPECTED_ASSETS))
+    parser.add_argument("--fixture-layout", choices=FIXTURE_LAYOUTS, default="canonical")
     parser.add_argument("--executable-path", type=Path)
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)

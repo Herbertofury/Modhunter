@@ -3,8 +3,8 @@ name: Complete-library style diagnostics
 on:
   workflow_dispatch:
   push:
-    branches: ['diagnostics/atelier-style', 'diagnostics/oled-gallery-labels']
-    paths: ['tests/visual_style_profile.py', 'tests/visual_trace_probe.py', 'tests/visual_startup_trace.py', 'tests/visual_surface_comparison.py', 'tests/visual_gallery_labels_qa.py', '.github/workflows/atelier-style-profile.yml']
+    branches: ['diagnostics/atelier-style', 'diagnostics/oled-gallery-labels', 'diagnostics/oled-gallery-labels-many']
+    paths: ['tests/visual_style_profile.py', 'tests/visual_trace_probe.py', 'tests/visual_startup_trace.py', 'tests/visual_surface_comparison.py', 'tests/visual_gallery_labels_qa.py', 'tests/visual_multi_label_fixture.py', '.github/workflows/atelier-style-profile.yml']
 
 permissions:
   contents: read
@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   motion-comparison:
-    if: github.ref != 'refs/heads/diagnostics/oled-gallery-labels'
+    if: github.ref != 'refs/heads/diagnostics/oled-gallery-labels' && github.ref != 'refs/heads/diagnostics/oled-gallery-labels-many'
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     strategy:
@@ -114,5 +114,51 @@ jobs:
         with:
           name: Modhunter-OLED-Gallery-Label-Diagnostic
           path: native/target/oled-gallery-labels/
+          if-no-files-found: error
+          retention-days: 90
+  oled-gallery-labels-many:
+    if: github.ref == 'refs/heads/diagnostics/oled-gallery-labels-many'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 64
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare the same browser and required font fixture
+        run: |
+          python3 -m venv /tmp/modhunter-oled-many
+          /tmp/modhunter-oled-many/bin/pip install -q playwright==1.57.0 Pillow==13.0.0
+          /tmp/modhunter-oled-many/bin/python tests/prepare_ci_fonts.py --output native/target/oled-gallery-labels-many/ci-fonts.json
+          MODHUNTER_MANY_BROWSER=$(/tmp/modhunter-oled-many/bin/python -c "import shutil; print(shutil.which('chromium') or shutil.which('chromium-browser') or '')")
+          test -n "$MODHUNTER_MANY_BROWSER" || { echo 'Required Chromium engine is unavailable'; exit 1; }
+          echo "MODHUNTER_MANY_BROWSER=$MODHUNTER_MANY_BROWSER" >> "$GITHUB_ENV"
+      - name: Bind the unchanged product and prepare the complete many-chapter fixture
+        run: |
+          /tmp/modhunter-oled-many/bin/python - <<'PYBIND'
+          import hashlib, pathlib
+          expected = {
+              'mo2_update_arsenal/web/app.js': '51920d83ef17605ffc4362c52e3877f7f19c7d3e3ebc67e7eb60bfb6d2573e05',
+              'mo2_update_arsenal/web/index.html': 'f348fba3b71976ba68c48face8286de11f52f5ba643d8694df0e1376138eea35',
+              'web/Modhunter.html': 'f348fba3b71976ba68c48face8286de11f52f5ba643d8694df0e1376138eea35',
+              'tests/visual_gallery_labels_qa.py': 'b5963cbb76d9653342310d9df0ba6080b5ffbf2d919e5e8c667ce20c3709b466',
+          }
+          for name, digest in expected.items():
+              assert hashlib.sha256(pathlib.Path(name).read_bytes()).hexdigest() == digest, name
+          print('Unchanged label-cache product from b27f5d53 / canonical run 43967195184. This run adds a separately declared complete 115-chapter workload; it does not replace earlier or native evidence.')
+          PYBIND
+          PYTHONPATH=. /tmp/modhunter-oled-many/bin/python tests/visual_surface_comparison.py --self-test
+          PYTHONPATH=. /tmp/modhunter-oled-many/bin/python tests/visual_multi_label_fixture.py --source-root . --output native/target/oled-gallery-labels-many/fixture
+      - name: Compare every record with all 115 authored chapter labels in ABBA order
+        run: |
+          PYTHONPATH=. /tmp/modhunter-oled-many/bin/python tests/visual_surface_comparison.py --mode gallery-label-cache --fixture-layout chapters-115 --output native/target/oled-gallery-labels-many/comparison --executable-path "$MODHUNTER_MANY_BROWSER" --control-ref 6ca747be97b98e17ea66c0fea9ef51be9b934e30
+      - name: Preserve the complete many-chapter evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Modhunter-OLED-Gallery-Many-Labels
+          path: native/target/oled-gallery-labels-many/
           if-no-files-found: error
           retention-days: 90

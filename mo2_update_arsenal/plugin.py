@@ -164,11 +164,20 @@ class ModUpdateArsenal(mobase.IPluginTool):
     def _on_profile_changed(self, previous, current):
         if self.server is not None:
             self.server.content.invalidate(reason="profile")
+            follows = getattr(self.server, "creator_follows", None)
+            if follows is not None:
+                follows.invalidate("MO2 changed profiles; pending creator evidence was discarded.")
         self._schedule_refresh()
 
     def _on_mod_installed(self, mod):
         if self.server is not None:
-            self.server.content.invalidate(reason="target", mod_name=mod if isinstance(mod, str) else call_str(mod, "name", ""))
+            name = mod if isinstance(mod, str) else call_str(mod, "name", "")
+            self.server.content.invalidate(reason="target", mod_name=name)
+            follows = getattr(self.server, "creator_follows", None)
+            if follows is not None and self.org is not None:
+                context = self.server.native_selection_snapshot([])
+                if str(self.org.profileName()) == str(context.get("profileName") or ""):
+                    follows.installed(name)
         self._schedule_refresh()
 
     def _on_mod_removed(self, name):
@@ -186,6 +195,16 @@ class ModUpdateArsenal(mobase.IPluginTool):
 
     def _on_download_complete(self, did):
         self._download_state(did, "complete")
+        follows = getattr(self.server, "creator_follows", None) if self.server is not None else None
+        if follows is None or type(did) is not int or parse_download_id(did) is None or self.org is None:
+            return
+        try:
+            # QObject access stays on Qt. The background owner receives public
+            # context and immutable native paths; no path enters its HTTP API.
+            follows.native_download_completed(did, str(self.org.downloadManager().downloadPath(did)),
+                str(self.org.downloadsPath()), str(self.org.profileName()))
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            pass  # Missing native receipt support does not invent a creator.
 
     def _on_download_failed(self, did):
         self._download_state(did, "failed")

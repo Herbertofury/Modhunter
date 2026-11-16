@@ -101,6 +101,7 @@ pub fn provider_of(raw: &str) -> &'static str {
         ("github.com", "github"),
         ("gitlab.com", "gitlab"),
         ("modrinth.com", "modrinth"),
+        ("modholdmods.com", "modhold"),
         ("thunderstore.io", "thunderstore"),
         ("curseforge.com", "curseforge"),
         ("patreon.com", "patreon"),
@@ -180,6 +181,23 @@ pub fn project_identity(raw: &str) -> Option<ProjectIdentity> {
             id.project_id = parts[1].into();
             id.project_type = Some(parts[0].into());
         }
+        "modhold" => {
+            // Mod IDs are scoped to the selected game. Author pages, listing
+            // pages and arbitrary paths are never treated as mod identities.
+            if !(4..=5).contains(&parts.len())
+                || parts[0] != "g"
+                || parts[2] != "mods"
+                || !modhold_game(parts[1])
+                || !modhold_id(parts[3])
+                || parts.get(4).is_some_and(|slug| !segment(slug))
+                || url.path().contains("//")
+            {
+                return None;
+            }
+            id.project_id = parts[3].into();
+            id.community = Some(parts[1].into());
+            id.project_type = Some("mod".into());
+        }
         "thunderstore" => {
             let host = url.host_str().unwrap_or_default();
             let package = if parts.len() >= 5 && parts[0] == "c" && parts[2] == "p" {
@@ -233,6 +251,7 @@ impl ProjectIdentity {
                 format!("https://gitlab.com/api/v4/projects/{encoded}/releases/permalink/latest")
             }
             "modrinth" => format!("https://api.modrinth.com/v2/project/{}", self.project_id),
+            "modhold" => format!("https://modholdmods.com/api/v1/mods/{}", self.project_id),
             "thunderstore" => format!(
                 "https://thunderstore.io/api/experimental/package/{}/",
                 self.project_id
@@ -257,7 +276,13 @@ pub fn api_url_allowed(raw: &str) -> bool {
     }
     matches!(
         url.host_str(),
-        Some("api.github.com" | "gitlab.com" | "api.modrinth.com" | "thunderstore.io")
+        Some(
+            "api.github.com"
+                | "gitlab.com"
+                | "api.modrinth.com"
+                | "thunderstore.io"
+                | "modholdmods.com"
+        )
     ) && match url.host_str().unwrap_or_default() {
         "api.github.com" => {
             url.path().starts_with("/repos/") && url.path().ends_with("/releases/latest")
@@ -267,8 +292,33 @@ pub fn api_url_allowed(raw: &str) -> bool {
             url.path().starts_with("/v2/project/") || url.path().starts_with("/v2/version/")
         }
         "thunderstore.io" => url.path().starts_with("/api/experimental/package/"),
+        "modholdmods.com" => {
+            url.query().is_none()
+                && url
+                    .path()
+                    .strip_prefix("/api/v1/mods/")
+                    .is_some_and(modhold_id)
+        }
         _ => false,
     }
+}
+
+fn modhold_game(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 80
+        && !value.starts_with('-')
+        && !value.ends_with('-')
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
+fn modhold_id(value: &str) -> bool {
+    !value.starts_with('0')
+        && value.bytes().all(|b| b.is_ascii_digit())
+        && value
+            .parse::<u64>()
+            .is_ok_and(|n| n > 0 && n <= 9_007_199_254_740_991)
 }
 
 // GitLab's latest endpoint redirects to a release endpoint, frequently using

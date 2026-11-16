@@ -1,0 +1,664 @@
+{
+  "schemaVersion": 1,
+  "kind": "creator-continuity-development-checkpoint",
+  "recordedAt": "2026-11-16T20:34:21.229216+00:00",
+  "scope": "Dated public metadata, synthetic subprocess contracts and local code gates. This is not released-build, Windows, native MO2, download, install or game acceptance.",
+  "platform": "Linux",
+  "codeBaseCommit": "a8791f35bfda96788a97bb8a34adcd4ec587c6e9",
+  "sourceMatchesCodeBaseCommit": true,
+  "sourceHashes": {
+    ".github/workflows/native-rust.yml": "d68910949ff959f21cac81252ef54e84a17b007b2d24545cd497831e347fe988",
+    "build.py": "a1f768379a29cd28d075d3328efed9d2751599f7968eeb5b74cf72eaeba2baad",
+    "mo2_update_arsenal/bridge.py": "142581bffe1258e639f9e8da06bc048a3e12bd6bddd73a29577575f3b1ba31ba",
+    "mo2_update_arsenal/creator_continuity.py": "b2346032a88e22be7dc5386c150696e5654c9b356d872f52c30a7aabca781350",
+    "mo2_update_arsenal/creator_follows.py": "d3510b9846d3b62e5aec539f4ca2b3bae86926137b427cb1623b945fe0d37a32",
+    "mo2_update_arsenal/gameplay.py": "f648fa359653f6edea92640742bc91714f84d35c1e9419b27aa9d1fa96508c38",
+    "mo2_update_arsenal/native_nexus.py": "837d58bf0a48898242063d6d7dbcd72d8abe30222b7f0b82410fb06e45a08948",
+    "mo2_update_arsenal/plugin.py": "4e7ba8996f7a9c59a7018795f3b65f0621db2bc48498e59e93aea08f0f5c3687",
+    "mo2_update_arsenal/scanner.py": "93bd8f3867ddc04cc82a0bbdd648dfa705e3240ae0f18552f9d34b18916813cc",
+    "mo2_update_arsenal/source_adapters.py": "0ec5fbd300dd105977e84c3ac60382bb4500712d0ebd739e85573247af6f0342",
+    "mo2_update_arsenal/source_registry.py": "f1ec0f2c3d11815ba0b94b31a49897f7f1b7c9dc68e53e825b85193a0e555088",
+    "mo2_update_arsenal/web/app.js": "347d09195c6fe82d95f8dc70f8533fc196411927ad9372cb206751a4db7196b5",
+    "mo2_update_arsenal/web/app.template.html": "966f0f598bde56cad0a6bca670a8fdd8ec9dd9a082fdf3aa743f7a342daad23b",
+    "mo2_update_arsenal/web/creator_continuity.css": "e24e7c0a07941b228eb547c3420bc64d09dd14d045d736e0d5c3ffc30d1f9032",
+    "mo2_update_arsenal/web/creator_continuity.js": "4c4040402efa827389eef89cc0a07bcbc552c98dfee76b7ed20f8c6efcc45aec",
+    "mo2_update_arsenal/web/creator_hub.css": "ed6a649a8ae4c9750c9ba7ac42e1c3f2a127d6969f96f9815f34dfebc585083f",
+    "mo2_update_arsenal/web/creator_hub.js": "82861d05241d83b783be04240c5c951d3d0a18ff8eba4fc59d975a5eec09eadd",
+    "native/crates/modhunter-core/src/source_adapters/http.rs": "ad468e8db3b7f7016048e848427974d51e13c88c9b444aeee142d5c419647014",
+    "native/crates/modhunter-core/src/source_adapters/identity.rs": "3dc0258c83b6b2ba99c6391343a1991b389a419fbbd89b4ac14f0e0ac686df40",
+    "native/crates/modhunter-core/src/source_adapters/mod.rs": "bd59dae92b3c1aee5e1a4aece9c230ebeae6e7834afff67390a4156c6825d524",
+    "native/crates/modhunter-core/src/source_adapters/parsers.rs": "c821d27c7a2742fa13fd34306dfbe8009371ca21e6449f3e51cf0c4c23bcc376",
+    "tests/creator_hub.test.cjs": "6ac57b31d551adaaadb7e4b6723c155212cf0bff76ba0dfc24f6c7d760e2d2a1",
+    "tests/frontend_runtime.test.cjs": "a75a621725c3e07059d75d661de891446f01f87f093565f0b2356efe36cd29ce",
+    "tests/test_creator_follows.py": "d2b08c94b60fcdd921c3cc5f0af8e5693d734d7eb60e604a6aeb703bb10e3587",
+    "tests/test_creator_hub_browser.py": "7445837730c6db9a1b4cbf05c84a9a337bfc9c80593dce232f94207d231c962b"
+  },
+  "productTier": {
+    "label": "Premium",
+    "billingImplemented": false,
+    "entitlementGateImplemented": false
+  },
+  "registry": {
+    "path": "shared/creator-continuity.v1.json",
+    "revision": "2026-11-16.1",
+    "sha256": "229ea75c1ee06d4df8ace30c4572abcf612aa510fd7cbe9aee075e521c7039ad",
+    "sourceProvider": "nexus",
+    "sourceHandle": "SethSaidThat",
+    "sourceAccountId": "199502561",
+    "status": "banned",
+    "observedAt": "2026-11-16T19:33:16Z",
+    "statusEvidenceUrl": "https://www.nexusmods.com/profile/SethSaidThat",
+    "moderationReasonEstablished": false,
+    "destinationProfileUrl": "https://modholdmods.com/u/SethSaidThat",
+    "identityEvidenceKind": "author-profile-backlink",
+    "perModRelocationDeclarationVerified": false,
+    "perModReviewRequired": true,
+    "candidateMappings": [
+      {
+        "fromProvider": "nexus",
+        "fromGame": "skyrimspecialedition",
+        "fromProjectId": "196696",
+        "fromUrl": "https://www.nexusmods.com/skyrimspecialedition/mods/196696",
+        "toProvider": "modhold",
+        "toGame": "skyrim-se",
+        "toProjectId": "11",
+        "toUrl": "https://modholdmods.com/g/skyrim-se/mods/11/estates-of-skyrim-immersive-settlement-and-survival-overhaul"
+      },
+      {
+        "fromProvider": "nexus",
+        "fromGame": "skyrimspecialedition",
+        "fromProjectId": "194692",
+        "fromUrl": "https://www.nexusmods.com/skyrimspecialedition/mods/194692",
+        "toProvider": "modhold",
+        "toGame": "skyrim-se",
+        "toProjectId": "4",
+        "toUrl": "https://modholdmods.com/g/skyrim-se/mods/4/word-travels-friends-talk-about-your-deeds-19560-voiced-line"
+      }
+    ],
+    "bundledSeedInProducts": [
+      "Modhunter",
+      "MO2R",
+      "Noxviola"
+    ],
+    "role": "App-local reviewed notice and migration-candidate projection; the identical initial seed is bundled in three products.",
+    "canonicalInterchange": false,
+    "canonicalFeedIngestionWired": false,
+    "canonicalLifecycleReconciliationWired": false
+  },
+  "liveModholdMetadata": {
+    "observedOn": "2026-11-16",
+    "receipt": "native/target/modhold-live-proof.json",
+    "receiptSha256": "1394eea5b0be74e0e325de20fb2090851ee39db41f1271a7e9682983dcb04576",
+    "scope": "Live public metadata reads, exact author/game/mod/main-file checks and warm cache. No account, file download, install, GUI or actual MO2 execution.",
+    "apiDocumentationUrl": "https://modholdmods.com/developers",
+    "helperSha256": "3a8a5cf3b6e1cdc2c604a82de8f7c0f46f5c7d74b8153c506733d1aeee95d62d",
+    "publicObservations": [
+      {
+        "provider": "modhold",
+        "projectId": "11",
+        "publisherId": "SethSaidThat",
+        "outcome": "review",
+        "latestVersion": "0.1.21",
+        "releaseId": "541",
+        "releaseIdentityKind": "main-file",
+        "publishedAt": "2026-11-12 18:40:37",
+        "updatedAt": "2026-11-14 18:10:48",
+        "providerTimestampZone": "not-declared",
+        "access": "free",
+        "reason": "The Modhold main file is marked alpha/beta or prerelease; review its channel and compatibility before updating.",
+        "game": "skyrim-se",
+        "pageUrl": "https://modholdmods.com/g/skyrim-se/mods/11/estates-of-skyrim-immersive-settlement-and-survival-overhaul",
+        "mainFileBytes": 47022769,
+        "installable": false
+      },
+      {
+        "provider": "modhold",
+        "projectId": "4",
+        "publisherId": "SethSaidThat",
+        "outcome": "release",
+        "latestVersion": "1.3.4",
+        "releaseId": "539",
+        "releaseIdentityKind": "main-file",
+        "publishedAt": "2026-11-12 18:31:59",
+        "updatedAt": "2026-11-14 18:15:29",
+        "providerTimestampZone": "not-declared",
+        "access": "free",
+        "reason": "The exact Modhold mod and main-file version are verified. Downloads require the provider's sign-in and are opened for manual review.",
+        "game": "skyrim-se",
+        "pageUrl": "https://modholdmods.com/g/skyrim-se/mods/4/word-travels-friends-talk-about-your-deeds-19560-voiced-line",
+        "mainFileBytes": 627790528,
+        "installable": false
+      },
+      {
+        "provider": "modhold",
+        "projectId": "6",
+        "publisherId": "SethSaidThat",
+        "outcome": "release",
+        "latestVersion": "1.2.28",
+        "releaseId": "774",
+        "releaseIdentityKind": "main-file",
+        "publishedAt": "2026-11-16 05:20:19",
+        "updatedAt": "2026-11-16 05:20:19",
+        "providerTimestampZone": "not-declared",
+        "access": "free",
+        "reason": "The exact Modhold mod and main-file version are verified. Downloads require the provider's sign-in and are opened for manual review.",
+        "game": "skyrim-se",
+        "pageUrl": "https://modholdmods.com/g/skyrim-se/mods/6/warband-follower-framework-party-manager-all-in-one-follower",
+        "mainFileBytes": 76408841,
+        "installable": false
+      }
+    ],
+    "networkRequests": 3,
+    "cacheHits": 0,
+    "processElapsedMs": 2686.863,
+    "warmNetworkRequests": 0,
+    "warmCacheHits": 3,
+    "warmProcessElapsedMs": 22.95,
+    "versionsEquivalentOnRepeat": true,
+    "timingScope": "One live sample and one warm-cache repeat; not a benchmark.",
+    "downloadRequests": 0,
+    "nativeMo2Exercised": false,
+    "gameLaunched": false
+  },
+  "protocolFixtures": {
+    "initialPublicSourceRegression": {
+      "recordedAt": "2026-11-16T19:39:09.319175+00:00",
+      "scope": "Synthetic public API cache fixtures through production Python scanner and compiled Rust CLI; no live provider, native MO2, install or game claim.",
+      "ok": true,
+      "checksPassed": 28,
+      "helperSha256": "3a8a5cf3b6e1cdc2c604a82de8f7c0f46f5c7d74b8153c506733d1aeee95d62d",
+      "receipt": "native/target/modhold-source-bridge-proof.json",
+      "receiptSha256": "bec5632ceeec1f1dbbceb856afe99ca0bc1bafa13fe592a44f2d7dbac34b4cd1",
+      "nativeMo2Exercised": false,
+      "liveModholdExercised": false,
+      "networkRequests": 0,
+      "providers": [
+        "github",
+        "gitlab",
+        "modrinth",
+        "thunderstore"
+      ]
+    },
+    "finalPublicSourceRegression": {
+      "recordedAt": "2026-11-16T19:54:13.268649+00:00",
+      "scope": "Synthetic public API cache fixtures through production Python scanner and compiled Rust CLI; no live provider, native MO2, install or game claim.",
+      "ok": true,
+      "checksPassed": 28,
+      "helperSha256": "3a8a5cf3b6e1cdc2c604a82de8f7c0f46f5c7d74b8153c506733d1aeee95d62d",
+      "receipt": "native/target/creator-continuity-source-bridge.json",
+      "receiptSha256": "b36d46855c5afd50e6768e4cb948a31187160b851869feaa2671721b121c5a6b",
+      "nativeMo2Exercised": false,
+      "liveModholdExercised": false,
+      "networkRequests": 0,
+      "providers": [
+        "github",
+        "gitlab",
+        "modrinth",
+        "thunderstore"
+      ]
+    },
+    "finalPluginRegression": {
+      "recordedAt": "2026-11-16T19:54:12.585495Z",
+      "scope": "Actual Python request capture and subprocess runner invoke the compiled Rust parser on synthetic files. Organizer methods are fixture doubles; no native MO2, Windows GUI, downloads, installs or game execution.",
+      "ok": true,
+      "checksPassed": 17,
+      "helperSha256": "3a8a5cf3b6e1cdc2c604a82de8f7c0f46f5c7d74b8153c506733d1aeee95d62d",
+      "receipt": "native/target/creator-continuity-plugin-bridge.json",
+      "receiptSha256": "d67a9aca77fa69a771579152be497bd1ad2b46477ce076f862d8354aeebe27e5",
+      "nativeMo2Exercised": false,
+      "liveModholdExercised": false,
+      "networkRequests": 0
+    },
+    "finalPluginBridge": {
+      "receipt": "native/target/creator-hub-plugin-bridge.json",
+      "receiptSha256": "ed0aee5eed3fc13e0985f5fa9161cfb9c400a4880852222f31b0643de7c85fb4",
+      "ok": true,
+      "checksPassed": 17,
+      "scope": "Synthetic production Python-to-compiled-Rust protocol; no live native MO2, download or installation."
+    },
+    "finalSourceBridge": {
+      "receipt": "native/target/creator-hub-source-bridge.json",
+      "receiptSha256": "f6db2b9aa49839894cc92dd5420e6819bf70501f47c783c874d09b067a9563bf",
+      "ok": true,
+      "checksPassed": 28,
+      "scope": "Synthetic production Python-to-compiled-Rust protocol; no live native MO2, download or installation."
+    }
+  },
+  "validation": {
+    "pythonFull": {
+      "status": "passed-with-skips",
+      "run": 569,
+      "passed": 538,
+      "skipped": 31,
+      "elapsedSeconds": 43.616,
+      "logName": "modhunter-creator-hub-python-final.log",
+      "logSha256": "6610debad2b9801ddb654bca5785498a0a21529f31c058f4b8f00dde0bd727a4"
+    },
+    "pythonCreatorContinuityTargeted": {
+      "status": "passed",
+      "run": 28,
+      "scope": "Parser identity, coalescing, account reuse, registry validation, persistence recovery, approved source propagation and profile lifecycle."
+    },
+    "nodeAllSuites": {
+      "status": "passed",
+      "passed": 179,
+      "logName": "modhunter-creator-hub-node-final.log",
+      "logSha256": "be09a84af972aa5a0cbc80833ba1093e888ae96cf7d931226f55bc9bf82e6c20",
+      "scope": "All repository Node runtime suites including desktop/offline; not Chromium rendering."
+    },
+    "rustWorkspace": {
+      "status": "passed",
+      "passed": 287,
+      "core": 165,
+      "importer": 18,
+      "modhold": 7,
+      "plugin": 21,
+      "sourceAdapters": 28,
+      "portableDesktop": 48,
+      "logName": "modhunter-creator-hub-rust-final.log",
+      "logSha256": "6b385d3147a14b199ea739f1f2d8ac90516a26117259d95b78d51cae9b48a203",
+      "scope": "Linux workspace tests; Windows-only runtime is not exercised.",
+      "sourceUnchangedAcrossFinalFrontEndRebase": true
+    },
+    "cargoFmt": {
+      "status": "passed",
+      "command": "cargo fmt --all --check",
+      "reportedBy": "root final validation"
+    },
+    "cargoClippy": {
+      "status": "passed",
+      "scope": "Workspace all-targets, locked, -D warnings",
+      "reportedBy": "root final validation",
+      "logName": "modhunter-creator-hub-clippy-final.log",
+      "logSha256": "37c8a0b99c0308389c7d8023fc9204176e312d6428836f3bca850022b164cb12"
+    },
+    "pythonCreatorFollows": {
+      "status": "passed",
+      "run": 45,
+      "scope": "Actual loopback API, production callbacks, owned Nexus metadata, exact-project scanner identity, persistence, profile/receipt generations, unfollow/cancel, complete catalogs, and scheduled uninstalled-project checks."
+    },
+    "creatorHubRendering": {
+      "nodeBehavior": "passed",
+      "completeSearchFixtureCreators": 12002,
+      "newRequiredChromiumWorkflows": 5,
+      "viewports": [
+        1440,
+        800,
+        390
+      ],
+      "localChromium": "Blocked by socket() Operation not permitted; no bypass attempted.",
+      "hostedBrowserGate": "Required in native-rust.yml; status must be read for the published head.",
+      "claimsNativeAcceptance": false
+    },
+    "independentReview": {
+      "reviewer": "MO2R implementation agent",
+      "reproducedIssuesClosed": [
+        "Late removed/failed native completion could admit a follow",
+        "Uninstalled catalog discoveries lacked recurring checks"
+      ],
+      "independentTargetedRegressionsPassed": 5,
+      "rootFollowUp": "Existing scan lifecycle tests were retained unchanged; no-op inventory worker removed, actual review item links preserved."
+    },
+    "finalLayoutReview": {
+      "reviewer": "Noxviola implementation agent",
+      "change": "Removed mobile tab negative margin to preserve the strict 390-pixel overflow gate; delayed old-profile fixture now waits for every follow read to drain.",
+      "releaseSourceEndingTestsPassed": 3,
+      "pythonBrowserFixtureSyntax": "passed",
+      "runtimeLogicUnchangedAfterFullSuites": true,
+      "actualChromium": "Required hosted gate, not established by this source review."
+    }
+  },
+  "generatedDashboard": {
+    "path": "mo2_update_arsenal/web/index.html",
+    "bytes": 958769,
+    "sha256": "5abdaf536e8983deb90c35be4f4ab5a6d16acf4379d2f7755df108786a7da197",
+    "generator": "native/scripts/prepare_assets.py",
+    "nativePackageAccepted": false
+  },
+  "pendingAcceptance": [
+    "Canonical schema_version: 1 ingestion, evidence-lifecycle reconciliation and compatibility with existing Modhunter PRs #24/#25 remain unwired in this new tracking path.",
+    "Actual local Chromium interactions for the new feature; prepared tests use fixture transport with production dashboard assets.",
+    "Windows application and WebView2 behavior for the final candidate.",
+    "Official native MO2 runtime integration and Windows package/install/upgrade acceptance.",
+    "Real-account downloads, interactive installers and game behavior are outside this metadata checkpoint."
+  ],
+  "limitations": [
+    "A dated account badge does not establish a moderation reason or permanent status.",
+    "An author-profile backlink does not automatically prove every individual mod relocation.",
+    "ModHold public files remain metadata-only and non-installable through this adapter.",
+    "Imported registry claims require human review and do not add live status or update adapters.",
+    "Published digest metadata does not mean archive bytes were downloaded or independently verified.",
+    "Receipt names do not broaden scope: source protocol fixtures cover four existing providers, not a live ModHold installation.",
+    "Bundling the same local notice seed across three apps does not establish canonical interchange compatibility or a shared automatic feed."
+  ],
+  "canonicalIntegrationBoundary": {
+    "notedAt": "2026-11-16T19:57:43.908964+00:00",
+    "canonicalEvidencePullRequest": "https://github.com/Herbertofury/Modding-Knowledge/pull/6",
+    "canonicalFormat": "schema_version: 1",
+    "localProjectionFormat": "creator-continuity-registry with schemaVersion: 1",
+    "canonicalIngestionWiredIntoNewTracking": false,
+    "canonicalLifecycleReconciliationWiredIntoNewTracking": false,
+    "sharedAutomaticFeedReady": false,
+    "releaseReadinessEstablished": false,
+    "noxviolaExistingCanonicalReviewConsumerPreserved": true,
+    "newTrackingUsesLocalProjection": true,
+    "relatedModhunterWork": [
+      {
+        "pullRequest": "https://github.com/Herbertofury/Modhunter/pull/24",
+        "branch": "upgrade/modhold-public-metadata",
+        "scope": "Earlier public metadata adapter",
+        "target": "main",
+        "includedInThisActiveUpgradeBase": false
+      },
+      {
+        "pullRequest": "https://github.com/Herbertofury/Modhunter/pull/25",
+        "branch": "feat/author-source-continuity",
+        "scope": "Pure continuity evaluator",
+        "target": "main",
+        "includedInThisActiveUpgradeBase": false
+      }
+    ],
+    "remainingWork": "Reconcile canonical ingestion and evidence lifecycle with the existing adapter/evaluator work before promoting this local tracking path as a shared automatic feed."
+  },
+  "upstreamBaseCommit": "a9abab1b141c06f44f4273a5dc22d8f8640074cb",
+  "liveCreatorCatalog": {
+    "scope": "Live public ModHold catalog metadata only; no download, login, install, or native MO2 acceptance.",
+    "startedAt": 1794860484.0068214,
+    "ok": true,
+    "checkedAt": 1794860498.3682601,
+    "catalogProjectCount": 149,
+    "requestCount": 3,
+    "endpoints": [
+      "https://modholdmods.com/api/v1/mods?page=1",
+      "https://modholdmods.com/api/v1/mods?page=2",
+      "https://modholdmods.com/api/v1/mods?page=3"
+    ],
+    "warmCacheAvoidedRequests": true,
+    "receipt": "native/target/creator-follows-live-catalog.json",
+    "receiptSha256": "385d03c6109300adf571312326b2fa759aa5f806217eaf905db042526803801c",
+    "exactSethSaidThatProjects": 36,
+    "authorProjectIdentities": [
+      {
+        "projectId": "201",
+        "game": "skyrim-se",
+        "version": "0.1.5 beta",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/201/nemesis",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "339",
+        "game": "skyrim-se",
+        "version": "0.1.5",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/339/reputation",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "5",
+        "game": "skyrim-se",
+        "version": "1.2.8",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/5/white-hearth-extra-jobs-and-features-add-on-player-home-imme",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "10",
+        "game": "skyrim-se",
+        "version": "1.1.11",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/10/mortum-castle-extra-jobs-and-features-add-on-player-home-imm",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "3",
+        "game": "skyrim-se",
+        "version": "1.3.12",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/3/halls-of-order-extra-jobs-raids-and-features-add-on-knights-",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "200",
+        "game": "skyrim-se",
+        "version": "0.1.8 alpha",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/200/skyrim-kings",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "198",
+        "game": "skyrim-se",
+        "version": "1.0.0",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/198/amber-skilled-fence-follower",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "6",
+        "game": "skyrim-se",
+        "version": "1.2.28",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/6/warband-follower-framework-party-manager-all-in-one-follower",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "8",
+        "game": "skyrim-se",
+        "version": "1.0.13",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/8/octavia-fully-voiced-shield-sister-follower-10461-voiced-lin",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "203",
+        "game": "skyrim-se",
+        "version": "1.0.1",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/203/followers-vs-followers",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "15",
+        "game": "skyrim-se",
+        "version": "1.0.5",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/15/goldenhills-plantation-extra-jobs-and-features-add-on-player",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "123",
+        "game": "skyrim-se",
+        "version": "1.0.2",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/123/dragons-keep-extra-jobs-and-features-add-on-player-home-cast",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "17",
+        "game": "skyrim-se",
+        "version": "1.0.2",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/17/nchuanthumz-extra-jobs-and-features-add-on-player-home-dwarv",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "14",
+        "game": "skyrim-se",
+        "version": "1.0.10",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/14/cassia-fully-voiced-skilled-huntress-follower-followers-comp",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "4",
+        "game": "skyrim-se",
+        "version": "1.3.4",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/4/word-travels-friends-talk-about-your-deeds-19560-voiced-line",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "16",
+        "game": "skyrim-se",
+        "version": "1.0.1",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/16/tundra-homestead-extra-jobs-and-features-add-on-player-home-",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "197",
+        "game": "skyrim-se",
+        "version": "0.1.1",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/197/skywent-of-gathering",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "13",
+        "game": "skyrim-se",
+        "version": "1.0.7",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/13/oskar-over-3-4k-voiced-lines-skilled-blacksmith-follower-or-",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "122",
+        "game": "skyrim-se",
+        "version": "1.0.3",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/122/nadira-skilled-commander-follower-voiced-followers-companion",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "209",
+        "game": "skyrim-se",
+        "version": "1.0.1",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/209/island-lord-extra-jobs-and-features-add-on-player-home-castl",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "7",
+        "game": "skyrim-se",
+        "version": "1.0.15",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/7/hjertesten-hall-extra-buildings-add-on-player-home-settlemen",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "1",
+        "game": "skyrim-se",
+        "version": "1.3.10",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/1/hjertesten-hall-extra-jobs-and-features-add-on-player-home-i",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "12",
+        "game": "skyrim-se",
+        "version": "1.0.6",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/12/falkreath-shop-skyrim-shop-simulator-own-and-run-your-store-",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "11",
+        "game": "skyrim-se",
+        "version": "0.1.21",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/11/estates-of-skyrim-immersive-settlement-and-survival-overhaul",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "2",
+        "game": "skyrim-se",
+        "version": "1.0.5",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/2/hjertesten-hall-stables-add-on-player-home-immersive-eos",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "121",
+        "game": "battle-brothers",
+        "version": "1.1.0",
+        "url": "https://modholdmods.com/g/battle-brothers/mods/121/entourage",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "204",
+        "game": "bellwright",
+        "version": "1.0.0",
+        "url": "https://modholdmods.com/g/bellwright/mods/204/bellwright-seasons-and-trade",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "154",
+        "game": "bellwright",
+        "version": "1.0.1",
+        "url": "https://modholdmods.com/g/bellwright/mods/154/bellwright-abundance",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "130",
+        "game": "manor-lords",
+        "version": "1.0.3",
+        "url": "https://modholdmods.com/g/manor-lords/mods/130/realm-manager",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "127",
+        "game": "skyrim-se",
+        "version": "1.0.2",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/127/terrain-builder-paint-forests-plants-and-rocks-anywhere-tree",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "195",
+        "game": "bellwright",
+        "version": "1.0.1",
+        "url": "https://modholdmods.com/g/bellwright/mods/195/bellwright-warband",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "180",
+        "game": "bellwright",
+        "version": "1.1.1",
+        "url": "https://modholdmods.com/g/bellwright/mods/180/bellwright-village-management",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "126",
+        "game": "manor-lords",
+        "version": "1.0.0",
+        "url": "https://modholdmods.com/g/manor-lords/mods/126/rich-deposits",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "125",
+        "game": "manor-lords",
+        "version": "1.0.0",
+        "url": "https://modholdmods.com/g/manor-lords/mods/125/faster-crops",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "124",
+        "game": "manor-lords",
+        "version": "1.0.0",
+        "url": "https://modholdmods.com/g/manor-lords/mods/124/abundance",
+        "handle": "SethSaidThat"
+      },
+      {
+        "projectId": "9",
+        "game": "skyrim-se",
+        "version": "1.0.0",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/9/custom-frost-weapons-and-spell-kit-octavia-s-frost-arsenal-i",
+        "handle": "SethSaidThat"
+      }
+    ]
+  },
+  "creatorFollowing": {
+    "defaultEnabled": true,
+    "localFollowsOnly": true,
+    "profileScoped": true,
+    "persistedUnfollowTombstones": true,
+    "successfulNativeReceiptsOnly": true,
+    "externalDownloadProfileScope": "Native active profile at completion; MO2 does not provide original-start profile for untracked downloads. Owned tickets retain original context.",
+    "verifiedRoles": [
+      "Nexus numeric-account uploader",
+      "ModHold published author profile",
+      "Provider-published profiles or namespaces from supported existing adapters"
+    ],
+    "reviewUnknownIdentities": true,
+    "scheduler": {
+      "nativeSessionOnly": true,
+      "tickSeconds": 60,
+      "dueIntervalSeconds": 1800,
+      "errorRetrySeconds": 300,
+      "normalSourceScanPriority": true,
+      "includesUninstalledProjects": true,
+      "nexusProjectCacheSeconds": 14400,
+      "profileAndCatalogCacheSeconds": 900
+    },
+    "modholdCatalog": "One complete paginated public catalog per service cache window shared across followed handles; first baseline, then unseen new projects and changed release observations.",
+    "nexusCatalog": "Linked projects and pinned account status only; no whole-author project enumeration.",
+    "canonicalFeed": false,
+    "automaticMigration": false,
+    "automaticInstallation": false
+  }
+}

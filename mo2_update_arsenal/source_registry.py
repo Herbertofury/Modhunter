@@ -36,6 +36,7 @@ PROVIDER_HOSTS = {
     "curseforge.com": "curseforge", "creations.bethesda.net": "bethesda",
     "dwemermods.com": "dwemer", "modding-guild.com": "modding-guild",
     "modrinth.com": "modrinth", "boosty.to": "boosty",
+    "modholdmods.com": "modhold",
     "thunderstore.io": "thunderstore", "ko-fi.com": "ko-fi",
     "afdian.com": "afdian", "afdian.net": "afdian", "tumblr.com": "tumblr",
     "subscribestar.com": "subscribestar", "subscribestar.adult": "subscribestar",

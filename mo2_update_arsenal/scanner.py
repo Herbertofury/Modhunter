@@ -53,8 +53,14 @@ def version_verdict(installed: str, latest: str) -> str:
 def summary_from_metadata(item: dict, meta: dict, checked_at: float) -> dict[str, Any]:
     if not isinstance(meta, dict) or not meta:
         return {"verdict": "unknown", "checkedAt": checked_at, "reason": "No Nexus metadata"}
+    from .creator_follows import nexus_creator, _creator_from_update, project_identity
+    identity = project_identity((item.get("source") or {}).get("url"))
+    creator = None
+    if identity and identity["provider"] == "nexus" and metadata_identity_matches(meta, identity["game"], int(identity["projectId"])):
+        creator = nexus_creator(meta, identity["game"], int(identity["projectId"])) or _creator_from_update(identity, {
+            "creator": meta.get("creator"), "checkedAt": checked_at, "expiresAt": checked_at + STARTUP_CACHE_SECONDS, "freshness": "fresh"})
     if meta.get("status") not in (None, "published", "Published"):
-        return {"verdict": "review", "checkedAt": checked_at, "reason": "Nexus listing status: " + str(meta.get("status"))[:80], "latestVersion": str(meta.get("version") or "")}
+        return {"verdict": "review", "checkedAt": checked_at, "reason": "Nexus listing status: " + str(meta.get("status"))[:80], "latestVersion": str(meta.get("version") or ""), **({"creator": creator} if creator else {})}
     latest = str(meta.get("version") or "")
     comparison = compare_versions(item.get("installedVersion", ""), latest)
     result = comparison["verdict"]
@@ -66,6 +72,8 @@ def summary_from_metadata(item: dict, meta: dict, checked_at: float) -> dict[str
         summary.update(thumbnailUrl=image, thumbnailKind="image")
     if isinstance(meta.get("author"), str) and meta["author"].strip():
         summary["author"] = {"name": meta["author"].strip()[:180], "role": "mod author"}
+    if creator:
+        summary["creator"] = creator
     return summary
 
 

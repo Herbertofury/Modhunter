@@ -19,6 +19,7 @@
 * [Watchtower pages and sign-ins](Watchtower)
 * [🛠️ MO2 Plugin](MO2-Plugin)
 * [🔎 Updater Sources](Updater-Source-Coverage)
+* [Creator Continuity](Creator-Continuity)
 * [⚒ Update Workshop](Update-Workshop)
 
 **Design & quality**

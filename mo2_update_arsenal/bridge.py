@@ -32,6 +32,8 @@ from .content_recovery import ContentRecovery
 from .duplicate_report import DuplicateReports
 from .source_adapters import compact_source_update, PUBLIC_API_PROVIDERS
 from .version import VERSION
+from .creator_continuity import CreatorStatusMonitor
+from .creator_follows import CreatorFollowService
 
 MAX_REQUEST = 16_384
 MAX_PROGRESS_REQUEST = 8_000_000
@@ -147,10 +149,13 @@ class ArsenalService:
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._scan: dict[str, Any] = {"state": "idle"}
+        self._scan_done = threading.Event()
+        self._scan_done.set()
         self._scan_epoch = 0
         self._startup_context: tuple[str, int] | None = None
         self._scan_cancel = threading.Event()
         self._source_scanner = None
+        self._creator_status = CreatorStatusMonitor()
         self._source_cache_path = cache_path.with_name("source-adapter-cache.json")
         self._file_cache: dict[tuple[str, int], dict] = {}
         self._file_epoch = 0
@@ -170,6 +175,7 @@ class ArsenalService:
         self.intelligence = ModIntelligence(self, cache_path.with_name("mod-intelligence.json"))
         self.content = ContentRecovery(self, cache_path.with_name("content-operations.json"))
         self.duplicates = DuplicateReports(self, cache_path.with_name("duplicate-reports"))
+        self.creator_follows = CreatorFollowService(self)
 
     def _publish_discovery(self) -> None:
         # Serialize with stop/profile replacement so an older profile cannot
@@ -271,7 +277,8 @@ class ArsenalService:
         # The existing MO2 Chronicle persists explicit user source links by
         # profile. Rehydrate them for scans without overwriting MO2 metadata.
         links = self.chronicle.source_links(snapshot.get("profileId", ""))
-        return self.intelligence.decorate(self._apply_source_links(snapshot, links))
+        return self.intelligence.decorate(self._apply_source_links(
+            snapshot, links, self.chronicle.creator_choices(snapshot.get("profileId", ""))))
 
     def selection_snapshot(self, item_ids: list[str]) -> dict:
         """A private exact-row view for queue preflights, independent of list size."""
@@ -282,7 +289,40 @@ class ArsenalService:
             snapshot["items"] = [deepcopy(self._items_by_id[key]) for key in item_ids
                                  if key in self._items_by_id]
         links = self.chronicle.source_links(snapshot.get("profileId", ""), item_ids)
-        return self.intelligence.decorate(self._apply_source_links(snapshot, links), detailed=True)
+        return self.intelligence.decorate(self._apply_source_links(
+            snapshot, links, self.chronicle.creator_choices(snapshot.get("profileId", ""), item_ids)), detailed=True)
+
+    def creator_inventory(self) -> dict:
+        """Small owned inputs for follows, without per-mod health or file lists."""
+        row_fields = {"id", "name", "mo2InternalName", "installedVersion", "nexusId", "source", "updateEligible"}
+        update_fields = {"provider", "source", "sourceUrl", "projectId", "releaseId", "latestVersion",
+                         "checkedAt", "expiresAt", "freshness", "outcome", "reason", "verdict",
+                         "creator", "author", "publisher", "publisherId"}
+        with self._guard:
+            snapshot = {key: self._snapshot.get(key) for key in ("profileId", "profileName", "game", "gameRuntime", "loader")}
+            snapshot["executionEpoch"] = self._execution_epoch
+            snapshot["items"] = []
+            for value in self._snapshot.get("items", []):
+                row = deepcopy({key: value[key] for key in row_fields if key in value})
+                if isinstance(value.get("update"), dict):
+                    row["update"] = deepcopy({key: value["update"][key] for key in update_fields if key in value["update"]})
+                snapshot["items"].append(row)
+            profile = snapshot.get("profileId", "")
+            return self._apply_source_links(snapshot, self.chronicle.source_links(profile), self.chronicle.creator_choices(profile))
+
+    def creator_status(self, item_id: str, profile_id: str, handle: str, expected_account_id=None) -> dict:
+        with self._guard:
+            epoch = self._execution_epoch
+            if self._stopped or profile_id != self._snapshot.get("profileId") or item_id not in self._items_by_id:
+                return {"ok": False, "error": "The creator check belongs to an old profile or mod."}
+        try:
+            observation = self._creator_status.check(handle, expected_account_id=expected_account_id)
+        except ValueError as error:
+            return {"ok": False, "error": str(error)}
+        with self._guard:
+            if self._stopped or epoch != self._execution_epoch or profile_id != self._snapshot.get("profileId"):
+                return {"ok": False, "error": "The profile changed during the creator check."}
+        return {"ok": True, "profileId": profile_id, "itemId": item_id, "handle": handle, "observation": observation}
 
     def source_details(self, item_id: str, profile_id: str) -> dict:
         with self._guard:
@@ -296,7 +336,7 @@ class ArsenalService:
                     "update": deepcopy(item.get("update") or {}), "source": deepcopy(item.get("source") or {})}
 
     @staticmethod
-    def _apply_source_links(snapshot: dict, links: dict) -> dict:
+    def _apply_source_links(snapshot: dict, links: dict, creators: dict | None = None) -> dict:
         for item in snapshot.get("items", []):
             candidate = canonical_source_url(links.get(str(item.get("id")), ""))
             update = item.get("update") or {}
@@ -305,11 +345,17 @@ class ArsenalService:
             previous = canonical_source_url((item.get("source") or {}).get("url", ""))
             if candidate and candidate != previous:
                 item["source"] = source_record(candidate, "MO2 Chronicle source link")
+            choice = (creators or {}).get(str(item.get("id")))
+            expected_author = choice.get("expectedAuthor", "") if choice else ""
+            if candidate and choice and canonical_source_url(choice.get("destinationUrl", "")) == candidate:
+                item["source"] = {**item.get("source", {}), "expectedAuthor": expected_author}
+                item["creatorContinuity"] = deepcopy(choice)
             expected = candidate or previous
             # A scanned override is evidence for that exact URL; retaining it
             # must not rewrite native MO2 metadata or survive clearing the link.
             if ((candidate and candidate != previous and update.get("sourceUrl") != candidate)
-                    or "sourceUrl" in update and update["sourceUrl"] != expected):
+                    or "sourceUrl" in update and update["sourceUrl"] != expected
+                    or expected_author and str(update.get("publisherId", "")).lower() != expected_author.lower()):
                 item.pop("update", None)
         return snapshot
 
@@ -330,12 +376,16 @@ class ArsenalService:
                 return {"ok": False, "profileChanged": True,
                         "error": "MO2 context changed before saving; refresh before replacing progress"}
             before = {key: canonical_source_url(url) for key, url in self.chronicle.source_links(profile).items()}
+            before_creators = self.chronicle.creator_choices(profile)
             result = self.chronicle.set_progress(profile, payload.get("rows"), payload.get("prefs"),
                 payload.get("verifiedRuntime", ""), self._items_by_id.keys(), persist=False)
             if not result.get("ok"):
                 return result
             after = {key: canonical_source_url(url) for key, url in self.chronicle.source_links(profile).items()}
             changed = {key for key in before.keys() | after.keys() if before.get(key, "") != after.get(key, "")}
+            after_creators = self.chronicle.creator_choices(profile)
+            changed.update(key for key in before_creators.keys() | after_creators.keys()
+                           if before_creators.get(key) != after_creators.get(key))
             if changed:
                 self._execution_epoch += 1
                 self._install_intent_epoch += 1
@@ -344,6 +394,8 @@ class ArsenalService:
                 self._scan_epoch += 1
                 self._scan_cancel.set()
                 self._scan = {"state": "stale", "reason": "Mod source links changed; rescan their release information"}
+                self._scan_done.set()
+                self.creator_follows.invalidate("A mod source changed; creator checks need current source evidence.", preserve_native_receipts=True)
                 self._quick_job = {"state": "idle", "profileId": profile, "queued": [], "skipped": [], "failed": []}
                 for item_id in changed:
                     if item_id in self._items_by_id:
@@ -390,6 +442,9 @@ class ArsenalService:
                 self._file_epoch += 1
                 self._scan_epoch += 1
                 self._scan_cancel.set()
+                self._scan_done.set()
+                self.creator_follows.invalidate("The native profile or installed library changed.",
+                    preserve_native_receipts=same_profile and same_game and same_runtime)
                 # A previous bulk queue must neither hold the new profile's
                 # progress state nor resume after an A -> B -> A switch.
                 self._quick_job = {"state": "idle", "profileId": snapshot.get("profileId"),
@@ -409,6 +464,7 @@ class ArsenalService:
             self.intelligence.invalidate(reason="MO2 inventory refreshed; plugin copies and conversion hashes need a fresh check")
         self._publish_discovery()
         self.intelligence.auto_audit()
+        self.creator_follows.inventory()
 
     def set_selected(self, mod_id: str) -> None:
         with self._guard:
@@ -553,6 +609,7 @@ class ArsenalService:
                 self._scan = {k: v for k, v in self._scan.items() if k not in {"records", "itemRecords"}}
                 self._scan.update(state="cancelled", reason="Check cancelled; completed results retained")
                 self._generation += 1
+                self._scan_done.set()
             return {"ok": True, "scan": self.scan_state(), "profileId": profile_id}
 
     def startup_check(self, profile_id: str, execution_epoch: int) -> dict:
@@ -586,6 +643,8 @@ class ArsenalService:
                 return {"ok": False, "error": "MO2 profile changed before scanning; refresh and try again"}
             if self._scan.get("state") == "running":
                 return {"ok": False, "error": "An update scan is already running"}
+            self.creator_follows.source_scan_started()
+            self._scan_done.clear()
             self._scan_epoch += 1
             job_epoch = self._scan_epoch
             self._scan_cancel.set()
@@ -734,6 +793,7 @@ class ArsenalService:
                     self.chronicle.maybe_victory(snapshot["profileId"], self._snapshot, self._scan,
                         scanned_after_update=(base_sequence == self.chronicle.update_count(snapshot["profileId"])))
                     self._generation += 1
+                    self.creator_follows.observe_updates(snapshot, result.get("itemRecords", {}))
             except (MissingAuth, NexusError, ValueError, OSError) as ex:
                 with self._guard:
                     if is_current():
@@ -742,6 +802,11 @@ class ArsenalService:
                 with self._guard:
                     if is_current():
                         self._scan = {"state": "error", "mode": mode, "error": "Unexpected scan failure: " + type(ex).__name__, "checked": 0, "total": 0, "jobId": job_epoch}
+            finally:
+                with self._guard:
+                    if self._scan.get("state") != "running":
+                        self._scan_done.set()
+                        self.creator_follows.source_scan_finished()
         threading.Thread(target=worker, name="ArsenalNexusScan", daemon=True).start()
         return {"ok": True, "state": "running"}
 
@@ -847,6 +912,7 @@ class ArsenalService:
     def _start_native_download(self, command: str, native_payload: dict, ticket: dict) -> dict:
         """Register native IDs atomically with any completion signal received early."""
         with self._guard:
+            ticket["creatorFollowContext"] = self.creator_follows.context_generation
             native_payload = {**native_payload, "profileId": ticket.get("profileId"),
                               "itemId": ticket.get("itemId", ""),
                               "gameRuntime": ticket.get("gameRuntime"),
@@ -867,6 +933,8 @@ class ArsenalService:
                         ticket["status"] = self._early_download_events.pop(download_id, "downloading")
                         self._downloads[download_id] = ticket
                         self.journal.record(ticket, download_id)
+                        if ticket["status"] == "complete":
+                            self.creator_follows.downloaded(ticket, download_id)
                 if not self._download_dispatches:
                     self._early_download_events.clear()
 
@@ -1520,6 +1588,7 @@ class ArsenalService:
                 or state not in ("complete", "downloading", "paused", "failed", "removed")):
             return
         with self._guard:
+            self.creator_follows.download_state(download_id, state)
             if download_id in self._downloads:
                 # A delayed download callback cannot renew installation
                 # authority, including an uncertain native outcome that still
@@ -1527,6 +1596,8 @@ class ArsenalService:
                 if self._downloads[download_id]["status"] not in ("installing", "installed", "needs-review"):
                     self._downloads[download_id]["status"] = state
                     self.journal.record(self._downloads[download_id], download_id)
+                    if state == "complete":
+                        self.creator_follows.downloaded(self._downloads[download_id], download_id)
             elif self._download_dispatches and type(download_id) is int and parse_download_id(download_id) is not None:
                 # Early native callback raced ahead of startDownload's return ID.
                 self._early_download_events[download_id] = state
@@ -1643,6 +1714,8 @@ class ArsenalService:
         self._thread.start()
         self._publish_discovery()
         self.intelligence.auto_audit()
+        self.creator_follows.inventory()
+        self.creator_follows.start()
         return f"http://127.0.0.1:{srv.server_port}/"
 
     def stop(self) -> None:
@@ -1652,6 +1725,8 @@ class ArsenalService:
             self._execution_epoch += 1
             self._scan_epoch += 1
             self._scan_cancel.set()
+            self._scan_done.set()
+            self.creator_follows.stop()
             self.intelligence.invalidate(reason="MO2 session closed")
             if self._scan.get("state") == "running":
                 self._scan = {"state": "idle", "reason": "MO2 session closed"}
@@ -1693,7 +1768,7 @@ class ArsenalService:
                 self.send_header("X-Content-Type-Options", "nosniff")
                 self.send_header("X-Frame-Options", "DENY")
                 self.send_header("Referrer-Policy", "no-referrer")
-                self.send_header("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: https://staticdelivery.nexusmods.com https://cdn.modrinth.com https://gcdn.thunderstore.io https://cdn.thunderstore.io https://thunderstore.io; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'")
+                self.send_header("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: https://staticdelivery.nexusmods.com https://avatars.nexusmods.com https://avatars.githubusercontent.com https://modholdmods.com https://cdn.modrinth.com https://gcdn.thunderstore.io https://cdn.thunderstore.io https://thunderstore.io; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'")
                 self.end_headers()
 
             def _reply(self, obj, status=200):
@@ -1809,6 +1884,8 @@ class ArsenalService:
                 if uri.path == "/api/source-details":
                     query = urllib.parse.parse_qs(uri.query)
                     return self._reply(service.source_details(query.get("itemId", [""])[0], query.get("profileId", [""])[0]))
+                if uri.path == "/api/creator-follows":
+                    return self._reply(service.creator_follows.snapshot())
                 if uri.path == "/api/update-plan":
                     detailed = urllib.parse.parse_qs(uri.query).get("details") == ["full"]
                     return self._reply(plan_updates(service.snapshot(source_details=detailed)))
@@ -1853,7 +1930,7 @@ class ArsenalService:
                     return
                 try:
                     length = int(self.headers.get("Content-Length", "0"))
-                    if length <= 0 or length > (MAX_CONTENT_REQUEST if self.path.split("?", 1)[0].startswith("/api/content-") and self._native_client() else MAX_PROGRESS_REQUEST if self.path.split("?", 1)[0] in ("/api/progress", "/api/update-queue") else MAX_REALM_REQUEST if self.path.split("?", 1)[0] in ("/api/realm/world", "/api/siege/state") else MAX_REQUEST):
+                    if length <= 0 or length > (MAX_CONTENT_REQUEST if self.path.split("?", 1)[0].startswith("/api/content-") and self._native_client() else MAX_PROGRESS_REQUEST if self.path.split("?", 1)[0] in ("/api/progress", "/api/update-queue") else MAX_REALM_REQUEST if self.path.split("?", 1)[0] in ("/api/realm/world", "/api/siege/state", "/api/creator-follows") else MAX_REQUEST):
                         return self._reply({"ok": False, "error": "Request size rejected"}, 413)
                     data = json.loads(self.rfile.read(length))
                     if not isinstance(data, dict):
@@ -1861,6 +1938,8 @@ class ArsenalService:
                 except (ValueError, json.JSONDecodeError):
                     return self._reply({"ok": False, "error": "Invalid JSON"}, 400)
                 uri = urllib.parse.urlsplit(self.path)
+                if uri.path == "/api/creator-follows":
+                    return self._reply(service.creator_follows.command(data))
                 if uri.path == "/api/content-install":
                     if not self._native_client():
                         return self._reply({"ok": False, "error": "Archive installation requires the owned native review"}, 403)
@@ -1882,6 +1961,10 @@ class ArsenalService:
                     return self._reply(service.intelligence.start_health(
                         str(data.get("itemId") or ""), str(data.get("profileId") or ""),
                         force=data.get("force") is True))
+                if uri.path == "/api/creator-status":
+                    return self._reply(service.creator_status(
+                        str(data.get("itemId") or ""), str(data.get("profileId") or ""),
+                        str(data.get("handle") or ""), data.get("expectedAccountId")))
                 if uri.path == "/api/eslifier-data":
                     return self._reply(service.call_ui("eslifier-data", {
                         "profileId": str(data.get("profileId") or "")}, timeout=180))

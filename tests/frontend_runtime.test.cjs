@@ -11,6 +11,9 @@ const {test}=require('node:test');
 const APP=fs.readFileSync(path.join(__dirname,'../mo2_update_arsenal/web/app.js'),'utf8');
 const INSIGHTS=fs.readFileSync(path.join(__dirname,'../mo2_update_arsenal/web/mod_insights.js'),'utf8');
 const SOURCES=fs.readFileSync(path.join(__dirname,'../mo2_update_arsenal/web/source_insights.js'),'utf8');
+const CONTINUITY=fs.readFileSync(path.join(__dirname,'../mo2_update_arsenal/web/creator_continuity.js'),'utf8');
+const CREATOR_HUB=fs.readFileSync(path.join(__dirname,'../mo2_update_arsenal/web/creator_hub.js'),'utf8');
+const CREATOR_REGISTRY=JSON.parse(fs.readFileSync(path.join(__dirname,'../shared/creator-continuity.v1.json'),'utf8'));
 
 function catalog(profile='a',count=3){
  return {executionEpoch:1,profileId:profile,catalogId:profile,profileName:profile,game:'skyrimspecialedition',gameRuntime:'1.5.97',
@@ -21,7 +24,8 @@ function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={
  const nodes=new Map(),timers=new Map(),pending=new Map(),calls=[],active=new Map(),maximum=new Map(),nativeNavigations=[],windowListeners=new Map();
  let timerId=0;
  const state={catalog:catalog('a',count),generation:1,failSnapshots,progressRows,progressReadFailures,score:0,scan:{state:'idle'},defer:new Set()};
- const document={hidden:false,activeElement:null,addEventListener(){},querySelectorAll(){return[]},createElement:name=>element(name),getElementById:id=>node(id),querySelector:selector=>node(selector)};
+ const documentListeners=new Map();
+ const document={hidden:false,activeElement:null,addEventListener(type,listener){if(!documentListeners.has(type))documentListeners.set(type,[]);documentListeners.get(type).push(listener)},async dispatchEvent(event){for(const listener of documentListeners.get(event.type)||[])await listener(event)},querySelectorAll(){return[]},createElement:name=>element(name),getElementById:id=>node(id),querySelector:selector=>node(selector)};
  function element(id){
   const classes=new Set();let html='';
   return{id,textContent:'',value:'',checked:false,disabled:false,hidden:true,dataset:{},writes:0,
@@ -71,6 +75,23 @@ function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={
     const item=c.items.find(m=>m.id===id);
     value={ok:true,profileId:c.profileId,itemId:id,health:state.health||{schema:1,provider:'nexus',bugs:{state:'available',displayedCount:0,checkedAt:1800000000},page:{status:'available'},job:{state:'completed'}},localAnalysis:item?.localAnalysis||null};
    }
+   else if(endpoint==='creator-follows'){
+    if(method==='POST'&&state.creatorFollowError)throw Error(state.creatorFollowError);
+    const saved=state.creatorFollowsByProfile?.[c.profileId]||state.creatorFollows||{revision:0,autoFollow:true,creators:[],review:[],job:{state:'idle'}};
+    const next=structuredClone(saved);
+    if(method==='POST'){
+     if(body.action==='settings')next.autoFollow=body.autoFollow;
+     const states={pause:'paused',resume:'following',unfollow:'unfollowed',restore:'following'};
+     for(const creator of next.creators)if((body.creatorIds||[]).includes(creator.id)){
+      if(states[body.action])creator.state=states[body.action];
+      if(body.action==='mark-seen')creator.unreadCount=0;
+     }
+     if(body.action==='discover'||body.action==='check')next.job={state:'running',kind:body.action,checked:0,total:next.creators.length};
+     next.revision++;state.creatorFollows=next;
+    }
+    value={ok:true,profileId:c.profileId,...next};
+   }
+   else if(endpoint==='creator-status')value={ok:true,profileId:c.profileId,itemId:body.itemId,handle:body.handle,observation:state.creatorObservation||{handle:body.handle,profileUrl:'https://www.nexusmods.com/profile/'+body.handle,accountId:'199502561',state:'banned',verified:true,checkedAt:Date.now()/1000,reason:'Confirmed header'}};
    else if(endpoint.startsWith('source-details?')){
     const id=new URL('http://fixture/'+endpoint).searchParams.get('itemId');
     value={ok:true,profileId:c.profileId,itemId:id,update:state.sourceDetails||c.items.find(m=>m.id===id)?.update||{}};
@@ -85,9 +106,10 @@ function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={
    return{ok:true,json:async()=>value};
   }finally{active.set(key,active.get(key)-1)}
  };
- const instrument='window.__RUNTIME__={setRows,libraryRowCacheOwner,clearLibraryRowCache,rememberFilteredLibraryRows,takeFilteredLibraryRow,cacheMap:()=>LIBRARY_DETACHED_ROWS,importJSON,attachNativeTracking,trackPageIntent,trackModPage,getSrc,modHTML,renderWorkshop,sourceLinksPending,requestLiveCatalog,bridgeRequest,scanLive,fastUpdateAll,refreshWorkshop,refreshDownloads,nextWorkshopCandidate,pollLiveBridge,updatePrefs,save,counts,filtered,render,importOfflineCatalog,scheduleSearchRender,analyzePlugins,refreshModHealth,drawInspector,loadModInsights,loadSourceDetails,sourceDetailMod,openFilePicker,closeFilePicker,exportWorkshop,state:()=>({connected:LIVE_CONNECTED,quick:QUICK_RUNNING,profileEpoch:PROFILE_EPOCH}),setRow:(id,value,invalidatePlan=true)=>{markSourceEdit(getRow(id).url,value.url);STORE.rows[id]=value;save(invalidatePlan)},setQuery:q=>{STORE.prefs.query=q;scheduleSearchRender()}};';
+ const instrument='window.__RUNTIME__={selectWorkspace,refreshCreatorHub,changeCreatorFollows,renderCreatorHub,creatorHubSnapshot,creatorHubState:()=>({data:CREATOR_HUB_DATA,view:CREATOR_HUB_VIEW,busy:CREATOR_HUB_BUSY}),setRows,libraryRowCacheOwner,clearLibraryRowCache,rememberFilteredLibraryRows,takeFilteredLibraryRow,cacheMap:()=>LIBRARY_DETACHED_ROWS,importJSON,attachNativeTracking,trackPageIntent,trackModPage,getSrc,modHTML,renderWorkshop,sourceLinksPending,requestLiveCatalog,bridgeRequest,scanLive,fastUpdateAll,refreshWorkshop,refreshDownloads,nextWorkshopCandidate,pollLiveBridge,updatePrefs,save,counts,filtered,render,importOfflineCatalog,scheduleSearchRender,analyzePlugins,refreshModHealth,drawInspector,loadModInsights,loadSourceDetails,sourceDetailMod,openFilePicker,closeFilePicker,exportWorkshop,state:()=>({connected:LIVE_CONNECTED,quick:QUICK_RUNNING,profileEpoch:PROFILE_EPOCH}),setRow:(id,value,invalidatePlan=true)=>{markSourceEdit(getRow(id).url,value.url);STORE.rows[id]=value;save(invalidatePlan)},setQuery:q=>{STORE.prefs.query=q;scheduleSearchRender()}};';
  const source=APP.replace('/*__POWERSHELL__*/','""').replace(/\}\)\(\);\s*$/,instrument+'\n})();');
- vm.createContext(context);vm.runInContext(SOURCES,context,{filename:'source_insights.js'});vm.runInContext(INSIGHTS,context,{filename:'mod_insights.js'});vm.runInContext(source,context,{filename:'app.js'});
+ context.__MODHUNTER_CREATOR_REGISTRY__=CREATOR_REGISTRY;
+ vm.createContext(context);vm.runInContext(CREATOR_HUB,context,{filename:'creator_hub.js'});vm.runInContext(CONTINUITY,context,{filename:'creator_continuity.js'});vm.runInContext(SOURCES,context,{filename:'source_insights.js'});vm.runInContext(INSIGHTS,context,{filename:'mod_insights.js'});vm.runInContext(source.replace('window.__RUNTIME__={','window.__RUNTIME__={checkCreatorStatus,refreshWatchingCreators,'),context,{filename:'app.js'});
  return{context,state,nodes,timers,calls,active,maximum,pending,nativeNavigations,api:context.__RUNTIME__,qa:context.__ARSENAL_QA__,
   release(key){state.defer.delete(key);for(const resolve of pending.get(key)||[])resolve();pending.delete(key)},
   async settle(){for(let i=0;i<6;i++)await new Promise(resolve=>setImmediate(resolve))},
@@ -815,4 +837,129 @@ test('catalog replacement clears cold rows before epoch changes, including same-
    assert.equal(h.api.takeFilteredLibraryRow(entry,h.api.libraryRowCacheOwner()),null);
   }
  }
+});
+
+test('creator status shares one request per author and saves evidence only in its profile',async()=>{
+ const h=harness();await h.settle();const data=catalog('a');
+ for(const item of data.items){item.author='SethSaidThat';item.source.url='https://www.nexusmods.com/skyrimspecialedition/mods/'+(196696+item.priority)}
+ h.state.catalog=data;await h.qa.setCatalog(data);await h.settle();
+ h.calls.length=0;await h.api.refreshWatchingCreators();
+ assert.equal(h.calls.filter(c=>c.endpoint==='creator-status').length,1);
+ assert.equal(h.calls.find(c=>c.endpoint==='creator-status').body.expectedAccountId,'199502561');
+ for(const item of data.items)assert.equal(h.qa.verifyRow(item.id).state.creatorObservation.state,'banned');
+ h.state.defer.add('POST creator-status');const pending=h.api.checkCreatorStatus(h.qa.getCatalog().items[0],null);await h.settle();
+ h.state.catalog=catalog('b');await h.qa.setCatalog(h.state.catalog);h.release('POST creator-status');await pending;
+ assert.equal(h.qa.verifyRow('item-0').state.creatorObservation,undefined);
+});
+test('failed creator checks retain the last verified observation',async()=>{
+ const h=harness();await h.settle();const data=catalog('a');data.items[0].author='SethSaidThat';data.items[0].source.url=CREATOR_REGISTRY.migrations[0].from.url;
+ h.state.catalog=data;await h.qa.setCatalog(data);await h.settle();const mod=h.qa.getCatalog().items[0];
+ await h.api.checkCreatorStatus(mod,null);const before=h.qa.verifyRow(mod.id).state.creatorObservation;
+ h.state.creatorObservation={handle:'SethSaidThat',state:'unknown',verified:false,reason:'HTTP 403'};
+ await h.api.checkCreatorStatus(mod,null);assert.equal(h.qa.verifyRow(mod.id).state.creatorObservation,before);
+});
+test('creator approval event persists exact source and cancellation restores it',async()=>{
+ const h=harness();await h.settle();const data=catalog('a');data.items[0].author='SethSaidThat';data.items[0].source.url=CREATOR_REGISTRY.migrations[0].from.url;
+ h.state.catalog=data;await h.qa.setCatalog(data);await h.settle();
+ const click=async(action,confirmed=true)=>{const button={dataset:{creatorAction:action,id:'item-0',candidate:CREATOR_REGISTRY.migrations[0].id},isConnected:true,closest:()=>({querySelector:()=>({checked:confirmed})})};await h.context.document.dispatchEvent({type:'click',preventDefault(){},target:{closest:selector=>selector==='[data-creator-action]'?button:null}})};
+ await click('approve',false);assert.equal(h.qa.verifyRow('item-0').state.creatorContinuity,undefined);
+ await click('approve');assert.equal(h.qa.verifyRow('item-0').state.url,CREATOR_REGISTRY.migrations[0].to.url);
+ assert.equal(h.qa.verifyRow('item-0').state.creatorContinuity.originalUrl,CREATOR_REGISTRY.migrations[0].from.url);
+ assert.equal(h.api.sourceLinksPending(),true);
+ await click('pause');assert.equal(h.qa.verifyRow('item-0').state.url,'');assert.equal(h.qa.verifyRow('item-0').state.creatorContinuity.state,'paused');
+ await click('resume');assert.equal(h.qa.verifyRow('item-0').state.creatorContinuity.state,'tracking');
+ await click('undo');assert.equal(h.qa.verifyRow('item-0').state.creatorContinuity.state,'undone');assert.equal(h.qa.verifyRow('item-0').state.url,'');
+ assert.equal(h.calls.filter(c=>['download','install','quick-update'].includes(c.endpoint)).length,0);
+});
+
+test('creator observations retain each row stable-account pin, including cached handle spelling',async()=>{
+ const h=harness();await h.settle();const data=catalog('a');for(const item of data.items)item.author='another';
+ h.state.catalog=data;await h.qa.setCatalog(data);await h.settle();
+ const observation=(accountId)=>({state:'banned',verified:true,handle:'another',profileUrl:'https://www.nexusmods.com/profile/another',accountId,checkedAt:Date.now()/1000-50});
+ const first=observation('1'),second=observation('2');h.api.setRow('item-0',{creatorObservation:first});h.api.setRow('item-1',{creatorObservation:second});
+ h.state.creatorObservation={...first,handle:'Another',profileUrl:'https://www.nexusmods.com/profile/Another',checkedAt:Date.now()/1000};
+ await h.api.checkCreatorStatus(h.qa.getCatalog().items[0],null,h.qa.getCatalog().items.slice(0,2));
+ assert.equal(h.qa.verifyRow('item-0').state.creatorObservation,h.state.creatorObservation);
+ assert.equal(h.qa.verifyRow('item-1').state.creatorObservation,second);
+});
+
+function followFixture(profile='a'){
+ return {ok:true,profileId:profile,revision:1,autoFollow:true,job:{state:'idle'},review:[],creators:[
+  {id:'nexus:199502561',name:'SethSaidThat',provider:'nexus',role:'uploader',profileUrl:'https://www.nexusmods.com/profile/SethSaidThat',state:'following',origin:'download',unreadCount:2,followedAt:1800000000,lastCheckedAt:1800000010,projects:[{itemId:'item-0',title:'Estates of Skyrim',url:'https://www.nexusmods.com/skyrimspecialedition/mods/196696',installedVersion:'0.1.0',latestVersion:'0.1.21'}]},
+  {id:'modhold:another',name:'Another Creator',provider:'modhold',profileUrl:'https://modholdmods.com/u/Another',state:'following',origin:'installed',unreadCount:1,projects:[{itemId:'item-1',title:'Other Project',url:'https://modholdmods.com/g/skyrim-se/mods/4/other'}]}
+ ]};
+}
+test('creator workspace renders the actual service snapshot and opens a dedicated management area',async()=>{
+ const h=harness();await h.settle();h.state.creatorFollows=followFixture();
+ h.api.selectWorkspace('creators');await h.settle();
+ assert.equal(h.context.document.body.dataset.workspace,'creators');
+ assert.equal(h.nodes.get('workspaceTitle').textContent,'Your creators');
+ assert.match(h.nodes.get('creatorHubGrid').innerHTML,/SethSaidThat/);
+ assert.match(h.nodes.get('creatorHubDetail').innerHTML,/Estates of Skyrim/);
+ assert.equal(h.nodes.get('creatorAutoFollow').checked,true);
+ assert.equal(h.nodes.get('creatorFollowingCount').textContent,'2');
+});
+test('creator unread notices remain visible in the workspace rail and clear with profile changes',async()=>{
+ const h=harness();await h.settle();h.state.creatorFollows=followFixture();await h.api.refreshCreatorHub();
+ h.api.selectWorkspace('mods');
+ assert.equal(h.nodes.get('creatorHubBadge').textContent,'3');assert.equal(h.nodes.get('creatorHubBadge').hidden,false);
+ await h.api.changeCreatorFollows('mark-seen',['nexus:199502561','modhold:another']);
+ assert.equal(h.nodes.get('creatorHubBadge').hidden,true);
+ h.state.creatorFollows=followFixture();await h.api.refreshCreatorHub();
+ h.state.catalog=catalog('b');h.state.creatorFollows={...followFixture('b'),creators:[],review:[]};await h.qa.setCatalog(h.state.catalog);
+ assert.equal(h.nodes.get('creatorHubBadge').hidden,true);
+});
+test('creator preferences wait for durable acknowledgement and retain prior follows on failure',async()=>{
+ const h=harness();await h.settle();h.state.creatorFollows=followFixture();await h.api.refreshCreatorHub();h.api.selectWorkspace('creators');await h.settle();
+ h.state.defer.add('POST creator-follows');const pending=h.api.changeCreatorFollows('settings',[],{autoFollow:false});await h.settle();
+ assert.equal(h.api.creatorHubSnapshot().autoFollow,true,'No optimistic preference write');
+ assert.equal(h.nodes.get('creatorAutoFollow').disabled,true);
+ const gets=h.calls.filter(x=>x.endpoint==='creator-follows'&&x.method==='GET').length;
+ assert.equal(await h.api.refreshCreatorHub(),false,'Background reads cannot supersede an in-flight mutation');
+ assert.equal(h.calls.filter(x=>x.endpoint==='creator-follows'&&x.method==='GET').length,gets);
+ h.release('POST creator-follows');await pending;
+ assert.equal(h.api.creatorHubSnapshot().autoFollow,false);assert.equal(h.api.creatorHubState().busy,false);
+ h.state.creatorFollowError='Atomic save failed';assert.equal(await h.api.changeCreatorFollows('unfollow',['nexus:199502561']),false);
+ assert.equal(h.api.creatorHubSnapshot().creators[0].state,'following');
+ assert.match(h.nodes.get('creatorHubStatus').textContent,/Atomic save failed/);
+});
+test('creator reads coalesce and an old profile response cannot replace the current follows',async()=>{
+ const h=harness();await h.settle();h.state.creatorFollows=followFixture();await h.api.refreshCreatorHub();
+ h.state.defer.add('GET creator-follows');const a=h.api.refreshCreatorHub(),b=h.api.refreshCreatorHub();await h.settle();
+ assert.equal(h.active.get('GET creator-follows'),1);
+ h.state.catalog=catalog('b');h.state.creatorFollows={...followFixture('b'),creators:[],review:[]};
+ const switched=h.qa.setCatalog(h.state.catalog);await h.settle();h.release('GET creator-follows');await Promise.all([a,b,switched]);
+ assert.equal(h.api.creatorHubState().data.profileId,'b');
+ assert.equal(h.api.creatorHubSnapshot().creators.length,0);
+});
+test('creator management preserves mod sources through pause, unfollow, restore and mark-seen',async()=>{
+ const h=harness();await h.settle();h.state.creatorFollows=followFixture();await h.api.refreshCreatorHub();
+ const before=JSON.stringify(h.qa.getCatalog().items.map(mod=>mod.source));
+ for(const [action,expected] of [['pause','paused'],['resume','following'],['unfollow','unfollowed'],['restore','following']]){
+  assert.equal(await h.api.changeCreatorFollows(action,['nexus:199502561']),true);
+  assert.equal(h.api.creatorHubSnapshot().creators[0].state,expected);
+ }
+ await h.api.changeCreatorFollows('mark-seen',['nexus:199502561']);
+ assert.equal(h.api.creatorHubSnapshot().creators[0].unreadCount,0);
+ assert.equal(JSON.stringify(h.qa.getCatalog().items.map(mod=>mod.source)),before);
+ assert.equal(h.calls.filter(call=>['download','install','scan'].includes(call.endpoint)&&call.method==='POST').length,0);
+ const body=h.calls.find(call=>call.endpoint==='creator-follows'&&call.method==='POST').body;
+ assert.equal(body.profileId,'a');assert.equal(body.executionEpoch,1);assert.equal(body.revision,1);
+});
+test('unresolved discovery pagination exposes every page rather than resetting to page one',async()=>{
+ const h=harness();await h.settle();h.state.creatorFollows={...followFixture(),creators:[],review:Array.from({length:57},(_,i)=>({id:'review-'+i,title:'Unresolved project '+i,reason:'Author not verified',sourceUrl:'https://modholdmods.com/g/skyrim-se/mods/'+(i+1)+'/project'}))};
+ await h.api.refreshCreatorHub();h.api.selectWorkspace('creators');await h.settle();
+ Object.assign(h.api.creatorHubState().view,{filter:'review',page:2});h.api.renderCreatorHub();
+ assert.match(h.nodes.get('creatorHubGrid').innerHTML,/Unresolved project 56/);
+ assert.doesNotMatch(h.nodes.get('creatorHubGrid').innerHTML,/Unresolved project 0</);
+ assert.equal(h.nodes.get('creatorHubPage').textContent,'Page 3 of 3');
+});
+test('closed creator workspace stops job polling and keeps unknown identities review-only',async()=>{
+ const h=harness();await h.settle();h.state.creatorFollows=followFixture();await h.api.refreshCreatorHub();h.api.selectWorkspace('creators');await h.settle();
+ await h.api.changeCreatorFollows('discover',[],{itemIds:['item-0']});
+ assert.ok([...h.timers.values()].some(timer=>timer.ms===1500));
+ h.api.selectWorkspace('mods');
+ assert.equal([...h.timers.values()].filter(timer=>timer.ms===1500).length,0);
+ const call=h.calls.filter(c=>c.endpoint==='creator-follows'&&c.method==='POST').at(-1);
+ assert.deepEqual(Array.from(call.body.itemIds),['item-0']);assert.equal(call.body.action,'discover');
 });

@@ -1,7 +1,7 @@
 use super::{
     SourceScanRequest,
     http::{HttpContext, Observation},
-    identity::{ProjectIdentity, canonical_source_url, segment},
+    identity::{ProjectIdentity, canonical_source_url, project_identity, segment},
 };
 use serde_json::{Value, json};
 use std::collections::HashSet;
@@ -741,6 +741,170 @@ pub fn thunderstore(
     Ok(result)
 }
 
+/// Modhold's observed v1 response uses a numeric mod ID, an exact game/page
+/// join, author.handle and explicit main/optional file kinds. No download URLs
+/// are returned by this public endpoint. File scan times are not release dates.
+pub fn modhold(
+    id: &ProjectIdentity,
+    observation: &Observation,
+    request: &SourceScanRequest,
+    now: u64,
+) -> Result<Value, String> {
+    let data = &observation.value;
+    if data
+        .get("id")
+        .and_then(Value::as_u64)
+        .map(|n| n.to_string())
+        .as_deref()
+        != Some(&id.project_id)
+    {
+        return Err("Modhold response does not match the selected mod ID".into());
+    }
+    let game = required(data, "game", 80)?;
+    if id.community.as_deref() != Some(&game) {
+        return Err("Modhold response does not match the selected game's mod".into());
+    }
+    let page = required(data, "page", 1800)?;
+    let page_identity = project_identity(&page).ok_or("Invalid Modhold canonical page")?;
+    let parsed_page = Url::parse(&page).map_err(|_| "Invalid Modhold canonical page")?;
+    if page_identity.provider != "modhold"
+        || page_identity.project_id != id.project_id
+        || page_identity.community != id.community
+        || parsed_page.host_str() != Some("modholdmods.com")
+        || parsed_page.query().is_some()
+        || parsed_page.fragment().is_some()
+    {
+        return Err("Modhold canonical page identifies a different mod or game".into());
+    }
+    let title = required(data, "name", 300)?;
+    let version = required(data, "version", 120)?;
+    let handle = required(&data["author"], "handle", 120)?;
+    if !segment(&handle) {
+        return Err("Invalid Modhold author handle".into());
+    }
+    let author_name = required(&data["author"], "name", 180)?;
+    // v1 emits a timestamp without an offset. Preserve that representation;
+    // a one-day bound detects clearly future data without inventing its zone.
+    let site_date = |value: &Value, key: &str| -> Result<String, String> {
+        let raw = required(value, key, 40)?;
+        let date = chrono::NaiveDateTime::parse_from_str(&raw, "%Y-%m-%d %H:%M:%S")
+            .map_err(|_| format!("Invalid Modhold {key}"))?;
+        if date.and_utc().timestamp() <= 0
+            || date.and_utc().timestamp() as u64 > now.saturating_add(86_400)
+        {
+            return Err("Modhold publication date is invalid or clearly in the future".into());
+        }
+        Ok(raw)
+    };
+    let updated = site_date(data, "updated")?;
+    let published = site_date(data, "published")?;
+    let files = data
+        .get("files")
+        .and_then(Value::as_array)
+        .ok_or("Missing Modhold files")?;
+    if files.len() > 300 {
+        return Err("Too many Modhold files for one bounded review".into());
+    }
+    let mut seen = HashSet::new();
+    let mut main = Vec::new();
+    let mut main_versions = HashSet::new();
+    for file in files {
+        let file_id = file
+            .get("id")
+            .and_then(Value::as_u64)
+            .filter(|n| *n > 0)
+            .ok_or("Invalid Modhold file identity")?;
+        if !seen.insert(file_id) {
+            return Err("Duplicate Modhold file identity".into());
+        }
+        if text(file, "kind", 30) == "main" {
+            let file_version = required(file, "version", 120)?;
+            main_versions.insert(file_version.clone());
+            if file_version == version {
+                main.push((file_id, file));
+            }
+        }
+    }
+    let mut result = base(id, observation);
+    result["title"] = title.clone().into();
+    result["releaseName"] = title.into();
+    result["latestVersion"] = version.clone().into();
+    result["releaseUrl"] = page.clone().into();
+    result["summary"] = text(data, "summary", 4000).into();
+    result["publisherId"] = handle.clone().into();
+    result["author"] = json!({"name":author_name,"handle":handle,
+        "url":format!("https://modholdmods.com/u/{handle}"),"role":"mod author"});
+    result["iconUrl"] = photo(&text(data, "cover", 1800), &["modholdmods.com"]).into();
+    result["updatedAt"] = updated.into();
+    result["projectPublishedAt"] = published.into();
+    result["providerTimestampZone"] = "not-declared".into();
+    result["access"] = text(data, "access", 80).into();
+    result["manualAssetCount"] = files.len().into();
+    result["channel"] = "not-declared".into();
+    result["reason"] = "The exact Modhold mod and main-file version are verified. Downloads require the provider's sign-in and are opened for manual review.".into();
+    if main.len() == 1 && main_versions.len() == 1 {
+        let (file_id, file) = main[0];
+        let name = required(file, "name", 240)?;
+        if !filename(&name) {
+            return Err("Invalid Modhold main-file name".into());
+        }
+        result["releaseId"] = file_id.to_string().into();
+        result["releaseIdentityKind"] = "main-file".into();
+        result["releaseAssets"] = json!([{
+            "assetKey":format!("modhold:{file_id}"),"assetId":file_id,
+            "provider":"modhold","projectId":id.project_id,"releaseId":file_id.to_string(),
+            "releaseVersion":version,"name":name,"fileKind":"main",
+            "url":format!("{page}?tab=files"),"size":file.get("size").and_then(Value::as_u64),
+            "hashes":hashes(file),"installable":false,"downloadMode":"provider-sign-in"
+        }]);
+        if looks_prerelease(&version) || looks_prerelease(&name) {
+            result["channel"] = "prerelease".into();
+            set_review(
+                &mut result,
+                "The Modhold main file is marked alpha/beta or prerelease; review its channel and compatibility before updating.",
+                "channel-review",
+            );
+        }
+    } else {
+        set_review(
+            &mut result,
+            "The page version does not identify exactly one current main file; optional files never establish the mod's update version.",
+            "main-file-review",
+        );
+    }
+    if let Some(changelog) = data.get("changelog").and_then(Value::as_array) {
+        if changelog.len() > 300 {
+            return Err("Too many Modhold changelog entries for one bounded review".into());
+        }
+        if let Some(entry) = changelog
+            .iter()
+            .find(|entry| entry.get("version").and_then(Value::as_str) == Some(&version))
+        {
+            result["changelog"] = text(entry, "body", 6000).into();
+            result["publishedAt"] = site_date(entry, "at")?.into();
+        }
+    }
+    let requested_game = game_key(&request.game);
+    let game_matches = match game.as_str() {
+        "skyrim-se" => matches!(requested_game.as_str(), "skyrimse" | "skyrimspecialedition"),
+        "skyrim" => matches!(requested_game.as_str(), "skyrim" | "skyrimle"),
+        "fallout-new-vegas" => matches!(
+            requested_game.as_str(),
+            "falloutnv" | "falloutnewvegas" | "newvegas"
+        ),
+        _ => requested_game == game_key(&game),
+    };
+    result["compatibility"]["game"] = game.into();
+    if !game_matches {
+        set_review(
+            &mut result,
+            "The Modhold mod's game does not match this profile; cross-game version comparison is disabled.",
+            "game-mismatch",
+        );
+    }
+    Ok(result)
+}
+
 pub(crate) fn fetch_project(
     id: &ProjectIdentity,
     http: &HttpContext<'_>,
@@ -758,6 +922,7 @@ pub(crate) fn fetch_project(
         "github" => github(id, &observation, now),
         "gitlab" => gitlab(id, &observation, now),
         "thunderstore" => thunderstore(id, &observation, request, now),
+        "modhold" => modhold(id, &observation, request, now),
         "modrinth" => {
             let canonical = observation
                 .value

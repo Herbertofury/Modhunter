@@ -277,6 +277,13 @@ class NativeNexusGateway:
             metadata["picture_url"] = image
         if isinstance(data.get("author"), str) and data["author"].strip():
             metadata["author"] = data["author"].strip()[:180]
+        # The native callback already proved the request's exact game/project.
+        # Retain only its public uploader identity, never arbitrary user data.
+        from .creator_follows import nexus_creator
+        metadata.update(mod_id=int(mod_id), domain_name=str(game))
+        creator = nexus_creator({**data, "mod_id": int(mod_id), "domain_name": str(game)}, str(game), int(mod_id))
+        if creator:
+            metadata["creator"] = creator
         return metadata
 
     def _description(self, game, mod_id, ticket, data):

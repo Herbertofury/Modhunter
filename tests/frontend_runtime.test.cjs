@@ -23,11 +23,14 @@ function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={
  const state={catalog:catalog('a',count),generation:1,failSnapshots,progressRows,progressReadFailures,score:0,scan:{state:'idle'},defer:new Set()};
  const document={hidden:false,activeElement:null,addEventListener(){},querySelectorAll(){return[]},createElement:name=>element(name),getElementById:id=>node(id),querySelector:selector=>node(selector)};
  function element(id){
-  const classes=new Set();let html='';
+  const classes=new Set(),listeners=new Map();let html='';
   return{id,textContent:'',value:'',checked:false,disabled:false,hidden:true,dataset:{},writes:0,
    style:{setProperty(){}},classList:{add(...names){names.forEach(n=>classes.add(n))},remove(...names){names.forEach(n=>classes.delete(n))},contains:name=>classes.has(name),toggle(name,force){const on=force??!classes.has(name);on?classes.add(name):classes.delete(name);return on}},
    get innerHTML(){return html},set innerHTML(value){html=value;this.writes++},
-   getContext(){return{setTransform(){}}},addEventListener(){},setAttribute(){},removeAttribute(){},querySelector:selector=>node(id+' '+selector),querySelectorAll(){return[]},
+   getContext(){return{setTransform(){}}},
+   addEventListener(type,listener,options){if(!listeners.has(type))listeners.set(type,[]);listeners.get(type).push({listener,capture:options===true||options?.capture===true})},
+   dispatchEvent(event){event.target??=this;for(const entry of [...listeners.get(event.type)||[]].sort((a,b)=>Number(b.capture)-Number(a.capture)))entry.listener(event);return true},
+   setAttribute(){},removeAttribute(){},querySelector:selector=>node(id+' '+selector),querySelectorAll(){return[]},
    append(){},appendChild(){},remove(){},scrollIntoView(){},focus(){document.activeElement=this},getBoundingClientRect(){return{left:0,top:0,width:800,height:50}},
    // This transport harness does not parse HTML. Only the static footer has
    // modeled children; actual row replacement is covered in Chromium tests.
@@ -267,10 +270,18 @@ test('standalone appearance controls retain independent local persistence',async
 function normalLibraryLayout(h){
  h.context.document.body.dataset.layout='compact';
  h.context.matchMedia=()=>({matches:false});
- const list=h.nodes.get('modList'),query=list.querySelector;
+ const list=h.nodes.get('modList'),query=list.querySelector,queryAll=list.querySelectorAll;
+ const rows=Array.from(h.qa.getCatalog().items,item=>{
+  const row=h.context.document.createElement('article');row.id='row-'+item.id;
+  row.dataset.id=item.id;row.classList.add('mod-row');row.parentElement=list;row.isConnected=true;
+  row.closest=selector=>selector==='.mod-row'?row:null;h.nodes.set(row.id,row);return row;
+ });
  list.isConnected=true;
- list.querySelector=selector=>selector===':scope > .mod-row'?{isConnected:true}:query(selector);
- return {list,frames:()=>[...h.timers.values()].filter(timer=>timer.ms==='frame')};
+ const current=row=>row.isConnected&&row.parentElement===list;
+ list.querySelector=selector=>selector===':scope > .mod-row'?rows.find(current)||null:query(selector);
+ list.querySelectorAll=selector=>selector===':scope > .mod-row:is(:hover,:focus-within,.selected,.native-selected,.aether-target)'?
+  rows.filter(row=>current(row)&&(row.fixtureHover||row.fixtureFocus||['selected','native-selected','aether-target'].some(name=>row.classList.contains(name)))):queryAll(selector);
+ return {list,rows,frames:()=>[...h.timers.values()].filter(timer=>timer.ms==='frame')};
 }
 
 test('bulk appearance restores row hover styling at the existing two-frame boundary',async()=>{
@@ -318,9 +329,11 @@ test('an obsolete second frame cannot clear a newer native appearance batch',asy
  h.context.dispatchEvent({type:'modhunter-appearance-applied'});
  const token=list.dataset.layoutChange;
  assert.ok(token);assert.notEqual(token,oldToken);
+ assert.equal(list.dataset.layoutThemeChange,token,'Native theme acknowledgement still guards the whole library');
  assert.deepEqual(widthReadTokens,[token],'Native theme suppression must precede the library width read');
  oldSecond();
  assert.equal(list.dataset.layoutChange,token,'A canceled callback must not affect the current batch');
+ assert.equal(list.dataset.layoutThemeChange,token);
  assert.equal(frames().length,1);
  await h.tick('frame');await h.tick('frame');
  assert.equal(list.dataset.layoutChange,undefined);
@@ -352,6 +365,96 @@ test('profile and execution changes cancel owned layout frames before advancing 
    stale();assert.equal(list.dataset.layoutChange,undefined);
    assert.equal(frames().length,0);
   }
+ }
+});
+
+test('view changes guard only hot direct rows while theme changes retain the whole-library guard',async()=>{
+ const h=harness({live:false});await h.settle();
+ const {list,rows,frames}=normalLibraryLayout(h);let restorationReads=0;
+ Object.defineProperty(list,'offsetHeight',{get(){
+  assert.equal(list.dataset.layoutChange,undefined);
+  assert.equal(list.dataset.layoutThemeChange,undefined);
+  assert.ok(rows.every(row=>row.dataset.layoutRowChange===undefined));
+  restorationReads++;return 200;
+ }});
+ rows[0].fixtureHover=true;rows[2].classList.add('selected');
+ h.api.updatePrefs({libraryView:'gallery'});
+ const viewToken=list.dataset.layoutChange;assert.ok(viewToken);
+ assert.equal(list.dataset.layoutThemeChange,undefined);
+ assert.deepEqual(rows.map(row=>row.dataset.layoutRowChange),[viewToken,undefined,viewToken]);
+ const first=frames()[0];
+ h.api.updatePrefs({density:'comfy'});h.api.updatePrefs({libraryView:'gallery'});
+ assert.equal(frames()[0],first,'Unchanged view and density must not extend sparse suppression');
+ await h.tick('frame');await h.tick('frame');
+ assert.equal(restorationReads,1);
+ h.api.updatePrefs({theme:'snow'});
+ const themeToken=list.dataset.layoutChange;assert.ok(themeToken);assert.notEqual(themeToken,viewToken);
+ assert.equal(list.dataset.layoutThemeChange,themeToken);
+ assert.ok(rows.every(row=>row.dataset.layoutRowChange===undefined),'Theme changes use their container guard');
+ list.dispatchEvent({type:'pointerover',target:rows[1]});
+ assert.equal(rows[1].dataset.layoutRowChange,undefined,'No duplicate row guard is needed inside a theme batch');
+ await h.tick('frame');await h.tick('frame');
+ assert.equal(restorationReads,2);assert.equal(frames().length,0);
+});
+
+test('pointer focus and native selection can join a sparse view batch without postponing its endpoint',async()=>{
+ const h=harness({count:4});await h.settle();
+ const {list,rows,frames}=normalLibraryLayout(h);
+ h.api.updatePrefs({libraryView:'gallery'});
+ const token=list.dataset.layoutChange,first=frames()[0];assert.ok(token);
+ assert.ok(rows.every(row=>row.dataset.layoutRowChange===undefined),'Cold rows retain their normal transition');
+ list.dispatchEvent({type:'pointerover',target:{closest:selector=>selector==='.mod-row'?rows[0]:null}});
+ list.dispatchEvent({type:'focusin',target:{closest:selector=>selector==='.mod-row'?rows[1]:null}});
+ assert.equal(rows[0].dataset.layoutRowChange,token);assert.equal(rows[1].dataset.layoutRowChange,token);
+ assert.equal(frames()[0],first);
+ const nested=h.context.document.createElement('article');nested.classList.add('mod-row');nested.parentElement=rows[0];
+ nested.closest=()=>nested;list.dispatchEvent({type:'pointerover',target:nested});
+ assert.equal(nested.dataset.layoutRowChange,undefined,'Nested rows do not belong to the library guard');
+ const notRow=h.context.document.createElement('div');notRow.parentElement=list;notRow.closest=()=>notRow;
+ list.dispatchEvent({type:'focusin',target:notRow});assert.equal(notRow.dataset.layoutRowChange,undefined);
+ rows[3].classList.add('selected');await h.tick('frame');
+ assert.equal(rows[3].dataset.layoutRowChange,token,'The first frame catches newly hot tracked classes');
+ const second=frames()[0],toggle=rows[2].classList.toggle;
+ rows[2].classList.toggle=(name,on)=>{
+  if(name==='native-selected'&&on)assert.equal(rows[2].dataset.layoutRowChange,token,'Guard must precede native selection styling');
+  return toggle(name,on);
+ };
+ await h.qa.locate(h.qa.getCatalog().items[2],rows[2]);
+ assert.equal(rows[2].dataset.layoutRowChange,token);assert.ok(rows[2].classList.contains('native-selected'));
+ assert.equal(frames()[0],second,'New hot rows must not move the existing second-frame boundary');
+ await h.tick('frame');
+ assert.equal(list.dataset.layoutChange,undefined);assert.ok(rows.every(row=>row.dataset.layoutRowChange===undefined));
+ assert.equal(frames().length,0);
+ list.dispatchEvent({type:'pointerover',target:rows[0]});
+ assert.equal(rows[0].dataset.layoutRowChange,undefined,'Normal post-batch hover remains unguarded');
+});
+
+test('detached sparse rows and profile replacement clean exact tokens before stale callbacks run',async()=>{
+ for(const live of [false,true]){
+  const h=harness({live});await h.settle();
+  const {list,rows,frames}=normalLibraryLayout(h);rows[0].fixtureHover=true;
+  h.api.updatePrefs({libraryView:'gallery'});await h.tick('frame');
+  const oldToken=list.dataset.layoutChange,obsoleteSecond=frames()[0].fn;
+  assert.equal(rows[0].dataset.layoutRowChange,oldToken);
+  rows[0].parentElement=null;rows[0].isConnected=false;rows[1].fixtureHover=true;
+  h.api.updatePrefs({libraryView:'list'});
+  const token=list.dataset.layoutChange;assert.ok(token);assert.notEqual(token,oldToken);
+  assert.equal(rows[0].dataset.layoutRowChange,undefined,'Detached owned rows must also be restored');
+  assert.equal(rows[1].dataset.layoutRowChange,token);
+  obsoleteSecond();assert.equal(rows[1].dataset.layoutRowChange,token);assert.equal(list.dataset.layoutChange,token);
+  await h.tick('frame');const profileSecond=frames()[0].fn,epoch=h.api.state().profileEpoch,removed=[];
+  rows[1].dataset=new Proxy(rows[1].dataset,{deleteProperty(target,key){
+   if(key==='layoutRowChange')removed.push({token:target[key],epoch:h.api.state().profileEpoch});
+   return Reflect.deleteProperty(target,key);
+  }});
+  const replacement={...catalog('sparse-replacement'),offline:!live};
+  if(live){h.state.catalog=replacement;await h.qa.setCatalog(replacement)}
+  else h.api.importOfflineCatalog(replacement);
+  assert.deepEqual(removed[0],{token,epoch},'Row cleanup must happen before the profile epoch changes');
+  assert.equal(rows[1].dataset.layoutRowChange,undefined);assert.equal(list.dataset.layoutChange,undefined);
+  profileSecond();obsoleteSecond();
+  assert.equal(rows[1].dataset.layoutRowChange,undefined);assert.equal(list.dataset.layoutChange,undefined);
+  assert.equal(frames().length,0);
  }
 });
 

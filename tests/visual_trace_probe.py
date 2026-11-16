@@ -33,7 +33,8 @@ CATEGORIES = (
 ARMS = ("playwright-helper", "page-cdp")
 ROWS = 96
 PASSES = 8
-ARM_TIMEOUT_SECONDS = 15
+BROWSER_LAUNCH_SECONDS = 30
+ARM_TIMEOUT_SECONDS = 45
 TRACE_STOP_SECONDS = 3
 TRACE_EVENT_LIMIT = 100_000
 TRACE_BYTE_LIMIT = 16 * 1024 * 1024
@@ -112,14 +113,25 @@ def retain_trace(output, arm, trace):
 def worker(arm, output, executable_path=None):
     from playwright.sync_api import sync_playwright
 
+    started = time.monotonic()
     report_path = output / f"{arm}.json"
-    report = {"transport": arm, "ok": False, "phase": "launch", "errors": [],
+    report = {"transport": arm, "ok": False, "phase": "start-playwright", "errors": [],
               "requestedExecutable": str(executable_path) if executable_path else None,
               "browserSelection": "explicit" if executable_path else "playwright-default",
+              "browserLaunchTimeoutSeconds": BROWSER_LAUNCH_SECONDS,
+              "startupDebug": "pw:browser", "phaseTimings": [],
               "rows": ROWS, "passes": PASSES, "categories": list(CATEGORIES)}
+
+    def checkpoint(phase):
+        report["phase"] = phase
+        timing = {"phase": phase, "elapsedMs": round((time.monotonic() - started) * 1000, 1),
+                  "atUnixMs": round(time.time() * 1000)}
+        report["phaseTimings"].append(timing)
+        write_json(report_path, report)
+        print("TRACE_PHASE " + json.dumps({"transport": arm, **timing}), flush=True)
+
     trace = {"traceEvents": []}
-    write_json(report_path, report)
-    started = time.monotonic()
+    checkpoint("start-playwright")
     browser = None
     session = None
     events = []
@@ -127,11 +139,22 @@ def worker(arm, output, executable_path=None):
     state = {"finished": False, "overflow": False}
     try:
         with sync_playwright() as playwright:
-            launch_options = {"headless": True, "timeout": 8_000}
+            # Match the established full profiler's cold-start allowance. The
+            # owned DOM task and trace-completion deadlines remain unchanged.
+            launch_options = {"headless": True, "timeout": BROWSER_LAUNCH_SECONDS * 1000}
             if executable_path is not None:
                 launch_options["executable_path"] = str(executable_path)
-            browser = playwright.chromium.launch(**launch_options)
+            checkpoint("launch")
+            try:
+                browser = playwright.chromium.launch(**launch_options)
+            except Exception as error:
+                # Persist the rejection before context-manager driver cleanup,
+                # which can otherwise hide the cause until the worker is killed.
+                report["errors"].append(f"{type(error).__name__}: {error}")
+                checkpoint("launch-rejected")
+                raise
             report["browserVersion"] = browser.version
+            checkpoint("browser-launched")
             # Observe the launched process, including a wrapper's actual binary or
             # Playwright's default headless shell. chromium.executable_path can
             # instead name the full bundled browser, so is not launch evidence.
@@ -144,6 +167,7 @@ def worker(arm, output, executable_path=None):
                 report["executableEvidence"] = "Browser.getBrowserCommandLine arguments[0]"
             finally:
                 identity_session.detach()
+            checkpoint("prepare-owned-page")
             context = browser.new_context(viewport={"width": 900, "height": 700}, reduced_motion="reduce")
             page = context.new_page()
             page.set_default_timeout(3_000)
@@ -151,8 +175,7 @@ def worker(arm, output, executable_path=None):
             page.on("pageerror", lambda error: page_errors.append(str(error)))
             page.set_content(HTML, wait_until="load")
             page.evaluate("rows=>{document.getElementById('items').innerHTML=Array.from({length:rows},(_,i)=>'<article class=\"entry\"><strong>Probe '+i+'</strong></article>').join('');document.body.offsetHeight}", ROWS)
-            report["phase"] = "start-tracing"
-            write_json(report_path, report)
+            checkpoint("start-tracing")
             if arm == "playwright-helper":
                 browser.start_tracing(page=page, screenshots=False, categories=list(CATEGORIES))
             else:
@@ -173,12 +196,10 @@ def worker(arm, output, executable_path=None):
                 session.on("Tracing.tracingComplete", on_complete)
                 session.send("Tracing.start", {"categories": ",".join(CATEGORIES),
                     "options": "record-until-full", "transferMode": "ReportEvents"})
-            report["phase"] = "owned-dom-task"
-            write_json(report_path, report)
+            checkpoint("owned-dom-task")
             report["task"] = page.evaluate(TASK, {"rows": ROWS, "passes": PASSES})
             assert report["task"]["rows"] == ROWS and report["task"]["checksum"] > 0
-            report["phase"] = "stop-tracing"
-            write_json(report_path, report)
+            checkpoint("stop-tracing")
             if arm == "playwright-helper":
                 raw = browser.stop_tracing()
                 trace = json.loads(raw)
@@ -200,11 +221,17 @@ def worker(arm, output, executable_path=None):
                     report["errors"].append("Tiny task exceeded the explicit trace retention bound")
             report["pageErrors"] = page_errors
             report["errors"].extend(page_errors)
-            report["phase"] = "complete"
+            checkpoint("close-browser")
             browser.close()
             browser = None
+            checkpoint("stop-playwright")
+        checkpoint("complete")
     except Exception as error:
-        report["errors"].append(f"{type(error).__name__}: {error}")
+        message = f"{type(error).__name__}: {error}"
+        if message not in report["errors"]:
+            report["errors"].append(message)
+        report["failurePhase"] = report["phase"]
+        checkpoint("failed")
     finally:
         # Preserve partial events if transport end or browser cleanup failed.
         if not trace.get("traceEvents") and events:
@@ -233,7 +260,8 @@ def run_bounded_arm(arm, output, executable_path=None):
     command = worker_command(arm, output, executable_path)
     with (output / f"{arm}.log").open("w", encoding="utf-8") as log:
         process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT,
-                                   start_new_session=os.name != "nt")
+                                   start_new_session=os.name != "nt",
+                                   env=dict(os.environ, DEBUG="pw:browser"))
         timed_out = False
         try:
             code = process.wait(timeout=ARM_TIMEOUT_SECONDS)
@@ -306,6 +334,7 @@ def main():
               "browserSelection": "explicit" if executable_path else "playwright-default",
               "selectedTransports": [args.transport] if args.transport else list(ARMS),
               "categories": list(CATEGORIES), "rows": ROWS, "passes": PASSES,
+              "browserLaunchTimeoutSeconds": BROWSER_LAUNCH_SECONDS, "startupDebug": "pw:browser",
               "workerDeadlineSeconds": ARM_TIMEOUT_SECONDS, "arms": []}
     for arm in report["selectedTransports"]:
         print(f"TRACE_PROBE {arm} starting (hard deadline {ARM_TIMEOUT_SECONDS}s)", flush=True)

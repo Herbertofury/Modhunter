@@ -75,6 +75,23 @@ def source_status() -> list[str]:
     return git("status", "--porcelain", "--untracked-files=all").splitlines()
 
 
+def fixture_page(html: str, fixture: dict) -> str:
+    """Model the real focus -> revision selection contract without changing clocks."""
+    compiled = acceptance.fixture_page(html, fixture)
+    previous = "else if(path==='revision')result={ok:true,profileId:c.profileId,generation:x.generation};"
+    replacement = """else if(path==='focus'&&method==='POST'){
+   if(body.profileId!==c.profileId||!c.items.some(item=>item.id===body.id))
+     throw new Error('Selection fixture requires an exact current-profile record');
+   x.selectedModId=body.id;x.focusRequest={id:body.id,profileId:body.profileId};x.focusRevisionConfirmed=false;
+   result={ok:true};
+  }else if(path==='revision'){
+   result={ok:true,profileId:c.profileId,generation:x.generation,selectedModId:x.selectedModId||''};
+   if(x.focusRequest)x.focusRevisionConfirmed=result.selectedModId===x.focusRequest.id;
+  }"""
+    assert compiled.count(previous) == 1, "The inherited fixture revision handler changed"
+    return compiled.replace(previous, replacement, 1)
+
+
 def make_fixture() -> tuple[dict, dict, list[dict]]:
     """Retain all 12 frozen project identities and four declared edge cases."""
     manifest = json.loads((ROOT / "tests/fixtures/visual_public_catalog.json").read_text("utf-8"))
@@ -247,6 +264,17 @@ def focused_state(page, state: str) -> dict:
     else:
         assert state == "ordinary", state
     page.wait_for_function(IDLE)
+    if state == "native-selected":
+        proof["nativeSelection"] = page.evaluate("""() => ({
+          selectedModId:__RESP__.selectedModId,focusRequest:__RESP__.focusRequest,
+          focusRequests:__RESP__.counts['POST focus'],
+          authoritativeRevisionConfirmed:__RESP__.focusRevisionConfirmed===true,
+          actualNativeCue:document.getElementById('row-item-0').classList.contains('native-selected')
+        })""")
+        selected = proof["nativeSelection"]
+        assert selected["selectedModId"] == selected["focusRequest"]["id"] == "item-0", selected
+        assert selected["focusRequest"]["profileId"] == page.evaluate("__RESP__.catalog.profileId"), selected
+        assert selected["focusRequests"] == 1 and selected["authoritativeRevisionConfirmed"] and selected["actualNativeCue"], selected
     expected={"hover":":hover","focus":":focus-within","native-selected":".native-selected","aether-selected":".aether-target"}.get(state)
     if expected:
         assert page.locator("#row-item-0").evaluate("(row,selector)=>row.matches(selector)",expected), state
@@ -284,7 +312,7 @@ def capture(browser, html: str, fixture: dict, assets: dict, output: Path,
                                   reduced_motion="no-preference" if state else "reduce")
     errors = []
     context.on("page", lambda page: page.on("pageerror", lambda error: errors.append(str(error))))
-    compiled = acceptance.fixture_page(html, fixture)
+    compiled = fixture_page(html, fixture)
 
     def route(request):
         url = request.request.url
@@ -383,6 +411,7 @@ def main() -> None:
               "sources": {name: sha((ROOT / name).read_bytes()) for name in SOURCES},
               "requestedExecutable": str(args.executable_path.resolve()),
               "motionPreference": "reduce matrix and no-preference focused states", "theme": "snow matrix; night/snow focused", "states": [], "errors": [],
+              "selectionFixture": "Actual Reveal action sends POST focus for an exact current-profile record; the fixture stores that native selection and reports it through subsequent revision responses, matching bridge.py. Production polling, selection/FX ownership and natural toast/effect lifetimes are unchanged.",
               "semanticComparisonsPassed": False, "strictPixelFailures": []}
 
     def checkpoint():

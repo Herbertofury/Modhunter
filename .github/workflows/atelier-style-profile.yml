@@ -2,6 +2,11 @@ name: Complete-library style diagnostics
 
 on:
   workflow_dispatch:
+    inputs:
+      control_trace:
+        description: 'Capture a new unchanged-control selector trace only when new evidence requires it'
+        type: boolean
+        default: false
   push:
     branches: ['diagnostics/atelier-style', 'diagnostics/oled-gallery-layout']
     paths: ['tests/visual_style_profile.py', 'tests/visual_trace_probe.py', 'tests/visual_startup_trace.py', 'tests/visual_surface_comparison.py', 'tests/visual_gallery_containment_qa.py', '.github/workflows/atelier-style-profile.yml']
@@ -111,7 +116,8 @@ jobs:
           if-no-files-found: error
           retention-days: 90
   oled-gallery-control-trace:
-    if: github.ref == 'refs/heads/diagnostics/oled-gallery-layout'
+    # Run 43962244054 already retains a complete, independently verified control trace.
+    if: github.ref == 'refs/heads/diagnostics/oled-gallery-layout' && github.event_name == 'workflow_dispatch' && inputs.control_trace
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:

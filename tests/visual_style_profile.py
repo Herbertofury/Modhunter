@@ -443,14 +443,18 @@ def full_page_transport_preflight(session, page, destination, result):
       performance.mark('modhunter-style-profile-transport-start');
       let changed;
       try{
-        control.style.setProperty('outline-offset',(Number.parseFloat(before)+1)+'px');
+        // Use the same attribute API for mutation and restoration. The receipt
+        // checks raw values instead of inferring restoration from computed CSS.
+        control.setAttribute('style',(attribute||'')+';outline-offset:'+(Number.parseFloat(before)+1)+'px!important;');
         changed=getComputedStyle(control).outlineOffset;
       }finally{
         if(attribute===null)control.removeAttribute('style');else control.setAttribute('style',attribute);
       }
       const after=getComputedStyle(control).outlineOffset;
       performance.mark('modhunter-style-profile-transport-end');
-      return {before,changed,after,attributeRestored:control.getAttribute('style')===attribute};
+      const attributeAfter=control.getAttribute('style');
+      return {before,changed,after,attributeBefore:attribute,attributeAfter,
+        attributeRestored:attributeAfter===attribute};
     }""")
     trace, receipt = finish_trace(session,page,destination,capture,completion_seconds=3)
     result["wallMs"] = (time.perf_counter()-started)*1000

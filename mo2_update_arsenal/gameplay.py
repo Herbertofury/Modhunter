@@ -22,6 +22,17 @@ def utcnow() -> str:
 
 # Economic credits are minted only by deduplicated native MO2 version-update events.
 # XP and cosmetic checklist clicks do not influence the wallet.
+# Presentation filters are a closed UI vocabulary, never provider/API grants.
+# Includes source adapters plus the dashboard's unresolved/custom-link states.
+LIBRARY_PROVIDER_FILTERS = frozenset({
+    "all", "nexus", "github", "gitlab", "modrinth", "thunderstore", "curseforge",
+    "patreon", "loverslab", "moddb", "bethesda", "creations", "dwemer", "modding-guild",
+    "ko-fi", "boosty", "afdian", "tumblr", "subscribestar", "modcollective", "simsfinds",
+    "itch", "itch.io", "steam-workshop", "steamworkshop", "steam", "discord", "youtube",
+    "bilibili", "x", "facebook", "aml", "f95", "sims-resource", "modthesims", "website",
+    "unknown", "official", "custom", "lookup",
+})
+
 REALM_COINS_PER_UPDATE = 10
 BOSS_KILL_POINTS = 100  # Cosmetic/run scoring is client-side.
 BOSS_UPDATE_BONUS_POINTS = 200  # Native verified update awards twice boss points.
@@ -115,9 +126,15 @@ class Chronicle:
                 item["status"] = "pending"
             sanitized[mid] = item
         safe_prefs = {}
-        for k in ("filter", "query", "sort", "theme", "density", "effect", "sound", "focus", "collapsed", "autoCheckOnLaunch"):
+        for k in ("filter", "query", "sort", "theme", "density", "effect", "sound", "focus", "collapsed", "autoCheckOnLaunch", "libraryView", "galleryGrouping", "provider", "navExpanded"):
             v = prefs.get(k)
-            if k == "autoCheckOnLaunch" and not isinstance(v, bool):
+            if k in ("autoCheckOnLaunch", "navExpanded") and not isinstance(v, bool):
+                continue
+            if k == "libraryView" and (not isinstance(v, str) or v not in {"list", "gallery"}):
+                continue
+            if k == "galleryGrouping" and (not isinstance(v, str) or v not in {"all", "chapters"}):
+                continue
+            if k == "provider" and (not isinstance(v, str) or v not in LIBRARY_PROVIDER_FILTERS):
                 continue
             if isinstance(v, (bool, str)):
                 safe_prefs[k] = v[:300] if isinstance(v, str) else v

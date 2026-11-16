@@ -15,13 +15,14 @@
 **Get Started**
 * [🚀 Installation](Getting-Started)
 * [🖥️ Desktop App](Desktop-App)
-* [Rust Desktop 0.10](Rust-Desktop)
+* [Rust Desktop 0.12](Rust-Desktop)
 * [Watchtower pages and sign-ins](Watchtower)
 * [🛠️ MO2 Plugin](MO2-Plugin)
 * [🔎 Updater Sources](Updater-Source-Coverage)
 * [⚒ Update Workshop](Update-Workshop)
 
 **Design & quality**
+* [Atelier 0.12 / The Mod Vault](Atelier-0.12)
 * [✦ AAA Visual Quality Standard](Design-System-and-Quality-Bar)
 
 **Under the hood**

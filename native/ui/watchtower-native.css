@@ -2,3 +2,42 @@
 .readiness-facts{display:grid;grid-template-columns:minmax(8rem,auto) minmax(0,1fr);gap:.45rem 1rem}.readiness-facts dt{font-weight:600}.readiness-facts dd{margin:0;overflow-wrap:anywhere}.native-pagination{display:flex;align-items:center;justify-content:space-between;gap:1rem;margin-top:1rem}#inventoryRows td:nth-child(2) p{margin:.25rem 0;font-size:.85rem}#inventoryRows td:first-child{overflow-wrap:anywhere;max-width:26rem}
 
 .form-error:empty{display:none}
+
+/* Exact-file review stays an ordered data surface, with the identity above it. */
+.native-workspace { margin-top:20px; }
+.native-operation { gap:16px; padding:13px 0; }
+.native-operation>div { min-width:0; }
+.native-operation strong { font-size:12px; line-height:1.5; }
+.native-operation p { font-size:11px; }
+.native-wide-dialog { width:min(1100px,94vw); }
+.native-wide-dialog .dialog-body { max-height:calc(100vh - 185px); }
+.native-file-tools { gap:10px; margin:14px 0; }
+.native-file-tools label { margin-bottom:0; }
+.native-file-scroll,.native-table-wrap { overflow:auto; border:1px solid var(--line); border-radius:6px; }
+.native-file-table { font-size:11px; }
+.native-file-table th { background:var(--panel-2); color:var(--text); font-size:10px; font-weight:650; line-height:1.5; }
+.native-file-table td,.native-file-table th { padding:9px 11px; }
+.native-file-table tbody tr:hover { background:var(--panel-2); }
+.native-file-table td:nth-child(2) { line-height:1.5; }
+.native-file-table input { width:16px; height:16px; }
+.native-pagination { font-size:11px; flex-wrap:wrap; }
+.native-pagination label { margin:0; display:flex; align-items:center; gap:8px; }
+.native-pagination input { margin-top:0!important; }
+.native-result { background:var(--input); border:1px solid var(--line); border-radius:6px; padding:12px; font-size:11px; line-height:1.65; }
+.native-result:empty { display:none; }
+.native-wide-dialog details>summary { cursor:pointer; color:var(--green); font-size:12px; padding:4px 0; }
+.readiness-facts { font-size:12px; padding:16px; border:1px solid var(--line); background:var(--input); border-radius:6px; line-height:1.6; }
+.readiness-facts dt { font-size:11px; font-weight:550; color:var(--muted); }
+@media(min-width:1500px) {
+ .settings-form { display:grid; grid-template-columns:1fr 1fr; gap:16px; max-width:none; }
+ .settings-form>.settings-card { margin-bottom:0; }
+ .settings-form>.settings-card:first-child { grid-row:span 2; }
+ .settings-footer { grid-column:1/-1; }
+}
+@media(max-width:760px) {
+ .native-wide-dialog .dialog-body { max-height:calc(100vh - 185px); }
+ .native-file-table td,.native-file-table th { padding:8px; }
+ .native-operation { gap:10px; }
+ .readiness-facts { grid-template-columns:1fr; gap:4px; padding:13px; }
+ .readiness-facts dd { margin-bottom:8px; }
+}

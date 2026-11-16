@@ -1,10 +1,28 @@
-# Modhunter 0.11.0 — Rust desktop
+# Modhunter 0.12.0 — Rust desktop
 
 The Windows desktop, profile import/cache engine, connection probing, tab lifecycle and native file dialogs run in Rust. Microsoft Edge WebView2 renders the existing Modhunter dashboard, Questbound, AetherFX, Shiverfell, Siege and Atlas. The shipped desktop does not require Node or Electron.
 
+**Atelier 0.12** adds a complete gallery/list library, genuine provider artwork, source filtering, saved density and navigation, and a cohesive dark/parchment visual system. The Rust toolbar is 116px high, and compact library rows stay at 48px. Update selection, approval, installation and recovery continue through the existing owners. All game modes and FX Studio remain available. Read the [visual guide](https://github.com/Herbertofury/Modhunter/wiki/Atelier-0.12) for screenshots and verification scope.
+
 MO2's Python/Qt plugin remains the supported in-process adapter for MO2's authenticated Nexus bridge, native downloads, FOMOD installer, focus and verified rewards. A small Qt Core C++ helper bridges the protected callback-sender binding needed by MO2 2.5.2's public file-list integration. The dashboard/game presentation remains HTML/CSS/JavaScript. Public site adapters, import/cache and plugin analysis run in Rust.
 
-## 0.11.0: reviewed downloads, actual file recovery and app upkeep
+## 0.12.0: library browsing and release packages
+
+Use **List** for compact version, provider and update comparisons, or **Gallery** for available project artwork. Gallery defaults to **All mods**; **By chapter** restores chapter organization and saved chapter-collapse choices. Search, provider filters and sorting keep the complete matching library available. Density and navigation choices persist with the current profile. The details panel retains source identity, notes and update actions; artwork is displayed only when supplied by the supported source.
+
+The 0.12.0 packaging layout includes these assets. Consult [GitHub Releases](https://github.com/Herbertofury/Modhunter/releases) for published availability; this source document does not establish that final runtime acceptance or publication has completed.
+
+| Asset | Purpose |
+| --- | --- |
+| `Modhunter_0.12.0_x64-setup.exe` | Windows installer, including WebView2 runtime setup when required. |
+| `Modhunter-Rust-Windows.zip` | Portable desktop, matching MO2 components, setup instructions and build identity. |
+| `Modhunter-0.12.0-MO2-Plugin.zip` | Independent MO2 plugin package with the matching compiled helpers and installer scripts. |
+| `Modhunter-0.12.0-Standalone.zip` | Independent `Modhunter.html`, `BUILD_INFO.json` and internal `SHA256SUMS.txt`. |
+| `Modhunter-0.12.0-Verification.zip` and `SHA256SUMS.txt` | Validated public receipts/screenshots and checksums for the downloadable release assets. |
+
+The release pipeline requires the exact compiled Windows app, complete-library measurements, installer, actual MO2 fixture and browser evidence before publication. The [Atelier guide](https://github.com/Herbertofury/Modhunter/wiki/Atelier-0.12) records the accepted checkpoint and any remaining runtime limits when those results are available.
+
+## Capabilities retained from 0.11.0: reviewed downloads, recovery and app upkeep
 
 Watchtower now carries a chosen external archive from its exact source identity into a complete file review and MO2's native installer. Update files stay bound to the chosen profile, game/runtime and installed mod. Separate new content requires a new mod name. A different file, changed source, profile round-trip or lost acknowledgement cannot silently reuse an earlier installation decision.
 
@@ -22,7 +40,7 @@ The release gate binds Windows WebView2, archive-helper, Chromium interaction an
 
 ## MO2 2.5.3b12 / Skyrim SE setup
 
-Run **Check_MO2_Readiness.bat** before installing and read **START-HERE-MO2-253.md** in the portable folder. The checker is read-only with respect to MO2/game data and can save a credential-free report. This release adds a self-tested Qt 6.11 runtime path, validated version-label strategies and persisted service-outage cooldowns. It retains the actual MO2 2.5.2 acceptance suite and adds separate compiled Qt 6.11.1/PyQt 6.11.0 tests; exact beta-12 application and personal account acceptance are not implied. Do not replace MO2's runtime DLLs.
+Run **Check_MO2_Readiness.bat** before installing and read **START-HERE-MO2-253.md** in the portable folder. The checker is read-only with respect to MO2/game data and can save a credential-free report. Current readiness support includes a self-tested Qt 6.11 runtime path, validated version-label strategies and persisted service-outage cooldowns. The actual MO2 2.5.2 acceptance suite and separate compiled Qt 6.11.1/PyQt 6.11.0 tests remain required; exact beta-12 application and personal account acceptance are not implied. Do not replace MO2's runtime DLLs.
 
 See the repository [setup guide](../wiki/MO2-253-Testing.md) and [GameSync technique map](../wiki/GameSync-Update-Techniques.md).
 

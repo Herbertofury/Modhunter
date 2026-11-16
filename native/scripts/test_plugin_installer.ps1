@@ -89,6 +89,12 @@ try {
     Write-FixtureFile (Join-Path $Source 'web/index.html') '<html>New fixture dashboard</html>'
     Write-FixtureFile (Join-Path $Source 'bin/modhunter-cli.exe') 'New Rust helper fixture marker; never execute this file.'
     Write-FixtureFile (Join-Path $Source 'bin/modhunter-qt-bridge.dll') 'New Qt helper fixture marker; never load this file.'
+    $ArchiveNames = @('7z.exe', '7z.dll', 'License.txt', 'provenance.json')
+    foreach ($Name in $ArchiveNames) {
+        Write-FixtureFile (Join-Path $Source "bin/archive-tools/$Name") ("Packaged archive component fixture: " + $Name + '; never execute it.')
+    }
+    Write-FixtureFile (Join-Path $Source 'bin/archive-tools/unrelated.exe') 'Unrelated archive folder fixture; must not be installed.'
+
     Write-FixtureFile (Join-Path $Source 'bin/unrelated.exe') 'Unrelated fixture marker; must not be installed.'
     Write-FixtureFile (Join-Path $Source 'bin/Qt6Core.dll') 'SDK runtime fixture marker; MO2 owns its Qt runtime.'
     Write-FixtureFile (Join-Path $Package 'BUILD_INFO.json') (@{ version = $FixtureVersion; commit = ('a' * 40) } | ConvertTo-Json)
@@ -103,6 +109,13 @@ try {
     Write-FixtureFile (Join-Path $Installed 'bin/modhunter-qt-bridge.dll') 'Previous Qt helper fixture marker; never load this file.'
     $OldHelperHash = Hash (Join-Path $Installed 'bin/modhunter-cli.exe')
     $OldQtHelperHash = Hash (Join-Path $Installed 'bin/modhunter-qt-bridge.dll')
+    $OldArchiveHashes = @{}
+    foreach ($Name in $ArchiveNames) {
+        $OldPath = Join-Path $Installed "bin/archive-tools/$Name"
+        Write-FixtureFile $OldPath ("Previous archive component fixture: " + $Name + '; never execute it.')
+        $OldArchiveHashes[$Name] = Hash $OldPath
+    }
+
     $DataFiles = @{
         'chronicle.json' = '{"profiles":{"fixture":{"score":4321,"progress":{"rows":{"one":{"done":true}}}}}}'
         'nexus-cache.json' = '{"fixture":"cached metadata"}'
@@ -127,6 +140,11 @@ try {
     Require ((Hash (Join-Path $Installed 'bin/modhunter-cli.exe')) -eq (Hash (Join-Path $Source 'bin/modhunter-cli.exe'))) 'Upgrade did not install the packaged Rust audit helper.'
     Require ((Hash (Join-Path $Installed 'bin/modhunter-qt-bridge.dll')) -eq (Hash (Join-Path $Source 'bin/modhunter-qt-bridge.dll'))) 'Upgrade did not install the packaged Qt bridge helper.'
     Require (!(Test-Path -LiteralPath (Join-Path $Installed 'bin/unrelated.exe'))) 'Upgrade copied an unrelated executable.'
+    foreach ($Name in $ArchiveNames) {
+        Require ((Hash (Join-Path $Installed "bin/archive-tools/$Name")) -eq (Hash (Join-Path $Source "bin/archive-tools/$Name"))) "Upgrade lost or changed an archive component: $Name"
+    }
+    Require (!(Test-Path -LiteralPath (Join-Path $Installed 'bin/archive-tools/unrelated.exe'))) 'Upgrade copied an unrelated archive executable.'
+
     Require (!(Test-Path -LiteralPath (Join-Path $Installed 'bin/Qt6Core.dll'))) 'Upgrade copied an SDK Qt runtime into the plugin.'
     Require (!(Test-Path -LiteralPath (Join-Path $Installed 'previous-plugin-sentinel.txt'))) 'The replaced plugin still contains an obsolete implementation sentinel.'
     $Backups = @(Get-ChildItem -LiteralPath (Join-Path $Upgrade 'ModhunterBackups') -Directory)
@@ -136,6 +154,10 @@ try {
     Require ((Hash (Join-Path $Backup '__init__.py')) -eq $OldPluginHash) 'Upgrade changed the previous plugin before backing it up.'
     Require ((Hash (Join-Path $Backup 'bin/modhunter-cli.exe')) -eq $OldHelperHash) 'Upgrade changed or lost the previous Rust helper backup.'
     Require ((Hash (Join-Path $Backup 'bin/modhunter-qt-bridge.dll')) -eq $OldQtHelperHash) 'Upgrade changed or lost the previous Qt helper backup.'
+    foreach ($Name in $ArchiveNames) {
+        Require ((Hash (Join-Path $Backup "bin/archive-tools/$Name")) -eq $OldArchiveHashes[$Name]) "Upgrade changed or lost the previous archive component backup: $Name"
+    }
+
     Require (Test-Path -LiteralPath (Join-Path $Backup 'previous-plugin-sentinel.txt')) 'The previous plugin backup lost its sentinel.'
     foreach ($Relative in $DataFiles.Keys) {
         Require ((Hash (Join-Path (Join-Path $Installed 'data') $Relative)) -eq $DataHashes[$Relative]) "Upgrade changed or lost active data: $Relative"
@@ -153,6 +175,11 @@ try {
     Require ((Hash (Join-Path $FreshPlugin 'bin/modhunter-cli.exe')) -eq (Hash (Join-Path $Source 'bin/modhunter-cli.exe'))) 'New installation did not copy the Rust audit helper.'
     Require ((Hash (Join-Path $FreshPlugin 'bin/modhunter-qt-bridge.dll')) -eq (Hash (Join-Path $Source 'bin/modhunter-qt-bridge.dll'))) 'New installation did not copy the Qt bridge helper.'
     Require (!(Test-Path -LiteralPath (Join-Path $FreshPlugin 'bin/unrelated.exe'))) 'New installation copied an unrelated executable.'
+    foreach ($Name in $ArchiveNames) {
+        Require ((Hash (Join-Path $FreshPlugin "bin/archive-tools/$Name")) -eq (Hash (Join-Path $Source "bin/archive-tools/$Name"))) "New installation lost or changed an archive component: $Name"
+    }
+    Require (!(Test-Path -LiteralPath (Join-Path $FreshPlugin 'bin/archive-tools/unrelated.exe'))) 'New installation copied an unrelated archive executable.'
+
     Require (!(Test-Path -LiteralPath (Join-Path $Fresh 'ModhunterBackups'))) 'A new installation created an unnecessary previous-plugin backup.'
     Require (!(Test-Path -LiteralPath (Join-Path $FreshPlugin 'data'))) 'New installation included unrelated fixture progress.'
     Assert-NoStaging $Fresh
@@ -171,7 +198,7 @@ try {
         $Shadow = "function Get-FileHash { throw 'Get-FileHash is unavailable in this fixture.' }"
         Write-FixtureFile $Installer ($InstallerScript.Replace($ParameterDeclaration, $ParameterDeclaration + "`r`n" + $Shadow))
         Invoke-FixtureInstaller $NoFileHash
-        foreach ($Relative in @('__init__.py', 'plugin.py', 'version.py', 'web/index.html', 'bin/modhunter-cli.exe', 'bin/modhunter-qt-bridge.dll')) {
+        foreach ($Relative in (@('__init__.py', 'plugin.py', 'version.py', 'web/index.html', 'bin/modhunter-cli.exe', 'bin/modhunter-qt-bridge.dll') + @($ArchiveNames | ForEach-Object { 'bin/archive-tools/' + $_ }))) {
             Require ((Hash (Join-Path $NoFileHash "plugins/mo2_update_arsenal/$Relative")) -eq (Hash (Join-Path $Source $Relative))) "Missing-cmdlet installation did not preserve exact packaged bytes: $Relative"
         }
         Assert-NoStaging $NoFileHash
@@ -197,7 +224,7 @@ try {
 
     # Each corrupt/mixed package must fail before touching the previous plugin,
     # its progress, its backup directory or any installation staging directory.
-    foreach ($Case in @('missing-manifest', 'damaged-helper', 'missing-python', 'unlisted-python', 'mixed-version')) {
+    foreach ($Case in @('missing-manifest', 'damaged-helper', 'missing-python', 'unlisted-python', 'mixed-version', 'missing-archive-helper', 'damaged-archive-library', 'missing-archive-license', 'missing-archive-provenance', 'unlisted-archive-helper')) {
         $Fixture = New-MO2Fixture $Case
         $Previous = Join-Path $Fixture 'plugins/mo2_update_arsenal'
         Write-FixtureFile (Join-Path $Previous '__init__.py') '# unchanged previous plugin'
@@ -210,6 +237,12 @@ try {
             'missing-python' { Join-Path $Source 'plugin.py' }
             'unlisted-python' { Join-Path $Source 'unlisted.py' }
             'mixed-version' { Join-Path $Package 'BUILD_INFO.json' }
+            'missing-archive-helper' { Join-Path $Source 'bin/archive-tools/7z.exe' }
+            'damaged-archive-library' { Join-Path $Source 'bin/archive-tools/7z.dll' }
+            'missing-archive-license' { Join-Path $Source 'bin/archive-tools/License.txt' }
+            'missing-archive-provenance' { Join-Path $Source 'bin/archive-tools/provenance.json' }
+            'unlisted-archive-helper' { Join-Path $Package 'SHA256SUMS.txt' }
+
         }
         $Original = if (Test-Path -LiteralPath $Changed) { [IO.File]::ReadAllBytes($Changed) } else { $null }
         try {
@@ -219,6 +252,16 @@ try {
                 'missing-python' { Remove-Item -LiteralPath $Changed; 'packaged plugin file is missing' }
                 'unlisted-python' { Write-FixtureFile $Changed '# absent from the manifest'; 'outside its package checksum manifest' }
                 'mixed-version' { Write-FixtureFile $Changed (@{ version = '0.0.0'; commit = ('a' * 40) } | ConvertTo-Json); Write-FixtureManifest; 'build and MO2 plugin versions do not match' }
+                'missing-archive-helper' { Remove-Item -LiteralPath $Changed; 'complete archive helper is missing' }
+                'damaged-archive-library' { Write-FixtureFile $Changed 'changed archive library'; 'checksum does not match' }
+                'missing-archive-license' { Remove-Item -LiteralPath $Changed; 'complete archive helper is missing' }
+                'missing-archive-provenance' { Remove-Item -LiteralPath $Changed; 'complete archive helper is missing' }
+                'unlisted-archive-helper' {
+                    $Lines = @([IO.File]::ReadAllLines($Changed) | Where-Object { $_ -notmatch '  MO2/mo2_update_arsenal/bin/archive-tools/7z\.exe$' })
+                    Write-FixtureFile $Changed (($Lines -join "`n") + "`n")
+                    'package checksum manifest omitted a required file'
+                }
+
             }
             Invoke-FixtureInstaller $Fixture $false $ExpectedError
         }
@@ -238,9 +281,9 @@ try {
     # after the final source copy, before its real validation. Production code
     # has no test hook, and every source file still passes the first preflight.
     $InstallerScript = [IO.File]::ReadAllText($Installer)
-    $FinalCopy = "    Copy-Item -LiteralPath `$qtHelper -Destination (Join-Path `$staging 'bin\modhunter-qt-bridge.dll')"
+    $FinalCopy = '    # All component bytes are staged; validate before changing the installed plugin.'
     Require (([regex]::Matches($InstallerScript, [regex]::Escape($FinalCopy))).Count -eq 1) 'Could not identify the single staging-copy boundary for deterministic corruption.'
-    foreach ($Case in @('damaged-staged-helper', 'unlisted-staged-python')) {
+    foreach ($Case in @('damaged-staged-helper', 'damaged-staged-archive', 'unlisted-staged-python')) {
         $Fixture = New-MO2Fixture $Case
         $Previous = Join-Path $Fixture 'plugins/mo2_update_arsenal'
         Write-FixtureFile (Join-Path $Previous '__init__.py') '# unchanged previous plugin'
@@ -249,6 +292,10 @@ try {
         $ProgressHash = Hash (Join-Path $Previous 'data/chronicle.json')
         if ($Case -eq 'damaged-staged-helper') {
             $Injected = "[IO.File]::WriteAllText((Join-Path `$staging 'bin\modhunter-cli.exe'), 'Changed after copying; never execute this fixture.')"
+            $ExpectedError = 'staged plugin checksum does not match'
+        }
+        elseif ($Case -eq 'damaged-staged-archive') {
+            $Injected = "[IO.File]::WriteAllText((Join-Path `$staging 'bin\archive-tools\7z.dll'), 'Changed after copying; never load this fixture.')"
             $ExpectedError = 'staged plugin checksum does not match'
         }
         else {
@@ -271,6 +318,33 @@ try {
         Assert-NoStaging $Fixture
         $Checks.Add(@{ name = $Case + '_rejected_without_mutation'; passed = $true })
     }
+
+    # The archive helper must remain a real package directory. A junction
+    # must be rejected before any installed bytes or progress are moved.
+    $LinkedArchive = New-MO2Fixture 'linked-archive-tools'
+    $Previous = Join-Path $LinkedArchive 'plugins/mo2_update_arsenal'
+    Write-FixtureFile (Join-Path $Previous '__init__.py') '# unchanged previous plugin'
+    $PreviousHash = Hash (Join-Path $Previous '__init__.py')
+    $ArchiveDirectory = Join-Path $Source 'bin/archive-tools'
+    $ArchiveSaved = Join-Path $Root 'original-archive-tools'
+    $ArchiveExternal = Join-Path $Root 'external-archive-tools'
+    Copy-Item -LiteralPath $ArchiveDirectory -Destination $ArchiveExternal -Recurse
+    Move-Item -LiteralPath $ArchiveDirectory -Destination $ArchiveSaved
+    try {
+        New-Item -ItemType Junction -Path $ArchiveDirectory -Target $ArchiveExternal | Out-Null
+        Invoke-FixtureInstaller $LinkedArchive $false 'linked archive helper directory'
+        Require ((Hash (Join-Path $Previous '__init__.py')) -eq $PreviousHash) 'Linked archive rejection changed the previous plugin.'
+        Require (!(Test-Path -LiteralPath (Join-Path $LinkedArchive 'ModhunterBackups'))) 'Linked archive rejection moved the previous plugin.'
+        foreach ($Name in $ArchiveNames) {
+            Require ((Hash (Join-Path $ArchiveExternal $Name)) -eq (Hash (Join-Path $ArchiveSaved $Name))) "Linked archive rejection changed external bytes: $Name"
+        }
+        Assert-NoStaging $LinkedArchive
+    }
+    finally {
+        if (Test-Path -LiteralPath $ArchiveDirectory) { [IO.Directory]::Delete($ArchiveDirectory) }
+        Move-Item -LiteralPath $ArchiveSaved -Destination $ArchiveDirectory
+    }
+    $Checks.Add(@{ name = 'linked_archive_tools_rejected_without_mutation'; passed = $true })
 
     $LinkedBackup = New-MO2Fixture 'linked-backup'
     $Previous = Join-Path $LinkedBackup 'plugins/mo2_update_arsenal'
@@ -295,6 +369,10 @@ try {
         $DeveloperMO2 = New-MO2Fixture 'source-tree-install'
         Invoke-FixtureInstaller $DeveloperMO2
         Require ((Hash (Join-Path $DeveloperMO2 'plugins/mo2_update_arsenal/plugin.py')) -eq (Hash (Join-Path $Source 'plugin.py'))) 'Documented source-tree installation stopped working.'
+        foreach ($Name in $ArchiveNames) {
+            Require ((Hash (Join-Path $DeveloperMO2 "plugins/mo2_update_arsenal/bin/archive-tools/$Name")) -eq (Hash (Join-Path $Source "bin/archive-tools/$Name"))) "Source-tree installation lost an archive component: $Name"
+        }
+
         Assert-NoStaging $DeveloperMO2
     }
     finally { $Installer = $PackagedInstaller }

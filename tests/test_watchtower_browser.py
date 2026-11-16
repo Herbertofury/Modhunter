@@ -23,6 +23,7 @@ except ImportError:
 
 ROOT = Path(__file__).resolve().parents[1]
 UI = ROOT / "native/ui"
+VERSION = json.loads((ROOT / "native/crates/modhunter-desktop/tauri.conf.json").read_text("utf-8"))["version"]
 OUTPUT = Path(os.environ.get("MODHUNTER_QA_OUTPUT", ROOT / "native/target/watchtower-browser"))
 BOOT = (ROOT / "tests/fixtures/watchtower_native_fixture.js").read_text("utf-8")
 SOURCE_FILES = ("native/ui/watchtower.html", "native/ui/watchtower.css", "native/ui/watchtower.js",
@@ -50,7 +51,7 @@ def watch(index=0, *, changed=False):
 
 
 def snapshot(count=2):
-    return {"revision": 1, "version": "0.10.1", "watches": [watch(i, changed=i == 0) for i in range(count)],
+    return {"revision": 1, "version": VERSION, "watches": [watch(i, changed=i == 0) for i in range(count)],
             "sessions": [], "history": [], "readOnly": False, "recoveryWarning": "",
             "work": {"active": [], "queued": []}, "settings": {
                 "checkOnLaunch": False, "backgroundChecking": False, "notifications": False,
@@ -232,6 +233,14 @@ class WatchtowerBrowserTests(unittest.TestCase):
         self.assertIn("Release 2.0", self.page.locator(".capture-preview").inner_text())
         self.assertEqual(len(self.calls("detail")), 1)
         self.screenshot("watchtower-details.png")
+        self.page.keyboard.press("Escape")
+        self.assertTrue(self.page.locator('[data-watch-id="watch-0"] [data-action="detail"]').first.evaluate("e => e === document.activeElement"))
+        self.page.keyboard.press("Enter")
+        self.page.wait_for_selector(".capture-preview")
+        self.page.locator("#closeDetail").click()
+        self.assertTrue(self.page.locator('[data-watch-id="watch-0"] [data-action="detail"]').first.evaluate("e => e === document.activeElement"))
+        self.page.keyboard.press("Enter")
+        self.page.wait_for_selector(".capture-preview")
         self.page.locator('#detailBody [data-action="remove"]').click()
         self.navigate(filter_name="removed")
         self.assertEqual(self.page.locator("#watchList .watch-row").count(), 1)
@@ -521,6 +530,17 @@ class WatchtowerBrowserTests(unittest.TestCase):
 
     def test_responsive_complete_list(self):
         self.open(snapshot(2500))
+        self.assertEqual(self.page.locator("#watchList .watch-row").count(), 2500)
+        # Compact navigation is a presentation change; complete observations and
+        # keyboard reachability remain unchanged in the rail and expanded view.
+        self.page.locator("#toggleNavigation").click()
+        self.assertEqual(self.page.locator("#toggleNavigation").get_attribute("aria-expanded"), "false")
+        self.assertEqual(self.page.locator("#watchList .watch-row").count(), 2500)
+        self.assertEqual(self.page.locator('.nav-item[data-view="sessions"]').get_attribute("aria-label"), "Site sign-ins")
+        self.assertEqual(self.page.evaluate("localStorage.getItem('modhunter.watchtower.navigationCollapsed')"), "true")
+        self.page.locator("#toggleNavigation").focus()
+        self.page.keyboard.press("Enter")
+        self.assertEqual(self.page.locator("#toggleNavigation").get_attribute("aria-expanded"), "true")
         self.assertEqual(self.page.locator("#watchList .watch-row").count(), 2500)
         self.page.locator("#search").fill("Release page 2499")
         self.page.wait_for_function("document.querySelectorAll('#watchList .watch-row').length === 1")

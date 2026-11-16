@@ -83,6 +83,7 @@ struct Probe {
     stage: &'static str,
     load: Option<Arc<Load>>,
     counts: Arc<[AtomicU64; 6]>,
+    traffic: Arc<ServerTraffic>,
     completed: Vec<Value>,
     readiness: Value,
 }
@@ -94,6 +95,7 @@ impl Probe {
             stage: "start",
             load: None,
             counts: server.counts.clone(),
+            traffic: server.traffic.clone(),
             completed: Vec::new(),
             readiness: Value::Null,
         }
@@ -120,7 +122,8 @@ impl Probe {
         let counts: [u64; 6] = std::array::from_fn(|i| self.counts[i].load(Ordering::Acquire));
         json!({"stage":self.stage,"elapsedMs":self.stage_started.elapsed().as_millis(),
             "totalElapsedMs":self.started.elapsed().as_millis(),"requestCounts":counts,
-            "navigation":navigation,"lastReadiness":self.readiness})
+            "navigation":navigation,"lastReadiness":self.readiness,
+            "fixtureServer":self.traffic.snapshot()})
     }
     fn evidence(&self) -> Value {
         json!({"completedStages":self.completed,"current":self.current(),
@@ -134,9 +137,34 @@ impl Probe {
     }
 }
 
+#[derive(Default)]
+struct ServerTraffic {
+    accepted: AtomicU64,
+    requests: AtomicU64,
+    responses: AtomicU64,
+    failures: Mutex<Vec<String>>,
+}
+impl ServerTraffic {
+    fn snapshot(&self) -> Value {
+        json!({"acceptedConnections":self.accepted.load(Ordering::Acquire),
+            "completeRequests":self.requests.load(Ordering::Acquire),
+            "completeResponses":self.responses.load(Ordering::Acquire),
+            "failures":self.failures.lock().map(|failures|failures.clone()).unwrap_or_default()})
+    }
+    fn failure(&self, error: String) {
+        if let Ok(mut failures) = self.failures.lock()
+            && failures.len() < 16
+        {
+            // Bounded transport diagnostics only; never retain cookies or page bodies.
+            failures.push(error);
+        }
+    }
+}
+
 struct Server {
     origin: String,
     counts: Arc<[AtomicU64; 6]>,
+    traffic: Arc<ServerTraffic>,
     stop: Arc<AtomicBool>,
     thread: Option<std::thread::JoinHandle<()>>,
 }
@@ -146,16 +174,23 @@ impl Server {
         listener.set_nonblocking(true).map_err(err)?;
         let origin = format!("http://{}", listener.local_addr().map_err(err)?);
         let counts = Arc::new(std::array::from_fn(|_| AtomicU64::new(0)));
+        let traffic = Arc::new(ServerTraffic::default());
         let stop = Arc::new(AtomicBool::new(false));
         let server_counts = counts.clone();
+        let server_traffic = traffic.clone();
         let server_stop = stop.clone();
         let thread = std::thread::spawn(move || {
             while !server_stop.load(Ordering::Acquire) {
                 match listener.accept() {
                     Ok((stream, peer)) if peer.ip().is_loopback() => {
                         let counts = server_counts.clone();
-                        std::thread::spawn(move || {
-                            let _ = respond(stream, &counts);
+                        let traffic = server_traffic.clone();
+                        traffic.accepted.fetch_add(1, Ordering::AcqRel);
+                        std::thread::spawn(move || match respond(stream, &counts, &traffic) {
+                            Ok(()) => {
+                                traffic.responses.fetch_add(1, Ordering::AcqRel);
+                            }
+                            Err(error) => traffic.failure(error),
                         });
                     }
                     Ok(_) => {}
@@ -169,6 +204,7 @@ impl Server {
         Ok(Self {
             origin,
             counts,
+            traffic,
             stop,
             thread: Some(thread),
         })
@@ -211,7 +247,12 @@ impl Drop for Server {
         }
     }
 }
-fn respond(mut stream: TcpStream, counts: &[AtomicU64; 6]) -> Result<()> {
+fn respond(mut stream: TcpStream, counts: &[AtomicU64; 6], traffic: &ServerTraffic) -> Result<()> {
+    // Winsock accept inherits the listener's nonblocking mode. A request may
+    // arrive after accept (or in several packets), so the worker must explicitly
+    // use blocking reads with the bounded timeouts below. Otherwise WouldBlock
+    // silently drops a healthy connection before WebView2 sends its headers.
+    stream.set_nonblocking(false).map_err(err)?;
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
         .map_err(err)?;
@@ -221,12 +262,18 @@ fn respond(mut stream: TcpStream, counts: &[AtomicU64; 6]) -> Result<()> {
     let mut bytes = Vec::new();
     let mut buffer = [0; 2048];
     while bytes.len() < 16384 && !bytes.windows(4).any(|x| x == b"\r\n\r\n") {
-        let size = stream.read(&mut buffer).map_err(err)?;
+        let size = stream
+            .read(&mut buffer)
+            .map_err(|error| format!("Fixture request read failed: {error}"))?;
         if size == 0 {
             break;
         }
         bytes.extend_from_slice(&buffer[..size]);
     }
+    if !bytes.windows(4).any(|part| part == b"\r\n\r\n") {
+        return Err("The fixture connection ended before complete request headers.".into());
+    }
+    traffic.requests.fetch_add(1, Ordering::AcqRel);
     let request = String::from_utf8_lossy(&bytes);
     let route = request
         .lines()
@@ -306,7 +353,9 @@ fn respond(mut stream: TcpStream, counts: &[AtomicU64; 6]) -> Result<()> {
         "HTTP/1.1 200 OK\r\nContent-Type: {mime}\r\nCache-Control: {cache}\r\nConnection: close\r\n{headers}Content-Length: {}\r\n\r\n{body}",
         body.len()
     );
-    stream.write_all(reply.as_bytes()).map_err(err)
+    stream
+        .write_all(reply.as_bytes())
+        .map_err(|error| format!("Fixture response write failed: {error}"))
 }
 fn view(
     app: &tauri::AppHandle,
@@ -642,5 +691,59 @@ pub(super) fn check(app: &tauri::AppHandle) -> Result<Value> {
         Ok(value)
     } else {
         Err(failures.join(" "))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepted_nonblocking_stream_waits_for_delayed_fragmented_headers() {
+        let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let address = listener.local_addr().unwrap();
+        let (ready_send, ready_receive) = mpsc::sync_channel(1);
+        let (done_send, done_receive) = mpsc::sync_channel(1);
+        let traffic = Arc::new(ServerTraffic::default());
+        let server_traffic = traffic.clone();
+        let worker = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            // Force the Windows inherited state explicitly, so the regression
+            // does not depend on which platform's accept semantics run the test.
+            stream.set_nonblocking(true).unwrap();
+            ready_send.send(()).unwrap();
+            let counts = std::array::from_fn(|_| AtomicU64::new(0));
+            done_send
+                .send(respond(stream, &counts, &server_traffic))
+                .unwrap();
+        });
+        let mut client = TcpStream::connect(address).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        ready_receive.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert!(matches!(
+            done_receive.recv_timeout(Duration::from_millis(40)),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ));
+        client
+            .write_all(b"GET /login-b HTTP/1.1\r\nHost: localhost\r\n")
+            .unwrap();
+        assert!(matches!(
+            done_receive.recv_timeout(Duration::from_millis(40)),
+            Err(mpsc::RecvTimeoutError::Timeout)
+        ));
+        client.write_all(b"\r\n").unwrap();
+        let mut response = String::new();
+        client.read_to_string(&mut response).unwrap();
+        done_receive
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap()
+            .unwrap();
+        worker.join().unwrap();
+        assert!(response.starts_with("HTTP/1.1 200 OK\r\n"));
+        assert!(response.contains("Set-Cookie: browser_data=b;"));
+        assert!(response.ends_with("window.fixtureReady=true;</script>"));
+        assert_eq!(traffic.requests.load(Ordering::Acquire), 1);
     }
 }

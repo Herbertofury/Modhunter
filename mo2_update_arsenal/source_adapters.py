@@ -21,6 +21,32 @@ REVIEW_COMPATIBILITY_STATES = frozenset({"mismatch", "incompatible", "unsupporte
 ARCHIVE_SUFFIXES = (".zip", ".7z", ".rar")
 CACHE_LIMIT = 4_194_304
 
+# Browsing previews use only artwork returned by the exact provider record.
+# Keep this list aligned with the dashboard image CSP; never guess an image
+# from a name, reuse a publisher avatar, or turn it into release authority.
+PREVIEW_IMAGE_HOSTS = {
+    "nexus": frozenset({"staticdelivery.nexusmods.com"}),
+    "modrinth": frozenset({"cdn.modrinth.com"}),
+    "thunderstore": frozenset({"gcdn.thunderstore.io", "cdn.thunderstore.io", "thunderstore.io"}),
+}
+
+
+def preview_image_url(raw, provider: str) -> str:
+    """Public provider artwork only; no local endpoints or signed sessions."""
+    if not isinstance(raw, str):
+        return ""
+    safe = _safe_url(raw)
+    if not safe:
+        return ""
+    parsed = urlsplit(safe)
+    if parsed.hostname not in PREVIEW_IMAGE_HOSTS.get(provider, ()) or parsed.query:
+        return ""
+    # canonical_source_url removes secrets. Reject their original presence
+    # rather than keeping a transformed URL that might request another file.
+    if urlsplit(raw.strip()).query:
+        return ""
+    return safe
+
 # Capabilities describe this integration, never a claim about an account session.
 PROVIDER_LABELS = {
     "nexus": "Nexus Mods", "github": "GitHub", "gitlab": "GitLab",
@@ -308,6 +334,18 @@ def compact_source_update(update: dict) -> dict:
     if isinstance(compatibility, dict):
         result["compatibility"] = {key: deepcopy(value) for key, value in compatibility.items() if key in {"status", "reason"}}
     result["summary"] = str(update.get("summary") or "")[:300]
+    provider = str(update.get("provider") or "")
+    artwork = next((preview_image_url(media.get("url"), provider)
+                    for media in (update.get("media") or [])
+                    if isinstance(media, dict) and media.get("type") == "image"
+                    and preview_image_url(media.get("url"), provider)), "")
+    icon = preview_image_url(update.get("iconUrl"), provider)
+    if artwork or icon:
+        result["thumbnailUrl"] = artwork or icon
+        result["thumbnailKind"] = "image" if artwork else "icon"
+    for field in ("author", "publisher"):
+        if person := _person(update.get(field)):
+            result[field] = person
     result["releaseAssetCount"] = len(update.get("releaseAssets") or [])
     result["dependencyCount"] = len(update.get("dependencies") or [])
     result["detailsAvailable"] = True

@@ -205,6 +205,23 @@ pub(super) fn apply_appearance(app: &tauri::AppHandle) -> Result<()> {
     )?;
     Ok(())
 }
+/// The dashboard shortcut changes only appearance, never privacy or retention.
+pub(super) fn set_theme(app: &tauri::AppHandle, theme: &str) -> Result<()> {
+    if !matches!(theme, "light" | "dark") {
+        return Err("Choose a light or dark application theme.".into());
+    }
+    let state = app.state::<Maintenance>();
+    {
+        let _save = state.save.lock().map_err(err)?;
+        let mut doc = state.document.lock().map_err(err)?.clone();
+        doc.settings.theme = theme.into();
+        persist(&state, doc)?;
+    }
+    apply_appearance(app)?;
+    notify(app);
+    Ok(())
+}
+
 fn save_settings(app: &tauri::AppHandle, value: &Value) -> Result<Value> {
     let mut next: Settings = serde_json::from_value(value.clone()).map_err(err)?;
     let requested_preset = next.privacy_preset.clone();

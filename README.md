@@ -2,11 +2,11 @@
 
 # ⚔ MODHUNTER
 
-### The Unfinished World · A Skyrim-inspired mod-maintenance RPG
+### The Unfinished World · A desktop mod manager built around your collection
 
-**Repair your load order. Hunt your unfinished mods. Build a legend.**
+**Browse your mods. Review every update. Keep your world intact.**
 
-[![Edition](https://img.shields.io/badge/Edition-Rust%200.11.0-cfa76d?style=for-the-badge&labelColor=182b30)](wiki/Rust-Desktop.md)
+[![Edition](https://img.shields.io/badge/Edition-Rust%200.12.0-cfa76d?style=for-the-badge&labelColor=182b30)](wiki/Rust-Desktop.md)
 [![MO2](https://img.shields.io/badge/MO2-Optional%20Live%20Link-78cfab?style=for-the-badge&labelColor=182b30)](wiki/MO2-Plugin.md)
 [![Modes](https://img.shields.io/badge/Modes-Siege%20%7C%20Survival%20%7C%20Atlas-9bb8f0?style=for-the-badge&labelColor=182b30)](wiki/Game-Modes.md)
 
@@ -14,11 +14,19 @@
 
 ---
 
-## Rust desktop 0.11.0
-
-The new Windows app runs its desktop shell, profile import/cache engine, connection discovery and native file operations in **Rust**, with WebView2 displaying the complete existing dashboard and games. Running the compiled app requires no Node or Electron. The Python plugin remains MO2's in-process adapter for authenticated Nexus requests and its native download/installer API.
+## Atelier 0.12 · The Mod Vault
 
 **[Windows releases](https://github.com/Herbertofury/Modhunter/releases)** · **[Install and use the Rust app](wiki/Rust-Desktop.md)** · **[Build and test results](https://github.com/Herbertofury/Modhunter/actions/workflows/native-rust.yml)**
+
+The new **[Mod Vault](wiki/Atelier-0.12.md)** brings an image-forward gallery and a compact list to the same complete library. A collapsible navigation rail, provider filters, persistent density controls, keyboard context actions and refined details make source evidence and update review easier to reach. Warm charcoal, oxidized green and restrained brass have an equivalent parchment light theme across the dashboard, native shell, Watchtower, settings and dialogs.
+
+Real project artwork comes from exact Nexus, Modrinth and Thunderstore observations. Missing artwork stays visibly absent; creator portraits are not substituted for a mod. The native shell uses 116 pixels instead of 144, and compact list rows retain their 48-pixel rhythm. The full inventory remains available without viewport virtualization or arbitrary result limits.
+
+Exact-file selection, profile-bound approvals, MO2 installation, backups, verification and recovery remain authoritative. Questbound, AetherFX/FX Studio, Shiverfell, Mythforge, Siege and Atlas remain independently available. The release pipeline compares the actual v0.11.0 and candidate UI, exercises complete 11,207-record fixtures, and separately runs Windows WebView2 and real MO2 acceptance. See the [versioned visual guide and evidence](wiki/Atelier-0.12.md) for observed results and scope.
+
+### Rust desktop, shared dashboard
+
+The Windows app runs its desktop shell, profile import/cache engine, connection discovery and native file operations in **Rust**, with WebView2 displaying the complete existing dashboard and games. Running the compiled app requires no Node or Electron. The Python plugin remains MO2's in-process adapter for authenticated Nexus requests and its native download/installer API.
 
 - **Find MO2** discovers running plugin sessions and validates their protocol and profile before connecting. A lightweight health request replaces full-dashboard connection probing.
 - Parallel, cached imports support portable and split-path MO2 configurations. In reproducible Linux fixtures, importing 2,500 mods took a median **70.78 ms** in Rust versus **477.03 ms** in the previous Node importer; 10,000 mods took **330.42 ms** versus **1,629.28 ms**. These include fresh metadata-content verification and root plugin inventory on generated fixtures without ESP payloads; they are not deep-audit, Windows GUI startup or Nexus download timings. [Raw measurements and method](native/evidence/import-comparison.json).

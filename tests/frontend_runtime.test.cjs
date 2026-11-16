@@ -18,7 +18,7 @@ function catalog(profile='a',count=3){
   items:Array.from({length:count},(_,i)=>({id:'item-'+i,name:'Fixture '+i,groupId:'group',group:'Fixtures',priority:i,author:'Test Author',installedVersion:'1.0',screenshotNote:'',flags:[],audit:{},nexusId:i+1,source:{type:'nexus',verified:true,url:'https://www.nexusmods.com/skyrimspecialedition/mods/'+(i+1)},update:{verdict:'candidate',latestVersion:'2.0'}}))};
 }
 function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={},progressReadFailures=0,nativeWatch=false}={}){
- const nodes=new Map(),timers=new Map(),pending=new Map(),calls=[],active=new Map(),maximum=new Map(),nativeNavigations=[];
+ const nodes=new Map(),timers=new Map(),pending=new Map(),calls=[],active=new Map(),maximum=new Map(),nativeNavigations=[],windowListeners=new Map();
  let timerId=0;
  const state={catalog:catalog('a',count),generation:1,failSnapshots,progressRows,progressReadFailures,score:0,scan:{state:'idle'},defer:new Set()};
  const document={hidden:false,activeElement:null,addEventListener(){},querySelectorAll(){return[]},createElement:name=>element(name),getElementById:id=>node(id),querySelector:selector=>node(selector)};
@@ -44,7 +44,8 @@ function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={
   setTimeout(fn,ms){const id=++timerId;timers.set(id,{fn,ms});return id},clearTimeout:id=>timers.delete(id),
   setInterval(){throw Error('Async interval polling is forbidden')},clearInterval:id=>timers.delete(id),
   requestAnimationFrame(fn){const id=++timerId;timers.set(id,{fn,ms:'frame'});return id},cancelAnimationFrame:id=>timers.delete(id),
-  addEventListener(){},confirm:()=>true,
+  addEventListener(type,listener){if(!windowListeners.has(type))windowListeners.set(type,[]);windowListeners.get(type).push(listener)},
+  dispatchEvent(event){for(const listener of windowListeners.get(event.type)||[])listener(event);return true},confirm:()=>true,
   __MO2_BRIDGE_BOOT__:{active:live,token:'test'},
  };
  context.window=context;context.__MODHUNTER_NATIVE_WATCHTOWER__=nativeWatch;context.location={assign:value=>nativeNavigations.push(value)};
@@ -84,7 +85,7 @@ function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={
    return{ok:true,json:async()=>value};
   }finally{active.set(key,active.get(key)-1)}
  };
- const instrument='window.__RUNTIME__={importJSON,attachNativeTracking,trackPageIntent,trackModPage,getSrc,modHTML,renderWorkshop,sourceLinksPending,requestLiveCatalog,bridgeRequest,scanLive,fastUpdateAll,refreshWorkshop,refreshDownloads,nextWorkshopCandidate,pollLiveBridge,updatePrefs,save,counts,filtered,render,importOfflineCatalog,scheduleSearchRender,analyzePlugins,refreshModHealth,drawInspector,loadModInsights,loadSourceDetails,sourceDetailMod,openFilePicker,closeFilePicker,exportWorkshop,state:()=>({connected:LIVE_CONNECTED,quick:QUICK_RUNNING,profileEpoch:PROFILE_EPOCH}),setRow:(id,value,invalidatePlan=true)=>{markSourceEdit(getRow(id).url,value.url);STORE.rows[id]=value;save(invalidatePlan)},setQuery:q=>{STORE.prefs.query=q;scheduleSearchRender()}};';
+ const instrument='window.__RUNTIME__={setRows,libraryRowCacheOwner,clearLibraryRowCache,rememberFilteredLibraryRows,takeFilteredLibraryRow,cacheMap:()=>LIBRARY_DETACHED_ROWS,importJSON,attachNativeTracking,trackPageIntent,trackModPage,getSrc,modHTML,renderWorkshop,sourceLinksPending,requestLiveCatalog,bridgeRequest,scanLive,fastUpdateAll,refreshWorkshop,refreshDownloads,nextWorkshopCandidate,pollLiveBridge,updatePrefs,save,counts,filtered,render,importOfflineCatalog,scheduleSearchRender,analyzePlugins,refreshModHealth,drawInspector,loadModInsights,loadSourceDetails,sourceDetailMod,openFilePicker,closeFilePicker,exportWorkshop,state:()=>({connected:LIVE_CONNECTED,quick:QUICK_RUNNING,profileEpoch:PROFILE_EPOCH}),setRow:(id,value,invalidatePlan=true)=>{markSourceEdit(getRow(id).url,value.url);STORE.rows[id]=value;save(invalidatePlan)},setQuery:q=>{STORE.prefs.query=q;scheduleSearchRender()}};';
  const source=APP.replace('/*__POWERSHELL__*/','""').replace(/\}\)\(\);\s*$/,instrument+'\n})();');
  vm.createContext(context);vm.runInContext(SOURCES,context,{filename:'source_insights.js'});vm.runInContext(INSIGHTS,context,{filename:'mod_insights.js'});vm.runInContext(source,context,{filename:'app.js'});
  return{context,state,nodes,timers,calls,active,maximum,pending,nativeNavigations,api:context.__RUNTIME__,qa:context.__ARSENAL_QA__,
@@ -117,6 +118,21 @@ test('loading source evidence preserves unsaved inspector notes',async()=>{
  const h=harness();await h.settle();const mod=h.qa.getCatalog().items[0];h.api.drawInspector(mod);
  h.context.document.getElementById('drawerNote').value='Keep my unsaved setup notes';await h.api.loadSourceDetails(mod);await h.settle();
  assert.equal(h.nodes.get('drawerNote').value,'Keep my unsaved setup notes');
+});
+test('unknown sources have a readable label while raw identity and author names remain intact',()=>{
+ const h=harness({live:false,count:1}),data=catalog('source-labels',1);
+ data.offline=true;
+ Object.assign(data.items[0],{nexusId:0,author:'',source:{type:'lookup',verified:false,url:''},update:{}});
+ h.api.importOfflineCatalog(data);
+ const mod=h.qa.getCatalog().items[0];
+ assert.equal(h.api.getSrc(mod).type,'lookup');
+ assert.match(h.api.modHTML(mod),/data-provider-label="Source needed"/);
+ assert.match(h.nodes.get('providerFilter').innerHTML,/<option value="lookup">Source needed · 1<\/option>/);
+ h.api.drawInspector(mod);
+ assert.match(h.nodes.get('drawerContent').innerHTML,/<div class="drawer-mod-meta"><span>Source needed<\/span>/);
+ mod.author='Library';h.api.drawInspector(mod);
+ assert.match(h.nodes.get('drawerContent').innerHTML,/<div class="drawer-mod-meta"><span data-no-translate>Library<\/span>/);
+ assert.equal(mod.source.type,'lookup');
 });
 test('expired public source evidence replaces update actions with an actionable source review',async()=>{
  const h=harness({count:1});await h.settle();const data=catalog('a',1);
@@ -176,6 +192,167 @@ test('cosmetic settings leave catalog DOM intact; large searches keep all record
  assert.equal([...h.timers.values()].filter(t=>t.ms==='frame').length,1);await h.tick('frame');
  assert.equal(h.api.filtered().length,1);assert.equal(h.qa.getCatalog().items.length,2500);
  assert.equal(h.nodes.get('modList').writes,writes+1);
+});
+
+test('gallery geometry reuses one card rule without inherited subtree writes',async()=>{
+ const h=harness({live:false,count:3});await h.settle();
+ const list=h.nodes.get('modList'),sheets=[],values=[];
+ list.clientWidth=1324;
+ h.context.document.querySelector('style[nonce]').nonce='packaged-style-nonce';
+ list.style.setProperty=(name)=>{throw Error('Gallery geometry must not inherit '+name+' through every record');};
+ h.context.document.head={append(style){
+  assert.equal(style.nonce,'packaged-style-nonce','Packaged styles retain the desktop CSP nonce');
+  assert.match(style.textContent,/\[data-library-view="gallery"\] #modList > \.mod-row/);
+  const initial=style.textContent.match(/flex-basis:([^}]+)/)[1];values.push(initial);
+  style.sheet={cssRules:[{style:{setProperty(name,value){assert.equal(name,'flex-basis');values.push(value);}}}]};
+  sheets.push(style);
+ }};
+ h.api.updatePrefs({libraryView:'gallery'});
+ assert.equal(values.at(-1),'calc((100% - 70px) / 6)');
+ const first=values.length,writes=list.writes;
+ h.api.updatePrefs({theme:'snow',navExpanded:true});
+ h.context.dispatchEvent({type:'resize'});
+ assert.equal(values.length,first,'Unchanged columns must not invalidate card styles');
+ assert.equal(list.writes,writes,'Presentation changes must retain the rendered records');
+ h.api.updatePrefs({density:'comfy'});
+ assert.equal(values.at(-1),'calc((100% - 54px) / 4)');
+ list.clientWidth=950;h.context.dispatchEvent({type:'resize'});
+ assert.equal(values.at(-1),'calc((100% - 36px) / 3)');
+ h.context.innerWidth=390;list.clientWidth=284;h.context.dispatchEvent({type:'resize'});
+ assert.equal(values.at(-1),'calc((100% - 0px) / 1)');
+ h.api.updatePrefs({density:'compact'});
+ assert.equal(values.at(-1),'calc((100% - 10px) / 2)');
+ h.context.innerWidth=1440;list.clientWidth=1324;h.context.dispatchEvent({type:'resize'});
+ assert.equal(values.at(-1),'calc((100% - 70px) / 6)');
+ h.api.updatePrefs({libraryView:'list'});const beforeListResize=values.length;
+ list.clientWidth=1110;h.context.dispatchEvent({type:'resize'});
+ assert.equal(values.length,beforeListResize,'List-only resizing must not mutate gallery rules');
+ h.api.updatePrefs({libraryView:'gallery'});
+ assert.equal(values.at(-1),'calc((100% - 56px) / 5)');
+ assert.equal(sheets.length,1,'Resize and density changes reuse the same CSS rule');
+ assert.equal(h.qa.getCatalog().items.length,3);
+});
+
+test('native appearance survives profile imports and theme controls await canonical preferences',async()=>{
+ const h=harness({live:false,count:2});await h.settle();const requests=[];
+ h.context.modhunterRequestTheme=theme=>{requests.push(theme);return true};
+ h.context.ModhunterAppearance={theme:'light',locale:'en',resolvedTheme:'light'};
+ h.api.importOfflineCatalog({...catalog('native-profile',2),offline:true});
+ assert.equal(h.context.document.body.dataset.theme,'snow','An imported profile must keep the native light appearance');
+ const writes=h.nodes.get('modList').writes;
+ h.api.updatePrefs({density:'comfy'});
+ assert.equal(h.context.document.body.dataset.theme,'snow','Presentation changes must preserve native theme authority');
+ h.nodes.get('themeToggle').onclick();
+ assert.deepEqual(requests,['dark']);
+ assert.equal(h.context.document.body.dataset.theme,'snow','A request must not claim an unacknowledged native preference');
+ h.context.ModhunterAppearance={theme:'dark',locale:'en',resolvedTheme:'dark'};
+ h.context.dispatchEvent({type:'modhunter-appearance-applied'});
+ assert.equal(h.context.document.body.dataset.theme,'night');
+ h.api.updatePrefs({density:'compact'});
+ assert.equal(h.context.document.body.dataset.theme,'night');
+ assert.equal(h.nodes.get('modList').writes,writes,'Appearance propagation must not rebuild the complete library');
+});
+
+test('standalone appearance controls retain independent local persistence',async()=>{
+ const h=harness({live:false,count:1});await h.settle();
+ h.api.importOfflineCatalog({...catalog('standalone-theme',1),offline:true});
+ assert.equal(h.context.document.body.dataset.theme,'night');
+ h.nodes.get('themeToggle').onclick();
+ assert.equal(h.context.document.body.dataset.theme,'snow');
+ assert.equal(JSON.parse(h.context.localStorage.getItem('modhunter-offline-profile:v1:standalone-theme')).prefs.theme,'snow');
+ h.nodes.get('themeToggle').onclick();
+ assert.equal(h.context.document.body.dataset.theme,'night');
+});
+
+function normalLibraryLayout(h){
+ h.context.document.body.dataset.layout='compact';
+ h.context.matchMedia=()=>({matches:false});
+ const list=h.nodes.get('modList'),query=list.querySelector;
+ list.isConnected=true;
+ list.querySelector=selector=>selector===':scope > .mod-row'?{isConnected:true}:query(selector);
+ return {list,frames:()=>[...h.timers.values()].filter(timer=>timer.ms==='frame')};
+}
+
+test('bulk appearance restores row hover styling at the existing two-frame boundary',async()=>{
+ const h=harness({live:false});await h.settle();
+ const {list,frames}=normalLibraryLayout(h);let restorationReads=0;
+ Object.defineProperty(list,'offsetHeight',{get(){
+  assert.equal(list.dataset.layoutChange,undefined,'The restoration read must follow removal of suppression');
+  restorationReads++;return 200;
+ }});
+ assert.equal(list.dataset.layoutChange,undefined);
+ h.api.updatePrefs({density:'comfy'});
+ assert.equal(frames().length,0,'Density alone must not create a structural batch');
+ h.api.updatePrefs({libraryView:'gallery'});
+ const token=list.dataset.layoutChange;assert.ok(token);
+ const first=frames()[0];
+ h.api.updatePrefs({density:'compact'});
+ h.api.updatePrefs({libraryView:'gallery'});
+ assert.equal(list.dataset.layoutChange,token);
+ assert.equal(frames()[0],first,'Repeated appearance events must not postpone restoration');
+ await h.tick('frame');
+ assert.equal(list.dataset.layoutChange,token);
+ assert.equal(restorationReads,0);
+ await h.tick('frame');
+ assert.equal(list.dataset.layoutChange,undefined);
+ assert.equal(restorationReads,1,'Restoration work must finish inside the second frame');
+ assert.equal(frames().length,0);
+ h.context.matchMedia=()=>({matches:true});
+ h.api.updatePrefs({libraryView:'list'});
+ assert.equal(list.dataset.layoutChange,undefined,'Reduced motion uses its own transition policy');
+ assert.equal(frames().length,0);
+});
+
+test('an obsolete second frame cannot clear a newer native appearance batch',async()=>{
+ const h=harness({live:false});await h.settle();
+ const {list,frames}=normalLibraryLayout(h);
+ h.api.updatePrefs({libraryView:'gallery'});
+ await h.tick('frame');
+ const oldSecond=frames()[0].fn,oldToken=list.dataset.layoutChange;
+ const widthReadTokens=[];
+ Object.defineProperty(list,'clientWidth',{get(){widthReadTokens.push(list.dataset.layoutChange);return 0;}});
+ // The native preference engine writes the theme before its synchronous event.
+ h.context.modhunterRequestTheme=()=>true;
+ h.context.ModhunterAppearance={resolvedTheme:'light'};
+ h.context.document.body.dataset.theme='snow';
+ h.context.dispatchEvent({type:'modhunter-appearance-applied'});
+ const token=list.dataset.layoutChange;
+ assert.ok(token);assert.notEqual(token,oldToken);
+ assert.deepEqual(widthReadTokens,[token],'Native theme suppression must precede the library width read');
+ oldSecond();
+ assert.equal(list.dataset.layoutChange,token,'A canceled callback must not affect the current batch');
+ assert.equal(frames().length,1);
+ await h.tick('frame');await h.tick('frame');
+ assert.equal(list.dataset.layoutChange,undefined);
+});
+
+test('profile and execution changes cancel owned layout frames before advancing the epoch',async()=>{
+ for(const live of [false,true]){
+  const h=harness({live});await h.settle();
+  const {list,frames}=normalLibraryLayout(h),removed=[];
+  list.dataset=new Proxy(list.dataset,{deleteProperty(target,key){
+   if(key==='layoutChange')removed.push({token:target[key],epoch:h.api.state().profileEpoch});
+   return Reflect.deleteProperty(target,key);
+  }});
+  h.api.updatePrefs({libraryView:'gallery'});await h.tick('frame');
+  const oldSecond=frames()[0].fn,oldToken=list.dataset.layoutChange,oldEpoch=h.api.state().profileEpoch;
+  const replacement={...catalog('replacement'),offline:!live};
+  if(live){h.state.catalog=replacement;await h.qa.setCatalog(replacement)}
+  else h.api.importOfflineCatalog(replacement);
+  assert.deepEqual(removed[0],{token:oldToken,epoch:oldEpoch},'Cleanup must happen before the profile epoch advances');
+  const token=list.dataset.layoutChange;assert.ok(token);assert.notEqual(token,oldToken);
+  oldSecond();assert.equal(list.dataset.layoutChange,token);
+  await h.tick('frame');await h.tick('frame');
+  assert.equal(list.dataset.layoutChange,undefined);
+  if(live){
+   h.api.updatePrefs({libraryView:'gallery'});await h.tick('frame');
+   const stale=frames()[0].fn;
+   h.state.catalog={...replacement,executionEpoch:2};await h.qa.setCatalog(h.state.catalog);
+   assert.equal(list.dataset.layoutChange,undefined,'Same-view execution changes cancel without extending a batch');
+   stale();assert.equal(list.dataset.layoutChange,undefined);
+   assert.equal(frames().length,0);
+  }
+ }
 });
 
 test('a completed prior release does not hide the next update or manual file selection',async()=>{
@@ -546,4 +723,96 @@ test('Watchtower row cache changes with visible age, not wall-clock minute bucke
  const changed=context.watchMarkup(watch);
  assert.notEqual(changed.key,initial.key);
  assert.match(changed.html,/Last success 1 min ago/);
+});
+
+
+// Model only detached-node ownership. Real parsing, reattachment, layout and
+// image-error events are covered by the actual Chromium cases.
+function cacheRowFixture(h,id,{classes=[],image=null,stage=false}={}){
+ const list=h.nodes.get('modList'),names=new Set(['mod-row',...classes]);
+ const row={id:'row-'+id,dataset:{id},parentElement:list,isConnected:true,
+  classList:{contains:name=>names.has(name),get length(){return names.size}},
+  closest:selector=>selector==='.mod-row'?row:null,
+  querySelector:selector=>selector==='.mod-preview-image'?image:selector==='.aether-selection-stage'&&stage?{}:null};
+ const mod=h.qa.getCatalog().items.find(item=>item.id===id);
+ return {key:'mod:'+id,html:h.api.modHTML(mod),node:row};
+}
+function detachCacheEntry(entry){entry.node.parentElement=null;entry.node.isConnected=false;}
+
+test('filtered-row cache reuses exact cold markup and excludes hot or transient ownership',async()=>{
+ const h=harness({count:10});await h.settle();
+ const entries=Array.from({length:10},(_,i)=>cacheRowFixture(h,'item-'+i,
+  i===1?{classes:['native-selected']}:i===2?{classes:['aether-target']}:
+  i===3?{classes:['focus-signal']}:i===4?{stage:true}:i===9?{image:{complete:true,naturalWidth:0,hidden:true}}:{}));
+ const list=h.nodes.get('modList');list.querySelector=()=>entries[5].node;
+ h.context.document.activeElement={closest:()=>entries[6].node};
+ h.context.document.getAnimations=()=>[
+  {playState:'running',effect:{target:entries[7].node}},
+  {playState:'paused',effect:{target:entries[8].node}}];
+ const owner=h.api.libraryRowCacheOwner();
+ h.api.rememberFilteredLibraryRows(list,entries,new Set(),owner);
+ assert.deepEqual(Array.from(h.api.cacheMap().keys()),['mod:item-0']);
+ detachCacheEntry(entries[0]);
+ const restored=h.api.takeFilteredLibraryRow({key:entries[0].key,html:entries[0].html},owner);
+ assert.equal(restored.node,entries[0].node);assert.equal(h.api.cacheMap().size,0);
+ entries[0].node.parentElement=list;entries[0].node.isConnected=true;
+ h.api.rememberFilteredLibraryRows(list,[entries[0]],new Set(),owner);detachCacheEntry(entries[0]);
+ h.api.setRow('item-0',{note:'Changed while excluded',status:'review',url:'https://github.com/cache-fixture/current-source'});
+ const next={key:entries[0].key,html:h.api.modHTML(h.qa.getCatalog().items[0])};
+ assert.notEqual(next.html,entries[0].html);
+ assert.equal(h.api.takeFilteredLibraryRow(next,owner),null,'New source/status/notes markup must be parsed');
+ assert.equal(h.api.cacheMap().size,0);
+});
+
+test('detached image failures, reconnected nodes and locale ownership cannot revive cached rows',async()=>{
+ const h=harness({count:3});await h.settle();
+ const list=h.nodes.get('modList');list.querySelector=()=>null;
+ h.context.document.activeElement=null;h.context.document.getAnimations=()=>[];
+ h.context.document.documentElement={lang:'es'};
+ const image={complete:false,naturalWidth:0,hidden:false};
+ const pending=cacheRowFixture(h,'item-0',{image}),owner=h.api.libraryRowCacheOwner();
+ h.api.rememberFilteredLibraryRows(list,[pending],new Set(),owner);detachCacheEntry(pending);
+ image.complete=true;
+ assert.equal(h.api.takeFilteredLibraryRow(pending,owner),null,'Detached failures must use the normal fresh-image path');
+ const ready=cacheRowFixture(h,'item-1',{image:{complete:true,naturalWidth:96,hidden:false}});
+ h.api.rememberFilteredLibraryRows(list,[ready],new Set(),owner);detachCacheEntry(ready);
+ h.context.document.documentElement.lang='en';
+ assert.notEqual(h.api.libraryRowCacheOwner(),owner);
+ assert.equal(h.api.takeFilteredLibraryRow(ready,h.api.libraryRowCacheOwner()),null,'Detached Spanish labels must not reappear in English');
+ const connected=cacheRowFixture(h,'item-2');
+ h.api.rememberFilteredLibraryRows(list,[connected],new Set(),h.api.libraryRowCacheOwner());
+ assert.equal(h.api.takeFilteredLibraryRow(connected,h.api.libraryRowCacheOwner()),null,'Do not move a node reattached elsewhere');
+ assert.equal(h.api.cacheMap().size,0);
+ const oldContainerEntry=cacheRowFixture(h,'item-2'),currentOwner=h.api.libraryRowCacheOwner();
+ h.api.rememberFilteredLibraryRows(list,[oldContainerEntry],new Set(),currentOwner);detachCacheEntry(oldContainerEntry);
+ assert.equal(h.api.cacheMap().size,1);
+ h.api.setRows({id:'modList',children:[],innerHTML:''},[],'<div class=empty-state>Empty</div>');
+ assert.equal(h.api.cacheMap().size,0,'A new container with the same ID cannot inherit old detached nodes');
+});
+
+test('catalog replacement clears cold rows before epoch changes, including same-profile removals',async()=>{
+ for(const live of [true,false]){
+  const h=harness({live,count:3});await h.settle();
+  const list=h.nodes.get('modList');list.querySelector=()=>null;h.context.document.activeElement=null;
+  const map=h.api.cacheMap(),cleared=[],clear=map.clear.bind(map);
+  map.clear=()=>{cleared.push({epoch:h.api.state().profileEpoch,size:map.size});return clear();};
+  const retained=cacheRowFixture(h,'item-0'),retainedOwner=h.api.libraryRowCacheOwner();
+  h.api.rememberFilteredLibraryRows(list,[retained],new Set(),retainedOwner);detachCacheEntry(retained);
+  if(live)assert.throws(()=>h.qa.setCatalog({profileId:'invalid',items:[],groups:null}),/Invalid profile snapshot/);
+  else assert.throws(()=>h.api.importOfflineCatalog({...catalog('invalid'),offline:false}),/Not a valid local MO2 snapshot/);
+  assert.equal(map.size,1,'Rejected snapshots preserve last-good cached state');
+  assert.equal(h.api.libraryRowCacheOwner(),retainedOwner);
+  for(const next of [{...catalog('a',2),executionEpoch:1},{...catalog('a',2),executionEpoch:2},catalog('b',2),catalog('a',2)]){
+   const entry=cacheRowFixture(h,'item-0'),owner=h.api.libraryRowCacheOwner();
+   h.api.rememberFilteredLibraryRows(list,[entry],new Set(),owner);detachCacheEntry(entry);
+   assert.equal(map.size,1);const epoch=h.api.state().profileEpoch,before=cleared.length;
+   h.state.catalog=next;
+   if(live)await h.qa.setCatalog(next);else h.api.importOfflineCatalog({...next,offline:true});
+   await h.settle();
+   assert.equal(cleared[before].epoch,epoch,'Release nodes before advancing context ownership');
+   assert.equal(cleared[before].size,1);assert.equal(map.size,0);
+   assert.notEqual(h.api.libraryRowCacheOwner(),owner);
+   assert.equal(h.api.takeFilteredLibraryRow(entry,h.api.libraryRowCacheOwner()),null);
+  }
+ }
 });

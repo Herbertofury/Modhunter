@@ -4,7 +4,8 @@ Four fresh page contexts alternate C7 -> candidate, candidate -> C7 in one
 browser. Every measured arm imports the exact complete 11,207-record native
 fixture. No CSS override, tracing, sampled geometry, warm-up exclusion, result
 limit, or virtualization is used. Preview-stretch changes only atelier.css;
-flat-fill changes only app.js and atelier.css. Each immutable source candidate
+flat-fill changes app.js and atelier.css; cold-row-cache changes only app.js.
+Each immutable source candidate
 compares against exact C7 independently. This diagnostic does not replace
 Windows/release acceptance or waive any existing responsiveness ceiling.
 Pixel-only mismatches retain their strict failure but defer termination until
@@ -41,8 +42,8 @@ REPORT_NAME = "surface-comparison.json"
 VIEWPORT = {"width": 1028, "height": 633}
 OWNED_URL = "http://modhunter-surface.invalid/"
 EXPECTED_ASSETS = {
+    "cold-row-cache": {"mo2_update_arsenal/web/app.js"},
     "preview-stretch": {"mo2_update_arsenal/web/atelier.css"},
-    "inner-card-flex": {"mo2_update_arsenal/web/atelier.css"},
     "flat-fill": {"mo2_update_arsenal/web/app.js", "mo2_update_arsenal/web/atelier.css"},
 }
 ACTIONS = (

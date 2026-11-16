@@ -973,16 +973,3 @@ body[data-layout="compact"] .operation-header{padding-right:40px}
  body[data-layout="compact"] .reset-filters{grid-column:2;grid-row:3}
  body[data-layout="compact"] .library-provider-control{grid-column:1;grid-row:3;width:calc(100vw - 114px);max-width:none}
 }
-
-/* Isolated inner-card layout diagnostic; library flow and FX clones stay owned. */
-body[data-layout="compact"][data-library-view="gallery"] #modList > .mod-row{display:flex;flex-wrap:wrap}
-body[data-layout="compact"][data-library-view="gallery"] #modList > .mod-row > .mod-art{flex:0 0 auto}
-body[data-layout="compact"][data-library-view="gallery"] #modList > .mod-row > .mod-primary,
-body[data-layout="compact"][data-library-view="gallery"] #modList > .mod-row > .mod-version,
-body[data-layout="compact"][data-library-view="gallery"] #modList > .mod-row > .mod-assessment{flex:0 0 100%}
-body[data-layout="compact"][data-library-view="gallery"] #modList > .mod-row > .mod-source{flex:1 1 0;min-width:0}
-body[data-layout="compact"][data-library-view="gallery"] #modList > .mod-row > .inspect-col{flex:0 0 auto}
-@media(max-width:580px){
- body[data-layout="compact"][data-library-view="gallery"] #modList > .mod-row > .mod-source,
- body[data-layout="compact"][data-library-view="gallery"] #modList > .mod-row > .inspect-col{flex:0 0 100%}
-}

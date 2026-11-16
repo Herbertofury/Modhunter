@@ -85,7 +85,7 @@ function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={
    return{ok:true,json:async()=>value};
   }finally{active.set(key,active.get(key)-1)}
  };
- const instrument='window.__RUNTIME__={importJSON,attachNativeTracking,trackPageIntent,trackModPage,getSrc,modHTML,renderWorkshop,sourceLinksPending,requestLiveCatalog,bridgeRequest,scanLive,fastUpdateAll,refreshWorkshop,refreshDownloads,nextWorkshopCandidate,pollLiveBridge,updatePrefs,save,counts,filtered,render,importOfflineCatalog,scheduleSearchRender,analyzePlugins,refreshModHealth,drawInspector,loadModInsights,loadSourceDetails,sourceDetailMod,openFilePicker,closeFilePicker,exportWorkshop,state:()=>({connected:LIVE_CONNECTED,quick:QUICK_RUNNING,profileEpoch:PROFILE_EPOCH}),setRow:(id,value,invalidatePlan=true)=>{markSourceEdit(getRow(id).url,value.url);STORE.rows[id]=value;save(invalidatePlan)},setQuery:q=>{STORE.prefs.query=q;scheduleSearchRender()}};';
+ const instrument='window.__RUNTIME__={setRows,libraryRowCacheOwner,clearLibraryRowCache,rememberFilteredLibraryRows,takeFilteredLibraryRow,cacheMap:()=>LIBRARY_DETACHED_ROWS,importJSON,attachNativeTracking,trackPageIntent,trackModPage,getSrc,modHTML,renderWorkshop,sourceLinksPending,requestLiveCatalog,bridgeRequest,scanLive,fastUpdateAll,refreshWorkshop,refreshDownloads,nextWorkshopCandidate,pollLiveBridge,updatePrefs,save,counts,filtered,render,importOfflineCatalog,scheduleSearchRender,analyzePlugins,refreshModHealth,drawInspector,loadModInsights,loadSourceDetails,sourceDetailMod,openFilePicker,closeFilePicker,exportWorkshop,state:()=>({connected:LIVE_CONNECTED,quick:QUICK_RUNNING,profileEpoch:PROFILE_EPOCH}),setRow:(id,value,invalidatePlan=true)=>{markSourceEdit(getRow(id).url,value.url);STORE.rows[id]=value;save(invalidatePlan)},setQuery:q=>{STORE.prefs.query=q;scheduleSearchRender()}};';
  const source=APP.replace('/*__POWERSHELL__*/','""').replace(/\}\)\(\);\s*$/,instrument+'\n})();');
  vm.createContext(context);vm.runInContext(SOURCES,context,{filename:'source_insights.js'});vm.runInContext(INSIGHTS,context,{filename:'mod_insights.js'});vm.runInContext(source,context,{filename:'app.js'});
  return{context,state,nodes,timers,calls,active,maximum,pending,nativeNavigations,api:context.__RUNTIME__,qa:context.__ARSENAL_QA__,
@@ -723,4 +723,96 @@ test('Watchtower row cache changes with visible age, not wall-clock minute bucke
  const changed=context.watchMarkup(watch);
  assert.notEqual(changed.key,initial.key);
  assert.match(changed.html,/Last success 1 min ago/);
+});
+
+
+// Model only detached-node ownership. Real parsing, reattachment, layout and
+// image-error events are covered by the actual Chromium cases.
+function cacheRowFixture(h,id,{classes=[],image=null,stage=false}={}){
+ const list=h.nodes.get('modList'),names=new Set(['mod-row',...classes]);
+ const row={id:'row-'+id,dataset:{id},parentElement:list,isConnected:true,
+  classList:{contains:name=>names.has(name),get length(){return names.size}},
+  closest:selector=>selector==='.mod-row'?row:null,
+  querySelector:selector=>selector==='.mod-preview-image'?image:selector==='.aether-selection-stage'&&stage?{}:null};
+ const mod=h.qa.getCatalog().items.find(item=>item.id===id);
+ return {key:'mod:'+id,html:h.api.modHTML(mod),node:row};
+}
+function detachCacheEntry(entry){entry.node.parentElement=null;entry.node.isConnected=false;}
+
+test('filtered-row cache reuses exact cold markup and excludes hot or transient ownership',async()=>{
+ const h=harness({count:10});await h.settle();
+ const entries=Array.from({length:10},(_,i)=>cacheRowFixture(h,'item-'+i,
+  i===1?{classes:['native-selected']}:i===2?{classes:['aether-target']}:
+  i===3?{classes:['focus-signal']}:i===4?{stage:true}:i===9?{image:{complete:true,naturalWidth:0,hidden:true}}:{}));
+ const list=h.nodes.get('modList');list.querySelector=()=>entries[5].node;
+ h.context.document.activeElement={closest:()=>entries[6].node};
+ h.context.document.getAnimations=()=>[
+  {playState:'running',effect:{target:entries[7].node}},
+  {playState:'paused',effect:{target:entries[8].node}}];
+ const owner=h.api.libraryRowCacheOwner();
+ h.api.rememberFilteredLibraryRows(list,entries,new Set(),owner);
+ assert.deepEqual(Array.from(h.api.cacheMap().keys()),['mod:item-0']);
+ detachCacheEntry(entries[0]);
+ const restored=h.api.takeFilteredLibraryRow({key:entries[0].key,html:entries[0].html},owner);
+ assert.equal(restored.node,entries[0].node);assert.equal(h.api.cacheMap().size,0);
+ entries[0].node.parentElement=list;entries[0].node.isConnected=true;
+ h.api.rememberFilteredLibraryRows(list,[entries[0]],new Set(),owner);detachCacheEntry(entries[0]);
+ h.api.setRow('item-0',{note:'Changed while excluded',status:'review',url:'https://github.com/cache-fixture/current-source'});
+ const next={key:entries[0].key,html:h.api.modHTML(h.qa.getCatalog().items[0])};
+ assert.notEqual(next.html,entries[0].html);
+ assert.equal(h.api.takeFilteredLibraryRow(next,owner),null,'New source/status/notes markup must be parsed');
+ assert.equal(h.api.cacheMap().size,0);
+});
+
+test('detached image failures, reconnected nodes and locale ownership cannot revive cached rows',async()=>{
+ const h=harness({count:3});await h.settle();
+ const list=h.nodes.get('modList');list.querySelector=()=>null;
+ h.context.document.activeElement=null;h.context.document.getAnimations=()=>[];
+ h.context.document.documentElement={lang:'es'};
+ const image={complete:false,naturalWidth:0,hidden:false};
+ const pending=cacheRowFixture(h,'item-0',{image}),owner=h.api.libraryRowCacheOwner();
+ h.api.rememberFilteredLibraryRows(list,[pending],new Set(),owner);detachCacheEntry(pending);
+ image.complete=true;
+ assert.equal(h.api.takeFilteredLibraryRow(pending,owner),null,'Detached failures must use the normal fresh-image path');
+ const ready=cacheRowFixture(h,'item-1',{image:{complete:true,naturalWidth:96,hidden:false}});
+ h.api.rememberFilteredLibraryRows(list,[ready],new Set(),owner);detachCacheEntry(ready);
+ h.context.document.documentElement.lang='en';
+ assert.notEqual(h.api.libraryRowCacheOwner(),owner);
+ assert.equal(h.api.takeFilteredLibraryRow(ready,h.api.libraryRowCacheOwner()),null,'Detached Spanish labels must not reappear in English');
+ const connected=cacheRowFixture(h,'item-2');
+ h.api.rememberFilteredLibraryRows(list,[connected],new Set(),h.api.libraryRowCacheOwner());
+ assert.equal(h.api.takeFilteredLibraryRow(connected,h.api.libraryRowCacheOwner()),null,'Do not move a node reattached elsewhere');
+ assert.equal(h.api.cacheMap().size,0);
+ const oldContainerEntry=cacheRowFixture(h,'item-2'),currentOwner=h.api.libraryRowCacheOwner();
+ h.api.rememberFilteredLibraryRows(list,[oldContainerEntry],new Set(),currentOwner);detachCacheEntry(oldContainerEntry);
+ assert.equal(h.api.cacheMap().size,1);
+ h.api.setRows({id:'modList',children:[],innerHTML:''},[],'<div class=empty-state>Empty</div>');
+ assert.equal(h.api.cacheMap().size,0,'A new container with the same ID cannot inherit old detached nodes');
+});
+
+test('catalog replacement clears cold rows before epoch changes, including same-profile removals',async()=>{
+ for(const live of [true,false]){
+  const h=harness({live,count:3});await h.settle();
+  const list=h.nodes.get('modList');list.querySelector=()=>null;h.context.document.activeElement=null;
+  const map=h.api.cacheMap(),cleared=[],clear=map.clear.bind(map);
+  map.clear=()=>{cleared.push({epoch:h.api.state().profileEpoch,size:map.size});return clear();};
+  const retained=cacheRowFixture(h,'item-0'),retainedOwner=h.api.libraryRowCacheOwner();
+  h.api.rememberFilteredLibraryRows(list,[retained],new Set(),retainedOwner);detachCacheEntry(retained);
+  if(live)assert.throws(()=>h.qa.setCatalog({profileId:'invalid',items:[],groups:null}),/Invalid profile snapshot/);
+  else assert.throws(()=>h.api.importOfflineCatalog({...catalog('invalid'),offline:false}),/Not a valid local MO2 snapshot/);
+  assert.equal(map.size,1,'Rejected snapshots preserve last-good cached state');
+  assert.equal(h.api.libraryRowCacheOwner(),retainedOwner);
+  for(const next of [{...catalog('a',2),executionEpoch:1},{...catalog('a',2),executionEpoch:2},catalog('b',2),catalog('a',2)]){
+   const entry=cacheRowFixture(h,'item-0'),owner=h.api.libraryRowCacheOwner();
+   h.api.rememberFilteredLibraryRows(list,[entry],new Set(),owner);detachCacheEntry(entry);
+   assert.equal(map.size,1);const epoch=h.api.state().profileEpoch,before=cleared.length;
+   h.state.catalog=next;
+   if(live)await h.qa.setCatalog(next);else h.api.importOfflineCatalog({...next,offline:true});
+   await h.settle();
+   assert.equal(cleared[before].epoch,epoch,'Release nodes before advancing context ownership');
+   assert.equal(cleared[before].size,1);assert.equal(map.size,0);
+   assert.notEqual(h.api.libraryRowCacheOwner(),owner);
+   assert.equal(h.api.takeFilteredLibraryRow(entry,h.api.libraryRowCacheOwner()),null);
+  }
+ }
 });

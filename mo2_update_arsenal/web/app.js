@@ -28,7 +28,8 @@ let APPLIED_FX_KEY='';
 let APPLIED_LIBRARY_APPEARANCE=null,LIBRARY_LAYOUT_CHANGE=null,LIBRARY_LAYOUT_GENERATION=0;
 let SOURCE_EDIT_REVISION=0,SOURCE_SYNCED_REVISION=0;
 const BRIDGE_READS=new Map(),SOURCE_CACHE=new WeakMap(),SEARCH_CACHE=new WeakMap(),HTML_CACHE=new WeakMap();
-const ROW_RENDER_CACHE=new WeakMap();
+const ROW_RENDER_CACHE=new WeakMap(),LIBRARY_DETACHED_ROWS=new Map();
+let LIBRARY_ROW_CACHE_OWNER='',LIBRARY_ROW_CACHE_LIST=null;
 const MOD_MARKUP_CACHE=new WeakMap(),WORKSHOP_MARKUP_CACHE=new WeakMap();
 const INSIGHT_REQUESTS=new Map();
 const SOURCE_DETAIL_READS=new WeakMap(),SOURCE_DETAILS=new WeakMap();
@@ -185,13 +186,53 @@ function replaceRenderedRow(previous,entry,template){
  if(action){const control=[...next.querySelectorAll('['+action+']')].find(el=>el.getAttribute(action)===actionValue);if(control&&!control.disabled)control.focus({preventScroll:true});}
  return {...entry,node:next};
 }
+// Retain only cold rows removed by the user's current filters or collapsed
+// chapters. These nodes have no parent; every matching row is still rendered.
+// A catalog/profile replacement releases this cache before changing context.
+function libraryRowCacheOwner(){return PROFILE_EPOCH+':'+CATALOG_RENDER_REVISION+':'+(DATA.profileId||DATA.catalogId||'')+':'+(document.documentElement?.lang||'')}
+function clearLibraryRowCache(){LIBRARY_DETACHED_ROWS.clear();LIBRARY_ROW_CACHE_OWNER='';LIBRARY_ROW_CACHE_LIST=null;}
+function coldLibraryRow(entry){
+ if(!entry.key.startsWith('mod:'))return false;
+ const id=entry.key.slice(4),mod=ITEM_MAP.get(id),row=entry.node;
+ if(!mod||!row||row.id!=='row-'+id||row.dataset.id!==id)return false;
+ if(id===focusedRowId||id===NATIVE_SELECTED||id===CONTEXT_MOD||id===openedId)return false;
+ const status=classFor(mod),classes=row.classList;
+ if(!classes.contains('mod-row')||classes.length!==(status?2:1)||(status&&!classes.contains(status)))return false;
+ // Timed selection children can briefly outlive their target class. Never
+ // revive them or carry a pending animation into a restored search result.
+ if(row.querySelector('.aether-selection-stage'))return false;
+ const image=row.querySelector('.mod-preview-image');
+ // Detached image errors cannot reach the live list's capture listener.
+ // Reparse failures on restoration, preserving the normal retry/error path.
+ if(image&&(image.hidden||(image.complete&&!image.naturalWidth)))return false;
+ return true;
+}
+function rememberFilteredLibraryRows(list,previous,wanted,owner){
+ const removed=previous.filter(entry=>!wanted.has(entry.key)&&entry.node.parentElement===list&&coldLibraryRow(entry));
+ if(!removed.length)return;
+ const blocked=new Set(),active=document.activeElement?.closest?.('.mod-row'),hovered=list.querySelector(':scope > .mod-row:hover');
+ if(active)blocked.add(active);if(hovered)blocked.add(hovered);
+ for(const animation of document.getAnimations?.()||[]){
+  if(['finished','idle'].includes(animation.playState)&&!animation.pending)continue;
+  const target=animation.effect?.target?.closest?.('.mod-row');if(target?.parentElement===list)blocked.add(target);
+ }
+ for(const entry of removed)if(!blocked.has(entry.node))LIBRARY_DETACHED_ROWS.set(entry.key,{...entry,owner});
+}
+function takeFilteredLibraryRow(entry,owner){
+ const prior=LIBRARY_DETACHED_ROWS.get(entry.key);LIBRARY_DETACHED_ROWS.delete(entry.key);
+ if(!prior||prior.owner!==owner||prior.html!==entry.html||prior.node.isConnected||!coldLibraryRow(prior))return null;
+ return {key:entry.key,html:entry.html,node:prior.node};
+}
 function setRows(node,entries,empty,preserveMoves=false){
  if(!node)return;
- const previous=ROW_RENDER_CACHE.get(node);
+ const previous=ROW_RENDER_CACHE.get(node),library=node.id==='modList';
+ const owner=library?libraryRowCacheOwner():'',ownsPrevious=library&&LIBRARY_ROW_CACHE_LIST===node&&LIBRARY_ROW_CACHE_OWNER===owner;
+ if(library&&!ownsPrevious)LIBRARY_DETACHED_ROWS.clear();
  // Download status changes can reorder tickets. Retain their controls through
  // moves as well as replacements, so a background poll cannot steal focus.
  const currentChildren=previous?[...node.children]:null;
  const intact=previous&&currentChildren.length===previous.length&&previous.every((entry,i)=>entry.node===currentChildren[i]);
+ if(library&&previous&&!intact)clearLibraryRowCache();
  if(preserveMoves&&entries.length&&intact&&new Set(entries.map(entry=>entry.key)).size===entries.length){
   const byKey=new Map(previous.map(entry=>[entry.key,entry])),template=document.createElement('template');
   const next=entries.map(entry=>{
@@ -204,27 +245,31 @@ function setRows(node,entries,empty,preserveMoves=false){
   for(const entry of next){if(entry.node!==cursor)node.insertBefore(entry.node,cursor);cursor=entry.node.nextElementSibling;}
   for(const entry of byKey.values())entry.node.remove();
   if(focused?.isConnected&&node.contains(focused)&&document.activeElement!==focused)focused.focus({preventScroll:true});
-  ROW_RENDER_CACHE.set(node,next);HTML_CACHE.delete(node);return;
+  ROW_RENDER_CACHE.set(node,next);HTML_CACHE.delete(node);if(library){LIBRARY_ROW_CACHE_OWNER=owner;LIBRARY_ROW_CACHE_LIST=node;}return;
  }
  if(intact&&previous.length===entries.length&&entries.every((entry,i)=>entry.key===previous[i].key)){
   const changed=[];
   for(let i=0;i<entries.length;i++)if(entries[i].html!==previous[i].html)changed.push(i);
-  if(!changed.length)return;
+  if(!changed.length){if(library){LIBRARY_ROW_CACHE_OWNER=owner;LIBRARY_ROW_CACHE_LIST=node;}return;}
   if(changed.length<=Math.max(8,entries.length/3)){
    const template=document.createElement('template');
    for(const i of changed){
     previous[i]=replaceRenderedRow(previous[i],entries[i],template);
    }
-   HTML_CACHE.delete(node);
+   HTML_CACHE.delete(node);if(library){LIBRARY_ROW_CACHE_OWNER=owner;LIBRARY_ROW_CACHE_LIST=node;}
    return;
   }
  }
- // Search and sort retain the actual surviving record nodes, including loaded
- // thumbnails and keyboard focus. A new profile still rebuilds changed markup.
- // Filtered-out records are not kept in an offscreen/virtualized container.
- if(intact&&entries.length&&node.id==='modList'){
-  const byKey=new Map(previous.map(entry=>[entry.key,entry]));
-  const next=entries.map(entry=>{const prior=byKey.get(entry.key);return prior?.html===entry.html?prior:{...entry,node:null}});
+ // Search/sort retain surviving nodes. Cold explicitly filtered rows can
+ // return without reparsing; exact new markup and context ownership gate reuse.
+ // An empty-result view may restore its detached rows without a visible index.
+ if(library&&(intact||(!previous&&ownsPrevious&&LIBRARY_DETACHED_ROWS.size))){
+  const priorEntries=previous||[],byKey=new Map(priorEntries.map(entry=>[entry.key,entry])),wanted=new Set(entries.map(entry=>entry.key));
+  const next=entries.map(entry=>{const prior=byKey.get(entry.key);
+   if(prior?.html===entry.html){LIBRARY_DETACHED_ROWS.delete(entry.key);return prior;}
+   return takeFilteredLibraryRow(entry,owner)||{...entry,node:null};
+  });
+  if(ownsPrevious&&intact)rememberFilteredLibraryRows(node,priorEntries,wanted,owner);
   if(next.some(entry=>entry.node)){
    const missing=next.filter(entry=>!entry.node);
    if(missing.length){
@@ -237,8 +282,8 @@ function setRows(node,entries,empty,preserveMoves=false){
    // changed. Switching list to a flat priority gallery usually removes just
    // chapter headers; detaching all surviving cards would force needless work.
    const focused=document.activeElement,retained=new Set(next.map(entry=>entry.node));
-   const removed=previous.filter(entry=>!retained.has(entry.node));
-   if(missing.length+removed.length>Math.max(32,Math.max(previous.length,next.length)/3)){
+   const removed=priorEntries.filter(entry=>!retained.has(entry.node)),added=next.filter(entry=>entry.node.parentElement!==node).length;
+   if(added+removed.length>Math.max(32,Math.max(priorEntries.length,next.length)/3)){
     // A large search contraction/expansion is one DOM replacement, retaining
     // surviving nodes, rather than thousands of individual removal calls.
     const fragment=document.createDocumentFragment();for(const entry of next)fragment.append(entry.node);node.replaceChildren(fragment);
@@ -248,7 +293,7 @@ function setRows(node,entries,empty,preserveMoves=false){
     for(const entry of next){if(entry.node!==cursor)node.insertBefore(entry.node,cursor);cursor=entry.node.nextElementSibling;}
    }
    if(focused?.isConnected&&node.contains(focused)&&document.activeElement!==focused)focused.focus({preventScroll:true});
-   ROW_RENDER_CACHE.set(node,next);HTML_CACHE.delete(node);return;
+   ROW_RENDER_CACHE.set(node,next);HTML_CACHE.delete(node);if(library){LIBRARY_ROW_CACHE_OWNER=owner;LIBRARY_ROW_CACHE_LIST=node;}return;
   }
  }
  if(previous)HTML_CACHE.delete(node);
@@ -257,6 +302,7 @@ function setRows(node,entries,empty,preserveMoves=false){
  // Do not retain an index if a host extension altered the generated structure.
  if(entries.length&&children.length===entries.length)ROW_RENDER_CACHE.set(node,entries.map((entry,i)=>({...entry,node:children[i]})));
  else ROW_RENDER_CACHE.delete(node);
+ if(library){LIBRARY_ROW_CACHE_OWNER=owner;LIBRARY_ROW_CACHE_LIST=node;}
 }
 function sourceLinksPending(){return BRIDGE.active&&SOURCE_EDIT_REVISION!==SOURCE_SYNCED_REVISION}
 function markSourceEdit(previous,next){if(txt(previous)!==txt(next)){PROVIDER_FILTER_KEY='';if(BRIDGE.active)SOURCE_EDIT_REVISION++;}}
@@ -935,6 +981,7 @@ async function requestLiveCatalog(method='GET',path='snapshot',body,fresh=false)
 }
 function activateLiveCatalog(c){
  if(!c||!Array.isArray(c.items)||!Array.isArray(c.groups)||!c.profileId)throw Error('Invalid profile snapshot');
+ clearLibraryRowCache();
  closeModContextMenu(false);
  const newProfile=LIVE_CATALOG?.profileId!==c.profileId;
  const newExecutionContext=newProfile||(Number.isSafeInteger(LIVE_CATALOG?.executionEpoch)&&Number.isSafeInteger(c.executionEpoch)&&LIVE_CATALOG.executionEpoch!==c.executionEpoch);
@@ -1701,6 +1748,7 @@ function importOfflineCatalog(c){
  if(BRIDGE.active)throw Error('Disconnect live MO2 before importing a local profile');
  if(!c||c.offline!==true||!c.profileId||!Array.isArray(c.items)||!Array.isArray(c.groups))
   throw Error('Not a valid local MO2 snapshot');
+ clearLibraryRowCache();
  closeModContextMenu(false);
  const previousProfile=DATA.profileId;
  if(SAVE_TIMER!==null)save();cancelLibraryLayoutChange();PROFILE_EPOCH++;CATALOG_REQUEST++;WORKSHOP_REQUEST++;GAME_REQUEST++;CATALOG_RENDER_REVISION++;LOCAL_PLAN_CACHE=null;

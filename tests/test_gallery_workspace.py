@@ -449,6 +449,142 @@ class GalleryWorkspaceTests(unittest.TestCase):
         self.assertTrue(self.page.locator('#row-item-0 .inspect-btn').is_visible())
         self.assertIn('No preview supplied', self.page.locator('#row-item-0').inner_text())
 
+    def test_cold_filtered_rows_restore_identity_order_after_empty_results_and_collapse(self):
+        self.open(count=257, group_count=3)
+        self.page.evaluate("window.__COLD_ROWS__=[...document.querySelectorAll('#modList > .mod-row')]")
+        self.page.locator('#search').fill('"Unique Fixture 256"')
+        self.page.wait_for_function("document.querySelectorAll('#modList > .mod-row').length===1")
+        self.assertTrue(self.page.evaluate("document.getElementById('row-item-256')===__COLD_ROWS__.find(row=>row.dataset.id==='item-256')"))
+        self.assertTrue(self.page.evaluate("__COLD_ROWS__.filter(row=>row.dataset.id!=='item-256').every(row=>!row.isConnected)"))
+        self.page.locator('#search').fill('')
+        self.page.wait_for_function("document.querySelectorAll('#modList > .mod-row').length===257")
+        self.assertTrue(self.page.evaluate("__COLD_ROWS__.every(row=>document.getElementById(row.id)===row)"))
+        self.page.locator('#search').fill('no-matching-cache-record')
+        self.page.wait_for_function("document.querySelectorAll('#modList > .mod-row').length===0")
+        self.assertTrue(self.page.locator('#modList .empty-state').is_visible())
+        self.assertTrue(self.page.evaluate('__COLD_ROWS__.every(row=>!row.isConnected)'))
+        self.page.locator('#search').fill('')
+        self.page.wait_for_function("document.querySelectorAll('#modList > .mod-row').length===257")
+        self.assertTrue(self.page.evaluate("__COLD_ROWS__.every(row=>document.getElementById(row.id)===row)"))
+        self.page.locator('#section-group-0').click()
+        self.assertEqual(self.page.locator('#modList > .mod-row').count(), 171)
+        self.assertTrue(self.page.evaluate("__COLD_ROWS__.filter(row=>Number(row.dataset.id.slice(5))%3===0).every(row=>!row.isConnected)"))
+        self.page.locator('#section-group-0').click()
+        self.assertTrue(self.page.evaluate("""() => {
+          const rows=[...document.querySelectorAll('#modList > .mod-row')];
+          return rows.length===257&&rows.every((row,index)=>row===__COLD_ROWS__[index]&&
+            row.getBoundingClientRect().width>0&&row.getBoundingClientRect().height>0&&getComputedStyle(row).contentVisibility==='visible');
+        }"""))
+
+    def test_filtered_cache_uses_new_notes_status_and_catalog_ownership(self):
+        self.open(count=12)
+        self.page.evaluate("window.__METADATA_ROWS__=[...document.querySelectorAll('#modList > .mod-row')]")
+        self.page.locator('#search').fill('"Unique Fixture 11"')
+        self.page.on('dialog', lambda dialog: dialog.accept())
+        backup={'catalogId':'profile-a','rows':{'item-0':{'note':'Changed while this row was filtered out','status':'review','favorite':True}}}
+        self.page.locator('#importFile').set_input_files({'name':'cache-progress.json','mimeType':'application/json','buffer':json.dumps(backup).encode()})
+        self.page.wait_for_function("__ARSENAL_QA__.verifyRow('item-0').state.note==='Changed while this row was filtered out'")
+        self.page.locator('#search').fill('')
+        self.assertTrue(self.page.evaluate("document.getElementById('row-item-0')!==__METADATA_ROWS__[0]"))
+        self.assertTrue(self.page.evaluate("document.getElementById('row-item-1')===__METADATA_ROWS__[1]"))
+        self.assertIn('Changed while this row was filtered out', self.page.locator('#row-item-0').inner_text())
+        self.assertIn('needs-review', self.page.locator('#row-item-0').get_attribute('class'))
+        self.assertIn('active', self.page.locator('#row-item-0 .favorite-btn').get_attribute('class'))
+        self.page.locator('#search').fill('"Unique Fixture 11"')
+        self.page.evaluate("""async()=>{
+          const next=structuredClone(__RESP__.catalog);next.executionEpoch=9;
+          next.items=next.items.filter(item=>item.id!=='item-1');next.groups[0].count=11;
+          __RESP__.catalog=next;__RESP__.generation++;await __ARSENAL_QA__.setCatalog(next);
+        }""")
+        self.page.locator('#search').fill('')
+        self.assertEqual(self.page.locator('#modList > .mod-row').count(), 11)
+        self.assertEqual(self.page.locator('#row-item-1').count(), 0)
+        self.assertTrue(self.page.evaluate("document.getElementById('row-item-2')!==__METADATA_ROWS__[2]"))
+        self.assertTrue(self.page.evaluate("__METADATA_ROWS__[1].isConnected===false"))
+
+    def test_filtered_cache_does_not_revive_selected_fx_or_steal_surviving_focus(self):
+        self.page.emulate_media(reduced_motion='no-preference')
+        self.open(count=12)
+        result=self.page.evaluate("""() => {
+          const intensity=document.getElementById('fxIntensity');intensity.value='subtle';
+          intensity.dispatchEvent(new Event('change',{bubbles:true}));
+          const row=document.getElementById('row-item-0');window.__OLD_HOT_ROW__=row;
+          window.__OTHER_COLD_ROW__=document.getElementById('row-item-1');
+          AetherFX.select(row,{force:true});
+          const selected=row.classList.contains('aether-target');
+          const stage=!!row.querySelector('.aether-selection-stage');
+          const search=document.getElementById('search');search.value='"Unique Fixture 11"';
+          search.dispatchEvent(new Event('input',{bubbles:true}));
+          return {selected,stage,detached:!row.isConnected};
+        }""")
+        self.assertTrue(result['selected'], result)
+        self.assertTrue(result['stage'], result)
+        self.assertTrue(result['detached'], result)
+        self.page.evaluate("document.querySelector('#row-item-11 [data-act=inspect]').click()")
+        self.page.locator('#drawerClose').click()
+        self.page.locator('#row-item-11 [data-act=inspect]').focus()
+        self.page.evaluate("const search=document.getElementById('search');search.value='';search.dispatchEvent(new Event('input',{bubbles:true}))")
+        self.assertEqual(self.page.locator('#modList > .mod-row').count(), 12)
+        self.assertTrue(self.page.evaluate("document.getElementById('row-item-0')!==__OLD_HOT_ROW__"))
+        self.assertTrue(self.page.evaluate("document.getElementById('row-item-1')===__OTHER_COLD_ROW__"))
+        self.assertTrue(self.page.evaluate("document.activeElement===document.querySelector('#row-item-11 [data-act=inspect]')"))
+        self.assertFalse(self.page.locator('#row-item-0').evaluate("row=>row.matches('.aether-target,.native-selected,.focus-signal,.shot-hit,.aether-shake,.aether-hover-anchored')||!!row.querySelector('.aether-selection-stage')"))
+        self.page.wait_for_function("!__OLD_HOT_ROW__.querySelector('.aether-selection-stage')")
+        self.assertFalse(self.page.locator('#row-item-0').evaluate("row=>!!row.querySelector('.aether-selection-stage')"))
+
+    def test_image_failure_while_detached_uses_fresh_image_and_visible_fallback(self):
+        self.open(count=12)
+        url='https://cdn.modrinth.com/data/cache-fixture/pending.png'
+        requests=[]
+        def pending_image(route):
+            requests.append(route)
+            if len(requests)>1:
+                route.fulfill(status=404,content_type='text/plain',body='Fixture missing image',headers={'Cache-Control':'no-store'})
+        self.page.route(url,pending_image)
+        with self.page.expect_request(url):
+            self.page.evaluate("""async url=>{
+              const item=__RESP__.catalog.items[1];item.update.thumbnailUrl=url;item.update.thumbnailKind='icon';
+              await __ARSENAL_QA__.setCatalog(structuredClone(__RESP__.catalog));
+            }""",url)
+        self.assertEqual(len(requests),1)
+        self.page.evaluate("window.__FAILED_CACHED_ROW__=document.getElementById('row-item-1');window.__PENDING_IMAGE__=__FAILED_CACHED_ROW__.querySelector('img');window.__GOOD_CACHED_ROW__=document.getElementById('row-item-0')")
+        self.assertFalse(self.page.evaluate('__PENDING_IMAGE__.complete'))
+        self.page.locator('#search').fill('"Unique Fixture 11"')
+        self.assertFalse(self.page.evaluate('__FAILED_CACHED_ROW__.isConnected'))
+        requests[0].fulfill(status=404,content_type='text/plain',body='Fixture missing image',headers={'Cache-Control':'no-store'})
+        self.page.wait_for_function('__PENDING_IMAGE__.complete&&__PENDING_IMAGE__.naturalWidth===0')
+        self.assertFalse(self.page.evaluate('__PENDING_IMAGE__.hidden'),'The detached event cannot reach the list capture handler')
+        self.page.locator('#search').fill('')
+        self.page.wait_for_function("document.querySelector('#row-item-1 .mod-preview-image')?.hidden===true")
+        self.assertGreaterEqual(len(requests),2)
+        self.assertTrue(self.page.evaluate("document.getElementById('row-item-1')!==__FAILED_CACHED_ROW__"))
+        self.assertTrue(self.page.evaluate("document.getElementById('row-item-0')===__GOOD_CACHED_ROW__"))
+        self.assertEqual(self.page.locator('#modList > .mod-row').count(),12)
+        self.assertIn('No preview supplied',self.page.locator('#row-item-1').inner_text())
+        self.assertTrue(self.page.locator('#row-item-1 [data-act=inspect]').is_visible())
+
+    def test_locale_change_discards_translated_detached_rows(self):
+        self.open(count=12)
+        # Execute the shipped translator, including its real connected-DOM
+        # observer and English fast path. No translation strings are mocked.
+        self.page.add_script_tag(content=(harness.ROOT/'native/ui/locale-catalogs.js').read_text())
+        self.page.add_script_tag(content=(harness.ROOT/'native/ui/preferences.js').read_text())
+        self.page.evaluate("ModhunterI18n.apply({locale:'es',theme:'dark'})")
+        expected=self.page.evaluate("ModhunterI18n.translate('Details')")
+        self.assertNotEqual(expected,'Details')
+        self.page.wait_for_function("text=>document.querySelector('#row-item-0 .inspect-btn').textContent===text",arg=expected)
+        self.page.evaluate("window.__SPANISH_CACHED_ROW__=document.getElementById('row-item-0')")
+        self.page.locator('#search').fill('"Unique Fixture 11"')
+        self.assertFalse(self.page.evaluate('__SPANISH_CACHED_ROW__.isConnected'))
+        self.page.evaluate("ModhunterI18n.apply({locale:'en'})")
+        self.page.wait_for_function("document.documentElement.lang==='en'&&document.querySelector('#row-item-11 .inspect-btn').textContent==='Details'")
+        self.assertEqual(self.page.evaluate("__SPANISH_CACHED_ROW__.querySelector('.inspect-btn').textContent"),expected)
+        self.page.locator('#search').fill('')
+        self.assertEqual(self.page.locator('#modList > .mod-row').count(),12)
+        self.assertTrue(self.page.evaluate("document.getElementById('row-item-0')!==__SPANISH_CACHED_ROW__"))
+        self.assertEqual(self.page.locator('#row-item-0 .inspect-btn').text_content(),'Details')
+        self.assertTrue(self.page.locator('#row-item-0 .inspect-btn').get_attribute('aria-label').startswith('Inspect '))
+
     def test_offline_connection_details_are_actionable(self):
         # The public standalone file must describe its state without a native host.
         self.context.route('http://standalone.fixture.test/', lambda route: route.fulfill(content_type='text/html', body=self.html))

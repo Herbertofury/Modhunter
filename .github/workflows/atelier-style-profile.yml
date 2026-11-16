@@ -3,14 +3,14 @@ on:
   workflow_dispatch:
   push:
     branches: ['diagnostics/atelier-style']
-    paths: ['mo2_update_arsenal/web/atelier.css', 'tests/visual_inner_card_flex_qa.py', 'tests/visual_surface_comparison.py', '.github/workflows/atelier-style-profile.yml']
+    paths: ['mo2_update_arsenal/web/app.js', 'tests/frontend_runtime.test.cjs', 'tests/test_gallery_workspace.py', 'tests/visual_surface_comparison.py', '.github/workflows/atelier-style-profile.yml']
 permissions:
   contents: read
 concurrency:
   group: modhunter-style-profile-${{ github.sha }}
   cancel-in-progress: true
 jobs:
-  inner-card-flex:
+  cold-row-cache:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -22,51 +22,62 @@ jobs:
           node-version: '22'
       - name: Prepare unchanged engine, pinned fonts and runtime contracts
         run: |
+          set -o pipefail
           git fetch --no-tags origin 18883b32e0683dad8aed1dc87c6fe9ec577e12f2
           python3 -m venv /tmp/modhunter-surface
           /tmp/modhunter-surface/bin/pip install -q playwright==1.57.0 Pillow==13.0.0
           test -x /usr/local/share/chromium/chrome-linux/chrome
           /tmp/modhunter-surface/bin/python tests/prepare_ci_fonts.py --output native/target/surface-proof/ci-fonts.json
-          node --test tests/frontend_runtime.test.cjs
+          node --test tests/frontend_runtime.test.cjs | tee native/target/surface-proof/frontend-runtime.tap
           /tmp/modhunter-surface/bin/python tests/visual_surface_comparison.py --self-test
-          /tmp/modhunter-surface/bin/python tests/visual_inner_card_flex_qa.py --self-test
-      - name: Verify existing actual Gallery interactions
-        timeout-minutes: 2
+      - name: Verify all nineteen actual Gallery and cache lifecycle cases
+        timeout-minutes: 3
         env:
           MODHUNTER_REQUIRE_BROWSER: '1'
-        run: PYTHONPATH=. /tmp/modhunter-surface/bin/python -m unittest discover -s tests -p test_gallery_workspace.py -v
-      - name: Compare complete card content at all widths, densities and groupings
-        id: layout
-        timeout-minutes: 4
         run: |
-          PYTHONPATH=. /tmp/modhunter-surface/bin/python tests/visual_inner_card_flex_qa.py --control-ref 18883b32e0683dad8aed1dc87c6fe9ec577e12f2 --executable-path /usr/local/share/chromium/chrome-linux/chrome --font-receipt native/target/surface-proof/ci-fonts.json --output native/target/surface-proof/preflight
-      - name: Measure complete library only after exact semantic and geometry proof
-        if: ${{ !cancelled() && (steps.layout.outcome == 'success' || steps.layout.outcome == 'failure') }}
+          PYTHONPATH=tests /tmp/modhunter-surface/bin/python - <<'PYCODE'
+          import hashlib, json, os, subprocess, sys, time, unittest
+          from pathlib import Path
+          import test_gallery_workspace as gallery
+          output=Path('native/target/surface-proof/gallery'); output.mkdir(parents=True,exist_ok=True)
+          paths=['mo2_update_arsenal/web/app.js','tests/frontend_runtime.test.cjs','tests/test_gallery_workspace.py']
+          git=lambda *args: subprocess.check_output(['git',*args],text=True).strip()
+          report={'sourceCommit':git('rev-parse','HEAD'),'sourceStatusAtStart':git('status','--porcelain'),
+              'sources':{p:{'bytes':Path(p).stat().st_size,'sha256':hashlib.sha256(Path(p).read_bytes()).hexdigest()} for p in paths},
+              'browserVersions':[], 'started':[], 'passed':[], 'expectedCases':19}
+          assert report['sourceCommit']==os.environ['GITHUB_SHA'] and report['sourceStatusAtStart']==''
+          class Result(unittest.TextTestResult):
+              def startTest(self,test):
+                  report['started'].append(test.id())
+                  version=test.browser.version
+                  if version not in report['browserVersions']: report['browserVersions'].append(version)
+                  super().startTest(test)
+              def addSuccess(self,test):
+                  report['passed'].append(test.id()); super().addSuccess(test)
+          suite=unittest.defaultTestLoader.loadTestsFromTestCase(gallery.GalleryWorkspaceTests)
+          assert suite.countTestCases()==19
+          started=time.monotonic()
+          with (output/'unittest.log').open('w') as log:
+              result=unittest.TextTestRunner(stream=log,verbosity=2,resultclass=Result).run(suite)
+          report.update(testsRun=result.testsRun,elapsedSeconds=time.monotonic()-started,
+              failures=[str(t) for t,_ in result.failures],errors=[str(t) for t,_ in result.errors],
+              skipped=[str(t) for t,_ in result.skipped],expectedFailures=[str(t) for t,_ in result.expectedFailures],
+              unexpectedSuccesses=[str(t) for t in result.unexpectedSuccesses],
+              sourceStatusAtEnd=git('status','--porcelain'),sourceCommitAtEnd=git('rev-parse','HEAD'))
+          report['ok']=result.wasSuccessful() and result.testsRun==19 and len(report['passed'])==19 and not result.skipped and not result.expectedFailures and not result.unexpectedSuccesses and report['sourceStatusAtEnd']=='' and report['sourceCommitAtEnd']==report['sourceCommit']
+          (output/'browser-cases.json').write_text(json.dumps(report,indent=2)+'\n')
+          print((output/'unittest.log').read_text()); print(json.dumps(report,indent=2))
+          sys.exit(0 if report['ok'] else 1)
+          PYCODE
+      - name: Measure all 11207 records in four fresh contexts
         timeout-minutes: 12
         run: |
-          # Retain strict pixel failure while collecting otherwise valid timing.
-          PYTHONPATH=tests /tmp/modhunter-surface/bin/python - <<'PYCODE'
-          import json, os
-          from pathlib import Path
-          r=json.loads(Path('native/target/surface-proof/preflight/inner-card-flex-preflight.json').read_text())
-          assert r.get('semanticComparisonsPassed') is True and r.get('sourceDirty') is False
-          assert r.get('sourceStatusAtStart') == [] and r.get('sourceStatusAtEnd') == []
-          assert r.get('candidateCommit') == os.environ['GITHUB_SHA'] and len(r['states']) == 24
-          candidates=[s for s in r['states'] if s.get('variant') == 'candidate']
-          assert len(candidates) == 12 and all(s.get('semanticComparisonPassed') is True for s in candidates)
-          if r.get('ok') is True:
-              assert r['strictPixelFailures'] == [] and r['errors'] == []
-          else:
-              assert r.get('ok') is False and r['phase'] == 'complete-with-strict-pixel-failures' and r['strictPixelFailures']
-              assert len(r['errors']) == 1 and 'Strict zero-tolerance pixels differed after all complete layout cases' in r['errors'][0]
-          print('Exact geometry and semantic preflight completed; strict pixel status unchanged')
-          PYCODE
-          PYTHONPATH=. /tmp/modhunter-surface/bin/python tests/visual_surface_comparison.py --mode inner-card-flex --output native/target/surface-proof/comparison --control-ref 18883b32e0683dad8aed1dc87c6fe9ec577e12f2 --executable-path /usr/local/share/chromium/chrome-linux/chrome
-      - name: Preserve all complete-layout and timing evidence
+          PYTHONPATH=. /tmp/modhunter-surface/bin/python tests/visual_surface_comparison.py --mode cold-row-cache --output native/target/surface-proof/comparison --control-ref 18883b32e0683dad8aed1dc87c6fe9ec577e12f2 --executable-path /usr/local/share/chromium/chrome-linux/chrome
+      - name: Preserve complete interaction, geometry, pixel and timing evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Modhunter-Inner-Card-Flex-Proof
+          name: Modhunter-Cold-Row-Cache-Proof
           path: native/target/surface-proof/
           if-no-files-found: error
           retention-days: 90

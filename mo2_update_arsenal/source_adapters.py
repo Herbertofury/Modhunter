@@ -16,7 +16,7 @@ from urllib.parse import unquote, urlsplit
 
 from .plugin_intelligence import RustAuditRunner
 
-PUBLIC_API_PROVIDERS = frozenset({"github", "gitlab", "modrinth", "thunderstore"})
+PUBLIC_API_PROVIDERS = frozenset({"github", "gitlab", "modrinth", "thunderstore", "modhold"})
 REVIEW_COMPATIBILITY_STATES = frozenset({"mismatch", "incompatible", "unsupported", "game-mismatch", "context-required", "community-required", "deprecated"})
 ARCHIVE_SUFFIXES = (".zip", ".7z", ".rar")
 CACHE_LIMIT = 4_194_304
@@ -49,7 +49,7 @@ def preview_image_url(raw, provider: str) -> str:
 
 # Capabilities describe this integration, never a claim about an account session.
 PROVIDER_LABELS = {
-    "nexus": "Nexus Mods", "github": "GitHub", "gitlab": "GitLab",
+    "modhold": "Modhold", "nexus": "Nexus Mods", "github": "GitHub", "gitlab": "GitLab",
     "modrinth": "Modrinth", "thunderstore": "Thunderstore", "curseforge": "CurseForge",
     "patreon": "Patreon", "loverslab": "LoversLab", "moddb": "Mod DB",
     "bethesda": "Bethesda Creations", "dwemer": "Dwemer Mods", "modding-guild": "Modding Guild",
@@ -72,9 +72,13 @@ def adapter_capabilities(provider: str, *, helper_available=True) -> dict:
     elif provider in PUBLIC_API_PROVIDERS:
         mode, auth, check, download = "public-api", "none", True, True
         reason = "Checks the provider's public release API; exact identity, compatible context and an installable archive remain required."
-        if not helper_available and provider in {"modrinth", "thunderstore"}:
+        if not helper_available and provider in {"modrinth", "thunderstore", "modhold"}:
             check = download = False
             reason = "Install the matching Modhunter Rust helper to enable this provider's public API checks."
+        if provider == "modhold":
+            download = False
+            if helper_available:
+                reason = "Anonymous public version/file metadata only. Downloads require a separate player grant and are not enabled."
     elif provider == "curseforge":
         mode, auth = "api-key", "api-key"
         reason = "CurseForge API access requires a provider-issued key; this build retains the original page and does not claim a configured API session."
@@ -350,3 +354,4 @@ def compact_source_update(update: dict) -> dict:
     result["dependencyCount"] = len(update.get("dependencies") or [])
     result["detailsAvailable"] = True
     return result
+

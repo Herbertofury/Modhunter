@@ -30,7 +30,7 @@ from .source_adapters import (RustSourceRunner, adapter_capabilities, normalize_
 LOG = logging.getLogger(__name__)
 
 PROVIDER_HOSTS = {
-    "nexusmods.com": "nexus", "github.com": "github",
+    "modholdmods.com": "modhold", "nexusmods.com": "nexus", "github.com": "github",
     "gitlab.com": "gitlab", "patreon.com": "patreon",
     "loverslab.com": "loverslab", "moddb.com": "moddb",
     "curseforge.com": "curseforge", "creations.bethesda.net": "bethesda",
@@ -48,7 +48,7 @@ PROVIDER_HOSTS = {
 }
 ARCHIVE_SUFFIXES = (".zip", ".7z", ".rar")
 PRIVATE_QUERY_KEYS = frozenset({
-    "token", "access_token", "refresh_token", "id_token", "apikey", "api_key", "api-key", "key",
+    "modhold_key", "token", "access_token", "refresh_token", "id_token", "apikey", "api_key", "api-key", "key",
     "auth", "auth_token", "private_token", "oauth_token", "download_key", "authorization", "password", "passwd", "secret", "client_secret", "session", "sessionid",
     "session_id", "sid", "signature", "sig", "fbclid", "gclid", "dclid", "msclkid", "igshid",
     "ref_src", "ref_url",
@@ -442,3 +442,4 @@ class SourceScanner:
         return {"records": {}, "itemRecords": output, "mode": "sources", "sourceEngine": "python-fallback",
                 "sourceProjects": len(grouped), "manualSources": manual_count,
                 "queried": completed, "errors": list(dict.fromkeys(errors)), "checkedAt": checked_at}
+

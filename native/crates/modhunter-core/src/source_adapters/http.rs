@@ -820,6 +820,29 @@ fn cache_document(url: &str, value: &Value) -> Value {
             result["gallery"] = list(gallery, &["url", "title"]);
         }
         result
+    } else if url.starts_with("https://modholdmods.com/api/v1/mods/") {
+        if !value.is_object() {
+            return Value::Null;
+        }
+        let mut result = fields(
+            value,
+            &["id", "name", "version", "game", "page", "summary", "cover"],
+        );
+        for field in ["page", "cover"] {
+            result[field] = value
+                .get(field)
+                .and_then(Value::as_str)
+                .and_then(super::identity::canonical_source_url)
+                .map(Value::String)
+                .unwrap_or(Value::Null);
+        }
+        if let Some(author) = value.get("author") {
+            result["author"] = fields(author, &["handle"]);
+        }
+        if let Some(files) = value.get("files") {
+            result["files"] = list(files, &["id", "kind", "name", "version", "size", "sha256"]);
+        }
+        result
     } else if url.starts_with("https://thunderstore.io/") {
         let mut result = fields(
             value,

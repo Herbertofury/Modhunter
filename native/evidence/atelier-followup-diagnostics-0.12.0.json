@@ -1,0 +1,1311 @@
+{
+  "schemaVersion": 1,
+  "title": "Atelier 0.12.0 follow-up diagnostics",
+  "scope": "Source-bound diagnostic history. These checkpoints do not replace final clean-commit Windows, MO2, installer, visual or release acceptance.",
+  "acceptance": false,
+  "repository": "https://github.com/Herbertofury/Modhunter",
+  "evidenceDateUtc": "2026-11-16",
+  "candidate7": {
+    "sourceCommit": "18883b32e0683dad8aed1dc87c6fe9ec577e12f2",
+    "runId": 43926185167,
+    "runUrl": "https://github.com/Herbertofury/Modhunter/actions/runs/43926185167",
+    "published": false,
+    "nativePerformanceReceiptSha256": "6936a4d7e1b836aad3abb91e8171a905b6284e5914c875c9e5f09e4034b5d69d",
+    "records": 11207,
+    "fixtureSha256": "afd855e4ac76f284630ffb4ed6d9dc37280113c9559aef4402516795b7fef0a0",
+    "engine": {
+      "protocolVersion": "1.3",
+      "product": "Edg/156.0.4314.58",
+      "revision": "@7806b68d20d1c1273d5b07b4f4de18e8f5852581",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
+      "jsVersion": "15.6.12.10",
+      "executable": "C:\\Program Files (x86)\\Microsoft\\EdgeWebView\\Application\\156.0.4314.58\\msedgewebview2.exe"
+    },
+    "initial": {
+      "url": "http://tauri.localhost/Modhunter.html",
+      "width": 1028,
+      "height": 633,
+      "devicePixelRatio": 1,
+      "view": "list",
+      "density": "compact",
+      "theme": "snow",
+      "nativeTheme": "light",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
+      "prefersReducedMotion": false,
+      "visibilityState": "visible",
+      "documentHasFocus": true
+    },
+    "timingsMs": {
+      "render": 4333.5,
+      "lastItemSearch": 646.0470000000005,
+      "searchRestore": 3246.4243000000006,
+      "listDensity": 1842.8469000000005,
+      "listDensityReset": 1722.451100000002,
+      "gallery": 5711.665300000001,
+      "galleryDensity": 3132.2014000000017,
+      "list": 3840.305699999997,
+      "finalDensityReset": 1908.4303999999975
+    },
+    "frameEndpoints": {
+      "listDensity": {
+        "structuralBatchActive": false,
+        "transitionProperty": "background",
+        "transitionDuration": "0.12s"
+      },
+      "listDensityReset": {
+        "structuralBatchActive": false,
+        "transitionProperty": "background",
+        "transitionDuration": "0.12s"
+      },
+      "gallery": {
+        "structuralBatchActive": false,
+        "transitionProperty": "background",
+        "transitionDuration": "0.12s"
+      },
+      "galleryDensity": {
+        "structuralBatchActive": false,
+        "transitionProperty": "background",
+        "transitionDuration": "0.12s"
+      },
+      "list": {
+        "structuralBatchActive": false,
+        "transitionProperty": "background",
+        "transitionDuration": "0.12s"
+      },
+      "finalDensityReset": {
+        "structuralBatchActive": false,
+        "transitionProperty": "background",
+        "transitionDuration": "0.12s"
+      }
+    },
+    "gate": {
+      "action": "gallery",
+      "ceilingMs": 5000,
+      "passed": false,
+      "packagingOutputCreated": false
+    },
+    "separateVisualBlocker": "Linux CI omitted CJK, Runic and Symbols2 font dependencies; actual screenshots contained missing glyphs."
+  },
+  "fontDiagnostic17": {
+    "sourceCommit": "ef28a2caf684f4b6aea8e685e08a5ec7ae463fe6",
+    "productCommit": "18883b32e0683dad8aed1dc87c6fe9ec577e12f2",
+    "runId": 43930545746,
+    "runUrl": "https://github.com/Herbertofury/Modhunter/actions/runs/43930545746",
+    "artifactId": 14257714055,
+    "artifactBytes": 1873005,
+    "artifactSha256": "b307e6ac13c661573265447b7aaf7caf6bbc032672acdefad07aead6613ce1f6",
+    "artifactDigestAndZipCrcVerified": true,
+    "browserVersion": "157.0.8103.0",
+    "helperSha256": "977c6cbe482df94b6859b96a29cf3a68cfc8e62d1c7efa6e776d5fe9bd4bf330",
+    "fontReceiptSha256": "c0b6f8155526abe94dd02a44b76475654199f4e519aa739a31bcb25eb1dbec7b",
+    "sourceHashCounts": {
+      "nativeManager": 16,
+      "fontRendering": 4,
+      "dashboardAssets": 18
+    },
+    "nativeManagerTests": 20,
+    "skipped": 0,
+    "actualCjkGlyphs": 8,
+    "actualFontFamilies": [
+      "Noto Sans CJK TC",
+      "Noto Sans Runic",
+      "Noto Sans Symbols2"
+    ],
+    "checks": [
+      {
+        "name": "mo2-locate",
+        "ok": true,
+        "selector": "#modList .mod-inline-locate",
+        "nodeIndex": 0,
+        "expectedText": "⌖",
+        "expectedFamily": "Noto Sans Symbols2",
+        "expectedPostScriptName": "NotoSansSymbols2-Regular",
+        "matchedGlyphCount": 1,
+        "fonts": [
+          {
+            "familyName": "Noto Sans Symbols2",
+            "postScriptName": "NotoSansSymbols2-Regular",
+            "isCustomFont": false,
+            "glyphCount": 1
+          }
+        ],
+        "text": "⌖",
+        "visible": true,
+        "inViewport": true,
+        "receivesPointer": true,
+        "rect": {
+          "x": 383.109375,
+          "y": 324.6875,
+          "width": 25,
+          "height": 24
+        },
+        "computedFontFamily": "\"Segoe UI Variable\", \"Segoe UI\", Inter, system-ui, sans-serif"
+      },
+      {
+        "name": "runic-crest",
+        "ok": true,
+        "selector": ".realm-brand-rune",
+        "nodeIndex": 0,
+        "expectedText": "ᛟ",
+        "expectedFamily": "Noto Sans Runic",
+        "expectedPostScriptName": "NotoSansRunic-Regular",
+        "matchedGlyphCount": 1,
+        "fonts": [
+          {
+            "familyName": "Noto Sans Runic",
+            "postScriptName": "NotoSansRunic-Regular",
+            "isCustomFont": false,
+            "glyphCount": 1
+          }
+        ],
+        "text": "ᛟ",
+        "visible": true,
+        "inViewport": true,
+        "receivesPointer": true,
+        "rect": {
+          "x": 18,
+          "y": 21.890625,
+          "width": 42.03125,
+          "height": 46
+        },
+        "computedFontFamily": "Georgia, serif"
+      },
+      {
+        "name": "ember-rune",
+        "ok": true,
+        "selector": ".realm-actionbar [data-action=\"spell\"] > b",
+        "nodeIndex": 0,
+        "expectedText": "ᚠ",
+        "expectedFamily": "Noto Sans Runic",
+        "expectedPostScriptName": "NotoSansRunic-Regular",
+        "matchedGlyphCount": 1,
+        "fonts": [
+          {
+            "familyName": "Noto Sans Runic",
+            "postScriptName": "NotoSansRunic-Regular",
+            "isCustomFont": false,
+            "glyphCount": 1
+          }
+        ],
+        "text": "ᚠ",
+        "visible": true,
+        "inViewport": true,
+        "receivesPointer": true,
+        "rect": {
+          "x": 310.28125,
+          "y": 847.28125,
+          "width": 12.953125,
+          "height": 26
+        },
+        "computedFontFamily": "Georgia, serif"
+      },
+      {
+        "name": "rift-rune",
+        "ok": true,
+        "selector": ".realm-run-card:has([data-action=\"start-rift\"]) .realm-run-icon",
+        "nodeIndex": 0,
+        "expectedText": "ᛟ",
+        "expectedFamily": "Noto Sans Runic",
+        "expectedPostScriptName": "NotoSansRunic-Regular",
+        "matchedGlyphCount": 1,
+        "fonts": [
+          {
+            "familyName": "Noto Sans Runic",
+            "postScriptName": "NotoSansRunic-Regular",
+            "isCustomFont": false,
+            "glyphCount": 1
+          }
+        ],
+        "text": "ᛟ",
+        "visible": true,
+        "inViewport": true,
+        "receivesPointer": true,
+        "rect": {
+          "x": 610.25,
+          "y": 564.75,
+          "width": 18.625,
+          "height": 43
+        },
+        "computedFontFamily": "Georgia, serif"
+      },
+      {
+        "name": "zoom-in",
+        "ok": true,
+        "selector": "button[data-action=\"zoom-in\"]",
+        "nodeIndex": 0,
+        "expectedText": "＋",
+        "expectedFamily": "Noto Sans CJK TC",
+        "expectedPostScriptName": "NotoSansCJKtc-Regular",
+        "matchedGlyphCount": 1,
+        "fonts": [
+          {
+            "familyName": "Noto Sans CJK TC",
+            "postScriptName": "NotoSansCJKtc-Regular",
+            "isCustomFont": false,
+            "glyphCount": 1
+          }
+        ],
+        "text": "＋",
+        "visible": true,
+        "inViewport": true,
+        "receivesPointer": true,
+        "rect": {
+          "x": 291.03125,
+          "y": 176.78125,
+          "width": 30,
+          "height": 33
+        },
+        "computedFontFamily": "system-ui"
+      },
+      {
+        "name": "zoom-out",
+        "ok": true,
+        "selector": "button[data-action=\"zoom-out\"]",
+        "nodeIndex": 0,
+        "expectedText": "－",
+        "expectedFamily": "Noto Sans CJK TC",
+        "expectedPostScriptName": "NotoSansCJKtc-Regular",
+        "matchedGlyphCount": 1,
+        "fonts": [
+          {
+            "familyName": "Noto Sans CJK TC",
+            "postScriptName": "NotoSansCJKtc-Regular",
+            "isCustomFont": false,
+            "glyphCount": 1
+          }
+        ],
+        "text": "－",
+        "visible": true,
+        "inViewport": true,
+        "receivesPointer": true,
+        "rect": {
+          "x": 329.03125,
+          "y": 176.78125,
+          "width": 30,
+          "height": 33
+        },
+        "computedFontFamily": "system-ui"
+      }
+    ],
+    "zoomInteraction": {
+      "original": 48,
+      "increased": 54,
+      "restored": 48
+    },
+    "game": {
+      "profileId": "practice",
+      "connected": false,
+      "mode": "expedition",
+      "actualCanvasDrawn": true,
+      "enteredThroughUi": true
+    },
+    "images": [
+      {
+        "name": "ci-font-library.png",
+        "bytes": 157416,
+        "sha256": "ea2b9491c9e1c3f1ce1cb3536c4f567b92ce3a6934db4b8ec1a8aa911d8173cb",
+        "dimensions": [
+          1440,
+          1000
+        ],
+        "visuallyReviewed": true
+      },
+      {
+        "name": "ci-font-expedition.png",
+        "bytes": 698079,
+        "sha256": "53fc0e14e5e5eae870521fd4933ea0ac5de264ebe0982782af058c0a8108c0e5",
+        "dimensions": [
+          900,
+          1000
+        ],
+        "visuallyReviewed": true
+      },
+      {
+        "name": "watchtower-preferences-zh.png",
+        "bytes": 156792,
+        "sha256": "749458900c56158ce21c92113260b9fd294935254873b02126d541f9cbfe68d4",
+        "dimensions": [
+          1440,
+          1000
+        ],
+        "visuallyReviewed": true
+      }
+    ],
+    "finding": "Pinned CI-only fonts restore the observed text and symbols. No product fonts, CSS, game code or assets changed in this diagnostic."
+  },
+  "widthDiagnostic18": {
+    "auditOk": true,
+    "performanceWinEstablished": false,
+    "promotionRecommended": false,
+    "conclusion": "Reject the width-cache optimization: no reliable Gallery wall-time benefit. One style recalculation was removed, but opposite-order paired timing changes disagree and the two raw candidate Gallery samples remain above 5 seconds. This diagnostic does not replace the fixed Windows release gate.",
+    "runUrl": "https://github.com/Herbertofury/Modhunter/actions/runs/43930796103",
+    "runId": 43930796103,
+    "jobId": 133522323481,
+    "artifact": {
+      "id": 14258242741,
+      "file": "artifact.zip",
+      "bytes": 920534,
+      "apiSha256": "8ff35762b239f430dea614929524085a1c07534548827160364b257ec9107810",
+      "digestMatchesApi": true,
+      "crcValid": true,
+      "safeEntries": 35
+    },
+    "candidateCommit": "360928bd7aaa2f2c002e87f8858703ce0b63d568",
+    "candidateCommitAtEnd": "360928bd7aaa2f2c002e87f8858703ce0b63d568",
+    "candidateTree": "abe7d7cfa2736de72ec733486afd0feec70a68a3",
+    "controlCommit": "18883b32e0683dad8aed1dc87c6fe9ec577e12f2",
+    "sourceCleanAtStartAndEnd": true,
+    "sourceCompiledHtmlReproducedExactly": true,
+    "sources": {
+      "control": {
+        "assets": {
+          "mo2_update_arsenal/web/app.template.html": "4385bd770a4c624381147d5b76ace86c567125849c901c82cbad8e071400b450",
+          "mo2_update_arsenal/web/style.css": "c84ef2afe26d455d1264051f2a8096b52e98723b641c9d540af0076f24767f3b",
+          "mo2_update_arsenal/web/aether_fx.css": "bbf8afd935cd97420bef66ba70c0b42722e06c9e5d84886fe147b38568f86bfd",
+          "mo2_update_arsenal/web/realm.css": "3b55f9e69af9315d34b0aa10b6b88aa82575ece81c77242be33dd6d01e4b50e4",
+          "mo2_update_arsenal/web/siege.css": "ffd8cb942207607d814fb677e6b1520a70633151b6f5e506fc2f537d81bd834e",
+          "mo2_update_arsenal/web/atelier.css": "8493d338300ecb9609a1abc7972ceabb218e5ce284e0a82bda2bbe93b5e763ca",
+          "mo2_update_arsenal/web/mod_insights.css": "e3254e0496ac4c6864dfa332db7f188cb7af83504e34a243288e6a61e0de2f0f",
+          "mo2_update_arsenal/web/source_insights.css": "0802191e06dbc3e1bc3bc93afda937cea08869a5212aece7ae038be55dd4b63c",
+          "mo2_update_arsenal/web/source_insights.js": "6363b3daa2073435d520aec397ae4c472fd928b8bba22624251bf817509f3ff8",
+          "mo2_update_arsenal/web/mod_insights.js": "7384dc1efb26c12b6214ac31b1b793c6c9dba94c746721aa7610ffd0de0570e4",
+          "mo2_update_arsenal/web/app.js": "e6379cdda46f4ee4277834376c0ef4b89d7914c2c59040c5d8a57d3c032d1a3e",
+          "mo2_update_arsenal/web/catalog.json": "7b63ff731bf4f66ff7c3ee6c2fa58732ca804ae2754d9a5d2b7ceade4375337e",
+          "mo2_update_arsenal/web/aether_fx.js": "37ed80d542dca7cce5d109b6fba9e38fec54ebb7d79ed99f2d81907e75940b42",
+          "mo2_update_arsenal/web/realm.js": "ddbb7e98f667baa9be6bcf16478602f3d1d2cda890599662fa925a53fd6eb5dc",
+          "mo2_update_arsenal/web/siege.js": "aeb05c2faa41c08944699d76ff65a2d86574bf05bdd24b4d25bd8b34f088f271",
+          "mo2_update_arsenal/web/realm_layout.html": "5912401cfc190e1d7be3f59f662e9b20668e595fdc1f1ec7ed951c7ac9671053",
+          "mo2_update_arsenal/web/siege_layout.html": "c6fbf968c672c100869799ff6ba96fd99f30d9029d7f50a6e71841bee2fb1867",
+          "mo2_update_arsenal/web/MO2_Source_Exporter.ps1": "f1c29d121a7c140a098b66b93544813cf56cfc5557d18a9565524eae97bc4a8c"
+        },
+        "htmlSha256": "c0d98ced6c4c2c03b2e5578c03c97f475a813df54f3f077ca565af789f026d54"
+      },
+      "candidate": {
+        "assets": {
+          "mo2_update_arsenal/web/app.template.html": "4385bd770a4c624381147d5b76ace86c567125849c901c82cbad8e071400b450",
+          "mo2_update_arsenal/web/style.css": "c84ef2afe26d455d1264051f2a8096b52e98723b641c9d540af0076f24767f3b",
+          "mo2_update_arsenal/web/aether_fx.css": "bbf8afd935cd97420bef66ba70c0b42722e06c9e5d84886fe147b38568f86bfd",
+          "mo2_update_arsenal/web/realm.css": "3b55f9e69af9315d34b0aa10b6b88aa82575ece81c77242be33dd6d01e4b50e4",
+          "mo2_update_arsenal/web/siege.css": "ffd8cb942207607d814fb677e6b1520a70633151b6f5e506fc2f537d81bd834e",
+          "mo2_update_arsenal/web/atelier.css": "8493d338300ecb9609a1abc7972ceabb218e5ce284e0a82bda2bbe93b5e763ca",
+          "mo2_update_arsenal/web/mod_insights.css": "e3254e0496ac4c6864dfa332db7f188cb7af83504e34a243288e6a61e0de2f0f",
+          "mo2_update_arsenal/web/source_insights.css": "0802191e06dbc3e1bc3bc93afda937cea08869a5212aece7ae038be55dd4b63c",
+          "mo2_update_arsenal/web/source_insights.js": "6363b3daa2073435d520aec397ae4c472fd928b8bba22624251bf817509f3ff8",
+          "mo2_update_arsenal/web/mod_insights.js": "7384dc1efb26c12b6214ac31b1b793c6c9dba94c746721aa7610ffd0de0570e4",
+          "mo2_update_arsenal/web/app.js": "4af194f1d0ef72a71b34d6e6c47005d495a305140dd54173dc08c3db3e439255",
+          "mo2_update_arsenal/web/catalog.json": "7b63ff731bf4f66ff7c3ee6c2fa58732ca804ae2754d9a5d2b7ceade4375337e",
+          "mo2_update_arsenal/web/aether_fx.js": "37ed80d542dca7cce5d109b6fba9e38fec54ebb7d79ed99f2d81907e75940b42",
+          "mo2_update_arsenal/web/realm.js": "ddbb7e98f667baa9be6bcf16478602f3d1d2cda890599662fa925a53fd6eb5dc",
+          "mo2_update_arsenal/web/siege.js": "aeb05c2faa41c08944699d76ff65a2d86574bf05bdd24b4d25bd8b34f088f271",
+          "mo2_update_arsenal/web/realm_layout.html": "5912401cfc190e1d7be3f59f662e9b20668e595fdc1f1ec7ed951c7ac9671053",
+          "mo2_update_arsenal/web/siege_layout.html": "c6fbf968c672c100869799ff6ba96fd99f30d9029d7f50a6e71841bee2fb1867",
+          "mo2_update_arsenal/web/MO2_Source_Exporter.ps1": "f1c29d121a7c140a098b66b93544813cf56cfc5557d18a9565524eae97bc4a8c"
+        },
+        "htmlSha256": "803e8885610aec370720b509ca79fc5c01754f4b1ef4fcfab314593978f3a623"
+      },
+      "changedCompiledAssets": [
+        "mo2_update_arsenal/web/app.js"
+      ]
+    },
+    "harnessFiles": {
+      "tests/visual_width_comparison.py": "508e0384469fe07fae10ebccd618d011fc100927668874d2cdebd96ac2eb4ff1",
+      "tests/visual_release_qa.py": "d89c185c0698c884172e22e7d3e2e9f311f858cddd11c26ebf9d68757208d9d1",
+      "tests/visual_style_profile.py": "8451ad9bbbfdc98030a45187a9b9a2682fc989e6d0c338ccdab96373933039ef",
+      "tests/visual_startup_trace.py": "bed15c9b1477284b05d2aba48414c44489e204ad4f790f678ffb603791dd4637",
+      "tests/test_frontend_responsiveness.py": "9dd5cc7cd0b1c491669e4e139c0a3a481e3a578652f3700c16569213d0b5c8a5"
+    },
+    "snapshotFiles": [
+      {
+        "path": "mo2_update_arsenal/web/app.js",
+        "sha": "68a1fe6c9732056df586fc5ea07bdf7a4cc46c73",
+        "bytes": 194295,
+        "sha256": "4af194f1d0ef72a71b34d6e6c47005d495a305140dd54173dc08c3db3e439255"
+      },
+      {
+        "path": "tests/frontend_runtime.test.cjs",
+        "sha": "e5ce8e18809ce85834073be6588a6b9e6c80e245",
+        "bytes": 60896,
+        "sha256": "6d28889f872aae37d4733955b268bb0cbf70cd1724b7b9cfc55d3a35a3f691b4"
+      },
+      {
+        "path": "tests/visual_width_comparison.py",
+        "sha": "cd17b9e88a378777016683c029a041230759743d",
+        "bytes": 24190,
+        "sha256": "508e0384469fe07fae10ebccd618d011fc100927668874d2cdebd96ac2eb4ff1"
+      },
+      {
+        "path": ".github/workflows/atelier-style-profile.yml",
+        "sha": "9a22e697a7ecabe99c4b1d3492c7c40ed5559b2e",
+        "bytes": 1965,
+        "sha256": "9422e642171ab19305c1f395c2830ae79dd9cff00bdfd1bf38a48c70b39db1ca"
+      }
+    ],
+    "fixture": {
+      "records": 11207,
+      "bytes": 4696493,
+      "sha256": "afd855e4ac76f284630ffb4ed6d9dc37280113c9559aef4402516795b7fef0a0",
+      "authoritativeGeneratorRecomputed": true
+    },
+    "order": [
+      [
+        1,
+        "control"
+      ],
+      [
+        1,
+        "candidate"
+      ],
+      [
+        2,
+        "candidate"
+      ],
+      [
+        2,
+        "control"
+      ]
+    ],
+    "rawTrials": [
+      {
+        "round": 1,
+        "variant": "control",
+        "label": "round-1-control",
+        "initial": {
+          "view": "list",
+          "density": "compact",
+          "theme": "snow",
+          "reducedMotion": false,
+          "width": 1028,
+          "height": 633,
+          "devicePixelRatio": 1,
+          "visibility": "visible"
+        },
+        "timingsMs": {
+          "render": 4021,
+          "lastItemSearch": 457.3149090000186,
+          "searchRestore": 2964.7295640000093,
+          "listDensity": 1790.7681540000056,
+          "listDensityReset": 2109.686135000004,
+          "gallery": 5408.42956100002,
+          "galleryDensity": 3529.2668940000167,
+          "list": 4120.163156000018,
+          "finalDensityReset": 1724.3483630000185
+        },
+        "actions": {
+          "listDensity": {
+            "frameEndpoint": {
+              "structuralBatchActive": false,
+              "transitionProperty": "background",
+              "transitionDuration": "0.12s"
+            },
+            "metricDeltas": {
+              "Nodes": 11,
+              "LayoutCount": 1,
+              "RecalcStyleCount": 5,
+              "LayoutDuration": 0.32907500000000023,
+              "RecalcStyleDuration": 0.3603700000000001,
+              "ScriptDuration": 0.08204299999999987,
+              "TaskDuration": 1.751099,
+              "JSHeapUsedSize": 12688880
+            }
+          },
+          "listDensityReset": {
+            "frameEndpoint": {
+              "structuralBatchActive": false,
+              "transitionProperty": "background",
+              "transitionDuration": "0.12s"
+            },
+            "metricDeltas": {
+              "Nodes": -4721,
+              "LayoutCount": 1,
+              "RecalcStyleCount": 2,
+              "LayoutDuration": 0.38331899999999974,
+              "RecalcStyleDuration": 0.40681699999999976,
+              "ScriptDuration": 0.1296940000000002,
+              "TaskDuration": 2.112755,
+              "JSHeapUsedSize": -48773008
+            }
+          },
+          "gallery": {
+            "frameEndpoint": {
+              "structuralBatchActive": false,
+              "transitionProperty": "background",
+              "transitionDuration": "0.12s"
+            },
+            "metricDeltas": {
+              "Nodes": 44845,
+              "LayoutCount": 1,
+              "RecalcStyleCount": 6,
+              "LayoutDuration": 1.556226,
+              "RecalcStyleDuration": 2.062841,
+              "ScriptDuration": 0.11121799999999982,
+              "TaskDuration": 5.371264999999999,
+              "JSHeapUsedSize": 15534460
+            }
+          },
+          "galleryDensity": {
+            "frameEndpoint": {
+              "structuralBatchActive": false,
+              "transitionProperty": "background",
+              "transitionDuration": "0.12s"
+            },
+            "metricDeltas": {
+              "Nodes": 6,
+              "LayoutCount": 1,
+              "RecalcStyleCount": 5,
+              "LayoutDuration": 0.8543209999999997,
+              "RecalcStyleDuration": 0.7501860000000002,
+              "ScriptDuration": 0.169829,
+              "TaskDuration": 3.5138890000000025,
+              "JSHeapUsedSize": 7023080
+            }
+          },
+          "list": {
+            "frameEndpoint": {
+              "structuralBatchActive": false,
+              "transitionProperty": "background",
+              "transitionDuration": "0.12s"
+            },
+            "metricDeltas": {
+              "Nodes": 29,
+              "LayoutCount": 1,
+              "RecalcStyleCount": 5,
+              "LayoutDuration": 0.8634050000000002,
+              "RecalcStyleDuration": 1.5288620000000002,
+              "ScriptDuration": 0.20947099999999996,
+              "TaskDuration": 4.082267000000002,
+              "JSHeapUsedSize": -16775008
+            }
+          },
+          "finalDensityReset": {
+            "frameEndpoint": {
+              "structuralBatchActive": false,
+              "transitionProperty": "background",
+              "transitionDuration": "0.12s"
+            },
+            "metricDeltas": {
+              "Nodes": 6,
+              "LayoutCount": 1,
+              "RecalcStyleCount": 4,
+              "LayoutDuration": 0.3271329999999999,
+              "RecalcStyleDuration": 0.371683,
+              "ScriptDuration": 0.0680400000000001,
+              "TaskDuration": 1.7152790000000024,
+              "JSHeapUsedSize": -23550160
+            }
+          }
+        },
+        "searchSurvivorPreserved": true
+      },
+      {
+        "round": 1,
+        "variant": "candidate",
+        "label": "round-1-candidate",
+        "initial": {
+          "view": "list",
+          "density": "compact",
+          "theme": "snow",
+          "reducedMotion": false,
+          "width": 1028,
+          "height": 633,
+          "devicePixelRatio": 1,
+          "visibility": "visible"
+        },
+        "timingsMs": {
+          "render": 4018.2999999999884,
+          "lastItemSearch": 531.8429179999953,
+          "searchRestore": 2889.9131670000033,
+          "listDensity": 1751.5888080000082,
+          "listDensityReset": 1773.2198889999893,
+          "gallery": 5749.8406039999845,
+          "galleryDensity": 3232.9218859999855,
+          "list": 4085.073133000009,
+          "finalDensityReset": 2136.833875999997
+        },
+        "actions": {
+          "listDensity": {
+            "frameEndpoint": {
+              "structuralBatchActive": false,
+              "transitionProperty": "background",
+              "transitionDuration": "0.12s"
+            },
+            "metricDeltas": {
+              "Nodes": 11,
+              "LayoutCount": 1,
+              "RecalcStyleCount": 5,
+              "LayoutDuration": 0.3123449999999999,
+              "RecalcStyleDuration": 0.34758399999999967,
+              "ScriptDuration": 0.08887899999999993,
+              "TaskDuration": 1.72391,
+              "JSHeapUsedSize": 12690964
+            }
+          },
+          "listDensityReset": {
+            "frameEndpoint": {
+              "structuralBatchActive": false,
+              "transitionProperty": "background",
+              "transitionDuration": "0.12s"
+            },
+            "metricDeltas": {
+              "Nodes": 6,
+              "LayoutCount": 1,
+              "RecalcStyleCount": 2,
+              "LayoutDuration": 0.34358200000000005,
+              "RecalcStyleDuration": 0.3577690000000002,
+              "ScriptDuration": 0.0817610000000002,
+              "TaskDuration": 1.7478580000000008,
+              "JSHeapUsedSize": 12611564
+            }
+          },
+          "gallery": {
+            "frameEndpoint": {
+              "structuralBatchActive": false,
+              "transitionProperty": "background",
+              "transitionDuration": "0.12s"
+            },
+            "metricDeltas": {
+              "Nodes": 40119,
+              "LayoutCount": 1,
+              "RecalcStyleCount": 5,
+              "LayoutDuration": 1.9060549999999998,
+              "RecalcStyleDuration": 2.0235279999999998,
+              "ScriptDuration": 0.1713429999999998,
+              "TaskDuration": 5.745714000000001,
+              "JSHeapUsedSize": -57830724
+            }
+          },
+          "galleryDensity": {
+            "frameEndpoint": {
+              "structuralBatchActive": false,
+              "transitionProperty": "background",
+              "transitionDuration": "0.12s"
+            },
+            "metricDeltas": {
+              "Nodes": 6,
+              "LayoutCount": 1,
+              "RecalcStyleCount": 4,
+              "LayoutDuration": 0.7470270000000001,
+              "RecalcStyleDuration": 0.7070680000000005,
+              "ScriptDuration": 0.15264200000000017,
+              "TaskDuration": 3.2135730000000002,
+              "JSHeapUsedSize": 7032416
+            }
+          },
+          "list": {
+            "frameEndpoint": {
+              "structuralBatchActive": false,
+              "transitionProperty": "background",
+              "transitionDuration": "0.12s"
+            },
+            "metricDeltas": {
+              "Nodes": 29,
+              "LayoutCount": 1,
+              "RecalcStyleCount": 5,
+              "LayoutDuration": 0.824846,
+              "RecalcStyleDuration": 1.5544599999999997,
+              "ScriptDuration": 0.18759400000000004,
+              "TaskDuration": 4.037254999999998,
+              "JSHeapUsedSize": 15629772
+            }
+          },
+          "finalDensityReset": {
+            "frameEndpoint": {
+              "structuralBatchActive": false,
+              "transitionProperty": "background",
+              "transitionDuration": "0.12s"
+            },
+            "metricDeltas": {
+              "Nodes": 6,
+              "LayoutCount": 1,
+              "RecalcStyleCount": 4,
+              "LayoutDuration": 0.3066519999999997,
+              "RecalcStyleDuration": 0.3657589999999997,
+              "ScriptDuration": 0.14605999999999986,
+              "TaskDuration": 2.1243119999999998,
+              "JSHeapUsedSize": 7023928
+            }
+          }
+        },
+        "searchSurvivorPreserved": true
+      },
+      {
+        "round": 2,
+        "variant": "candidate",
+        "label": "round-2-candidate",
+        "initial": {
+          "view": "list",
+          "density": "compact",
+          "theme": "snow",
+          "reducedMotion": false,
+          "width": 1028,
+          "height": 633,
+          "devicePixelRatio": 1,
+          "visibility": "visible"
+        },
+        "timingsMs": {
+          "render": 4094.2999999999884,
+          "lastItemSearch": 555.6948580000096,
+          "searchRestore": 3018.972668999993,
+          "listDensity": 1825.6740550000075,
+          "listDensityReset": 1879.716263000006,
+          "gallery": 5697.705953000024,
+          "galleryDensity": 3270.9267079999904,
+          "list": 4115.443706000007,
+          "finalDensityReset": 2116.586823999967
+        },
+        "actions": {
+          "listDensity": {
+            "frameEndpoint": {
+              "structuralBatchActive": false,
+              "transitionProperty": "background",
+              "transitionDuration": "0.12s"
+            },
+            "metricDeltas": {
+              "Nodes": 11,
+              "LayoutCount": 1,
+              "RecalcStyleCount": 5,
+              "LayoutDuration": 0.34734799999999977,
+              "RecalcStyleDuration": 0.35958100000000015,
+              "ScriptDuration": 0.09051399999999987,
+              "TaskDuration": 1.8159609999999997,
+              "JSHeapUsedSize": 12692336
+            }
+          },
+          "listDensityReset": {
+            "frameEndpoint": {
+              "structuralBatchActive": false,
+              "transitionProperty": "background",
+              "transitionDuration": "0.12s"
+            },
+            "metricDeltas": {
+              "Nodes": 6,
+              "LayoutCount": 1,
+              "RecalcStyleCount": 2,
+              "LayoutDuration": 0.33324500000000024,
+              "RecalcStyleDuration": 0.3721239999999999,
+              "ScriptDuration": 0.11342200000000013,
+              "TaskDuration": 1.8591040000000003,
+              "JSHeapUsedSize": 12611560
+            }
+          },
+          "gallery": {
+            "frameEndpoint": {
+              "structuralBatchActive": false,
+              "transitionProperty": "background",
+              "transitionDuration": "0.12s"
+            },
+            "metricDeltas": {
+              "Nodes": 38509,
+              "LayoutCount": 1,
+              "RecalcStyleCount": 5,
+              "LayoutDuration": 1.9186759999999996,
+              "RecalcStyleDuration": 2.0274479999999997,
+              "ScriptDuration": 0.15164999999999984,
+              "TaskDuration": 5.693054,
+              "JSHeapUsedSize": -57043692
+            }
+          },
+          "galleryDensity": {
+            "frameEndpoint": {
+              "structuralBatchActive": false,
+              "transitionProperty": "background",
+              "transitionDuration": "0.12s"
+            },
+            "metricDeltas": {
+              "Nodes": 6,
+              "LayoutCount": 1,
+              "RecalcStyleCount": 4,
+              "LayoutDuration": 0.7679160000000005,
+              "RecalcStyleDuration": 0.7226110000000006,
+              "ScriptDuration": 0.156528,
+              "TaskDuration": 3.252219,
+              "JSHeapUsedSize": 7032416
+            }
+          },
+          "list": {
+            "frameEndpoint": {
+              "structuralBatchActive": false,
+              "transitionProperty": "background",
+              "transitionDuration": "0.12s"
+            },
+            "metricDeltas": {
+              "Nodes": 29,
+              "LayoutCount": 1,
+              "RecalcStyleCount": 5,
+              "LayoutDuration": 0.8189760000000001,
+              "RecalcStyleDuration": 1.5710039999999994,
+              "ScriptDuration": 0.1803100000000002,
+              "TaskDuration": 4.078182000000002,
+              "JSHeapUsedSize": 15630404
+            }
+          },
+          "finalDensityReset": {
+            "frameEndpoint": {
+              "structuralBatchActive": false,
+              "transitionProperty": "background",
+              "transitionDuration": "0.12s"
+            },
+            "metricDeltas": {
+              "Nodes": 6,
+              "LayoutCount": 1,
+              "RecalcStyleCount": 4,
+              "LayoutDuration": 0.3217849999999993,
+              "RecalcStyleDuration": 0.37494400000000017,
+              "ScriptDuration": 0.14185199999999987,
+              "TaskDuration": 2.1063030000000005,
+              "JSHeapUsedSize": 7024000
+            }
+          }
+        },
+        "searchSurvivorPreserved": true
+      },
+      {
+        "round": 2,
+        "variant": "control",
+        "label": "round-2-control",
+        "initial": {
+          "view": "list",
+          "density": "compact",
+          "theme": "snow",
+          "reducedMotion": false,
+          "width": 1028,
+          "height": 633,
+          "devicePixelRatio": 1,
+          "visibility": "visible"
+        },
+        "timingsMs": {
+          "render": 4099.700000000012,
+          "lastItemSearch": 544.1521879999982,
+          "searchRestore": 3041.879714000004,
+          "listDensity": 1869.684248999988,
+          "listDensityReset": 1900.597442999981,
+          "gallery": 6059.092338999961,
+          "galleryDensity": 3282.5029719999748,
+          "list": 4122.528520999993,
+          "finalDensityReset": 2151.3955089999968
+        },
+        "actions": {
+          "listDensity": {
+            "frameEndpoint": {
+              "structuralBatchActive": false,
+              "transitionProperty": "background",
+              "transitionDuration": "0.12s"
+            },
+            "metricDeltas": {
+              "Nodes": 11,
+              "LayoutCount": 1,
+              "RecalcStyleCount": 5,
+              "LayoutDuration": 0.33402799999999977,
+              "RecalcStyleDuration": 0.3733580000000001,
+              "ScriptDuration": 0.09296399999999994,
+              "TaskDuration": 1.8463100000000008,
+              "JSHeapUsedSize": 12689184
+            }
+          },
+          "listDensityReset": {
+            "frameEndpoint": {
+              "structuralBatchActive": false,
+              "transitionProperty": "background",
+              "transitionDuration": "0.12s"
+            },
+            "metricDeltas": {
+              "Nodes": 6,
+              "LayoutCount": 1,
+              "RecalcStyleCount": 2,
+              "LayoutDuration": 0.33749399999999996,
+              "RecalcStyleDuration": 0.36116400000000004,
+              "ScriptDuration": 0.11988700000000008,
+              "TaskDuration": 1.8860810000000008,
+              "JSHeapUsedSize": 12607960
+            }
+          },
+          "gallery": {
+            "frameEndpoint": {
+              "structuralBatchActive": false,
+              "transitionProperty": "background",
+              "transitionDuration": "0.12s"
+            },
+            "metricDeltas": {
+              "Nodes": 38508,
+              "LayoutCount": 1,
+              "RecalcStyleCount": 6,
+              "LayoutDuration": 1.919937,
+              "RecalcStyleDuration": 2.1503939999999995,
+              "ScriptDuration": 0.19839399999999996,
+              "TaskDuration": 6.0510410000000014,
+              "JSHeapUsedSize": -58694664
+            }
+          },
+          "galleryDensity": {
+            "frameEndpoint": {
+              "structuralBatchActive": false,
+              "transitionProperty": "background",
+              "transitionDuration": "0.12s"
+            },
+            "metricDeltas": {
+              "Nodes": 6,
+              "LayoutCount": 1,
+              "RecalcStyleCount": 5,
+              "LayoutDuration": 0.7680980000000002,
+              "RecalcStyleDuration": 0.7220980000000008,
+              "ScriptDuration": 0.16858299999999993,
+              "TaskDuration": 3.258851,
+              "JSHeapUsedSize": 7031848
+            }
+          },
+          "list": {
+            "frameEndpoint": {
+              "structuralBatchActive": false,
+              "transitionProperty": "background",
+              "transitionDuration": "0.12s"
+            },
+            "metricDeltas": {
+              "Nodes": 29,
+              "LayoutCount": 1,
+              "RecalcStyleCount": 5,
+              "LayoutDuration": 0.8186939999999998,
+              "RecalcStyleDuration": 1.5728879999999998,
+              "ScriptDuration": 0.18875900000000012,
+              "TaskDuration": 4.087971,
+              "JSHeapUsedSize": 15506524
+            }
+          },
+          "finalDensityReset": {
+            "frameEndpoint": {
+              "structuralBatchActive": false,
+              "transitionProperty": "background",
+              "transitionDuration": "0.12s"
+            },
+            "metricDeltas": {
+              "Nodes": 6,
+              "LayoutCount": 1,
+              "RecalcStyleCount": 4,
+              "LayoutDuration": 0.3216090000000005,
+              "RecalcStyleDuration": 0.37732299999999963,
+              "ScriptDuration": 0.13924399999999992,
+              "TaskDuration": 2.1372560000000007,
+              "JSHeapUsedSize": 7016892
+            }
+          }
+        },
+        "searchSurvivorPreserved": true
+      }
+    ],
+    "pairedComparisons": [
+      {
+        "round": 1,
+        "actions": {
+          "render": {
+            "controlMs": 4021,
+            "candidateMs": 4018.2999999999884,
+            "candidateOverControl": 0.9993285252424741
+          },
+          "lastItemSearch": {
+            "controlMs": 457.3149090000186,
+            "candidateMs": 531.8429179999953,
+            "candidateOverControl": 1.1629686842332394
+          },
+          "searchRestore": {
+            "controlMs": 2964.7295640000093,
+            "candidateMs": 2889.9131670000033,
+            "candidateOverControl": 0.9747645121131845
+          },
+          "listDensity": {
+            "controlMs": 1790.7681540000056,
+            "candidateMs": 1751.5888080000082,
+            "candidateOverControl": 0.9781214860715033
+          },
+          "listDensityReset": {
+            "controlMs": 2109.686135000004,
+            "candidateMs": 1773.2198889999893,
+            "candidateOverControl": 0.840513600379701
+          },
+          "gallery": {
+            "controlMs": 5408.42956100002,
+            "candidateMs": 5749.8406039999845,
+            "candidateOverControl": 1.06312572608172
+          },
+          "galleryDensity": {
+            "controlMs": 3529.2668940000167,
+            "candidateMs": 3232.9218859999855,
+            "candidateOverControl": 0.9160321344628719
+          },
+          "list": {
+            "controlMs": 4120.163156000018,
+            "candidateMs": 4085.073133000009,
+            "candidateOverControl": 0.9914833413941608
+          },
+          "finalDensityReset": {
+            "controlMs": 1724.3483630000185,
+            "candidateMs": 2136.833875999997,
+            "candidateOverControl": 1.2392124015372026
+          }
+        }
+      },
+      {
+        "round": 2,
+        "actions": {
+          "render": {
+            "controlMs": 4099.700000000012,
+            "candidateMs": 4094.2999999999884,
+            "candidateOverControl": 0.9986828304510029
+          },
+          "lastItemSearch": {
+            "controlMs": 544.1521879999982,
+            "candidateMs": 555.6948580000096,
+            "candidateOverControl": 1.021212209110903
+          },
+          "searchRestore": {
+            "controlMs": 3041.879714000004,
+            "candidateMs": 3018.972668999993,
+            "candidateOverControl": 0.9924694441747374
+          },
+          "listDensity": {
+            "controlMs": 1869.684248999988,
+            "candidateMs": 1825.6740550000075,
+            "candidateOverControl": 0.9764611623467868
+          },
+          "listDensityReset": {
+            "controlMs": 1900.597442999981,
+            "candidateMs": 1879.716263000006,
+            "candidateOverControl": 0.9890133599427476
+          },
+          "gallery": {
+            "controlMs": 6059.092338999961,
+            "candidateMs": 5697.705953000024,
+            "candidateOverControl": 0.9403563494694022
+          },
+          "galleryDensity": {
+            "controlMs": 3282.5029719999748,
+            "candidateMs": 3270.9267079999904,
+            "candidateOverControl": 0.9964733424162199
+          },
+          "list": {
+            "controlMs": 4122.528520999993,
+            "candidateMs": 4115.443706000007,
+            "candidateOverControl": 0.9982814394214872
+          },
+          "finalDensityReset": {
+            "controlMs": 2151.3955089999968,
+            "candidateMs": 2116.586823999967,
+            "candidateOverControl": 0.9838204157002216
+          }
+        }
+      }
+    ],
+    "gallerySummary": {
+      "controlMeanMs": 5733.760949999991,
+      "candidateMeanMs": 5723.773278500004,
+      "candidateMeanOverControl": 0.9982580941920876,
+      "sampleCountPerSource": 2,
+      "statisticalSignificanceClaim": false
+    },
+    "timingIntegrity": {
+      "tracing": false,
+      "cssOverrides": false,
+      "warmupTrials": 0,
+      "discardedTrials": 0,
+      "changedEndpointsOrThresholds": false,
+      "workerExitCode": 0,
+      "workerDeadlineSeconds": 690,
+      "maximumExternalSeconds": 698,
+      "supervisorElapsedSeconds": 227.366971017,
+      "externallyTimedOut": false,
+      "sourceReportSha256": "45a09fe6d42d3d95906176c93dc0d58d15744c23962246aa5d9b40d29fb00855",
+      "errors": []
+    },
+    "limits": [
+      "Two raw samples per source in one Linux Chromium157 browser are not a statistical speed claim or Windows acceptance.",
+      "CDP durations are elapsed cumulative categories with a measurement interval wider than the click clock; residual time is not assigned to paint, GC or any other unmeasured cause.",
+      "The exact D18 candidate is the rejected cache experiment. Later copy/localization changes are outside this source-bound comparison and require their own final acceptance.",
+      "The fixed native Gallery ceiling remains5000ms; the C7 native5711.6653ms failure is not waived."
+    ],
+    "geometryAuditSummary": {
+      "receiptCount": 32,
+      "rowsPerReceipt": 11207,
+      "rowRectanglesChecked": 358624,
+      "all32CompressedAndUncompressedHashesVerified": true,
+      "allRowsOrderedPositiveAndLaidOut": true,
+      "exactGeometryHeaderContainerAndMarkupEquality": true,
+      "all24ActionEndpointsRestored": true,
+      "recordMarkupMethod": "All ordered outerHTML was fingerprinted by the source-reviewed worker. Audit verifies matching complete-row digest/byte-count receipts; raw outerHTML strings were not retained separately. Full geometry arrays were independently compared from every retained file."
+    },
+    "runtime": {
+      "browserVersion": "157.0.8103.0",
+      "browserProtocolIdentity": {
+        "protocolVersion": "1.3",
+        "product": "Chrome/157.0.8103.0",
+        "revision": "@0000000000000000000000000000000000000000",
+        "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36",
+        "jsVersion": "15.7.112"
+      },
+      "resolvedExecutable": "/usr/local/share/chromium/chrome-linux/chrome",
+      "platform": "Linux-7.0.0-1014-aws-x86_64-with-glibc2.39",
+      "viewport": {
+        "width": 1028,
+        "height": 633
+      },
+      "motionPreference": "no-preference",
+      "themeSetup": "Fresh owned intercepted HTTP origin; ordinary persisted light preference for initial standalone and exact offline fixture profile. No native authority mock or partial-catalog warm-up."
+    },
+    "fontSetup": {
+      "receipt": "artifact/ci-fonts.json",
+      "receiptSha256": "c0b6f8155526abe94dd02a44b76475654199f4e519aa739a31bcb25eb1dbec7b",
+      "scriptSha256": "977c6cbe482df94b6859b96a29cf3a68cfc8e62d1c7efa6e776d5fe9bd4bf330",
+      "preparedBeforeAllArms": true,
+      "pinnedFiles": [
+        {
+          "path": "Sans/OTF/TraditionalChinese/NotoSansCJKtc-Regular.otf",
+          "bytes": 16435884,
+          "sha256": "dce08bd4fd91aa8aa76ed8fea4b694c2dfb8550f67871e326843212ddbeb88b4",
+          "gitBlob": "f9376bae1d421520f73a3c6c9d50b22f89548301",
+          "crc32": "c02b7773",
+          "url": "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/TraditionalChinese/NotoSansCJKtc-Regular.otf",
+          "cached": false
+        },
+        {
+          "path": "Sans/LICENSE",
+          "bytes": 4301,
+          "sha256": "6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2",
+          "gitBlob": "d952d62c065f3f35fb83a173496e90b21525aef3",
+          "crc32": "898314c0",
+          "url": "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/LICENSE",
+          "cached": false
+        },
+        {
+          "path": "hinted/ttf/NotoSansRunic/NotoSansRunic-Regular.ttf",
+          "bytes": 9044,
+          "sha256": "49e540798dedccf24301437fb5ea5c8a3f42143b1b6c108c1d48c78a41c4ce0f",
+          "gitBlob": "114595f54023e304a3e66c9f904da56e5d1b13f4",
+          "crc32": "e7b3f988",
+          "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/925ebb8364f5ec2cb0614305900782f44d32a3ab/hinted/ttf/NotoSansRunic/NotoSansRunic-Regular.ttf",
+          "cached": false
+        },
+        {
+          "path": "hinted/ttf/NotoSansSymbols2/NotoSansSymbols2-Regular.ttf",
+          "bytes": 656852,
+          "sha256": "876598db5f1e3bef2bc77c4d94c5b0d5d2c1620be4878a06f18fb5434e331688",
+          "gitBlob": "45df8301c7bdfaccff52e30a0973132e94b2e95d",
+          "crc32": "0eee93ff",
+          "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/925ebb8364f5ec2cb0614305900782f44d32a3ab/hinted/ttf/NotoSansSymbols2/NotoSansSymbols2-Regular.ttf",
+          "cached": false
+        },
+        {
+          "path": "LICENSE",
+          "bytes": 4377,
+          "sha256": "0dab92d0544f7b233403f14b84a663bdbfa746982eda629e7f4f9ffe1b036feb",
+          "gitBlob": "c82d72e422e2d08c5ab439b6bac7c2177ea0c565",
+          "crc32": "5a568cc4",
+          "url": "https://raw.githubusercontent.com/notofonts/noto-fonts/925ebb8364f5ec2cb0614305900782f44d32a3ab/LICENSE",
+          "cached": false
+        }
+      ],
+      "registeredFonts": [
+        {
+          "fontFamily": "Noto Sans CJK TC",
+          "postScriptName": "NotoSansCJKtc-Regular",
+          "glyphCoverage": {
+            "text": "外觀、隱私與維護",
+            "method": "fc-query FreeType/fontconfig charset",
+            "glyphs": [
+              {
+                "character": "外",
+                "codepoint": "U+5916",
+                "covered": true
+              },
+              {
+                "character": "觀",
+                "codepoint": "U+89C0",
+                "covered": true
+              },
+              {
+                "character": "、",
+                "codepoint": "U+3001",
+                "covered": true
+              },
+              {
+                "character": "隱",
+                "codepoint": "U+96B1",
+                "covered": true
+              },
+              {
+                "character": "私",
+                "codepoint": "U+79C1",
+                "covered": true
+              },
+              {
+                "character": "與",
+                "codepoint": "U+8207",
+                "covered": true
+              },
+              {
+                "character": "維",
+                "codepoint": "U+7DAD",
+                "covered": true
+              },
+              {
+                "character": "護",
+                "codepoint": "U+8B77",
+                "covered": true
+              }
+            ]
+          }
+        },
+        {
+          "fontFamily": "Noto Sans Runic",
+          "postScriptName": "NotoSansRunic-Regular",
+          "glyphCoverage": {
+            "text": "ᛟᚠ",
+            "method": "fc-query FreeType/fontconfig charset",
+            "glyphs": [
+              {
+                "character": "ᛟ",
+                "codepoint": "U+16DF",
+                "covered": true
+              },
+              {
+                "character": "ᚠ",
+                "codepoint": "U+16A0",
+                "covered": true
+              }
+            ]
+          }
+        },
+        {
+          "fontFamily": "Noto Sans Symbols2",
+          "postScriptName": "NotoSansSymbols2-Regular",
+          "glyphCoverage": {
+            "text": "⌖",
+            "method": "fc-query FreeType/fontconfig charset",
+            "glyphs": [
+              {
+                "character": "⌖",
+                "codepoint": "U+2316",
+                "covered": true
+              }
+            ]
+          }
+        }
+      ],
+      "fullwidthZoomCoverage": {
+        "fontFamily": "Noto Sans CJK TC",
+        "postScriptName": "NotoSansCJKtc-Regular",
+        "text": "＋－",
+        "method": "fc-query FreeType/fontconfig charset",
+        "glyphs": [
+          {
+            "character": "＋",
+            "codepoint": "U+FF0B",
+            "covered": true
+          },
+          {
+            "character": "－",
+            "codepoint": "U+FF0D",
+            "covered": true
+          }
+        ]
+      },
+      "scope": "This receipt proves pinned Linux font preparation/registration and glyph coverage. Separate D17 screenshots prove rendered glyph selection; this is not Windows font evidence."
+    },
+    "disposition": "Rejected and reverted before the next release candidate. No release limit changed."
+  }
+}

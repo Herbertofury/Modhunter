@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import unittest
 
 import test_frontend_responsiveness as harness
@@ -29,7 +30,7 @@ class GalleryWorkspaceTests(unittest.TestCase):
     tearDown = harness.FrontendResponsivenessTests.tearDown
     connected = harness.FrontendResponsivenessTests.connected
 
-    def open(self, count=9, group_count=1):
+    def open(self, count=9, group_count=1, style_nonce=None):
         catalog = harness.catalog(count=count)
         if group_count > 1:
             catalog['groups'] = [{'id':f'group-{group}', 'name':f'Fixture chapter {group}', 'startPriority':group,
@@ -46,8 +47,15 @@ class GalleryWorkspaceTests(unittest.TestCase):
             }[provider]}
         boot = harness.BOOT.replace('__CATALOG__', json.dumps(catalog)).replace('__FAIL__', '0').replace('prefs:{}', 'prefs:{autoCheckOnLaunch:false}')
         html = self.html.replace('<!--__MO2_BOOT__-->', boot)
+        headers = {}
+        if style_nonce:
+            # Model the packaged Tauri style nonce in a real Chromium response.
+            # Script/API fixtures stay unchanged; styles receive no unsafe-inline
+            # exception, so a newly inserted unnonced style must be rejected.
+            html = re.sub(r'<style\b', '<style nonce="'+style_nonce+'"', html)
+            headers['Content-Security-Policy'] = "style-src 'nonce-"+style_nonce+"'"
         self.context.route('https://cdn.modrinth.com/**', lambda route: route.fulfill(content_type='image/png', body=PNG))
-        self.context.route('http://gallery.fixture.test/', lambda route: route.fulfill(content_type='text/html', body=html))
+        self.context.route('http://gallery.fixture.test/', lambda route: route.fulfill(content_type='text/html', body=html, headers=headers))
         self.page.goto('http://gallery.fixture.test/', wait_until='load')
         self.connected()
         self.page.wait_for_function("__RESP__.counts['GET progress']>=1")
@@ -72,6 +80,55 @@ class GalleryWorkspaceTests(unittest.TestCase):
         self.assertEqual(self.page.locator('#libraryList').get_attribute('aria-pressed'), 'true')
         self.assertEqual(self.page.locator('#libraryGallery').get_attribute('aria-pressed'), 'false')
         self.assertEqual(self.page.locator('#modList .mod-row').count(), 9)
+
+    def test_gallery_geometry_works_with_packaged_style_nonce_policy(self):
+        nonce = 'bW9kaHVudGVyLXN0eWxlLXFh'
+        self.open(count=12, style_nonce=nonce)
+        # Prove the browser enforces the response policy; a missing nonce in
+        # the product's dynamic stylesheet must not pass this test by accident.
+        self.assertTrue(self.page.evaluate("""() => {
+          const probe=document.createElement('style');probe.textContent='.nonce-policy-probe{color:red}';
+          document.head.append(probe);const blocked=probe.sheet===null;probe.remove();return blocked;
+        }"""))
+
+        def geometry(expected_columns):
+            self.page.wait_for_function("""columns => {
+              const rows=[...document.querySelectorAll('#modList .mod-row')];
+              if(rows.length!==12)return false;const top=rows[0].getBoundingClientRect().top;
+              return rows.filter(row=>Math.abs(row.getBoundingClientRect().top-top)<1).length===columns;
+            }""", arg=expected_columns)
+            state = self.page.evaluate("""() => {
+              const style=document.querySelector('style[data-library-geometry]'),list=document.getElementById('modList');
+              const rows=[...list.querySelectorAll('.mod-row')],box=list.getBoundingClientRect();
+              return {nonce:style?.nonce,rule:style?.sheet?.cssRules[0]?.style.flexBasis,
+                rules:style?.sheet?.cssRules.length,rows:rows.length,
+                allLaidOut:rows.every(row=>row.getClientRects().length>0),
+                contained:rows.every(row=>{const bounds=row.getBoundingClientRect();return bounds.left>=box.left-1&&bounds.right<=box.right+1;}),
+                inheritedColumns:list.style.getPropertyValue('--library-columns'),
+                inheritedGap:list.style.getPropertyValue('--library-gap-total'),
+                overflow:document.documentElement.scrollWidth>innerWidth+1};
+            }""")
+            self.assertEqual(state['nonce'], nonce)
+            self.assertEqual(state['rules'], 1)
+            self.assertTrue(state['rule'].startswith('calc('), state)
+            self.assertEqual(state['rows'], 12)
+            self.assertTrue(state['allLaidOut'] and state['contained'], state)
+            self.assertFalse(state['overflow'], state)
+            self.assertEqual(state['inheritedColumns'], '')
+            self.assertEqual(state['inheritedGap'], '')
+
+        self.page.locator('#libraryGallery').click()
+        geometry(6)
+        self.page.locator('#densityToggle').click()
+        geometry(4)
+        self.page.set_viewport_size({'width':900,'height':900})
+        geometry(2)
+        self.page.set_viewport_size({'width':390,'height':844})
+        geometry(1)
+        self.page.locator('#densityToggle').click()
+        geometry(2)
+        self.page.locator('#libraryList').click()
+        self.assertEqual(self.page.locator('#modList .mod-row').count(), 12)
 
     def test_provider_filter_composes_with_search_and_reset(self):
         self.open()

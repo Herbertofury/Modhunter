@@ -16,7 +16,7 @@
 
 ## Rust desktop 0.12.0
 
-The new Windows app runs its desktop shell, profile import/cache engine, connection discovery and native file operations in **Rust**, with WebView2 displaying the complete existing dashboard and games. Running the compiled app requires no Node or Electron. The Python plugin remains MO2's in-process adapter for authenticated Nexus requests and its native download/installer API.
+The Windows app runs its desktop shell, profile import/cache engine, connection discovery and native file operations in **Rust**, with WebView2 displaying the complete existing dashboard and games. Running the compiled app requires no Node or Electron. The Python plugin remains MO2's in-process adapter for authenticated Nexus requests and its native download/installer API.
 
 **[Windows releases](https://github.com/Herbertofury/Modhunter/releases)** · **[Install and use the Rust app](wiki/Rust-Desktop.md)** · **[Build and test results](https://github.com/Herbertofury/Modhunter/actions/workflows/native-rust.yml)**
 

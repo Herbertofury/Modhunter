@@ -239,6 +239,18 @@ jobs:
           $InstallerVersion = python native/scripts/prepare_release.py --print-version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./native/scripts/installer_smoke.ps1 -Installer "$PWD/native/target/release/bundle/nsis/Modhunter_${InstallerVersion}_x64-setup.exe" -Executable "$PWD/native/target/release/Modhunter.exe" -Output "$PWD/native/target/installer-smoke"
+      - name: Measure the complete library in actual Windows WebView2
+        if: ${{ !cancelled() && steps.build_windows.outcome == 'success' }}
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          $LiveTools = Join-Path $env:RUNNER_TEMP 'modhunter-live-tools'
+          if (!(Test-Path (Join-Path $LiveTools 'node_modules/playwright/package.json'))) {
+            npm install --prefix $LiveTools --no-audit --no-fund playwright@1.57.0
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          $env:NODE_PATH = Join-Path $LiveTools 'node_modules'
+          ./native/scripts/benchmark_native_library.ps1 -Executable "$PWD/native/target/release/Modhunter.exe" -Output "$PWD/native/target/native-library-performance"
       - name: Package tested Windows app, MO2 plugin, and diagnostics
         shell: pwsh
         run: |
@@ -305,6 +317,7 @@ jobs:
             native/target/installer-smoke/native-launch/native-smoke.json
             native/target/installer-smoke/native-launch/fixture-desktop.png
             native/target/archive-review-proof.json
+            native/target/native-library-performance/
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [contracts, windows, mo2, visual]

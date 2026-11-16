@@ -4,13 +4,13 @@ on:
   workflow_dispatch:
   push:
     branches: ['diagnostics/atelier-style']
-    paths: ['tests/visual_style_profile.py', '.github/workflows/atelier-style-profile.yml']
+    paths: ['tests/visual_style_profile.py', 'tests/visual_trace_probe.py', '.github/workflows/atelier-style-profile.yml']
 
 permissions:
   contents: read
 
 concurrency:
-  group: modhunter-style-profile-${{ github.ref }}
+  group: modhunter-style-profile-${{ github.sha }}
   cancel-in-progress: true
 
 jobs:
@@ -21,10 +21,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: controlled-arms
-            variants: 'control,cssom-geometry,no-universal-scrollbar,overflow-clip'
-            traces: ''
-          - name: selector-traces
+          - name: page-attached-selectors
             variants: 'control'
             traces: 'control'
     steps:
@@ -42,7 +39,12 @@ jobs:
           python3 -m venv /tmp/modhunter-style
           /tmp/modhunter-style/bin/pip install -q playwright==1.57.0
           /tmp/modhunter-style/bin/python -m playwright install --with-deps chromium
-          PYTHONPATH=. /tmp/modhunter-style/bin/python tests/visual_style_profile.py --output native/target/style-profile --mods 11207 --variants "$PROFILE_VARIANTS" --trace-variants "$PROFILE_TRACES"
+          MODHUNTER_PROFILE_BROWSER=$(/tmp/modhunter-style/bin/python -c "import shutil; print(shutil.which('chromium') or shutil.which('chromium-browser') or '')")
+          if [[ -n "$MODHUNTER_PROFILE_BROWSER" ]]; then
+            PYTHONPATH=. /tmp/modhunter-style/bin/python tests/visual_style_profile.py --executable-path "$MODHUNTER_PROFILE_BROWSER" --output native/target/style-profile --mods 11207 --variants "$PROFILE_VARIANTS" --trace-variants "$PROFILE_TRACES" --actions gallery
+          else
+            PYTHONPATH=. /tmp/modhunter-style/bin/python tests/visual_style_profile.py --output native/target/style-profile --mods 11207 --variants "$PROFILE_VARIANTS" --trace-variants "$PROFILE_TRACES" --actions gallery
+          fi
       - name: Preserve selector measurements and traces
         if: always()
         uses: actions/upload-artifact@v4

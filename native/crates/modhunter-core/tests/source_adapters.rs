@@ -914,3 +914,26 @@ fn modhold_route_is_exact_and_grants_are_not_retained() {
         "https://modholdmods.com/g/skyrim-se/mods/203/fixture"
     );
 }
+
+#[test]
+fn modhold_cache_and_output_strip_provider_supplied_grants() {
+    let mock = Mock::new();
+    let mut data = modhold_fixture();
+    data["page"] =
+        "https://modholdmods.com/g/skyrim-se/mods/203/fixture?modhold_key=PRIVATE_SENTINEL".into();
+    data["cover"] = "https://modholdmods.com/media/test.webp?modhold_key=PRIVATE_SENTINEL".into();
+    mock.reply("https://modholdmods.com/api/v1/mods/203", 200, data, &[]);
+    let mut req = request("https://modholdmods.com/g/skyrim-se/mods/203/fixture");
+    req.game = "Skyrim Special Edition".into();
+    let result = scan_sources_with(&req, &mock, NOW).unwrap();
+    assert_eq!(result.item_records["row"]["outcome"], "release");
+    assert!(
+        !serde_json::to_string(&result)
+            .unwrap()
+            .contains("PRIVATE_SENTINEL")
+    );
+    assert_eq!(
+        result.item_records["row"]["releaseAssets"][0]["assetKey"],
+        "modhold:file:759"
+    );
+}

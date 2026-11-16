@@ -8,6 +8,7 @@ class ModholdTests(unittest.TestCase):
         c=adapter_capabilities('modhold')
         self.assertTrue(c['versionCheck']);self.assertFalse(c['reviewedDownload'])
         self.assertFalse(adapter_capabilities('modhold',helper_available=False)['versionCheck'])
+        self.assertIn('Rust helper',adapter_capabilities('modhold',helper_available=False)['reason'])
     def test_exact_host_and_secret_redaction(self):
         self.assertEqual(provider_of('https://modholdmods.com/g/skyrim-se/mods/203/title'),'modhold')
         self.assertNotEqual(provider_of('https://modholdmods.com.evil.test/g/skyrim-se/mods/203/title'),'modhold')

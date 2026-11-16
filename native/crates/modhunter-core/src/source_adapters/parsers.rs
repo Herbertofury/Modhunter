@@ -813,7 +813,8 @@ pub fn modhold(
         return Err("Modhold mod identity mismatch".into());
     }
     let game = required(data, "game", 120)?;
-    let page = required(data, "page", 1800)?;
+    let page =
+        canonical_source_url(&required(data, "page", 1800)?).ok_or("Invalid Modhold page")?;
     let page_id = super::identity::project_identity(&page).ok_or("Invalid Modhold page")?;
     if page_id.provider != "modhold"
         || page_id.project_id != id.project_id
@@ -849,7 +850,7 @@ pub fn modhold(
         let hash =
             hash_value(&required(file, "sha256", 64)?, 64).ok_or("Invalid Modhold SHA256")?;
         main |= file["kind"] == "main" && fv == version && size > 0;
-        assets.push(json!({"assetKey":format!("modhold:{fid}"),"assetId":fid,"provider":"modhold","projectId":id.project_id,
+        assets.push(json!({"assetKey":format!("modhold:file:{fid}"),"assetId":fid,"provider":"modhold","projectId":id.project_id,
             "releaseId":format!("{}:{}",id.project_id,version),"releaseVersion":fv,"name":name,"size":size,"hashes":{"sha256":hash},
             "installable":false,"url":Value::Null}));
     }

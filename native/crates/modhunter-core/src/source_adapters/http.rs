@@ -825,6 +825,14 @@ fn cache_document(url: &str, value: &Value) -> Value {
             value,
             &["id", "name", "version", "game", "page", "summary", "cover"],
         );
+        for field in ["page", "cover"] {
+            result[field] = value
+                .get(field)
+                .and_then(Value::as_str)
+                .and_then(super::identity::canonical_source_url)
+                .map(Value::String)
+                .unwrap_or(Value::Null);
+        }
         if let Some(author) = value.get("author") {
             result["author"] = fields(author, &["handle"]);
         }

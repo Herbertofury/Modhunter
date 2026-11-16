@@ -51,7 +51,8 @@ def adapter_capabilities(provider: str, *, helper_available=True) -> dict:
             reason = "Install the matching Modhunter Rust helper to enable this provider's public API checks."
         if provider == "modhold":
             download = False
-            reason = "Anonymous public version/file metadata only. Downloads require a separate player grant and are not enabled."
+            if helper_available:
+                reason = "Anonymous public version/file metadata only. Downloads require a separate player grant and are not enabled."
     elif provider == "curseforge":
         mode, auth = "api-key", "api-key"
         reason = "CurseForge API access requires a provider-issued key; this build retains the original page and does not claim a configured API session."

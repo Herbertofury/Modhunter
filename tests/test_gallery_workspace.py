@@ -487,9 +487,14 @@ class GalleryWorkspaceTests(unittest.TestCase):
         self.page.locator('#search').fill('')
         self.assertTrue(self.page.evaluate("document.getElementById('row-item-0')!==__METADATA_ROWS__[0]"))
         self.assertTrue(self.page.evaluate("document.getElementById('row-item-1')===__METADATA_ROWS__[1]"))
-        self.assertIn('Changed while this row was filtered out', self.page.locator('#row-item-0').inner_text())
+        note=self.page.locator('#row-item-0 .mod-note')
+        self.assertEqual(note.text_content(),'Changed while this row was filtered out')
+        self.assertEqual(note.get_attribute('title'),'Changed while this row was filtered out')
         self.assertIn('needs-review', self.page.locator('#row-item-0').get_attribute('class'))
         self.assertIn('active', self.page.locator('#row-item-0 .favorite-btn').get_attribute('class'))
+        self.page.locator('#row-item-0 [data-act=inspect]').click()
+        self.assertEqual(self.page.locator('#drawerNote').input_value(),'Changed while this row was filtered out')
+        self.page.locator('#drawerClose').click()
         self.page.locator('#search').fill('"Unique Fixture 11"')
         self.page.evaluate("""async()=>{
           const next=structuredClone(__RESP__.catalog);next.executionEpoch=9;
@@ -534,6 +539,7 @@ class GalleryWorkspaceTests(unittest.TestCase):
 
     def test_image_failure_while_detached_uses_fresh_image_and_visible_fallback(self):
         self.open(count=12)
+        self.page.locator('#libraryGallery').click()
         url='https://cdn.modrinth.com/data/cache-fixture/pending.png'
         requests=[]
         def pending_image(route):
@@ -546,9 +552,11 @@ class GalleryWorkspaceTests(unittest.TestCase):
               const item=__RESP__.catalog.items[1];item.update.thumbnailUrl=url;item.update.thumbnailKind='icon';
               await __ARSENAL_QA__.setCatalog(structuredClone(__RESP__.catalog));
             }""",url)
-        self.assertEqual(len(requests),1)
+        # A request event precedes the Python route callback; this actual DOM
+        # read also gives Playwright the opportunity to deliver the paused route.
         self.page.evaluate("window.__FAILED_CACHED_ROW__=document.getElementById('row-item-1');window.__PENDING_IMAGE__=__FAILED_CACHED_ROW__.querySelector('img');window.__GOOD_CACHED_ROW__=document.getElementById('row-item-0')")
         self.assertFalse(self.page.evaluate('__PENDING_IMAGE__.complete'))
+        self.assertEqual(len(requests),1)
         self.page.locator('#search').fill('"Unique Fixture 11"')
         self.assertFalse(self.page.evaluate('__FAILED_CACHED_ROW__.isConnected'))
         requests[0].fulfill(status=404,content_type='text/plain',body='Fixture missing image',headers={'Cache-Control':'no-store'})

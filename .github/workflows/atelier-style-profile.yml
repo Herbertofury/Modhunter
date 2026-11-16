@@ -3,14 +3,14 @@ on:
   workflow_dispatch:
   push:
     branches: ['diagnostics/atelier-style']
-    paths: ['mo2_update_arsenal/web/atelier.css', 'tests/visual_preview_stretch_qa.py', 'tests/visual_surface_comparison.py', '.github/workflows/atelier-style-profile.yml']
+    paths: ['mo2_update_arsenal/web/app.js', 'mo2_update_arsenal/web/atelier.css', 'tests/frontend_runtime.test.cjs', 'tests/visual_gallery_paint_qa.py', 'tests/visual_surface_comparison.py', '.github/workflows/atelier-style-profile.yml']
 permissions:
   contents: read
 concurrency:
   group: modhunter-style-profile-${{ github.sha }}
   cancel-in-progress: true
 jobs:
-  preview-stretch:
+  flat-fill:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -20,7 +20,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Prepare the unchanged engine and verified font prerequisites
+      - name: Prepare unchanged engine, pinned fonts and runtime contracts
         run: |
           git fetch --no-tags origin 18883b32e0683dad8aed1dc87c6fe9ec577e12f2
           python3 -m venv /tmp/modhunter-surface
@@ -29,19 +29,50 @@ jobs:
           /tmp/modhunter-surface/bin/python tests/prepare_ci_fonts.py --output native/target/surface-proof/ci-fonts.json
           node --test tests/frontend_runtime.test.cjs
           /tmp/modhunter-surface/bin/python tests/visual_surface_comparison.py --self-test
-      - name: Verify complete preview cases at all three widths and both densities
-        timeout-minutes: 5
+          /tmp/modhunter-surface/bin/python tests/visual_gallery_paint_qa.py --self-test
+      - name: Verify existing actual Gallery interactions
+        timeout-minutes: 2
+        env:
+          MODHUNTER_REQUIRE_BROWSER: '1'
+        run: PYTHONPATH=. /tmp/modhunter-surface/bin/python -m unittest discover -s tests -p test_gallery_workspace.py -v
+      - name: Compare all actual hover, focus, theme and forced-color states
+        id: paint
+        timeout-minutes: 4
         run: |
-          PYTHONPATH=. /tmp/modhunter-surface/bin/python tests/visual_preview_stretch_qa.py --executable-path /usr/local/share/chromium/chrome-linux/chrome --font-receipt native/target/surface-proof/ci-fonts.json --output native/target/surface-proof/preflight
-      - name: Measure four fresh complete-library contexts with exact pixels
+          PYTHONPATH=. /tmp/modhunter-surface/bin/python tests/visual_gallery_paint_qa.py --control-ref 18883b32e0683dad8aed1dc87c6fe9ec577e12f2 --executable-path /usr/local/share/chromium/chrome-linux/chrome --output native/target/surface-proof/preflight
+      - name: Retain complete-library measurements after a complete semantic preflight
+        if: ${{ !cancelled() && (steps.paint.outcome == 'success' || steps.paint.outcome == 'failure') }}
         timeout-minutes: 12
         run: |
-          PYTHONPATH=. /tmp/modhunter-surface/bin/python tests/visual_surface_comparison.py --mode preview-stretch --output native/target/surface-proof/comparison --control-ref 18883b32e0683dad8aed1dc87c6fe9ec577e12f2 --executable-path /usr/local/share/chromium/chrome-linux/chrome
-      - name: Preserve every timing, complete geometry and actual screenshot
+          # A strict pixel failure keeps this job failed. It may not discard
+          # timing evidence when all real semantic/interaction checks completed.
+          PYTHONPATH=tests /tmp/modhunter-surface/bin/python - <<'PYCODE'
+          import json, os
+          from pathlib import Path
+          import visual_gallery_paint_qa as proof
+          r=json.loads(Path('native/target/surface-proof/preflight/gallery-paint-qa.json').read_text())
+          assert r.get('checksComplete') is True and r.get('sourceDirty') is False
+          assert r.get('sourceStatusAtStart') == [] and r.get('sourceStatusAtEnd') == []
+          assert r.get('candidateCommit') == os.environ['GITHUB_SHA']
+          assert len(r['states']) == 72 and len({(x['variant'],x['state']) for x in r['states']}) == 72
+          assert {(x['variant'],x['theme']) for x in r['interactions']} == {(v,t) for v in ('before','after') for t in ('night','snow')}
+          assert len(r['interactions']) == 4
+          for state in r['states']: proof.validate_comparison(state)
+          if r.get('ok') is True:
+              assert r['strictComparisonPassed'] is True and r['strictPixelFailures'] == [] and r['errors'] == []
+          else:
+              assert r.get('ok') is False and r['strictComparisonPassed'] is False
+              assert r['phase'] == 'complete-with-strict-pixel-failures' and r['strictPixelFailures']
+              assert len(r['errors']) == 1 and 'Strict zero-tolerance pixels differ after the complete state and interaction matrix' in r['errors'][0]
+              assert all(x['comparison']['pixels']['identical'] is False and x['comparison']['endpointEqual'] is True and x['comparison']['settledStateEqual'] is True for x in r['strictPixelFailures'])
+          print('Complete semantic preflight verified; raw strict pixel status remains unchanged')
+          PYCODE
+          PYTHONPATH=. /tmp/modhunter-surface/bin/python tests/visual_surface_comparison.py --mode flat-fill --output native/target/surface-proof/comparison --control-ref 18883b32e0683dad8aed1dc87c6fe9ec577e12f2 --executable-path /usr/local/share/chromium/chrome-linux/chrome
+      - name: Preserve all strict results, raw pixels and complete timings
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Modhunter-Preview-Stretch-Proof
+          name: Modhunter-Gallery-Fill-Proof
           path: native/target/surface-proof/
           if-no-files-found: error
           retention-days: 90

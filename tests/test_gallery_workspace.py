@@ -783,6 +783,17 @@ class GalleryWorkspaceTests(unittest.TestCase):
             self.assertTrue(chapter['diamondVisible'] and chapter['trackVisible'], chapter)
             self.assertGreaterEqual(chapter['rect']['left'], 0)
             self.assertLessEqual(chapter['rect']['right'], 391)
+        self.page.locator('#workspaceTitle').hover()
+        done_paint = self.page.locator('#row-item-0').evaluate('''e=>({
+            hot:e.matches(':hover,:focus-within,.selected,.native-selected,.aether-target'),
+            background:getComputedStyle(e).backgroundColor,image:getComputedStyle(e).backgroundImage
+        })''')
+        self.assertEqual(done_paint, {'hot':False,'background':'rgba(0, 0, 0, 0)','image':'none'},
+                         'An unfocused manually cleared light row must not inherit the old mint fill')
+        source_title = self.page.locator('#modList > .mod-row:not(.done):not(.aether-target):not(.native-selected):not(.selected) .mod-title.source-title').first
+        self.assertEqual(source_title.evaluate('e=>getComputedStyle(e).color'),
+                         self.page.locator('body').evaluate('e=>getComputedStyle(e).color'),
+                         'Ordinary source-linked titles must use the neutral light text color')
         self.assertFalse(self.page.evaluate("document.getAnimations().some(a=>a.constructor.name==='CSSTransition'&&a.effect?.target?.closest?.('#modList')&&a.playState==='running')"))
         self.feedback_capture('oled-chapters-390-light.png')
 
@@ -833,6 +844,8 @@ class GalleryWorkspaceTests(unittest.TestCase):
         self.assertEqual(self.page.locator('body').get_attribute('data-workspace'), 'updates')
         self.assertIn('active', updates.get_attribute('class'))
         self.assertNotEqual(updates.evaluate('e=>getComputedStyle(e).backgroundColor'), inactive_nav)
+        workshop_backgrounds = self.page.locator('.workshop-filter :is(input,select)').evaluate_all("es=>es.map(e=>getComputedStyle(e).backgroundColor)")
+        self.assertEqual(workshop_backgrounds, ['rgb(11, 12, 16)'] * 2, 'Both Workshop filters must use the OLED input surface')
         self.assertEqual(self.page.evaluate('__ARSENAL_QA__.game()?.score||0'), 0)
         for action in ('POST install','POST download','POST quick-update','POST update-queue'):
             self.assertEqual(self.page.evaluate('key=>__RESP__.counts[key]||0', action), 0)
@@ -871,6 +884,9 @@ class GalleryWorkspaceTests(unittest.TestCase):
         self.assertIn('QA source service unavailable', self.page.locator('#workspaceCheckDetail').inner_text())
         self.assertIn('Check failed', self.page.locator('#workspaceCheckStatus').inner_text())
         self.assertFalse(self.page.locator('#unifiedScan').is_disabled())
+        failure_toast = self.page.locator('#toastWrap .toast').filter(has_text='QA source service unavailable')
+        self.assertTrue(failure_toast.is_visible())
+        self.assertEqual(failure_toast.get_attribute('data-state'), 'error')
         self.feedback_capture('oled-scan-failed-1440-dark.png')
         self.page.evaluate('__RESP__.failScanStart=false')
         self.page.locator('#unifiedScan').click()

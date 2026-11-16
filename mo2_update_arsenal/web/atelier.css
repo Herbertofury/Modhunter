@@ -470,6 +470,13 @@ body[data-layout="compact"]:not(.realm-route) .breadcrumb strong{color:var(--vau
 body[data-layout="compact"]:not(.realm-route) .top-actions .realm-launch{background:var(--vault-raised);border-color:var(--vault-line);color:var(--vault-text)!important;box-shadow:none}
 body[data-layout="compact"]:not(.realm-route) .top-actions .realm-launch:hover{background:var(--vault-hover);border-color:var(--vault-accent);filter:none;box-shadow:none}
 body[data-layout="compact"]:not(.realm-route) .top-actions .realm-launch strong{color:var(--vault-accent)}
+body[data-layout="compact"]:not(.realm-route) .top-actions .primary-small{background:var(--vault-primary);border-color:var(--vault-primary);color:var(--vault-primary-ink)}
+body[data-layout="compact"]:not(.realm-route) .top-actions .primary-small:hover{background:var(--vault-accent);border-color:var(--vault-accent);color:var(--vault-primary-ink)}
+body[data-layout="compact"]:not(.realm-route) .top-actions .top-select{background:var(--vault-input);border-color:var(--vault-line);color:var(--vault-text)}
+body[data-layout="compact"]:not(.realm-route) .top-actions .top-select-label{color:var(--vault-muted)}
+body[data-layout="compact"]:not(.realm-route) .top-actions .icon-button{background:var(--vault-input);border-color:var(--vault-line);color:var(--vault-muted)}
+body[data-layout="compact"]:not(.realm-route) .top-actions .icon-button:hover{background:var(--vault-hover);border-color:var(--vault-accent);color:var(--vault-text)}
+body[data-layout="compact"]:not(.realm-route) .top-actions .fx-studio-toggle{border-color:var(--vault-line)!important;color:var(--vault-accent)!important}
 body[data-layout="compact"][data-nav="expanded"]{--vault-rail:196px}
 .mh-symbols{position:absolute;width:0;height:0;overflow:hidden;pointer-events:none}
 .mh-icon{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;flex:none;vertical-align:middle}
@@ -555,6 +562,7 @@ body[data-layout="compact"] .mod-row{min-height:48px;transition:background .12s 
 /* View/theme batches must not start a background fade for every installed mod.
    app.js removes this owned marker within the measured two-frame interaction. */
 body[data-layout="compact"] #modList[data-layout-change] > .mod-row{transition:none!important}
+body[data-layout="compact"] .mod-row.done{background:transparent}
 body[data-layout="compact"] .mod-row:hover{background:var(--vault-hover);transform:none;box-shadow:none}
 body[data-layout="compact"] .mod-row.selected,body[data-layout="compact"] .mod-row.native-selected{background:var(--vault-selection);box-shadow:inset 2px 0 var(--vault-accent);border-left:0;padding-left:10px;outline:0}
 body[data-layout="compact"] .mod-row:focus-within{background:var(--vault-hover)}
@@ -565,7 +573,7 @@ body[data-layout="compact"] .mod-art:after{display:none}
 body[data-layout="compact"] .mod-priority{font:10px var(--mh-ui);font-variant-numeric:tabular-nums;color:var(--vault-faint);text-align:center}
 body[data-layout="compact"] .mod-primary{gap:1px;padding:0}
 body[data-layout="compact"] .mod-name-actions{gap:5px;flex-wrap:nowrap;min-width:0}
-body[data-layout="compact"] .mod-title,body[data-layout="compact"] .mod-title.unknown,body[data-layout="compact"] .mod-row.done .mod-title{font:550 12px/1.4 var(--mh-ui);color:var(--vault-text);letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block!important;min-width:0;text-decoration:none}
+body[data-layout="compact"] .mod-title,body[data-layout="compact"] .mod-title.source-title,body[data-layout="compact"] .mod-title.unknown,body[data-layout="compact"] .mod-row.done .mod-title{font:550 12px/1.4 var(--mh-ui);color:var(--vault-text);letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block!important;min-width:0;text-decoration:none}
 body[data-layout="compact"] .mod-title:hover{color:var(--vault-accent);text-decoration:underline}
 body[data-layout="compact"] .source-open-glyph{display:inline;font-size:10px;color:var(--vault-faint);margin-left:5px}
 body[data-layout="compact"] .mod-author{font-size:9px;line-height:1.35;color:var(--vault-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -653,6 +661,7 @@ body[data-layout="compact"] .workshop-tools button{font-size:10px;min-height:31p
 body[data-layout="compact"] .source-coverage{border-color:var(--vault-line);color:var(--vault-muted);background:transparent;font-size:11px;margin:10px 0}
 body[data-layout="compact"] .source-coverage summary{color:var(--vault-muted)}
 body[data-layout="compact"] .workshop-filter,body[data-layout="compact"] .activity-toolbar{background:var(--vault-surface);border:1px solid var(--vault-line);border-radius:5px;padding:8px 10px;margin:12px 0 8px;color:var(--vault-muted)}
+body[data-layout="compact"] .workshop-filter :is(input,select){background:var(--vault-input);border-color:var(--vault-line);color:var(--vault-text)}
 body[data-layout="compact"] .workshop-filter label,body[data-layout="compact"] .activity-toolbar label{color:var(--vault-muted);font-size:10px}
 body[data-layout="compact"] .workshop-result-count,body[data-layout="compact"] .activity-count{font-size:10px;color:var(--vault-faint);margin:9px 0}
 body[data-layout="compact"] .workshop-results{border:1px solid var(--vault-line);border-radius:7px;background:var(--vault-surface);overflow:hidden}

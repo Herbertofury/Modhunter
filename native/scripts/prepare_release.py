@@ -26,7 +26,7 @@ import tomllib
 import zlib
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
-from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile
+from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile, ZipInfo
 
 ROOT = Path(__file__).resolve().parents[2]
 PORTABLE_NAME = "Modhunter-Rust-Windows.zip"
@@ -62,7 +62,11 @@ REQUIRED_MO2_CHECKS = {
     "rust_content_recovery", "native_content_install",
 }
 LIVE_DESKTOP_SOURCES = ('native/scripts/verify_live_desktop.cjs', 'native/ui/shell.js', 'native/ui/shell.html', 'native/ui/native.css', 'native/crates/modhunter-desktop/src/windows.rs', 'native/crates/modhunter-desktop/src/policy.rs', 'mo2_update_arsenal/plugin.py', 'mo2_update_arsenal/bridge.py', 'mo2_update_arsenal/download_ids.py', 'mo2_update_arsenal/scanner.py', 'mo2_update_arsenal/gameplay.py', 'mo2_update_arsenal/native_nexus.py', 'mo2_update_arsenal/web/atelier.css', 'mo2_update_arsenal/web/app.js', 'mo2_update_arsenal/web/app.template.html')
-LIVE_DESKTOP_CHECKS = {"compact_workspace", "automatic_source_check", "automatic_discovery", "live_catalog_not_demo", "toolbar_refresh", "toolbar_plugin_audit", "connection_details", "content_native_ipc_denied", "manual_rediscovery", "disconnected_welcome", "setup_reconnect"}
+LIVE_DESKTOP_CHECKS = {"compact_workspace", "automatic_source_check", "automatic_discovery", "live_catalog_not_demo", "toolbar_refresh", "toolbar_plugin_audit", "connection_details", "content_native_ipc_denied", "manual_rediscovery", "disconnected_welcome", "setup_reconnect", "native_layout_1440_dark", "native_layout_900_light", "native_gallery_retains_live_catalog", "native_inspector_returns_focus", "native_dashboard_theme_control_acknowledged"}
+LIVE_DESKTOP_SCREENSHOTS = {
+    "desktop-window-1440-dark.png", "desktop-window-900-light.png",
+    "desktop-window-gallery-light.png", "desktop-window-inspector-light.png",
+}
 REQUIRED_WATCHTOWER_CHECKS = {
     "trusted_manager_ipc", "remote_ipc_denied", "session_persistent_reopen",
     "session_account_isolation", "session_reset_generation", "authenticated_page_capture",
@@ -173,6 +177,80 @@ def source_version(root: Path = ROOT) -> str:
 VERSION = source_version()
 VERIFICATION_NAME = f"Modhunter-{VERSION}-Verification.zip"
 INSTALLER_NAME = f"Modhunter_{VERSION}_x64-setup.exe"
+MO2_PACKAGE_NAME = f"Modhunter-{VERSION}-MO2-Plugin.zip"
+STANDALONE_NAME = f"Modhunter-{VERSION}-Standalone.zip"
+MO2_PACKAGE_ROOT_FILES = frozenset({
+    "BUILD_INFO.json", "Install_MO2_Plugin.ps1", "Install_MO2_Plugin.bat",
+    "PROJECT_NOTICE.txt", "THIRD_PARTY_NOTICES.json",
+    "START-HERE-MO2-253.md", "GameSync-Update-Techniques.md",
+})
+VISUAL_BASELINE = "1a99a66d346b1593273afc7c2b12e2d493c8d5e0"
+INSTALLER_CHECKS = {
+    "nsis_installs_executable", "installed_executable_matches_tested_binary",
+    "installed_archive_resource_7z.exe", "installed_archive_resource_7z.dll",
+    "installed_archive_resource_License.txt", "installed_archive_resource_provenance.json",
+    "installed_application_runs_in_webview2", "nsis_provides_uninstaller",
+    "nsis_removes_installed_executable", "uninstall_preserves_external_profile",
+    "nsis_registers_current_user_installation", "nsis_removes_installed_payload",
+    "nsis_removes_current_user_registration",
+    "installer_artifacts_stayed_unchanged",
+    "candidate_source_stayed_unchanged",
+}
+VISUAL_SCREENSHOTS = {
+    f"{variant}/{name}" for variant in ("before", "after") for name in (
+        "library-1440-dark.png", "library-1440-light.png", "library-900-dark.png",
+        "library-390-light.png", "updates-1440-dark.png", "inspector-1440-dark.png",
+        "desktop-chrome-900-light.png", "watchtower-add-dialog-900-light.png",
+    )
+} | {"after/public-projects-gallery-1440-dark.png", "after/public-projects-gallery-1440-light.png"}
+
+
+def validate_installer_report(report: dict, commit: str, installer_hash: str, executable_hash: str) -> None:
+    require(report.get("schemaVersion") == 1 and report.get("ok") is True
+            and report.get("candidateCommit") == commit and report.get("sourceDirty") is False,
+            "Windows installer receipt does not identify the clean tested candidate")
+    require(report.get("installerSha256") == installer_hash
+            and report.get("executableSha256") == executable_hash
+            and report.get("installedExecutableSha256") == executable_hash,
+            "Windows installer did not install the exact tested executable")
+    require(report.get("installerScriptSha256") == file_hash(ROOT / "native/scripts/installer_smoke.ps1"),
+            "Windows installer acceptance script differs from the candidate")
+    checks = report.get("checks")
+    require(isinstance(checks, list) and len(checks) == len(INSTALLER_CHECKS)
+            and all(isinstance(row, dict) and row.get("passed") is True for row in checks)
+            and {row.get("name") for row in checks} == INSTALLER_CHECKS,
+            "Windows installer acceptance omitted or failed an install/launch/uninstall check")
+    resources = report.get("archiveResourceHashes")
+    require(isinstance(resources, dict) and all(resources.get(name) == digest for name, digest in ARCHIVE_PINS.items()),
+            "Installed application archive tools differ from the pinned helpers")
+
+
+def validate_visual_report(report: dict, commit: str) -> None:
+    require(report.get("ok") is True and report.get("candidateCommit") == commit
+            and report.get("sourceDirty") is False and report.get("baselineCommit") == VISUAL_BASELINE,
+            "Visual acceptance is incomplete or does not identify the clean candidate and v0.11.0 baseline")
+    sources = (report.get("assets") or {}).get("after")
+    require(isinstance(sources, dict) and bool(sources)
+            and all(isinstance(name, str) and name.startswith("mo2_update_arsenal/web/")
+                    and ".." not in PurePosixPath(name).parts and file_hash(ROOT / name) == digest
+                    for name, digest in sources.items()),
+            "Visual acceptance source hashes differ from the shipped dashboard")
+    require({"mo2_update_arsenal/web/app.js", "mo2_update_arsenal/web/app.template.html",
+             "mo2_update_arsenal/web/atelier.css"}.issubset(sources),
+            "Visual acceptance omitted the primary dashboard sources")
+    library = report.get("completeLibrary") or {}
+    count, rounds = library.get("mods"), library.get("rounds")
+    require(type(count) is int and count >= 10000 and type(rounds) is int and rounds >= 3,
+            "Visual acceptance did not measure the complete large library")
+    variants = library.get("variants") or {}
+    require(set(variants) == {"before", "after"}, "Visual acceptance omitted a comparison variant")
+    for samples in variants.values():
+        require(isinstance(samples, list) and len(samples) == rounds and all(
+            isinstance(row, dict) and row.get("rows") == count and row.get("complete") is True
+            and row.get("allLaidOut") is True and row.get("noContentVisibility") is True
+            and isinstance(row.get("renderMs"), (int, float)) and row["renderMs"] > 0
+            and isinstance(row.get("lastItemSearchMs"), (int, float)) and row["lastItemSearchMs"] > 0
+            for row in samples), "Visual comparison dropped, hid or failed to search library records")
 
 
 def regular_file(path: Path) -> Path:
@@ -564,6 +642,9 @@ def portable_contents(path: Path, commit: str, run_url: str, native_report: dict
                 provenance=json_object(archive.read(index[prefix+"provenance.json"]),"archive provenance")
                 require(provenance.get("version")=="26.06" and all(provenance.get("files",{}).get(name)==expected for name,expected in ARCHIVE_PINS.items())
                         and provenance.get("licenseSha256")==digests[prefix+"License.txt"],"Archive helper provenance is inconsistent")
+            for installer_script in ("Install_MO2_Plugin.ps1", "Install_MO2_Plugin.bat"):
+                require(digests[installer_script] == file_hash(ROOT / "native" / installer_script),
+                        f"Packaged plugin installer differs from the tested source: {installer_script}")
             require(digests["PROJECT_NOTICE.txt"]==file_hash(ROOT/"native/PROJECT_NOTICE.txt"),"Project notice differs from this source")
             require(index["THIRD_PARTY_NOTICES.json"].file_size<=16*1024*1024,"Third-party notice index is too large")
             notices=json.loads(archive.read(index["THIRD_PARTY_NOTICES.json"]).decode("utf-8"))
@@ -609,12 +690,74 @@ def portable_contents(path: Path, commit: str, run_url: str, native_report: dict
     return public
 
 
+
+def component_archive(destination: Path, bodies: dict[str, bytes]) -> None:
+    """Write and read back an independently checkable subset of validated bytes."""
+    require("SHA256SUMS.txt" not in bodies, "Component input must not reuse the portable checksum manifest")
+    checksums = {name: hashlib.sha256(body).hexdigest() for name, body in bodies.items()}
+    manifest = "".join(f"{digest}  {name}\n" for name, digest in sorted(checksums.items())).encode("utf-8")
+    # Stable entry timestamps make repeat preparation reproducible. Content and
+    # BUILD_INFO bytes remain exactly those of the validated Windows package.
+    with ZipFile(destination, "w", ZIP_DEFLATED, compresslevel=9) as archive:
+        for name, body in sorted({**bodies, "SHA256SUMS.txt": manifest}.items()):
+            entry = ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            entry.compress_type = ZIP_DEFLATED
+            entry.external_attr = (stat.S_IFREG | 0o644) << 16
+            archive.writestr(entry, body, compress_type=ZIP_DEFLATED, compresslevel=9)
+    with ZipFile(destination) as archive:
+        index = {entry.filename: entry for entry in archive.infolist()}
+        require(len(index) == len(archive.infolist()) and set(index) == set(bodies) | {"SHA256SUMS.txt"},
+                "Derived component archive changed its exact file set")
+        require(archive.testzip() is None, "Derived component archive failed its CRC check")
+        require(portable_checksums(archive, index) == checksums,
+                "Derived component archive differs from the validated portable bytes")
+
+
+def component_assets(portable: Path, staged: Path) -> None:
+    """Derive convenience downloads only after all portable release gates pass.
+
+    This intentionally never re-reads dashboard/source files from the checkout:
+    every shipped component is taken from the tested portable archive. The
+    single added guide describes this narrower download, not a new installer.
+    """
+    with ZipFile(portable) as archive:
+        index = {entry.filename.replace("\\", "/"): entry for entry in archive.infolist() if not entry.is_dir()}
+        required = MO2_PACKAGE_ROOT_FILES | {"MO2/mo2_update_arsenal/web/index.html", BUNDLED_HELPER, BUNDLED_QT_HELPER}
+        require(required <= set(index), "Validated portable archive is missing a component dependency")
+        mo2 = {name: archive.read(entry) for name, entry in index.items()
+               if name.startswith("MO2/") or name in MO2_PACKAGE_ROOT_FILES}
+        mo2["START-HERE.txt"] = (
+            f"MODHUNTER {VERSION} - MO2 PLUGIN\n\n"
+            "Extract this complete archive before running Install_MO2_Plugin.bat.\n"
+            "Close MO2, select the folder containing ModOrganizer.exe, then restart MO2.\n"
+            "The installer validates this package and preserves existing plugin progress.\n\n"
+            "Every file under MO2/ is copied unchanged from the tested portable release.\n"
+            "The plugin includes its Rust CLI, Qt bridge and complete archive helpers.\n"
+            "BUILD_INFO.json identifies the tested commit; SHA256SUMS.txt covers this archive's files.\n\n"
+            "For the desktop app, the separate readiness checker and the full documentation set,\n"
+            f"download {PORTABLE_NAME} from the same release. The standalone HTML download\n"
+            "is also independent. Choose only the entry points you want to use.\n"
+        ).encode("utf-8")
+        standalone = {"BUILD_INFO.json": archive.read(index["BUILD_INFO.json"]),
+                      "Modhunter.html": archive.read(index["MO2/mo2_update_arsenal/web/index.html"])}
+    component_archive(staged / MO2_PACKAGE_NAME, mo2)
+    component_archive(staged / STANDALONE_NAME, standalone)
+
+
 def release_notes(commit: str, run_url: str, repository_url: str, installer_name: str) -> str:
-    return f"""# Modhunter {VERSION} — Rust desktop
+    return f"""# Modhunter {VERSION} — Atelier / The Mod Vault
 
 The Windows desktop, MO2 profile import/cache engine, connection checks, tab lifecycle and native dialogs now run in Rust. Microsoft Edge WebView2 renders the existing dashboard and all game modes. The shipped desktop does not require Node or Electron.
 
 MO2's Python/Qt plugin remains the in-process adapter for MO2's authenticated Nexus connection, native downloads, interactive FOMOD installer, focus and verified rewards. Dashboard/game presentation remains HTML/CSS/JavaScript.
+
+## 0.12.0: image-forward mod browsing and a compact desktop
+
+- **A richer library:** gallery and readable list views, adjustable density, authentic provider thumbnails when available, search and filters, and clear installed/candidate version and provider identities. Complete results remain available without viewport virtualization or record caps.
+- **A coherent workspace:** warm obsidian and parchment themes, restrained brass accents, custom vector navigation, compact toolbars, and consistent update review, source, settings and file-detail surfaces.
+- **More working space:** the native shell is 116px tall, with full tab titles and every command retained. Collapsible navigation, keyboard focus restoration and wrapping for long names keep narrower windows usable.
+- **Preserved update safeguards:** exact-file choices, profile-bound approval, native MO2 installation, content backups, verification and rollback remain authoritative. Game modes, progression and FX Studio remain available. The plugin installer now copies and verifies all four archive-helper components beside its Rust CLI, preserving the previous copies in upgrade backups.
+- **Independent downloads:** the MO2 plugin and standalone HTML now have dedicated versioned archives, derived from the already-validated portable package with fresh internal checksum manifests.
 
 ## 0.11.0: reviewed downloads, actual file recovery and app upkeep
 
@@ -679,7 +822,9 @@ See the [0.9.2 evidence and repeatable workloads]({repository_url}/blob/{commit}
 ## Download and run
 
 - **{PORTABLE_NAME}** includes Modhunter.exe, the compiled diagnostic CLI, the MO2 plugin with its narrow Qt interoperability helper, and its installer scripts. Extract it and run Modhunter.exe. The portable app requires Microsoft Edge WebView2 Runtime.
-- **{installer_name}** installs the Rust desktop for the current Windows user and bootstraps WebView2 when needed. Use the portable ZIP's included plugin installer for live MO2 integration.
+- **{installer_name}** installs the Rust desktop for the current Windows user and bootstraps WebView2 when needed. Use the MO2 plugin archive or the portable ZIP's included plugin installer for live MO2 integration.
+- **{MO2_PACKAGE_NAME}** is the complete MO2 plugin with its existing installer, embedded Rust/Qt/archive helpers, notices, build identity and scoped checksums. Extract the whole archive, close MO2 and run Install_MO2_Plugin.bat. The optional readiness checker and desktop app remain in the complete portable package.
+- **{STANDALONE_NAME}** contains the exact tested shared dashboard as Modhunter.html, BUILD_INFO.json and its own checksums. Open the HTML directly for its independent browser/offline experience and preserved game modes; optional live operations still use the existing MO2 bridge.
 - **{VERIFICATION_NAME}** contains the selected native receipts, screenshots, build identity and available benchmark evidence. **SHA256SUMS.txt** verifies the release files.
 
 ## Controls and existing progress
@@ -692,6 +837,8 @@ JSON, CSV and PowerShell exports are saved to Windows Downloads with unique file
 
 ## What this build actually passed
 
+- Before/after Chromium captures against v0.11.0 at desktop and narrow sizes, dark/light themes, authentic source artwork, gallery/list views and update dialogs. The complete 11,207-record comparison preserves every laid-out row and verifies the last item remains searchable; its raw samples and screenshots are included in the verification archive.
+- Actual current-user NSIS installation of this exact installer, byte-for-byte verification of its installed executable and archive helpers, a real installed WebView2 launch, removal of the installed payload and registration, and preservation of the complete external fixture profile during uninstall.
 - The packaged Windows release CLI with the pinned 7-Zip executable and DLL across 26 archive format, path-safety, integrity and exact-selection cases. The portable package carries these exact helpers beside both the desktop and MO2 CLI.
 - Real Chromium review-manager interactions covering complete 1,207-entry selection, explicit new targets, FOMOD advisory behavior, lost acknowledgement, retained restart evidence, exact retention/reset confirmations, support export, preferences and duplicate ownership.
 - The real MO2 native installer applying an exact generated archive to a disposable target, followed by production Rust verification and complete content restoration; separate recovery probes cover wrong targets, later edits, two-target restore and repeated acknowledgement.
@@ -724,6 +871,7 @@ def prepare(artifacts_dir: Path, output_dir: Path, commit: str, run_url: str) ->
     windows = artifact_directory(artifacts_dir / "Modhunter-Rust-Windows")
     mo2 = artifact_directory(artifacts_dir / "Modhunter-MO2-Native-Proof")
     browser = artifact_directory(artifacts_dir / "Modhunter-Rust-Browser-Proof")
+    visual = artifact_directory(artifacts_dir / "Modhunter-Visual-Release-Proof" / "visual-release")
     portable_candidates = sorted(windows.rglob("*.zip"))
     require(len(portable_candidates) == 1 and portable_candidates[0].name == PORTABLE_NAME, "Expected exactly one Modhunter portable ZIP in the Windows artifact")
     portable = regular_file(portable_candidates[0])
@@ -745,10 +893,34 @@ def prepare(artifacts_dir: Path, output_dir: Path, commit: str, run_url: str) ->
     validate_qt_forward(qt_forward_report, commit, file_hash(qt_helper))
     live_report = read_json(windows / "live-mo2-smoke/desktop-live.json")
     archive_report=read_json(windows/"archive-review-proof.json")
+    portable_digest = file_hash(portable)
     public = portable_contents(portable, commit, run_url, native_report, watchtower_report, mo2_result, file_hash(qt_helper), qt_forward_report, live_report,archive_report)
+    require(file_hash(portable) == portable_digest, "Portable archive changed during release validation")
+    installer_report = read_json(windows / "installer-smoke/installer-smoke.json")
+    validate_installer_report(installer_report, commit, file_hash(installer), native_report["executableSha256"])
+    installed_launch = read_json(windows / "installer-smoke/native-launch/native-smoke.json")
+    validate_native_report(installed_launch)
+    validate_native_binding(installed_launch, commit, native_report["executableSha256"])
+    public["windows/installer-smoke.json"] = public_json(installer_report)
+    public["windows/installed-native-smoke.json"] = public_json(installed_launch)
+    public["windows/installed-desktop.png"] = png_bytes(windows / "installer-smoke/native-launch/fixture-desktop.png")
+    visual_report = read_json(visual / "visual-release.json")
+    validate_visual_report(visual_report, commit)
+    public["visual/visual-release.json"] = public_json(visual_report)
+    visual_images = sorted(visual.rglob("*.png"))
+    relative_images = {image.relative_to(visual).as_posix() for image in visual_images}
+    require(VISUAL_SCREENSHOTS.issubset(relative_images), "Visual proof omitted required before/after or gallery screenshots")
+    require(len(visual_images) <= 128, "Unexpected visual acceptance image count")
+    for screenshot in visual_images:
+        relative = screenshot.relative_to(visual)
+        require(all(part not in (".", "..") and not any(c in part for c in "\\:\r\n") for part in relative.parts),
+                "Unsafe visual screenshot path")
+        public["visual/" + relative.as_posix()] = png_bytes(screenshot)
     public["windows/archive-review-proof.json"]=public_json(archive_report)
     public["windows/desktop-live.json"] = public_json(live_report)
     public["windows/desktop-live.png"] = png_bytes(windows / "live-mo2-smoke/desktop-live.png")
+    for name in LIVE_DESKTOP_SCREENSHOTS:
+        public["windows/" + name] = png_bytes(windows / "live-mo2-smoke" / name)
     public["windows/qt-forward.json"] = public_json(qt_forward_report)
     public.update({"windows/native-smoke.json": public_json(native_report), "windows/watchtower-smoke.json": public_json(watchtower_report), "mo2/result.json": public_json(mo2_result), "mo2/native-receipt.json": public_json(mo2_receipt), "mo2/mo2-fixture.png": png_bytes(mo2 / "mo2-fixture.png")})
     watchtower_browser = read_json(browser / "watchtower-browser.json")
@@ -775,7 +947,7 @@ def prepare(artifacts_dir: Path, output_dir: Path, commit: str, run_url: str) ->
         public["browser/" + relative.as_posix()] = png_bytes(screenshot)
     # All proof is validated before creating final output. Build in an adjacent
     # temporary directory and publish it only after copy/checksum verification.
-    expected_binary_hashes = {portable.name: file_hash(portable), installer.name: file_hash(installer)}
+    expected_binary_hashes = {portable.name: portable_digest, installer.name: file_hash(installer)}
     output_dir.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".modhunter-release-", dir=output_dir.parent) as temporary:
         staged = Path(temporary)
@@ -783,6 +955,9 @@ def prepare(artifacts_dir: Path, output_dir: Path, commit: str, run_url: str) ->
             target = staged / source.name
             shutil.copyfile(source, target)
             require(file_hash(target) == expected_binary_hashes[source.name], f"Release copy changed the tested binary: {source.name}")
+        component_assets(staged / PORTABLE_NAME, staged)
+        require(file_hash(staged / PORTABLE_NAME) == portable_digest,
+                "Validated portable archive changed while deriving component assets")
         with ZipFile(staged / VERIFICATION_NAME, "w", ZIP_DEFLATED, compresslevel=9) as archive:
             for name, content in sorted(public.items()):
                 require(PurePosixPath(name).suffix.lower() in (".json", ".png"), "Unexpected non-public evidence file type")
@@ -815,7 +990,8 @@ def self_test() -> None:
             self.windows = self.artifacts / "Modhunter-Rust-Windows"
             self.mo2 = self.artifacts / "Modhunter-MO2-Native-Proof"
             self.browser = self.artifacts / "Modhunter-Rust-Browser-Proof"
-            for path in (self.windows / "release/bundle/nsis", self.windows / "native-smoke", self.windows / "watchtower-smoke", self.windows / "qt-bridge/Release", self.windows / "qt-forward", self.windows / "live-mo2-smoke", self.mo2, self.browser):
+            self.visual = self.artifacts / "Modhunter-Visual-Release-Proof" / "visual-release"
+            for path in (self.windows / "release/bundle/nsis", self.windows / "native-smoke", self.windows / "watchtower-smoke", self.windows / "qt-bridge/Release", self.windows / "qt-forward", self.windows / "live-mo2-smoke", self.windows / "installer-smoke/native-launch", self.mo2, self.browser, self.visual):
                 path.mkdir(parents=True)
             self.native = {"ok": True, "nativeWebView2": True, "shellIpc": True, "exportDownloadVerified": True, "gameViewNativeIpcDenied": "1"}
             self.watchtower = {"ok": True, "nativeWebView2": True, "watchtowerSchema": 1,
@@ -854,6 +1030,8 @@ def self_test() -> None:
                 "checks": [{"name": name, "passed": True} for name in sorted(LIVE_DESKTOP_CHECKS)]}
             self.write_json(self.windows / "live-mo2-smoke/desktop-live.json", self.live)
             (self.windows / "live-mo2-smoke/desktop-live.png").write_bytes(self.png())
+            for name in LIVE_DESKTOP_SCREENSHOTS:
+                (self.windows / "live-mo2-smoke" / name).write_bytes(self.png())
             self.qt_bytes = b"non-loadable synthetic Qt bridge fixture"
             self.qt_hash = hashlib.sha256(self.qt_bytes).hexdigest()
             (self.windows / "qt-bridge/Release/modhunter-qt-bridge.dll").write_bytes(self.qt_bytes)
@@ -898,6 +1076,29 @@ def self_test() -> None:
             self.write_portable()
             (self.windows / "release/bundle/nsis" / INSTALLER_NAME).write_bytes(b"synthetic installer fixture - not executable")
             image = self.png()
+            self.installer_proof = {"schemaVersion": 1, "ok": True, "candidateCommit": self.commit,
+                "sourceDirty": False, "scope": "Synthetic release-validator fixture; no NSIS execution",
+                "installerSha256": file_hash(self.windows / "release/bundle/nsis" / INSTALLER_NAME),
+                "executableSha256": self.cli_hash, "installedExecutableSha256": self.cli_hash,
+                "installerScriptSha256": file_hash(ROOT / "native/scripts/installer_smoke.ps1"),
+                "checks": [{"name": name, "passed": True} for name in sorted(INSTALLER_CHECKS)],
+                "archiveResourceHashes": dict(ARCHIVE_PINS)}
+            self.write_json(self.windows / "installer-smoke/installer-smoke.json", self.installer_proof)
+            self.write_json(self.windows / "installer-smoke/native-launch/native-smoke.json", self.native)
+            (self.windows / "installer-smoke/native-launch/fixture-desktop.png").write_bytes(image)
+            sample = {"rows": 11207, "complete": True, "allLaidOut": True, "noContentVisibility": True,
+                      "renderMs": 100, "lastItemSearchMs": 50}
+            self.visual_proof = {"ok": True, "candidateCommit": self.commit, "baselineCommit": VISUAL_BASELINE,
+                "sourceDirty": False, "scope": "Synthetic release-validator fixture; no browser execution",
+                "assets": {"after": {name: file_hash(ROOT / name) for name in (
+                    "mo2_update_arsenal/web/app.js", "mo2_update_arsenal/web/app.template.html", "mo2_update_arsenal/web/atelier.css")}},
+                "completeLibrary": {"mods": 11207, "rounds": 3,
+                    "variants": {variant: [dict(sample) for _ in range(3)] for variant in ("before", "after")}}}
+            self.write_json(self.visual / "visual-release.json", self.visual_proof)
+            for name in VISUAL_SCREENSHOTS:
+                target = self.visual / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(image)
             (self.mo2 / "mo2-fixture.png").write_bytes(image)
             (self.browser / "review.png").write_bytes(image)
             for name in WATCHTOWER_SCREENSHOTS | NATIVE_MANAGER_SCREENSHOTS:
@@ -919,8 +1120,10 @@ def self_test() -> None:
         def write_portable(self, commit=None, *, build_version=None, include_helper=True, helper_bytes=None, include_qt_helper=True, qt_bytes=None):
             with ZipFile(self.zip_path, "w") as archive:
                 archive.writestr("BUILD_INFO.json", b"\xef\xbb\xbf" + public_json({"version": build_version or VERSION, "commit": commit or self.commit, "workflow": self.run}))
-                for name in ("Modhunter.exe", "modhunter-cli.exe", "Install_MO2_Plugin.ps1", "Install_MO2_Plugin.bat", "Check_MO2_Readiness.ps1", "Check_MO2_Readiness.bat", "START-HERE-MO2-253.md", "GameSync-Update-Techniques.md"):
+                for name in ("Modhunter.exe", "modhunter-cli.exe", "Check_MO2_Readiness.ps1", "Check_MO2_Readiness.bat", "START-HERE-MO2-253.md", "GameSync-Update-Techniques.md"):
                     archive.writestr(name, self.cli_bytes)
+                for name in ("Install_MO2_Plugin.ps1", "Install_MO2_Plugin.bat"):
+                    archive.writestr(name, (ROOT / "native" / name).read_bytes())
                 if include_helper:
                     archive.writestr(BUNDLED_HELPER, self.cli_bytes if helper_bytes is None else helper_bytes)
                 if include_qt_helper:
@@ -1093,8 +1296,118 @@ def self_test() -> None:
                 expected = {"windows/desktop-live.json", "windows/desktop-live.png", "BUILD_INFO.json", "windows/qt-forward.json", "windows/native-smoke.json", "windows/watchtower-smoke.json", "windows/archive-review-proof.json", "mo2/result.json", "mo2/native-receipt.json", "mo2/mo2-fixture.png", "browser/review.png", "browser/watchtower-browser.json"}
                 expected.update("browser/" + name for name in WATCHTOWER_SCREENSHOTS | NATIVE_MANAGER_SCREENSHOTS)
                 expected.add("browser/native-manager-ui.json")
+                expected.update({"windows/installer-smoke.json", "windows/installed-native-smoke.json",
+                                 "windows/installed-desktop.png", "visual/visual-release.json"})
+                expected.update("windows/" + name for name in LIVE_DESKTOP_SCREENSHOTS)
+                expected.update("visual/" + name for name in VISUAL_SCREENSHOTS)
                 self.assertEqual(set(names), expected)
                 self.assertTrue(all(PurePosixPath(name).suffix in (".json", ".png") for name in names))
+
+        def test_plugin_installer_is_bound_to_the_tested_script(self):
+            with ZipFile(self.zip_path) as archive:
+                bodies = {name: archive.read(name) for name in archive.namelist() if name != "SHA256SUMS.txt"}
+            bodies["Install_MO2_Plugin.ps1"] += b"\n# A different installer than the candidate source\n"
+            with ZipFile(self.zip_path, "w") as archive:
+                for name, body in bodies.items():
+                    archive.writestr(name, body)
+            self.refresh_portable_manifest()
+            with self.assertRaisesRegex(ReleaseError, "plugin installer differs from the tested source"):
+                prepare(self.artifacts, self.output, self.commit, self.run)
+            self.assertFalse(self.output.exists())
+
+        def test_visual_gate_rejects_incomplete_wrong_commit_or_reduced_library(self):
+            from copy import deepcopy
+            original = deepcopy(self.visual_proof)
+            for change in (lambda r: r.update(ok=False), lambda r: r.update(candidateCommit="b"*40),
+                           lambda r: r.update(sourceDirty=True),
+                           lambda r: r["completeLibrary"].update(mods=9999),
+                           lambda r: r["completeLibrary"]["variants"]["after"][0].update(allLaidOut=False),
+                           lambda r: r["completeLibrary"]["variants"]["after"][0].update(rows=11206)):
+                report = deepcopy(original)
+                change(report)
+                self.write_json(self.visual / "visual-release.json", report)
+                with self.assertRaises(ReleaseError):
+                    prepare(self.artifacts, self.output, self.commit, self.run)
+                self.assertFalse(self.output.exists())
+
+        def test_installer_gate_rejects_wrong_binary_or_failed_uninstall(self):
+            from copy import deepcopy
+            original = deepcopy(self.installer_proof)
+            for change in (lambda r: r.update(installedExecutableSha256="0"*64),
+                           lambda r: r.update(installerSha256="0"*64),
+                           lambda r: r.update(installerScriptSha256="0"*64),
+                           lambda r: r["checks"].pop(),
+                           lambda r: r["checks"][0].update(passed=False)):
+                report = deepcopy(original)
+                change(report)
+                self.write_json(self.windows / "installer-smoke/installer-smoke.json", report)
+                with self.assertRaises(ReleaseError):
+                    prepare(self.artifacts, self.output, self.commit, self.run)
+                self.assertFalse(self.output.exists())
+
+        def test_component_archives_keep_every_mo2_file_and_exact_tested_html(self):
+            # Extra nested content proves selection keeps the complete plugin,
+            # rather than a hardcoded subset of known Python modules/helpers.
+            with ZipFile(self.zip_path, "a") as archive:
+                archive.writestr("MO2/mo2_update_arsenal/extra-assets/original.bin", b"exact extra plugin asset\x00\xff")
+                archive.writestr("MO2/README.txt", b"another MO2 component")
+            self.refresh_portable_manifest()
+            prepare(self.artifacts, self.output, self.commit, self.run)
+            with ZipFile(self.zip_path) as original:
+                source = {name: original.read(name) for name in original.namelist()}
+            copied_mo2 = {name for name in source if name.startswith("MO2/") or name in MO2_PACKAGE_ROOT_FILES}
+            with ZipFile(self.output / MO2_PACKAGE_NAME) as archive:
+                self.assertEqual(set(archive.namelist()), copied_mo2 | {"START-HERE.txt", "SHA256SUMS.txt"})
+                for name in copied_mo2:
+                    self.assertEqual(archive.read(name), source[name], name)
+                checksums = portable_checksums(archive, {entry.filename: entry for entry in archive.infolist()})
+                self.assertEqual(set(checksums), copied_mo2 | {"START-HERE.txt"})
+                self.assertIn(PORTABLE_NAME.encode(), archive.read("START-HERE.txt"))
+                self.assertNotIn("Modhunter.exe", archive.namelist())
+                self.assertNotIn("Check_MO2_Readiness.ps1", archive.namelist())
+                self.assertNotIn("modhunter-cli.exe", archive.namelist())
+                self.assertTrue(all(not name.startswith("Evidence/") for name in archive.namelist()))
+            with ZipFile(self.output / STANDALONE_NAME) as archive:
+                self.assertEqual(set(archive.namelist()), {"Modhunter.html", "BUILD_INFO.json", "SHA256SUMS.txt"})
+                self.assertEqual(archive.read("Modhunter.html"), source["MO2/mo2_update_arsenal/web/index.html"])
+                self.assertEqual(archive.read("BUILD_INFO.json"), source["BUILD_INFO.json"])
+                portable_checksums(archive, {entry.filename: entry for entry in archive.infolist()})
+            public_checksums = (self.output / "SHA256SUMS.txt").read_text()
+            for name in (PORTABLE_NAME, INSTALLER_NAME, VERIFICATION_NAME, MO2_PACKAGE_NAME, STANDALONE_NAME):
+                self.assertIn(f"{file_hash(self.output / name)}  {name}\n", public_checksums)
+
+        def test_component_archives_are_reproducible_for_identical_validated_bytes(self):
+            prepare(self.artifacts, self.output, self.commit, self.run)
+            repeated = self.root / "repeated"
+            prepare(self.artifacts, repeated, self.commit, self.run)
+            for name in (MO2_PACKAGE_NAME, STANDALONE_NAME):
+                self.assertEqual(file_hash(self.output / name), file_hash(repeated / name))
+
+        def test_component_failure_does_not_publish_partial_output(self):
+            from unittest.mock import patch
+            original = component_archive
+            def fail_second(destination, bodies):
+                if destination.name == STANDALONE_NAME:
+                    raise OSError("Synthetic component disk failure")
+                original(destination, bodies)
+            with patch(__name__ + ".component_archive", side_effect=fail_second):
+                with self.assertRaisesRegex(OSError, "Synthetic component disk failure"):
+                    prepare(self.artifacts, self.output, self.commit, self.run)
+            self.assertFalse(self.output.exists())
+            self.assertFalse(list(self.root.glob(".modhunter-release-*")))
+
+        def test_portable_changed_after_validation_cannot_seed_component_assets(self):
+            from unittest.mock import patch
+            original = portable_contents
+            def change_after_validation(*args, **kwargs):
+                result = original(*args, **kwargs)
+                with ZipFile(self.zip_path, "a") as archive:
+                    archive.writestr("unvalidated.txt", b"changed after the source bytes were verified")
+                return result
+            with patch(__name__ + ".portable_contents", side_effect=change_after_validation):
+                with self.assertRaisesRegex(ReleaseError, "changed during release validation"):
+                    prepare(self.artifacts, self.output, self.commit, self.run)
+            self.assertFalse(self.output.exists())
 
         def test_native_manager_rejects_stale_partial_or_synthetic_interaction_proof(self):
             original=public_json(self.manager_ui)

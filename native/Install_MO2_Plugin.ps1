@@ -36,6 +36,20 @@ if (!(Test-Path -LiteralPath $qtHelper -PathType Leaf)) { throw 'The native Qt b
 foreach ($path in @($source, (Join-Path $source 'web'), (Join-Path $source 'bin'), $helper, $qtHelper)) {
     if ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Refusing to install a linked native helper: $path" }
 }
+# The Rust helper resolves archive-tools beside its own executable. These
+# four pinned-package components must travel with the installed plugin too.
+$archiveRoot = Join-Path $source 'bin\archive-tools'
+$archiveNames = @('7z.exe', '7z.dll', 'License.txt', 'provenance.json')
+$archiveRelativeFiles = @($archiveNames | ForEach-Object { 'MO2/mo2_update_arsenal/bin/archive-tools/' + $_ })
+$archiveSourceHashes = @{}
+if (!(Test-Path -LiteralPath $archiveRoot -PathType Container)) { throw 'The complete archive helper is missing. Extract the complete Windows package including MO2\mo2_update_arsenal\bin\archive-tools.' }
+if ((Get-Item -LiteralPath $archiveRoot -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Refusing to install a linked archive helper directory.' }
+foreach ($name in $archiveNames) {
+    $path = Join-Path $archiveRoot $name
+    if (!(Test-Path -LiteralPath $path -PathType Leaf)) { throw "The complete archive helper is missing: $name. Extract the complete Windows package again." }
+    if ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw "Refusing to install a linked archive helper file: $name" }
+    $archiveSourceHashes[$name] = Get-PluginFileSHA256 $path
+}
 $versionFile = Join-Path $source 'version.py'
 if (!(Test-Path -LiteralPath $versionFile -PathType Leaf)) { throw 'The MO2 plugin version is missing. Extract the complete Windows package again.' }
 $versionMatches = [regex]::Matches([IO.File]::ReadAllText($versionFile), '(?m)^\s*VERSION\s*=\s*["'']([0-9]+\.[0-9]+\.[0-9]+)["'']\s*$')
@@ -59,9 +73,9 @@ if ($packagedSource) {
         $_ -match '^MO2/mo2_update_arsenal/[^/]+\.py$' -or $_ -in @(
             'MO2/mo2_update_arsenal/web/index.html',
             'MO2/mo2_update_arsenal/bin/modhunter-cli.exe',
-            'MO2/mo2_update_arsenal/bin/modhunter-qt-bridge.dll')
+            'MO2/mo2_update_arsenal/bin/modhunter-qt-bridge.dll') -or ($archiveRelativeFiles -contains $_)
     })
-    foreach ($relative in @('BUILD_INFO.json', 'MO2/mo2_update_arsenal/__init__.py', 'MO2/mo2_update_arsenal/plugin.py', 'MO2/mo2_update_arsenal/version.py', 'MO2/mo2_update_arsenal/web/index.html', 'MO2/mo2_update_arsenal/bin/modhunter-cli.exe', 'MO2/mo2_update_arsenal/bin/modhunter-qt-bridge.dll')) {
+    foreach ($relative in (@('BUILD_INFO.json', 'MO2/mo2_update_arsenal/__init__.py', 'MO2/mo2_update_arsenal/plugin.py', 'MO2/mo2_update_arsenal/version.py', 'MO2/mo2_update_arsenal/web/index.html', 'MO2/mo2_update_arsenal/bin/modhunter-cli.exe', 'MO2/mo2_update_arsenal/bin/modhunter-qt-bridge.dll') + $archiveRelativeFiles)) {
         if (!$manifest.ContainsKey($relative)) { throw "The package checksum manifest omitted a required file: $relative" }
     }
     foreach ($relative in @('BUILD_INFO.json') + $installedFiles) {
@@ -116,6 +130,17 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $staging 'bin') | Out-Null
     Copy-Item -LiteralPath $helper -Destination (Join-Path $staging 'bin\modhunter-cli.exe')
     Copy-Item -LiteralPath $qtHelper -Destination (Join-Path $staging 'bin\modhunter-qt-bridge.dll')
+    $archiveStaging = Join-Path $staging 'bin\archive-tools'
+    New-Item -ItemType Directory -Path $archiveStaging | Out-Null
+    foreach ($name in $archiveNames) {
+        $from = Join-Path $archiveRoot $name
+        $to = Join-Path $archiveStaging $name
+        if (((Get-Item -LiteralPath $archiveRoot -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+            ((Get-Item -LiteralPath $from -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "Refusing to copy a linked archive helper: $name" }
+        Copy-Item -LiteralPath $from -Destination $to
+        if ((Get-PluginFileSHA256 $to) -ne $archiveSourceHashes[$name]) { throw "The staged archive helper changed during installation: $name" }
+    }
+    # All component bytes are staged; validate before changing the installed plugin.
     if ($packagedSource) {
         # Confirm the bytes that will actually be installed. A source file can
         # change after preflight or while it is copied; reject that staging

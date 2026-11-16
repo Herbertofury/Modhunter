@@ -1888,6 +1888,10 @@ pub(crate) fn apply_global_appearance(app: &tauri::AppHandle) -> Result<()> {
     maintenance::apply_appearance(app)
 }
 
+pub(crate) fn set_global_theme(app: &tauri::AppHandle, theme: &str) -> Result<()> {
+    maintenance::set_theme(app, theme)
+}
+
 pub(crate) fn reset_pending(app: &tauri::AppHandle) -> bool {
     reset::pending(app)
 }

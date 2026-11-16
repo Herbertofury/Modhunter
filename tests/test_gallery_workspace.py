@@ -82,6 +82,24 @@ class GalleryWorkspaceTests(unittest.TestCase):
         self.assertEqual(self.page.locator('#modList .mod-row').count(), 9)
         self.assertEqual(self.page.locator('body').get_attribute('data-library-view'), 'gallery')
 
+    def test_search_restore_and_sort_reuse_the_surviving_row(self):
+        self.open(count=111)
+        self.page.evaluate("window.__GALLERY_SURVIVOR__=document.getElementById('row-item-110')")
+        self.page.locator('#search').fill('Unique Fixture 110')
+        self.page.wait_for_function('document.querySelectorAll("#modList .mod-row").length===1')
+        self.assertTrue(self.page.evaluate("document.getElementById('row-item-110')===__GALLERY_SURVIVOR__"))
+        self.page.locator('#search').fill('')
+        self.page.wait_for_function('document.querySelectorAll("#modList .mod-row").length===111')
+        self.assertTrue(self.page.evaluate("document.getElementById('row-item-110')===__GALLERY_SURVIVOR__"))
+        self.page.locator('#sortSelect').select_option('name')
+        self.assertEqual(self.page.locator('#modList .mod-row').count(), 111)
+        self.assertTrue(self.page.evaluate("document.getElementById('row-item-110')===__GALLERY_SURVIVOR__"))
+        self.page.locator('#libraryGallery').click()
+        self.assertTrue(self.page.evaluate("document.getElementById('row-item-110')===__GALLERY_SURVIVOR__"))
+        self.page.locator('#densityToggle').click()
+        self.assertTrue(self.page.evaluate("document.getElementById('row-item-110')===__GALLERY_SURVIVOR__"))
+        self.assertEqual(self.page.locator('#modList .mod-row').count(), 111)
+
     def test_next_pending_reveals_target_across_provider_filter(self):
         self.open()
         self.page.locator('#providerFilter').select_option('github')

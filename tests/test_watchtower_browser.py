@@ -23,6 +23,7 @@ except ImportError:
 
 ROOT = Path(__file__).resolve().parents[1]
 UI = ROOT / "native/ui"
+VERSION = json.loads((ROOT / "native/crates/modhunter-desktop/tauri.conf.json").read_text("utf-8"))["version"]
 OUTPUT = Path(os.environ.get("MODHUNTER_QA_OUTPUT", ROOT / "native/target/watchtower-browser"))
 BOOT = (ROOT / "tests/fixtures/watchtower_native_fixture.js").read_text("utf-8")
 SOURCE_FILES = ("native/ui/watchtower.html", "native/ui/watchtower.css", "native/ui/watchtower.js",
@@ -50,7 +51,7 @@ def watch(index=0, *, changed=False):
 
 
 def snapshot(count=2):
-    return {"revision": 1, "version": "0.10.1", "watches": [watch(i, changed=i == 0) for i in range(count)],
+    return {"revision": 1, "version": VERSION, "watches": [watch(i, changed=i == 0) for i in range(count)],
             "sessions": [], "history": [], "readOnly": False, "recoveryWarning": "",
             "work": {"active": [], "queued": []}, "settings": {
                 "checkOnLaunch": False, "backgroundChecking": False, "notifications": False,

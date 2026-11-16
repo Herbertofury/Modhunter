@@ -12,7 +12,7 @@ const SOURCES=window.ModhunterSources;
 let LIVE_SCAN=null,LIVE_CATALOG=null,SCAN_TIMER=null,FILE_PICKER_MOD=null,LIVE_GENERATION=0,LIVE_REFRESH_BUSY=false;
 let WORKSHOP_PLAN=null,WORKSHOP_CHOICES=new Map(),WORKSHOP_BUSY=false,WORKSHOP_REVIEW_ID=null,FAST_PICKER_ID=null;
 let QUICK_RUNNING=false,QUICK_POLL=null,QUICK_SKIPPED=new Map();
-let QUEUE_PENDING=null,INSTALL_PREVIEW_ID=null,INSTALL_PREVIEW_PROFILE='',PREVIEW_RETURN_FOCUS=null;
+let QUEUE_PENDING=null,INSTALL_PREVIEW_ID=null,INSTALL_PREVIEW_PROFILE='',PREVIEW_RETURN_FOCUS=null,INSPECTOR_RETURN_FOCUS=null;
 let WORKSHOP_TICKETS={},WORKSHOP_TICKET_SIGNATURE='',DOWNLOAD_REFRESH_PROMISE=null,DOWNLOAD_REFRESH_AGAIN=false;
 let ACTIVITY_RECORDS=[],ACTIVITY_GENERATION=0,ACTIVITY_WARNING='';
 // Requests may finish after MO2 switches profiles, including A -> B -> A.
@@ -172,7 +172,7 @@ function cachedMarkup(cache,key,dependencies,build){
 }
 // Keep the complete list in the DOM. A ticket or checklist change replaces
 // only its changed rows, preserving unrelated links, focus and scroll state.
-// Structural changes (filtering, sorting, profile replacement) use one parse.
+// Structural library changes reuse surviving rows and parse new markup once.
 function replaceRenderedRow(previous,entry,template){
  const old=previous.node,focused=document.activeElement;
  const action=old.contains(focused)?['data-act','data-workshop-act','data-insight-act','data-source-act','data-download-id','data-download-details','data-retry-download-id','data-retry-item-id'].find(name=>focused.hasAttribute(name)):null;
@@ -188,7 +188,8 @@ function setRows(node,entries,empty,preserveMoves=false){
  const previous=ROW_RENDER_CACHE.get(node);
  // Download status changes can reorder tickets. Retain their controls through
  // moves as well as replacements, so a background poll cannot steal focus.
- const intact=previous&&node.children.length===previous.length&&previous.every((entry,i)=>entry.node===node.children[i]);
+ const currentChildren=previous?[...node.children]:null;
+ const intact=previous&&currentChildren.length===previous.length&&previous.every((entry,i)=>entry.node===currentChildren[i]);
  if(preserveMoves&&entries.length&&intact&&new Set(entries.map(entry=>entry.key)).size===entries.length){
   const byKey=new Map(previous.map(entry=>[entry.key,entry])),template=document.createElement('template');
   const next=entries.map(entry=>{
@@ -214,6 +215,27 @@ function setRows(node,entries,empty,preserveMoves=false){
    }
    HTML_CACHE.delete(node);
    return;
+  }
+ }
+ // Search and sort retain the actual surviving record nodes, including loaded
+ // thumbnails and keyboard focus. A new profile still rebuilds changed markup.
+ // Filtered-out records are not kept in an offscreen/virtualized container.
+ if(intact&&entries.length&&node.id==='modList'){
+  const byKey=new Map(previous.map(entry=>[entry.key,entry]));
+  const next=entries.map(entry=>{const prior=byKey.get(entry.key);return prior?.html===entry.html?prior:{...entry,node:null}});
+  if(next.some(entry=>entry.node)){
+   const missing=next.filter(entry=>!entry.node);
+   if(missing.length){
+    const template=document.createElement('template');template.innerHTML=missing.map(entry=>entry.html).join('');
+    const parsed=[...template.content.children];
+    if(parsed.length!==missing.length)throw Error('The mod library markup could not be reconciled.');
+    missing.forEach((entry,index)=>{entry.node=parsed[index]});
+   }
+   const focused=document.activeElement,fragment=document.createDocumentFragment();
+   for(const entry of next)fragment.append(entry.node);
+   node.replaceChildren(fragment);
+   if(focused?.isConnected&&node.contains(focused)&&document.activeElement!==focused)focused.focus({preventScroll:true});
+   ROW_RENDER_CACHE.set(node,next);HTML_CACHE.delete(node);return;
   }
  }
  if(previous)HTML_CACHE.delete(node);
@@ -276,7 +298,11 @@ async function hydrateProgress(profile){const context=profileContext(),revision=
 
 function updateStorageIndicator(){const b=$('storageStatus');if(!b)return;b.textContent=persistOK?'◉ AUTO-SAVED LOCALLY':'⚠ SESSION ONLY · EXPORT JSON';b.style.color=persistOK?'var(--teal)':'var(--red)'}
 function updatePrefs(p){STORE.prefs={...STORE.prefs,...p};save(false);applyAppearance();if(Object.keys(p).some(k=>['filter','insight','query','sort','collapsed','provider'].includes(k)))render()}
-function applyAppearance(){applyLibraryAppearance();document.body.dataset.theme=STORE.prefs.theme==='snow'?'snow':'night';document.body.dataset.density=STORE.prefs.density==='comfy'?'comfy':'compact';$('effectSelect').value=STORE.prefs.effect;$('soundToggle').textContent=STORE.prefs.sound?'♫':'♪̸';$('soundToggle').title=STORE.prefs.sound?'Mute sounds':'Enable sounds';$('soundToggle').setAttribute('aria-label',STORE.prefs.sound?'Effect sounds on':'Effect sounds off');$('themeToggle').textContent=STORE.prefs.theme==='snow'?'☾':'◐';document.body.dataset.focus=STORE.prefs.focus?'yes':'no';$('focusToggle').textContent=STORE.prefs.focus?'◉ Exit Focus':'◎ Focus';$('focusToggle').setAttribute('aria-pressed',String(Boolean(STORE.prefs.focus)));$('focusTop').textContent=STORE.prefs.focus?'◉':'▦';$('focusTop').setAttribute('aria-pressed',String(Boolean(STORE.prefs.focus)));$('fxIntensity').value=STORE.prefs.vfxIntensity||'legendary';$('fxShake').checked=STORE.prefs.vfxShake!==false;$('fxTrails').checked=STORE.prefs.vfxTrails!==false;window.AetherFX?.config({intensity:STORE.prefs.vfxIntensity||'legendary',shake:STORE.prefs.vfxShake!==false,trails:STORE.prefs.vfxTrails!==false,sound:STORE.prefs.sound})}
+function applyAppearance(){
+ // Native app preferences are global; Chronicle imports must not overwrite the
+ // canonical desktop appearance. Standalone keeps its independent local theme.
+ if(typeof window.modhunterRequestTheme==='function'&&['light','dark'].includes(window.ModhunterAppearance?.resolvedTheme))STORE.prefs.theme=window.ModhunterAppearance.resolvedTheme==='light'?'snow':'night';
+ applyLibraryAppearance();document.body.dataset.theme=STORE.prefs.theme==='snow'?'snow':'night';document.body.dataset.density=STORE.prefs.density==='comfy'?'comfy':'compact';$('effectSelect').value=STORE.prefs.effect;$('soundToggle').textContent=STORE.prefs.sound?'♫':'♪̸';$('soundToggle').title=STORE.prefs.sound?'Mute sounds':'Enable sounds';$('soundToggle').setAttribute('aria-label',STORE.prefs.sound?'Effect sounds on':'Effect sounds off');$('themeToggle').textContent=STORE.prefs.theme==='snow'?'☾':'◐';document.body.dataset.focus=STORE.prefs.focus?'yes':'no';$('focusToggle').textContent=STORE.prefs.focus?'◉ Exit Focus':'◎ Focus';$('focusToggle').setAttribute('aria-pressed',String(Boolean(STORE.prefs.focus)));$('focusTop').textContent=STORE.prefs.focus?'◉':'▦';$('focusTop').setAttribute('aria-pressed',String(Boolean(STORE.prefs.focus)));$('fxIntensity').value=STORE.prefs.vfxIntensity||'legendary';$('fxShake').checked=STORE.prefs.vfxShake!==false;$('fxTrails').checked=STORE.prefs.vfxTrails!==false;window.AetherFX?.config({intensity:STORE.prefs.vfxIntensity||'legendary',shake:STORE.prefs.vfxShake!==false,trails:STORE.prefs.vfxTrails!==false,sound:STORE.prefs.sound})}
 function counts(){if(RENDER_COUNTS)return RENDER_COUNTS;const c={total:DATA.items.length,done:0,review:0,risky:0,unlinked:0,favorites:0,pending:0,updates:0};for(const m of DATA.items){const status=getStatus(m);if(status==='done')c.done++;if(status==='review')c.review++;if(status==='pending')c.pending++;if(isRisk(m))c.risky++;if(!getSrc(m).verified)c.unlinked++;if(isFav(m))c.favorites++;if(isUpdate(m))c.updates++;}return{...c,left:c.total-c.done,percent:c.total?Math.round(c.done/c.total*100):0}}
 const SET=(id,val)=>{const el=$(id);if(el)el.textContent=val};
 function renderStats(){const c=counts();SET('sidePercent',c.percent+'%');$('sideProgressFill').style.width=c.percent+'%';SET('sideDone',c.done);SET('sideRemaining',c.left);SET('sideDanger',c.risky);SET('heroPercent',c.percent+'%');SET('heroProgressLabel',`${c.done} / ${c.total} mods`);$('heroMotivation').textContent=c.percent===100?'SOVNGARDE IS YOURS':c.percent>=75?'THE FINAL ASSAULT':c.percent>=40?'THE TIDE TURNS':'THE JOURNEY BEGINS';document.querySelector('.orb-outer').style.setProperty('--percent',c.percent+'%');SET('metricTotal',c.total);SET('metricSections',DATA.groups.length+' hand-sorted sections');SET('metricDone',c.done);SET('metricRemaining',c.left+' left in the quest');SET('metricWatch',c.risky);SET('metricLinks',c.total-c.unlinked);SET('metricLinksSub',c.unlinked+' still need source confirmation');
@@ -305,9 +331,9 @@ function modHTML(m){const row=getRow(m.id);return cachedMarkup(MOD_MARKUP_CACHE,
 function buildModHTML(m){const s=getSrc(m),sourceText=s.verified?(SOURCES?.label(s.type)||'Source'):'Find source',note=getRow(m.id).note||m.screenshotNote||'',stat=getStatus(m),statusLabel=stat==='done'?'Clear completed status':stat==='review'?'Mark mod cleared':'Mark mod cleared';
  return `<article class="mod-row ${classFor(m)}" id="row-${escapeHTML(m.id)}" data-id="${escapeHTML(m.id)}" data-detected="${escapeHTML(detectedStatus(m).kind)}">
  <div class="mod-status"><button class="complete-btn" data-act="complete" data-id="${m.id}" aria-label="${escapeHTML(statusLabel+' for '+m.name)}" title="${escapeHTML(statusLabel)}">${stat==='done'?'✓':stat==='review'?'!':''}</button></div>
- ${thumbnailMarkup(m)}
+ ${thumbnailMarkup(m,false,s)}
  <div class="mod-priority">${m.priority}</div>
- <div class="mod-primary" data-priority="${m.priority}"><div class="mod-name-actions"><a class="mod-title source-title ${s.verified?'':'unknown'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHTML((s.verified?'Open source page for ':'Search for original source of ')+m.name)}" title="${escapeHTML(m.name+' — '+(s.verified?'Open original source':'Find original source'))}" data-act="source" data-id="${escapeHTML(m.id)}">${escapeHTML(m.name)}<span class="source-open-glyph" aria-hidden="true">↗</span></a>${BRIDGE.active?`<button class="mod-inline-locate" type="button" title="Reveal this mod in Mod Organizer 2" aria-label="Reveal ${escapeHTML(m.name)} in MO2" data-act="locate" data-id="${escapeHTML(m.id)}">⌖</button>`:''}</div><div class="mod-author">${escapeHTML(modAuthor(m)||m.group||'Installed mod')}</div>${note?`<div class="mod-note ${/do not|ctd|crash|hard esp|incompati|needs update|bugs/i.test(note)?'warning-note':''}" title="${escapeHTML(note)}">${escapeHTML(note)}</div>`:''}${INSIGHTS?.chips(m)||''}${SOURCES?.chips(m)||''}</div>
+ <div class="mod-primary" data-priority="${m.priority}"><div class="mod-name-actions"><a class="mod-title source-title ${s.verified?'':'unknown'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHTML((s.verified?'Open source page for ':'Search for original source of ')+m.name)}" title="${escapeHTML(m.name+' — '+(s.verified?'Open original source':'Find original source'))}" data-act="source" data-id="${escapeHTML(m.id)}">${escapeHTML(m.name)}<span class="source-open-glyph" aria-hidden="true">↗</span></a>${BRIDGE.active?`<button class="mod-inline-locate" type="button" title="Reveal this mod in Mod Organizer 2" aria-label="Reveal ${escapeHTML(m.name)} in MO2" data-act="locate" data-id="${escapeHTML(m.id)}">⌖</button>`:''}</div>${modAuthor(m)?`<div class="mod-author" data-no-translate>${escapeHTML(modAuthor(m))}</div>`:''}${note?`<div class="mod-note ${/do not|ctd|crash|hard esp|incompati|needs update|bugs/i.test(note)?'warning-note':''}" title="${escapeHTML(note)}">${escapeHTML(note)}</div>`:''}${INSIGHTS?.chips(m)||''}${SOURCES?.chips(m)||''}</div>
  <div class="mod-version" title="Installed version recorded by source">${escapeHTML(m.installedVersion||'Unknown')}${m.update?.latestVersion&&m.update.latestVersion!==m.installedVersion?`<small class="newer-version" title="Latest metadata, not necessarily compatible">→ ${escapeHTML(m.update.latestVersion)}</small>`:''}</div>
  <div class="mod-assessment">${detectedMarkup(m)}<span class="legacy-assessment">${assessmentHTML(m)}</span></div>
  <div class="mod-source"><a class="source-btn ${s.verified?'':'lookup'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" data-act="source" data-id="${m.id}" title="${escapeHTML(s.type==='creations'?'Exact Bethesda Creation listing. Install from in-game Creations menu.':s.verified?'Exact mod files page':'Search for the correct mod project; source not yet verified')}">${sourceText}</a></div>
@@ -335,11 +361,14 @@ function focusRow(id){const row=$('row-'+id);if(!row)return;focusedRowId=id;row.
 function jumpChapter(id){STORE.prefs.filter='all';STORE.prefs.provider='all';STORE.prefs.query='';$('search').value='';if(STORE.prefs.collapsed.includes(id))STORE.prefs.collapsed=STORE.prefs.collapsed.filter(x=>x!==id);save();render();const el=$('section-'+id);el?.scrollIntoView({behavior:'smooth',block:'start'});$('sidebar').classList.remove('open')}
 function resetFilters(){STORE.prefs.filter='all';STORE.prefs.insight='all';STORE.prefs.provider='all';STORE.prefs.query='';$('search').value='';save();render()}
 function toggleAllChapters(){const allClosed=STORE.prefs.collapsed.length===DATA.groups.length;STORE.prefs.collapsed=allClosed?[]:DATA.groups.map(g=>g.id);$('collapseAll').textContent=allClosed?'Collapse':'Expand';save();render();}
-function drawInspector(m){openedId=m.id;STORE.lastSelected=m.id;save(false);const row=getRow(m.id),audit=getAudit(m),source=getSrc(m);SET('drawerTitle',m.name);
+function drawInspector(m){
+ const drawer=$('detailDrawer');
+ if(!drawer.classList.contains('open'))INSPECTOR_RETURN_FOCUS=document.activeElement?.closest('.mod-row')?document.activeElement:$('row-'+m.id)?.querySelector('.inspect-btn')||document.activeElement;
+ openedId=m.id;STORE.lastSelected=m.id;save(false);const row=getRow(m.id),audit=getAudit(m),source=getSrc(m);SET('drawerTitle',m.name);
  const selected=(v)=>row.compat===v?'selected':'';const status=getStatus(m);
  const profileMode=Boolean(BRIDGE.active||DATA.offline),runtime=profileMode?txt(DATA.gameRuntime).trim():'1.5.97';
  const verifiedLabel=runtime&&runtime.toLowerCase()!=='unknown'?'Verified working on '+runtime:'Verified working in this setup';
- $('drawerContent').innerHTML=`${thumbnailUrl(m)?'<div class="drawer-preview">'+thumbnailMarkup(m,true)+'</div>':''}<div class="drawer-mod-meta"><span>${escapeHTML(modAuthor(m)||providerLabel(source.type))}</span><strong>Installed ${escapeHTML(m.installedVersion||'Unknown')}</strong></div><div class="drawer-priority"><span>MO2 PRIORITY #${m.priority}</span><span>${escapeHTML(m.group)}</span><span>${BRIDGE.active?'LIVE PROFILE':DATA.offline?'IMPORTED PROFILE':'SCREENSHOT '+m.screenshot}</span></div>
+ $('drawerContent').innerHTML=`${thumbnailUrl(m)?'<div class="drawer-preview">'+thumbnailMarkup(m,true)+'</div>':''}<div class="drawer-mod-meta"><span data-no-translate>${escapeHTML(modAuthor(m)||providerLabel(source.type))}</span><strong>Installed ${escapeHTML(m.installedVersion||'Unknown')}</strong></div><div class="drawer-priority"><span>MO2 PRIORITY #${m.priority}</span><span>${escapeHTML(m.group)}</span><span>${BRIDGE.active?'LIVE PROFILE':DATA.offline?'IMPORTED PROFILE':'SCREENSHOT '+m.screenshot}</span></div>
  <div class="drawer-section drawer-alert" data-alert="${escapeHTML(audit.verdict)}"><span class="drawer-label" style="margin:0">${(BRIDGE.active||DATA.offline)?'RUNTIME / FILE COMPATIBILITY CHECK':'1.5.97 COMPATIBILITY ADVISORY'}</span><strong>${escapeHTML(audit.verdict==='avoid'?'AVOID LATEST RELEASE':audit.verdict==='hold'?'HOLD / PICK LEGACY FILE':audit.verdict==='safe-file'?(profileMode?'BUILD LISTED':'SE BUILD LISTED'):audit.verdict==='check'?'VERIFY SPECIFIC BUILD':'NOT YET VERIFIED')}</strong><p>${escapeHTML(audit.note||((BRIDGE.active||DATA.offline)?'This source has not established complete compatibility. Check the required game runtime, script extender, dependencies and installation choices.':'The provided screenshots do not establish compatibility for a new release. Check the required game executable, SKSE, Address Library, BEES and masters before updating.'))}</p>${audit.evidence?`<a class="drawer-link" href="${escapeHTML(audit.evidence)}" target="_blank" rel="noopener noreferrer">↗ View supporting source</a>`:''}</div>
  <div id="modSourceDetails">${SOURCES?.details(sourceDetailMod(m),{live:BRIDGE.active})||''}</div>
  <div id="modInsightDetails">${INSIGHTS?.details(m,{live:BRIDGE.active,game:DATA.game,auditState:DATA.pluginAuditState||{}})||''}</div>
@@ -353,7 +382,7 @@ function drawInspector(m){openedId=m.id;STORE.lastSelected=m.id;save(false);cons
  <div class="drawer-check"><input type="checkbox" id="drawerFavorite" ${row.favorite?'checked':''}><label for="drawerFavorite">Bookmark this mod in the sidebar</label></div>
  <div class="drawer-action-bar"><button id="saveInspector">✦ Save inspection</button><button id="markInspectorDone">✓ Mark cleared</button></div>
  <p class="drawer-micro" style="margin-top:15px">${BRIDGE.active?'Your notes and verdicts are persisted in the MO2 Chronicle for this profile. Manual clearing does not award ranked XP.':'Your notes and verdicts are local to this browser. Back up JSON before moving machines.'} This dashboard does not directly modify installed mod files.</p>`;
- $('drawerVeil').hidden=false;$('detailDrawer').classList.add('open');$('detailDrawer').setAttribute('aria-hidden','false');setTimeout(()=>$('drawerStatus').focus(),130);
+ $('drawerVeil').hidden=false;drawer.inert=false;drawer.classList.add('open');drawer.setAttribute('aria-hidden','false');setTimeout(()=>{if(openedId===m.id&&drawer.classList.contains('open'))$('drawerStatus')?.focus({preventScroll:true})},130);
  // A pasted URL is immediately previewable/copyable, even before saving notes.
  // Never leave the old link clickable while an invalid replacement is typed.
  const sourceInput=$('drawerUrl'),sourceLink=$('drawerOpenLink');
@@ -511,7 +540,11 @@ if($('analyzePlugins'))$('analyzePlugins').addEventListener('click',()=>void ana
 function saveInspection(forceDone){const m=ITEM_MAP.get(openedId);if(!m)return;const url=$('drawerUrl').value.trim();if(url&&!validUrl(url)){toast('Please enter a valid http(s) mod URL.');$('drawerUrl').focus();return}
  const old=getStatus(m);const selected=$('drawerStatus').value;const next=forceDone?'done':selected;
  markSourceEdit(getRow(m.id).url,url);STORE.rows[m.id]={...getRow(m.id),status:next,installed:$('drawerInstalled').value.trim(),testedVersion:$('drawerVerifiedVersion').value.trim(),compat:$('drawerCompat').value,url:url,note:$('drawerNote').value,favorite:$('drawerFavorite').checked,updatedAt:new Date().toISOString()};save();closeInspector();render();if(next==='done'&&old!=='done')spawnFinisher(centerOfRow(m.id));toast('✦ Inspection recorded for '+m.name);}
-function closeInspector(){$('drawerVeil').hidden=true;$('detailDrawer').classList.remove('open');$('detailDrawer').setAttribute('aria-hidden','true');openedId=null}
+function closeInspector(restoreFocus=true){
+ const drawer=$('detailDrawer'),wasOpen=drawer.classList.contains('open'),opener=INSPECTOR_RETURN_FOCUS?.isConnected?INSPECTOR_RETURN_FOCUS:$('row-'+openedId)?.querySelector('.inspect-btn');
+ $('drawerVeil').hidden=true;drawer.inert=true;drawer.classList.remove('open');drawer.setAttribute('aria-hidden','true');openedId=null;INSPECTOR_RETURN_FOCUS=null;
+ if(restoreFocus&&wasOpen&&opener?.isConnected)opener.focus({preventScroll:true});
+}
 function help(open){$('helpVeil').hidden=!open;}
 async function copyToClipboard(value){try{await navigator.clipboard.writeText(value);toast('⧉ Source URL copied.')}catch{const t=document.createElement('textarea');t.value=value;document.body.append(t);t.select();let success=false;try{success=document.execCommand('copy')}catch{}t.remove();toast(success?'Source URL copied.':'Copy unavailable. Select the URL in the inspector.')}}
 function exportFilename(label,extension){const raw=String(DATA.profileName||LIVE_CATALOG?.profileName||'Standalone').replace(/[<>:"\/\\|?*\u0000-\u001f]/g,'_').trim();const profile=Array.from(raw).slice(0,80).join('')||'Profile';return 'Modhunter - '+profile+' - '+label+'.'+extension;}
@@ -655,10 +688,13 @@ function thumbnailUrl(mod){
  for(const value of candidates){if(typeof value!=='string'||value.length>8192)continue;try{const u=new URL(value);if(u.protocol==='https:'&&!u.username&&!u.password&&['staticdelivery.nexusmods.com','cdn.modrinth.com','thunderstore.io','cdn.thunderstore.io','gcdn.thunderstore.io'].includes(u.hostname.toLowerCase()))return u.href}catch{}}
  return '';
 }
-function thumbnailMarkup(mod,large=false){
- const url=thumbnailUrl(mod),source=getSrc(mod),label=providerLabel(source.type),id=escapeHTML(mod.id),artClass=(mod.thumbnailKind||mod.update?.thumbnailKind||mod.sourceUpdate?.thumbnailKind)==='icon'?' mod-art-icon':'';
- const inside='<span class="mod-art-fallback" aria-hidden="true">No preview supplied</span>'+(url?'<img class="mod-preview-image" src="'+escapeHTML(url)+'" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">':'')+'<span class="mod-art-provider">'+escapeHTML(label)+'</span>';
- return large?'<div class="mod-art mod-art-large'+artClass+'">'+inside+'</div>':'<button class="mod-art'+artClass+'" type="button" data-act="preview" data-id="'+id+'" title="'+escapeHTML('Inspect '+mod.name)+'" aria-label="'+escapeHTML('Preview and inspect '+mod.name)+'">'+inside+'</button>';
+function thumbnailMarkup(mod,large=false,source=getSrc(mod)){
+ const url=thumbnailUrl(mod),label=providerLabel(source.type),id=escapeHTML(mod.id),artClass=(mod.thumbnailKind||mod.update?.thumbnailKind||mod.sourceUpdate?.thumbnailKind)==='icon'?' mod-art-icon':'';
+ // Keep the fallback as text in the existing button. Repeated decorative
+ // wrappers and per-image stacking contexts are costly across full libraries.
+ const inside='No preview supplied'+(url?'<img class="mod-preview-image" src="'+escapeHTML(url)+'" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">':'');
+ const metadata=' data-provider-label="'+escapeHTML(label)+'"';
+ return large?'<div class="mod-art mod-art-large'+artClass+'"'+metadata+'>'+inside+'</div>':'<button class="mod-art'+artClass+'" type="button" data-act="preview" data-id="'+id+'"'+metadata+' title="'+escapeHTML('Inspect '+mod.name)+'" aria-label="'+escapeHTML('Preview and inspect '+mod.name)+'">'+inside+'</button>';
 }
 function applyLibraryAppearance(){
  document.body.dataset.libraryView=STORE.prefs.libraryView==='gallery'?'gallery':'list';
@@ -684,7 +720,7 @@ function openModContextMenu(row,x,y){
  const mod=ITEM_MAP.get(CONTEXT_MOD),menu=$('modContextMenu'),actions=[['inspect','Open details'],['source','Open source page'],['favorite',isFav(mod)?'Remove bookmark':'Bookmark mod']];
  if(row.querySelector('[data-act="files"]'))actions.splice(1,0,['files','Review exact files']);
  if(BRIDGE.active)actions.push(['locate','Reveal in MO2']);
- menu.innerHTML='<div class="context-title">'+escapeHTML(mod.name)+'</div>'+actions.map(([action,label])=>'<button type="button" role="menuitem" data-context-act="'+action+'">'+label+'</button>').join('');
+ menu.innerHTML='<div class="context-title" data-no-translate>'+escapeHTML(mod.name)+'</div>'+actions.map(([action,label])=>'<button type="button" role="menuitem" data-context-act="'+action+'">'+label+'</button>').join('');
  menu.hidden=false;menu.style.left=Math.max(8,Math.min(x,innerWidth-menu.offsetWidth-8))+'px';menu.style.top=Math.max(8,Math.min(y,innerHeight-menu.offsetHeight-8))+'px';menu.querySelector('button').focus({preventScroll:true});
 }
 $('libraryList').onclick=()=>updatePrefs({libraryView:'list'});
@@ -729,7 +765,18 @@ $('focusToggle').onclick=()=>updatePrefs({focus:!STORE.prefs.focus});
 $('focusTop').onclick=()=>updatePrefs({focus:!STORE.prefs.focus});
 $('effectSelect').onchange=e=>updatePrefs({effect:e.target.value});$('fxSettingsToggle').onclick=()=>{const panel=$('fxStudio');panel.hidden=!panel.hidden;$('fxSettingsToggle').setAttribute('aria-expanded',String(!panel.hidden))};$('fxIntensity').onchange=e=>updatePrefs({vfxIntensity:e.target.value});$('fxShake').onchange=e=>updatePrefs({vfxShake:e.target.checked});$('fxTrails').onchange=e=>updatePrefs({vfxTrails:e.target.checked});$('fxTest').onclick=()=>{if(STORE.prefs.vfxIntensity==='off'||matchMedia('(prefers-reduced-motion: reduce)').matches){toast('✧ Preview unavailable while visual effects are disabled or Reduced Motion is enabled.');return}window.AetherFX?.preview();toast('✧ Visual preview · no progress or ranked XP')};$('fxClose').onclick=()=>{$('fxStudio').hidden=true;$('fxSettingsToggle').setAttribute('aria-expanded','false')};$('fxStudioDone').onclick=$('fxClose').onclick;
 $('soundToggle').onclick=()=>updatePrefs({sound:!STORE.prefs.sound});
-$('themeToggle').onclick=()=>updatePrefs({theme:STORE.prefs.theme==='night'?'snow':'night'});
+$('themeToggle').onclick=()=>{
+ const next=document.body.dataset.theme==='snow'?'night':'snow';
+ if(typeof window.modhunterRequestTheme==='function'){
+  try{window.modhunterRequestTheme(next==='snow'?'light':'dark')}catch(error){toast(error.message||'The appearance change could not be requested.');}
+  return;
+ }
+ updatePrefs({theme:next});
+};
+window.addEventListener('modhunter-appearance-applied',()=>applyAppearance());
+// The native preference engine may be injected after this dashboard. Wait for
+// its event listener to apply the canonical payload before reading it.
+window.addEventListener('modhunter-preferences',()=>Promise.resolve().then(()=>{if(typeof window.modhunterRequestTheme==='function')applyAppearance()}));
 $('nextPending').onclick=nextPending;$('showCritical').onclick=()=>{STORE.prefs.filter='risky';STORE.prefs.provider='all';STORE.prefs.query='';$('search').value='';STORE.prefs.collapsed=[];save();render();$('workbench')?.scrollIntoView({behavior:'smooth'})};
 $('backToTop').onclick=()=>scrollTo({top:0,behavior:'smooth'});
 $('advisoryToggle').onclick=()=>{const s=document.querySelector('.advisory');s.classList.toggle('collapsed');$('advisoryBody').hidden=s.classList.contains('collapsed');$('advisoryToggle').setAttribute('aria-expanded',String(!s.classList.contains('collapsed')))};
@@ -806,7 +853,7 @@ function activateLiveCatalog(c){
  SET('liveProfile',c.profileName+' / '+c.game);SET('liveCount',c.items.length+' mods · '+c.groups.length+' chapters');setBridgeConnection(true,'Live session. Your active MO2 profile is authoritative; the checklist is saved per profile.');
  $('liveSync').textContent='Snapshot: '+new Date().toLocaleTimeString();
  const chosen=STORE.prefs.filter;if(chosen==='updates'&&!c.items.some(isUpdate))STORE.prefs.filter='all';
- if(newProfile){closeInspector();}else{refreshInspectorInsights();if(openedId&&ITEM_MAP.has(openedId)){void loadModInsights(ITEM_MAP.get(openedId));void loadSourceDetails(ITEM_MAP.get(openedId));}}
+ if(newProfile){closeInspector(false);}else{refreshInspectorInsights();if(openedId&&ITEM_MAP.has(openedId)){void loadModInsights(ITEM_MAP.get(openedId));void loadSourceDetails(ITEM_MAP.get(openedId));}}
  if(newExecutionContext||changedRuntime||changedMods){WORKSHOP_PLAN=null;WORKSHOP_CHOICES.clear();QUEUE_PENDING=null;$('queueReviewVeil').hidden=true;INSTALL_PREVIEW_ID=null;$('installPreviewVeil').hidden=true;closeFilePicker();}
  if(newExecutionContext){if(QUICK_POLL){clearTimeout(QUICK_POLL);QUICK_POLL=null;}QUICK_RUNNING=false;FAST_PICKER_ID=null;QUICK_SKIPPED.clear();}
  if(newProfile){WORKSHOP_TICKETS={};WORKSHOP_TICKET_SIGNATURE='';$('liveDownloadList').innerHTML='';renderDownloadPulse({});ACTIVITY_RECORDS=[];ACTIVITY_WARNING='';ACTIVITY_GENERATION++;renderActivity();refreshActivity();}
@@ -838,7 +885,13 @@ $('workspaceCancel').onclick=async()=>{
  try{const response=await bridgeRequest('POST','cancel-scan',{profileId:context.profile,jobId});if(contextIsCurrent(context)&&response.scan){updateScanUI(response.scan);await requestLiveCatalog()}}
  catch(error){toast('Could not cancel this check: '+error.message)}finally{$('workspaceCancel').disabled=false}
 };
-$('workspaceDetails').onclick=()=>{if(BRIDGE.active&&LIVE_CONNECTED&&window.modhunterDesktopAction)window.modhunterDesktopAction('diagnostics');else{$('connectionDetailsText').textContent=BRIDGE.active?(LIVE_CONNECTED?'Connected to the MO2 plugin. Profile: '+(LIVE_CATALOG?.profileName||'Loading')+'\nGame: '+(LIVE_CATALOG?.game||'Unknown'):'The MO2 plugin is disconnected. Reopen its dashboard to reconnect.'):(DATA.offline?'Imported read-only profile. Live scans and installation require the MO2 plugin.':'Standalone demonstration. Import your profile with Tools → Link MO2, or launch Modhunter through the MO2 plugin.');$('connectionDetails').showModal()}};
+$('workspaceDetails').onclick=()=>{
+ if(BRIDGE.active&&LIVE_CONNECTED&&window.modhunterDesktopAction){window.modhunterDesktopAction('diagnostics');return}
+ const message=BRIDGE.active?(LIVE_CONNECTED?'Connected to the MO2 plugin. Profile: {profile}\nGame: {game}':'The MO2 plugin is disconnected. Reopen its dashboard to reconnect.'):(DATA.offline?'Imported read-only profile. Live scans and installation require the MO2 plugin.':'Standalone demonstration. Import your profile with Tools → Link MO2, or launch Modhunter through the MO2 plugin.');
+ const params={profile:LIVE_CATALOG?.profileName||'Loading',game:LIVE_CATALOG?.game||'Unknown'};
+ $('connectionDetailsText').textContent=window.ModhunterI18n?.translate(message,params)||message.replace(/\{(profile|game)\}/g,(_,key)=>params[key]);
+ $('connectionDetails').showModal();
+};
 $('unifiedScan').onclick=()=>{if(BRIDGE.active&&LIVE_CATALOG)scanLive('all');else{unifiedScroll('liveHub');workshopSetStatus(DATA?.offline?'Imported profile is read only. Launch the MO2 plugin for real update checks.':'Standalone sample mode. Install or launch the optional MO2 plugin to verify and download updates.')}};
 $('unifiedReview').onclick=()=>{unifiedScroll('updateWorkshop');$('workshopFilter').value='candidate';renderWorkshop()};
 $('unifiedQuest').onclick=()=>unifiedScroll('gameBoard');
@@ -1577,7 +1630,7 @@ function importOfflineCatalog(c){
  if(footerLink){footerLink.href='https://github.com/Herbertofury/Modhunter/wiki/Updater-Source-Coverage';footerLink.textContent='SOURCE COVERAGE ↗';}
  for(const id of ['liveAll','liveQuick','liveDeep','liveLocal','liveRefresh','liveRuntime','liveConnect','liveBackup'])$(id).disabled=true;
  applyAppearance();updateStorageIndicator();render();
- if(previousProfile!==c.profileId)closeInspector();else refreshInspectorInsights();
+ if(previousProfile!==c.profileId)closeInspector(false);else refreshInspectorInsights();
  refreshWorkshop().catch(e=>workshopSetStatus('Local profile: '+e.message));
  return{ok:true,count:c.items.length,profileId:c.profileId};
 }

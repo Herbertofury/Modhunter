@@ -13,7 +13,7 @@ const root=path.resolve(__dirname,'../..');
 const hash=f=>crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
 const options=Object.fromEntries(process.argv.slice(2).map(s=>{const at=s.indexOf('=');return[s.slice(0,at),s.slice(at+1)];}));
 const exe=options['--exe'],output=options['--output'],endpoint=options['--endpoint'];
-const checks=[],timings={},policyValues=[];let phase='preflight',child,browser,launchError='',attachError='',childOutput='';
+const checks=[],timings={},policyValues=[];let phase='preflight',child,browser,launchError='',attachError='',childOutput='',ownedDesktopWindow=null,originalDisplay=null;
 // Runtime 150+ correctly ignores user-controlled debugging overrides in an
 // elevated process. Set only this disposable runner's exact application policy,
 // never a wildcard, HKCU override, runtime downgrade, or shipped app change.
@@ -39,6 +39,97 @@ function clearCiPolicies(){
  }
 }
 function check(name,value){checks.push({name,passed:!!value});if(!value)throw Error('Failed: '+name);}
+function configureCiDisplay(width,height){
+ if(process.platform!=='win32'||process.env.GITHUB_ACTIONS!=='true'||process.env.RUNNER_OS!=='Windows'||process.env.MODHUNTER_NATIVE_SMOKE!=='1')throw Error('Display changes require the disposable Windows CI fixture');
+ const script=`$ErrorActionPreference='Stop'
+Add-Type @'
+using System; using System.Runtime.InteropServices;
+public static class ModhunterCiDisplay {
+ [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] public struct Mode {
+  [MarshalAs(UnmanagedType.ByValTStr,SizeConst=32)] public string DeviceName;
+  public short SpecVersion,DriverVersion,Size,DriverExtra; public int Fields;
+  public int PositionX,PositionY,Orientation,FixedOutput;
+  public short Color,Duplex,YResolution,TTOption,Collate;
+  [MarshalAs(UnmanagedType.ByValTStr,SizeConst=32)] public string FormName;
+  public short LogPixels; public int BitsPerPel,Width,Height,DisplayFlags,Frequency;
+  public int ICMMethod,ICMIntent,MediaType,DitherType,Reserved1,Reserved2,PanningWidth,PanningHeight;
+ }
+ [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern bool EnumDisplaySettings(string name,int mode,ref Mode value);
+ [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern int ChangeDisplaySettings(ref Mode mode,int flags);
+ [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
+ [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+}
+'@
+$null=[ModhunterCiDisplay]::SetProcessDPIAware()
+$mode=[ModhunterCiDisplay+Mode]::new();$mode.Size=[Runtime.InteropServices.Marshal]::SizeOf($mode)
+if(![ModhunterCiDisplay]::EnumDisplaySettings($null,-1,[ref]$mode)){throw 'Current CI display mode unavailable'}
+$previous=@{width=$mode.Width;height=$mode.Height}
+$mode.Width=${width};$mode.Height=${height};$mode.Fields=0x180000
+if([ModhunterCiDisplay]::ChangeDisplaySettings([ref]$mode,2) -ne 0){throw 'Requested real CI display mode is unsupported'}
+if([ModhunterCiDisplay]::ChangeDisplaySettings([ref]$mode,0) -ne 0){throw 'Real CI display mode change failed'}
+$deadline=(Get-Date).AddSeconds(3)
+while(([ModhunterCiDisplay]::GetSystemMetrics(0) -ne ${width} -or [ModhunterCiDisplay]::GetSystemMetrics(1) -ne ${height}) -and (Get-Date) -lt $deadline){Start-Sleep -Milliseconds 100}
+if([ModhunterCiDisplay]::GetSystemMetrics(0) -ne ${width} -or [ModhunterCiDisplay]::GetSystemMetrics(1) -ne ${height}){throw 'Actual primary screen did not adopt the requested dimensions'}
+$previous | ConvertTo-Json -Compress`;
+ const result=spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{windowsHide:true,encoding:'utf8',timeout:15000});
+ if(result.error||result.status!==0)throw Error('Real CI display configuration failed: '+(result.error?.message||result.stderr||result.stdout));
+ return JSON.parse(result.stdout.trim());
+}
+// Resize and capture only the actual child owned by this disposable fixture.
+// This exercises native WebView bounds rather than emulating a browser viewport.
+function nativeWindow(width,height,capture){
+ const target=capture?`'${path.resolve(capture).replaceAll("'","''")}'`:'$null';
+ const script=`$ErrorActionPreference='Stop'
+Add-Type -AssemblyName System.Windows.Forms,System.Drawing
+Add-Type @'
+using System; using System.Runtime.InteropServices;
+public static class ModhunterOwnedWindowProbe {
+ [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left,Top,Right,Bottom; }
+ [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h,IntPtr after,int x,int y,int w,int hgt,uint flags);
+ [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h,int command);
+ [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h,out Rect rect);
+ [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+ [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+ [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h,System.Text.StringBuilder text,int count);
+ [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h,out uint id);
+ [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
+ [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+}
+'@
+$null=[ModhunterOwnedWindowProbe]::SetProcessDPIAware()
+$owned=Get-Process -Id ${child.pid};$handle=${ownedDesktopWindow?`[IntPtr]::new(${ownedDesktopWindow})`:'$owned.MainWindowHandle'}
+[uint32]$owner=0
+$null=[ModhunterOwnedWindowProbe]::GetWindowThreadProcessId($handle,[ref]$owner)
+if($handle -eq [IntPtr]::Zero -or $owner -ne ${child.pid}){throw 'Owned application window is unavailable'}
+${width?`$null=[ModhunterOwnedWindowProbe]::ShowWindow($handle,9)
+if(![ModhunterOwnedWindowProbe]::SetWindowPos($handle,[IntPtr]::Zero,40,40,${width},${height},0x44)){throw 'Native window resize failed'}`:''}
+$capture=${target}
+if($capture){
+ $activation=New-Object -ComObject WScript.Shell
+ try{
+  $deadline=(Get-Date).AddSeconds(3);$focused=$false
+  $title=[Text.StringBuilder]::new(512);$null=[ModhunterOwnedWindowProbe]::GetWindowText($handle,$title,512)
+  do{$null=$activation.AppActivate($title.ToString());$null=[ModhunterOwnedWindowProbe]::SetForegroundWindow($handle);Start-Sleep -Milliseconds 100
+   $focused=[ModhunterOwnedWindowProbe]::GetForegroundWindow() -eq $handle
+  }while(!$focused -and (Get-Date) -lt $deadline)
+  if(!$focused){throw 'Owned application could not own the screenshot'}
+  $rect=[ModhunterOwnedWindowProbe+Rect]::new()
+  if(![ModhunterOwnedWindowProbe]::GetWindowRect($handle,[ref]$rect)){throw 'Window bounds unavailable'}
+  $left=[ModhunterOwnedWindowProbe]::GetSystemMetrics(76);$top=[ModhunterOwnedWindowProbe]::GetSystemMetrics(77)
+  $right=$left+[ModhunterOwnedWindowProbe]::GetSystemMetrics(78);$bottom=$top+[ModhunterOwnedWindowProbe]::GetSystemMetrics(79)
+  if($rect.Left -lt $left -or $rect.Top -lt $top -or $rect.Right -gt $right -or $rect.Bottom -gt $bottom){throw 'Actual application window is outside the real desktop; refusing a clipped capture'}
+  $bitmap=[Drawing.Bitmap]::new($rect.Right-$rect.Left,$rect.Bottom-$rect.Top);$graphics=[Drawing.Graphics]::FromImage($bitmap)
+  try{$graphics.CopyFromScreen([Drawing.Point]::new($rect.Left,$rect.Top),[Drawing.Point]::Empty,$bitmap.Size);$bitmap.Save($capture,[Drawing.Imaging.ImageFormat]::Png)}
+  finally{$graphics.Dispose();$bitmap.Dispose()}
+ }finally{[void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($activation)}
+}
+Write-Output $handle.ToInt64()`;
+ const result=spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{windowsHide:true,encoding:'utf8',timeout:15000});
+ if(result.error||result.status!==0)throw Error('Owned native window operation failed: '+(result.error?.message||result.stderr||result.stdout));
+ const observed=result.stdout.trim();if(!/^[0-9]+$/.test(observed))throw Error('Owned desktop handle was not observed');
+ if(ownedDesktopWindow&&observed!==ownedDesktopWindow)throw Error('Owned desktop window changed during acceptance');
+ ownedDesktopWindow=observed;
+}
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function until(fn,ms=20000){const end=Date.now()+ms;while(Date.now()<end){const value=await fn();if(value)return value;await pause(100);}throw Error('Deadline at '+phase);}
 async function main(){
@@ -54,6 +145,8 @@ async function main(){
  // data directory or suppress its new loopback debugging arguments. This
  // override is scoped to this disposable child, never the shipped launcher.
  const browserProfile=fs.mkdtempSync(path.join(path.dirname(output),'desktop-profile-'));
+ phase='configure-real-ci-display';
+ originalDisplay=configureCiDisplay(1920,1080);
  phase='configure-isolated-webview2';
  setCiPolicy('UserDataFolder',browserProfile);
  setCiPolicy('AdditionalBrowserArguments',`--remote-debugging-port=${port} --remote-debugging-address=127.0.0.1`);
@@ -131,11 +224,71 @@ async function main(){
  check('setup_reconnect',true);
  phase='capture';
  await dashboard.screenshot({path:path.join(path.dirname(output),'desktop-live.png')});
+ phase='native-theme-and-window-acceptance';
+ nativeWindow(1440,960);
+ await shell.locator('#openWatchtower').click();
+ const watchtower=await until(()=>pages().find(p=>p.url().endsWith('/watchtower.html')));
+ watchtower.setDefaultTimeout(15000);
+ await watchtower.locator('#navigation [data-view="settings"]').click();
+ await watchtower.locator('#globalTheme').waitFor();
+ await watchtower.waitForFunction(()=>document.getElementById('globalReleaseStatus')?.textContent.includes('Installed'));
+ const originalTheme=await watchtower.locator('#globalTheme').inputValue();
+ const activateDashboard=async()=>{
+  const tabs=shell.locator('.tab-open');
+  for(let i=0;i<await tabs.count();i++)if(await tabs.nth(i).getAttribute('title')===dashboard.url()){await tabs.nth(i).click();return;}
+  throw Error('Live profile tab disappeared during native acceptance');
+ };
+ const setNativeTheme=async theme=>{
+  await shell.locator('#openWatchtower').click();
+  await watchtower.locator('#navigation [data-view="settings"]').click();
+  await watchtower.locator('#globalTheme').selectOption(theme);
+  await watchtower.locator('#globalPreferencesSave').click();
+  await watchtower.waitForFunction(()=>document.getElementById('globalPreferencesStatus').textContent==='App preferences saved.');
+  await activateDashboard();
+  await dashboard.waitForFunction(theme=>document.body.dataset.theme===(theme==='light'?'snow':'night'),theme);
+  await shell.waitForFunction(theme=>document.documentElement.dataset.theme===theme,theme);
+ };
+ const nativeCaptures=[];
+ for(const [width,height,theme] of [[1440,960,'dark'],[900,850,'light']]){
+  nativeWindow(width,height);
+  await setNativeTheme(theme);
+  await dashboard.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  const layout=await dashboard.evaluate(()=>({width:innerWidth,height:innerHeight,scrollWidth:document.documentElement.scrollWidth,rows:document.querySelectorAll('#modList .mod-row').length,theme:document.body.dataset.theme}));
+  check('native_layout_'+width+'_'+theme,layout.width<=width&&layout.width>=width-60&&layout.scrollWidth<=layout.width+1&&layout.rows===facts.names.length);
+  const capture='desktop-window-'+width+'-'+theme+'.png';nativeWindow(null,null,path.join(path.dirname(output),capture));
+  nativeCaptures.push({file:capture,layout,window:{width,height}});
+ }
+ // The shared dashboard asks its native owner for a theme change; it cannot
+ // invoke desktop commands or optimistically report an unsaved preference.
+ await dashboard.locator('#themeToggle').click();
+ await dashboard.waitForFunction(()=>document.body.dataset.theme==='night');
+ await shell.waitForFunction(()=>document.documentElement.dataset.theme==='dark');
+ await dashboard.locator('#themeToggle').click();
+ await dashboard.waitForFunction(()=>document.body.dataset.theme==='snow');
+ await shell.waitForFunction(()=>document.documentElement.dataset.theme==='light');
+ check('native_dashboard_theme_control_acknowledged',true);
+ await dashboard.locator('#libraryGallery').click();
+ await dashboard.waitForFunction(()=>document.body.dataset.libraryView==='gallery');
+ check('native_gallery_retains_live_catalog',await dashboard.locator('#modList .mod-row').count()===facts.names.length);
+ nativeWindow(null,null,path.join(path.dirname(output),'desktop-window-gallery-light.png'));
+ await dashboard.locator('#modList .inspect-btn').first().click();
+ await dashboard.locator('#detailDrawer.open').waitFor();
+ nativeWindow(null,null,path.join(path.dirname(output),'desktop-window-inspector-light.png'));
+ await dashboard.keyboard.press('Escape');
+ check('native_inspector_returns_focus',await dashboard.locator('#modList .inspect-btn').first().evaluate(e=>document.activeElement===e));
+ await dashboard.locator('#libraryList').click();
+ // Restore an explicit baseline theme; system preferences are preserved too.
+ await shell.locator('#openWatchtower').click();
+ await watchtower.locator('#globalTheme').selectOption(originalTheme);
+ await watchtower.locator('#globalPreferencesSave').click();
+ await watchtower.waitForFunction(()=>document.getElementById('globalPreferencesStatus').textContent==='App preferences saved.');
+ await activateDashboard();
+ nativeWindow(1440,960);
  const changes=spawnSync('git',['diff','--quiet','HEAD','--',...sourceFiles],{cwd:root,windowsHide:true});
  const report={schemaVersion:1,ok:true,nativeDesktop:true,nativeMO2:true,nativeWebView2:true,
   candidateCommit:process.env.GITHUB_SHA,sourceDirty:changes.status!==0,executableSha256:hash(exe),
   sourceFiles:Object.fromEntries(sourceFiles.map(name=>[name,hash(path.join(root,name))])),
-  checks,timingsMs:timings,fixture:{profile:'Modhunter Smoke',accountAuthentication:false,ownedGameFiles:false},
+  checks,timingsMs:timings,nativeCaptures,fixture:{profile:'Modhunter Smoke',accountAuthentication:false,ownedGameFiles:false},
   scope:'Actual compiled desktop connected to the official MO2 2.5.2 synthetic fixture. No personal beta-12, Nexus account, remote download or installation.'};
  fs.writeFileSync(output,JSON.stringify(report,null,2));
  console.log(JSON.stringify({ok:true,checks:checks.length,timingsMs:timings}));
@@ -158,5 +311,9 @@ main().catch(async error=>{
  try{clearCiPolicies();}catch(error){
   process.exitCode=1;console.error('Temporary CI policy cleanup failed: '+error.message);
   if(output){const report=JSON.parse(fs.readFileSync(output,'utf8'));report.ok=false;report.cleanupError=error.message;fs.writeFileSync(output,JSON.stringify(report,null,2));}
+ }
+ if(originalDisplay)try{configureCiDisplay(originalDisplay.width,originalDisplay.height);}catch(error){
+  process.exitCode=1;console.error('Temporary CI display restoration failed: '+error.message);
+  if(output){const report=JSON.parse(fs.readFileSync(output,'utf8'));report.ok=false;report.displayRestoreError=error.message;fs.writeFileSync(output,JSON.stringify(report,null,2));}
  }
 });

@@ -18,7 +18,7 @@ function catalog(profile='a',count=3){
   items:Array.from({length:count},(_,i)=>({id:'item-'+i,name:'Fixture '+i,groupId:'group',group:'Fixtures',priority:i,author:'Test Author',installedVersion:'1.0',screenshotNote:'',flags:[],audit:{},nexusId:i+1,source:{type:'nexus',verified:true,url:'https://www.nexusmods.com/skyrimspecialedition/mods/'+(i+1)},update:{verdict:'candidate',latestVersion:'2.0'}}))};
 }
 function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={},progressReadFailures=0,nativeWatch=false}={}){
- const nodes=new Map(),timers=new Map(),pending=new Map(),calls=[],active=new Map(),maximum=new Map(),nativeNavigations=[];
+ const nodes=new Map(),timers=new Map(),pending=new Map(),calls=[],active=new Map(),maximum=new Map(),nativeNavigations=[],windowListeners=new Map();
  let timerId=0;
  const state={catalog:catalog('a',count),generation:1,failSnapshots,progressRows,progressReadFailures,score:0,scan:{state:'idle'},defer:new Set()};
  const document={hidden:false,activeElement:null,addEventListener(){},querySelectorAll(){return[]},createElement:name=>element(name),getElementById:id=>node(id),querySelector:selector=>node(selector)};
@@ -44,7 +44,8 @@ function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={
   setTimeout(fn,ms){const id=++timerId;timers.set(id,{fn,ms});return id},clearTimeout:id=>timers.delete(id),
   setInterval(){throw Error('Async interval polling is forbidden')},clearInterval:id=>timers.delete(id),
   requestAnimationFrame(fn){const id=++timerId;timers.set(id,{fn,ms:'frame'});return id},cancelAnimationFrame:id=>timers.delete(id),
-  addEventListener(){},confirm:()=>true,
+  addEventListener(type,listener){if(!windowListeners.has(type))windowListeners.set(type,[]);windowListeners.get(type).push(listener)},
+  dispatchEvent(event){for(const listener of windowListeners.get(event.type)||[])listener(event);return true},confirm:()=>true,
   __MO2_BRIDGE_BOOT__:{active:live,token:'test'},
  };
  context.window=context;context.__MODHUNTER_NATIVE_WATCHTOWER__=nativeWatch;context.location={assign:value=>nativeNavigations.push(value)};
@@ -176,6 +177,37 @@ test('cosmetic settings leave catalog DOM intact; large searches keep all record
  assert.equal([...h.timers.values()].filter(t=>t.ms==='frame').length,1);await h.tick('frame');
  assert.equal(h.api.filtered().length,1);assert.equal(h.qa.getCatalog().items.length,2500);
  assert.equal(h.nodes.get('modList').writes,writes+1);
+});
+
+test('native appearance survives profile imports and theme controls await canonical preferences',async()=>{
+ const h=harness({live:false,count:2});await h.settle();const requests=[];
+ h.context.modhunterRequestTheme=theme=>{requests.push(theme);return true};
+ h.context.ModhunterAppearance={theme:'light',locale:'en',resolvedTheme:'light'};
+ h.api.importOfflineCatalog({...catalog('native-profile',2),offline:true});
+ assert.equal(h.context.document.body.dataset.theme,'snow','An imported profile must keep the native light appearance');
+ const writes=h.nodes.get('modList').writes;
+ h.api.updatePrefs({density:'comfy'});
+ assert.equal(h.context.document.body.dataset.theme,'snow','Presentation changes must preserve native theme authority');
+ h.nodes.get('themeToggle').onclick();
+ assert.deepEqual(requests,['dark']);
+ assert.equal(h.context.document.body.dataset.theme,'snow','A request must not claim an unacknowledged native preference');
+ h.context.ModhunterAppearance={theme:'dark',locale:'en',resolvedTheme:'dark'};
+ h.context.dispatchEvent({type:'modhunter-appearance-applied'});
+ assert.equal(h.context.document.body.dataset.theme,'night');
+ h.api.updatePrefs({density:'compact'});
+ assert.equal(h.context.document.body.dataset.theme,'night');
+ assert.equal(h.nodes.get('modList').writes,writes,'Appearance propagation must not rebuild the complete library');
+});
+
+test('standalone appearance controls retain independent local persistence',async()=>{
+ const h=harness({live:false,count:1});await h.settle();
+ h.api.importOfflineCatalog({...catalog('standalone-theme',1),offline:true});
+ assert.equal(h.context.document.body.dataset.theme,'night');
+ h.nodes.get('themeToggle').onclick();
+ assert.equal(h.context.document.body.dataset.theme,'snow');
+ assert.equal(JSON.parse(h.context.localStorage.getItem('modhunter-offline-profile:v1:standalone-theme')).prefs.theme,'snow');
+ h.nodes.get('themeToggle').onclick();
+ assert.equal(h.context.document.body.dataset.theme,'night');
 });
 
 test('a completed prior release does not hide the next update or manual file selection',async()=>{

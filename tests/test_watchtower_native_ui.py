@@ -96,7 +96,7 @@ OVERRIDE=r'''(() => {
   }
   if(kind==='contentJobs')return finish({operations:{jobs:f.native.jobs,nativeAvailable:true,helperAvailable:true}});
   if(kind==='discardReview'){if(f.native.review?.submitted&&['unknown','interrupted'].includes(f.native.review.state))throw Error('Unresolved operation retains this review.');f.state.reviews.rows=[];f.publish();return finish()}
-  if(kind==='diagnosticsPreview')return finish({reportId:'report-fixture-exact',text:'{"application":"Modhunter","version":"0.11.0","redacted":true}\n'});
+  if(kind==='diagnosticsPreview')return finish({reportId:'report-fixture-exact',text:JSON.stringify({application:'Modhunter',version:f.state.version,redacted:true})+'\n'});
   if(kind==='diagnosticsCopy'||kind==='diagnosticsSave'){if(v.reportId!=='report-fixture-exact')throw Error('Preview changed');f.native.savedReports.push({kind,...clone(v)});return finish({message:'Exact preview exported.'})}
   if(kind==='storage')return finish({storage:{groups:[{id:'downloads',label:'Verified downloads',complete:true,usage:{bytes:1000,files:1}}]}});
   if(kind==='previewDownloadCleanup')return finish({cleanup:{id:'cleanup-fixture-exact',count:1,bytes:1000,scope:'Owned idle downloads only.'}});
@@ -113,7 +113,7 @@ OVERRIDE=r'''(() => {
 
 class NativeUiTests(base.WatchtowerBrowserTests):
     def open_native(self,mode='plain',intent='update'):
-        state=base.snapshot(1);state['version']='0.11.0';state['acquisitions']={'revision':1,'jobs':[{'id':'download-fixture','filename':'Verified fixture.zip','state':'ready','bytes':1000,'sha256':'a'*64,'createdAt':1,'binding':{'watchId':'watch-0','watchGeneration':1,'sourceOrigin':'https://mods.example.com','contentIntent':intent,'association':({'profileId':'profile-1','itemId':'mod-1'} if intent=='update' else None)}}],'offers':[]};state['reviews']={'rows':[],'preparing':[]}
+        state=base.snapshot(1);state['acquisitions']={'revision':1,'jobs':[{'id':'download-fixture','filename':'Verified fixture.zip','state':'ready','bytes':1000,'sha256':'a'*64,'createdAt':1,'binding':{'watchId':'watch-0','watchGeneration':1,'sourceOrigin':'https://mods.example.com','contentIntent':intent,'association':({'profileId':'profile-1','itemId':'mod-1'} if intent=='update' else None)}}],'offers':[]};state['reviews']={'rows':[],'preparing':[]}
         self.context.add_init_script(base.BOOT.replace('__WATCHTOWER_INITIAL_STATE__',json.dumps(state))+OVERRIDE+f';__WATCH_FIX__.native.mode={json.dumps(mode)};')
         self.page.goto('http://watchtower.invalid/watchtower.html',wait_until='networkidle')
         self.page.wait_for_function('Boolean(window.ModhunterWatchtower && document.getElementById("nativeReviewQueue"))')

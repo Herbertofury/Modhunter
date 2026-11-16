@@ -225,6 +225,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $env:NODE_PATH = Join-Path $LiveTools 'node_modules'
           ./native/scripts/mo2_native_smoke.ps1 -RustCliPath "$PWD/native/target/release/modhunter-cli.exe" -QtBridgePath "$PWD/native/target/qt-bridge/Release/modhunter-qt-bridge.dll" -DesktopExecutable "$PWD/native/target/release/Modhunter.exe" -EvidenceDirectory "$PWD/native/target/live-mo2-smoke" -TimeoutSeconds 240
+      - name: Install, launch and uninstall the exact Windows installer
+        shell: pwsh
+        run: |
+          $InstallerVersion = python native/scripts/prepare_release.py --print-version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./native/scripts/installer_smoke.ps1 -Installer "$PWD/native/target/release/bundle/nsis/Modhunter_${InstallerVersion}_x64-setup.exe" -Executable "$PWD/native/target/release/Modhunter.exe" -Output "$PWD/native/target/installer-smoke"
       - name: Package tested Windows app, MO2 plugin, and diagnostics
         shell: pwsh
         run: |
@@ -287,6 +293,9 @@ jobs:
             native/target/watchtower-smoke/*.json
             native/target/watchtower-smoke/*.jsonl
             native/target/watchtower-smoke/*.log
+            native/target/installer-smoke/installer-smoke.json
+            native/target/installer-smoke/native-launch/native-smoke.json
+            native/target/installer-smoke/native-launch/fixture-desktop.png
             native/target/archive-review-proof.json
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -324,7 +333,7 @@ jobs:
           fi
           gh release create "$tag" release-assets/*.zip release-assets/*.exe release-assets/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-            --title "Modhunter $version — Rust desktop" --notes-file release-assets/release-notes.md
+            --title "Modhunter $version — Atelier desktop" --notes-file release-assets/release-notes.md
   mo2:
     runs-on: windows-2025
     timeout-minutes: 25

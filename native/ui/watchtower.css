@@ -170,7 +170,7 @@ dialog::backdrop { background:#101512b8; backdrop-filter:none; }
  .summary-strip { flex-wrap:wrap; gap:12px 25px; }
  .summary-strip .run-status { max-width:none; margin-left:0; flex:1 1 100%; }
  .page-header { align-items:flex-start; }
- .header-actions { justify-content:flex-end; max-width:170px; }
+ .header-actions { justify-content:flex-end; max-width:205px; }
 }
 @media(max-width:760px) {
  .app { grid-template-columns:minmax(0,1fr); }
@@ -194,8 +194,8 @@ dialog::backdrop { background:#101512b8; backdrop-filter:none; }
  .summary-strip>div:not(.run-status) { font-size:10px; gap:6px; }
  .summary-number { font-size:20px; }
  .summary-strip .run-status { padding-top:0; border-top:0; width:100%; }
- .toolbar #sort { flex-basis:auto; }
- .toolbar select { min-width:0; max-width:100%; padding:9px 6px; font-size:10px; }
+ .toolbar #sort { flex-basis:130px; }
+ .toolbar select { flex:1 1 90px; min-width:0; max-width:100%; padding:9px 6px; font-size:10px; }
  .watch-row { padding:13px 3px; }
  .row-title { gap:6px; }
  .page-name { font-size:13px; }

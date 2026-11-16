@@ -147,9 +147,80 @@ pub fn setup_command(target: &Url, source: &Url) -> Option<&'static str> {
     }
 }
 
+/// A dashboard appearance action can change only the global light/dark theme.
+/// The caller also verifies the originating webview's owned dashboard identity.
+pub fn appearance_theme(
+    target: &Url,
+    source: &Url,
+    endpoint: Option<&str>,
+) -> Option<&'static str> {
+    if !owned_page(source, endpoint)
+        || Mode::from_url(source) != Mode::Dashboard
+        || target.scheme() != "modhunter-appearance"
+        || target.host_str() != Some("theme")
+        || !target.username().is_empty()
+        || target.password().is_some()
+        || target.port().is_some()
+        || target.query().is_some()
+        || target.fragment().is_some()
+    {
+        return None;
+    }
+    match target.path() {
+        "/light" => Some("light"),
+        "/dark" => Some("dark"),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn appearance_changes_accept_only_owned_dashboards_and_exact_theme_values() {
+        let endpoint = Some("http://127.0.0.1:8765/");
+        for source in [
+            "http://tauri.localhost/Modhunter.html",
+            "tauri://localhost/Modhunter.html",
+            "http://127.0.0.1:8765/",
+        ] {
+            let source = Url::parse(source).unwrap();
+            for theme in ["light", "dark"] {
+                let target = Url::parse(&format!("modhunter-appearance://theme/{theme}")).unwrap();
+                assert_eq!(appearance_theme(&target, &source, endpoint), Some(theme));
+            }
+        }
+        let target = Url::parse("modhunter-appearance://theme/light").unwrap();
+        for source in [
+            "https://example.com/",
+            "http://127.0.0.1:9999/",
+            "http://127.0.0.1:8765/unowned.html",
+            "http://tauri.localhost/shell.html",
+            "http://tauri.localhost/Modhunter.html?realm=1",
+            "http://127.0.0.1:8765/?siege=1",
+        ] {
+            assert_eq!(
+                appearance_theme(&target, &Url::parse(source).unwrap(), endpoint),
+                None
+            );
+        }
+        let source = Url::parse("http://tauri.localhost/Modhunter.html").unwrap();
+        for target in [
+            "modhunter-appearance://theme/system",
+            "modhunter-appearance://theme/light/",
+            "modhunter-appearance://theme/light?locale=it",
+            "modhunter-appearance://theme/light#extra",
+            "modhunter-appearance://user@theme/light",
+            "modhunter-appearance://theme:80/light",
+            "modhunter-appearance://settings/light",
+            "https://theme/light",
+        ] {
+            assert_eq!(
+                appearance_theme(&Url::parse(target).unwrap(), &source, endpoint),
+                None
+            );
+        }
+    }
     #[test]
     fn setup_actions_are_argument_free_and_packaged_origin_only() {
         let source = Url::parse("http://tauri.localhost/Modhunter.html").unwrap();

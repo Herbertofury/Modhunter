@@ -1,8 +1,10 @@
-# Rust Desktop 0.11.0
+# Rust Desktop 0.12.0
 
 [Home](Home.md) / [Windows releases](https://github.com/Herbertofury/Modhunter/releases) / [Native build results](https://github.com/Herbertofury/Modhunter/actions/workflows/native-rust.yml)
 
 ## What changed
+
+The [Atelier 0.12 workspace](Atelier-0.12) brings a compact native shell, image-forward Gallery and List choices, adjustable density, source filters, custom vector navigation and coordinated charcoal/parchment themes. The guide records actual before/after screenshots and the exact candidate verification status. The complete library remains available without viewport virtualization or result caps.
 
 Modhunter now has a compiled Rust Windows desktop. Rust owns the window and tab lifecycle, file dialogs, background profile import, cached metadata parsing, local preferences, MO2 discovery, connection health, export destinations and plugin record/hash analysis. WebView2 renders the shared updater and all existing game modes. The shipped app does not run Electron or require Node.
 
@@ -10,7 +12,7 @@ The presentation remains HTML/CSS/JavaScript. The Python/Qt plugin remains insid
 
 ## Install and connect
 
-1. Download **Modhunter-Rust-Windows.zip** from the linked release and extract it. Run **Modhunter.exe**. The NSIS installer is another option and bootstraps Microsoft Edge WebView2 when needed.
+1. Download **Modhunter-Rust-Windows.zip** from the linked release and extract it. Run **Modhunter.exe**. The NSIS installer is another option and bootstraps Microsoft Edge WebView2 when needed. Version 0.12 also provides dedicated **MO2-Plugin** and **Standalone** archives derived from the same validated portable package.
 2. For local inspection, click **Import MO2** and select the profile's `modlist.txt`. Portable instances are inferred. For separate configuration/data directories, first select **Instance INI**; **Mods path** provides an explicit override. **Auto paths** clears those overrides.
 3. Click **Refresh** after changing files. The toolbar reports measured import duration, metadata cache hits and warnings. **CANCEL** interrupts a native import/refresh or plugin audit; **CANCELING…** remains visible until its workers settle. The last complete catalog stays available and another refresh/audit can then run. Importing never changes the MO2 profile or installed mod files.
 4. To enable live updating, close MO2 and run **Install_MO2_Plugin.bat** from the portable package. Select the directory containing `ModOrganizer.exe`. The previous plugin is preserved in `ModhunterBackups`, outside MO2's plugin directory, and a failed replacement is rolled back.
@@ -90,12 +92,14 @@ The [Rust desktop and MO2 readiness workflow](https://github.com/Herbertofury/Mo
 | Rust format, tests and Clippy | Parser/cache correctness, explicit cancellation and retry, shared catalog encoding, split paths and encodings, bridge validation, discovery and navigation/export policies |
 | Python and Node regressions | MO2 command/download/install lifecycle, response-cache invalidation, scan/source epochs, delayed Chronicle hydration, frontend polling/rendering/focus and preserved legacy importer |
 | Actual Chromium | Built dashboard interactions, update actions, search responsiveness, profile changes, connection recovery and existing update workshop flows |
+| Before/after visual acceptance | v0.11.0 and current source rendered in Chromium at desktop and narrow sizes, dark/light themes, actual source-artwork fixtures, gallery/list and operational dialogs; complete 11,207-mod DOM and last-item search measurements |
 | Actual Chromium Watchtower | Shipped manager forms, session/source choices, complete file selection, new targets, FOMOD scope, retained reviews, lost acknowledgement, exact retention/reset approvals, support export, preferences and responsive layout with a fixture native-command adapter |
 | Actual Windows archive CLI | ZIP/7z/RAR bytes, path/link/collision/encryption guards and exact selected-archive provenance with the pinned official helper |
 | Actual Windows WebView2 | Compiled application launch, native toolbar IPC, three-mod profile import into the real dashboard, actual JSON backup download and rejection of native IPC from game content |
 | Actual Windows Watchtower | Account isolation, remembered-profile close/reopen within one process, generation-selected fresh profiles, same-session popups, authenticated page capture/change, selected-region capture, incomplete/stale/canceled rejection and denied website IPC against internally owned loopback pages; an anonymous `https://example.com/` production check must also complete a durable baseline. Exact direct/blob download consent, selected-file navigation ownership, cancellation, stale-source rejection, native privacy calls and browser cache/resource policy are also checked. No application restart is performed |
 | Actual MO2 2.5.2 fixture | Production plugin loading in official Windows MO2, actual C++ QObject/raw QVariant binding with synthetic callbacks, real loopback API and Qt focus, a completed Rust plugin/hash audit, actual native installation of a generated archive, complete content restore, wrong-target/later-edit guards and repeated-acknowledgement handling in a disposable fixture |
 | Windows PowerShell 5.1 installer | Fresh install, upgrade/progress preservation, rejected incomplete/damaged/mixed packages, source-tree installation and linked-directory handling |
+| Actual NSIS installation | Install the exact packaged installer into a disposable current-user directory, verify the executable and archive helpers, launch that installed app in WebView2, uninstall its payload/registration and verify the entire external fixture profile remains unchanged |
 
 CI uploads JSON receipts and browser proof alongside the portable app and NSIS installer. Inspect the linked run for the exact commit and outcome; a workflow definition is not proof that a particular run passed.
 

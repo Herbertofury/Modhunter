@@ -5,7 +5,7 @@
 
 **Repair your load order · Hunt unfinished mods · Build a legend**
 
-![Version](https://img.shields.io/badge/Rust-v0.9-cfa76d?style=for-the-badge&labelColor=17272c)
+![Version](https://img.shields.io/badge/Rust-v0.12-cfa76d?style=for-the-badge&labelColor=17272c)
 ![Play](https://img.shields.io/badge/Play-Offline-70d6b0?style=for-the-badge&labelColor=17272c)
 ![Integrations](https://img.shields.io/badge/MO2-Optional-9abcf5?style=for-the-badge&labelColor=17272c)
 
@@ -25,7 +25,9 @@
 
 ## ✦ One product · One Command Center
 
-**[Download the Rust Windows app](https://github.com/Herbertofury/Modhunter/releases)** · **[Rust 0.9 installation and test evidence](Rust-Desktop.md)**
+**[Download the Rust Windows app](https://github.com/Herbertofury/Modhunter/releases)** · **[Rust installation and test evidence](Rust-Desktop)** · **[Atelier 0.12 visual update](Atelier-0.12)**
+
+The Atelier workspace adds an image-forward gallery, compact and comfortable list views, provider filtering, a collapsible navigation rail and coordinated dark and light themes. Real source artwork appears when the exact mod record supplies it. The complete library, reviewed update workflow, backup and recovery controls, and every existing adventure remain available. See the [Atelier guide](Atelier-0.12) for controls, actual screenshots and candidate verification status.
 
 The current desktop uses Rust for the shell, parallel profile importer, metadata cache, native operations and MO2 discovery. The shared dashboard and complete games continue in WebView2; MO2's Python adapter retains its native Nexus/download/install integration. Earlier combined archives below preserve the previous Electron release series.
 

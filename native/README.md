@@ -1,6 +1,8 @@
-# Modhunter 0.11.0 — Rust desktop
+# Modhunter 0.12.0 — Rust desktop
 
 The Windows desktop, profile import/cache engine, connection probing, tab lifecycle and native file dialogs run in Rust. Microsoft Edge WebView2 renders the existing Modhunter dashboard, Questbound, AetherFX, Shiverfell, Siege and Atlas. The shipped desktop does not require Node or Electron.
+
+**Atelier 0.12** adds a complete gallery/list library, genuine provider artwork, source filtering, saved density and navigation, and a cohesive dark/parchment visual system. The Rust toolbar is 116px high, and compact library rows stay at 48px. Update selection, approval, installation and recovery continue through the existing owners. All game modes and FX Studio remain available. Read the [visual guide](https://github.com/Herbertofury/Modhunter/wiki/Atelier-0.12) for screenshots and verification scope.
 
 MO2's Python/Qt plugin remains the supported in-process adapter for MO2's authenticated Nexus bridge, native downloads, FOMOD installer, focus and verified rewards. A small Qt Core C++ helper bridges the protected callback-sender binding needed by MO2 2.5.2's public file-list integration. The dashboard/game presentation remains HTML/CSS/JavaScript. Public site adapters, import/cache and plugin analysis run in Rust.
 

@@ -4365,7 +4365,7 @@ function renderWorld(){const frameStart=performance.now();resize();ctx.clearRect
  const light=ctx.createRadialGradient(cw*.5,ch*.43,35,cw*.5,ch*.5,Math.max(cw,ch)*.77);light.addColorStop(0,'#fffde200');light.addColorStop(.63,'#0e191d0b');light.addColorStop(1,'#030b0f77');ctx.fillStyle=light;ctx.fillRect(0,0,cw,ch);
  for(const f of combatFloats){const pt=screen(f.x,f.y);ctx.save();ctx.globalAlpha=clamp(f.life/.8,0,1);ctx.textAlign='center';ctx.font='900 17px Georgia,serif';ctx.lineWidth=3;ctx.strokeStyle='#11151c';ctx.strokeText(f.text,pt.x,pt.y-15);ctx.fillStyle=f.color;ctx.fillText(f.text,pt.x,pt.y-15);ctx.restore()}
  if(damageTint>0&&!reducedMotion()){ctx.fillStyle=`rgba(178,34,56,${(damageTint*.22).toFixed(3)})`;ctx.fillRect(0,0,cw,ch)}drawMinimap();
- if(S.mode==='expedition'){ctx.fillStyle='#e8cb8f';ctx.font='800 12px system-ui';ctx.fillText(`IRONMAN · ${S.rift?.relics||0}/3 RELICS · ${Math.max(0,90-Math.floor(S.rift?.seconds||0))}s`,Math.max(10,cw-245),Math.max(166,ch-18))}
+ if(S.mode==='expedition'){ctx.fillStyle='#e8cb8f';ctx.font='800 12px system-ui';ctx.fillText(`IRONMAN · ${S.rift?.relics||0}/3 RELICS · ${Math.max(0,90-Math.floor(S.rift?.seconds||0))}s`,Math.max(10,cw-245),Math.max(166,ch-(window.innerWidth>540?56:18)))}
  if(S.mode==='rift'){ctx.fillStyle='#f4d8ac';ctx.font='800 13px Georgia';ctx.textAlign='center';ctx.fillText(`ᛟ WAVE ${S.rift?.wave||1}/5  ·  ${enemies.size} FOES REMAIN`,cw/2,ch-26);ctx.textAlign='left'}
  renderMetrics.last=performance.now()-frameStart;
 }

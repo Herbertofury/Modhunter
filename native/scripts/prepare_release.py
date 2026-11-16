@@ -747,9 +747,9 @@ def component_assets(portable: Path, staged: Path) -> None:
 def release_notes(commit: str, run_url: str, repository_url: str, installer_name: str) -> str:
     return f"""# Modhunter {VERSION} — Atelier / The Mod Vault
 
-The Windows desktop, MO2 profile import/cache engine, connection checks, tab lifecycle and native dialogs now run in Rust. Microsoft Edge WebView2 renders the existing dashboard and all game modes. The shipped desktop does not require Node or Electron.
+Atelier gives your mod collection a new image-forward gallery, a precise compact list, and a consistent dark/light workspace. Source identities, installed and detected versions, exact-file review and real installation results stay close to the mod you are managing.
 
-MO2's Python/Qt plugin remains the in-process adapter for MO2's authenticated Nexus connection, native downloads, interactive FOMOD installer, focus and verified rewards. Dashboard/game presentation remains HTML/CSS/JavaScript.
+This release continues the Rust desktop introduced in earlier versions. WebView2 renders the shared dashboard and preserved game modes; MO2 retains authenticated Nexus downloads and its native installer, including FOMOD choices. The Windows app does not require Node or Electron.
 
 ## 0.12.0: image-forward mod browsing and a compact desktop
 

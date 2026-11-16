@@ -268,17 +268,24 @@ async function main(){
  }
  // The shared dashboard asks its native owner for a theme change; it cannot
  // invoke desktop commands or optimistically report an unsaved preference.
- await dashboard.locator('#railTheme').click();
+ // WebView2 deliberately intercepts modhunter-appearance:// without navigating
+ // the document. Wait for both canonical acknowledgements below, not for the
+ // browser navigation that the native on_navigation handler intentionally denies.
+ phase='native-theme-shortcut-dark';
+ await dashboard.locator('#railTheme').click({noWaitAfter:true});
  await dashboard.waitForFunction(()=>document.body.dataset.theme==='night');
  await shell.waitForFunction(()=>document.documentElement.dataset.theme==='dark');
- await dashboard.locator('#railTheme').click();
+ phase='native-theme-shortcut-light';
+ await dashboard.locator('#railTheme').click({noWaitAfter:true});
  await dashboard.waitForFunction(()=>document.body.dataset.theme==='snow');
  await shell.waitForFunction(()=>document.documentElement.dataset.theme==='light');
  check('native_dashboard_theme_control_acknowledged',true);
+ phase='native-gallery';
  await dashboard.locator('#libraryGallery').click();
  await dashboard.waitForFunction(()=>document.body.dataset.libraryView==='gallery');
  check('native_gallery_retains_live_catalog',await dashboard.locator('#modList .mod-row').count()===facts.names.length);
  nativeWindow(null,null,path.join(path.dirname(output),'desktop-window-gallery-light.png'));
+ phase='native-inspector';
  await dashboard.locator('#modList .inspect-btn').first().click();
  await dashboard.locator('#detailDrawer.open').waitFor();
  nativeWindow(null,null,path.join(path.dirname(output),'desktop-window-inspector-light.png'));
@@ -306,7 +313,7 @@ main().catch(async error=>{
  if(browser)for(const page of browser.contexts().flatMap(c=>c.pages())){
   try{
    const url=new URL(page.url());
-   const state=await page.evaluate(()=>({title:document.title,source:document.getElementById('sourceText')?.textContent,message:document.getElementById('message')?.textContent,sessionChoices:document.querySelectorAll('#mo2Sessions option').length}));
+   const state=await page.evaluate(()=>({title:document.title,source:document.getElementById('sourceText')?.textContent,message:document.getElementById('message')?.textContent,sessionChoices:document.querySelectorAll('#mo2Sessions option').length,rootTheme:document.documentElement.dataset.theme,dashboardTheme:document.body?.dataset.theme}));
    failureViews.push({path:url.pathname,...state});
    if(url.pathname.endsWith('/shell.html'))await page.screenshot({path:path.join(path.dirname(output),'desktop-failure.png')});
   }catch{}

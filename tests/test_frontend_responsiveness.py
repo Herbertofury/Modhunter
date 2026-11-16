@@ -373,14 +373,25 @@ class FrontendResponsivenessTests(unittest.TestCase):
         data = catalog(count=2500); data["offline"] = True
         self.page.evaluate("c=>window.modhunterImportCatalog(c)", data)
         self.assertEqual(self.page.locator("#modList .mod-row").count(), 2500)
-        self.page.evaluate("""()=>{window.searchMutations=0;
-          new MutationObserver(rs=>searchMutations+=rs.length).observe(document.getElementById('modList'),{childList:true});
+        self.page.evaluate("""()=>{window.searchFrameRequests=0;window.searchDeliveries=0;
+          window.survivingSearchRow=document.getElementById('row-item-2499');
+          new MutationObserver(()=>searchDeliveries++).observe(document.getElementById('modList'),{childList:true});
           const input=document.getElementById('search');
-          for(const value of ['Unique','Unique Fixture','Unique Fixture 2','Unique Fixture 2499']){
+          const originalFrame=window.requestAnimationFrame;
+          window.requestAnimationFrame=(...args)=>{searchFrameRequests++;return originalFrame.apply(window,args);};
+          try{for(const value of ['Unique','Unique Fixture','Unique Fixture 2','Unique Fixture 2499']){
             input.value=value;input.dispatchEvent(new Event('input',{bubbles:true}));
-          }}""")
+          }}finally{window.requestAnimationFrame=originalFrame;}
+          window.rowsBeforeScheduledSearch=document.querySelectorAll('#modList .mod-row').length;
+        }""")
         self.page.wait_for_function("document.querySelectorAll('#modList .mod-row').length===1")
-        self.assertEqual(self.page.evaluate("searchMutations"), 1)
+        # Reconciliation can remove or move many nodes in one application.
+        # Measure the actual scheduled work and observer delivery, rather than
+        # requiring a particular number of low-level DOM mutation records.
+        self.assertEqual(self.page.evaluate("rowsBeforeScheduledSearch"), 2500)
+        self.assertEqual(self.page.evaluate("searchFrameRequests"), 1)
+        self.assertEqual(self.page.evaluate("searchDeliveries"), 1)
+        self.assertTrue(self.page.evaluate("survivingSearchRow===document.querySelector('#modList .mod-row')"))
         self.assertEqual(self.page.evaluate("__ARSENAL_QA__.getCatalog().items.length"), 2500)
         self.page.locator("#clearSearch").click()
         self.assertEqual(self.page.locator("#modList .mod-row").count(), 2500)

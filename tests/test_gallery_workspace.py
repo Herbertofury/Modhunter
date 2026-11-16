@@ -29,9 +29,15 @@ class GalleryWorkspaceTests(unittest.TestCase):
     tearDown = harness.FrontendResponsivenessTests.tearDown
     connected = harness.FrontendResponsivenessTests.connected
 
-    def open(self, count=9):
+    def open(self, count=9, group_count=1):
         catalog = harness.catalog(count=count)
+        if group_count > 1:
+            catalog['groups'] = [{'id':f'group-{group}', 'name':f'Fixture chapter {group}', 'startPriority':group,
+                                  'count':len(range(group,count,group_count)), 'color':'mint'} for group in range(group_count)]
         for index, item in enumerate(catalog['items']):
+            if group_count > 1:
+                group = catalog['groups'][index % group_count]
+                item.update(groupId=group['id'], group=group['name'])
             provider = ['nexus', 'modrinth', 'github'][index % 3]
             item['source'] = {'type': provider, 'verified': True, 'url': {
                 'nexus': f'https://www.nexusmods.com/skyrimspecialedition/mods/{index+1}',
@@ -99,6 +105,39 @@ class GalleryWorkspaceTests(unittest.TestCase):
         self.page.locator('#densityToggle').click()
         self.assertTrue(self.page.evaluate("document.getElementById('row-item-110')===__GALLERY_SURVIVOR__"))
         self.assertEqual(self.page.locator('#modList .mod-row').count(), 111)
+
+    def test_gallery_grouping_preserves_collapsed_chapters_and_sorts_all_records(self):
+        self.open(count=12, group_count=3)
+        self.page.locator('[data-chapter-toggle="group-0"]').click()
+        self.assertEqual(self.page.locator('#modList .mod-row').count(), 8)
+        self.page.locator('#libraryGallery').click()
+        self.assertTrue(self.page.locator('#galleryGrouping').is_visible())
+        self.assertEqual(self.page.locator('#galleryGrouping').input_value(), 'all')
+        self.assertEqual(self.page.locator('#modList .mod-row').count(), 12)
+        ids = lambda:self.page.locator('#modList .mod-row').evaluate_all('rows=>rows.map(row=>row.dataset.id)')
+        self.assertEqual(ids(),[f'item-{index}' for index in range(12)])
+        self.page.locator('#workspaceTitle').click()
+        self.page.keyboard.press('j')
+        self.assertEqual(self.page.evaluate("document.activeElement.closest('.mod-row')?.dataset.id"),'item-0')
+        self.page.keyboard.press('j')
+        self.assertEqual(self.page.evaluate("document.activeElement.closest('.mod-row')?.dataset.id"),'item-1')
+        self.page.locator('#sortSelect').select_option('name')
+        self.assertEqual(ids(),[f'item-{index}' for index in (0,1,10,11,2,3,4,5,6,7,8,9)])
+        self.page.locator('#galleryGrouping').select_option('chapters')
+        self.assertEqual(self.page.locator('#modList .mod-row').count(),8)
+        self.assertEqual(self.page.locator('[data-chapter-toggle="group-0"]').get_attribute('aria-expanded'),'false')
+        self.page.reload(wait_until='load');self.connected()
+        self.assertEqual(self.page.locator('body').get_attribute('data-library-view'),'gallery')
+        self.assertEqual(self.page.locator('#galleryGrouping').input_value(),'chapters')
+        self.assertEqual(self.page.locator('#modList .mod-row').count(),8)
+        self.page.locator('#galleryGrouping').select_option('all')
+        self.assertEqual(self.page.locator('#modList .mod-row').count(),12)
+        self.page.locator('#libraryList').click()
+        self.assertFalse(self.page.locator('#galleryGrouping').is_visible())
+        self.assertEqual(self.page.locator('#modList .mod-row').count(),8)
+        self.assertEqual(self.page.locator('[data-chapter-toggle="group-0"]').get_attribute('aria-expanded'),'false')
+        self.page.locator('[data-chapter-toggle="group-0"]').click()
+        self.assertEqual(self.page.locator('#modList .mod-row').count(),12)
 
     def test_next_pending_reveals_target_across_provider_filter(self):
         self.open()

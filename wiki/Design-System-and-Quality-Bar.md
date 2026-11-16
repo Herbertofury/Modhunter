@@ -58,9 +58,11 @@ Both light and dark themes require equivalent contrast and usable focus states. 
 
 **Mod library:** List and Gallery are presentations of the same keyed records. Switching view or density retains the complete result set, filters and notes. Default list rows remain compact; comfortable spacing is opt-in. Show the installed version, meaningful update state, exact provider identity and accessible Details. Full names remain available through the title and inspector even when a compact card wraps or truncates them.
 
+**Gallery organization:** All mods is the default continuous gallery, globally sorted with a visible chapter label on each card. By chapter retains section headers and their saved collapse state. Entering All mods reveals every matching record without rewriting saved collapses; returning to List or By chapter restores that organization. Keyboard row navigation follows the displayed order. Sparse real libraries must receive the same visual scrutiny as an ideal artwork fixture.
+
 **Artwork:** Only explicit artwork supplied by the exact source record is eligible. Current compact artwork paths use Nexus project pictures, Modrinth gallery/icon metadata and Thunderstore package icons. Public CDN hosts are validated in the data layer and image policy. Images use browser image loading and decoding, with no referrer. Missing, blocked or failed images retain a deliberate “No preview supplied” fallback. A thumbnail is not verification evidence.
 
-**Filtering and preferences:** Text search, source/provider filtering, status filters, chapter navigation and existing mod-health filters must compose predictably. Reset clears the applied library filters. Jumping to a chapter or the next pending mod must reveal its target. View, density and navigation preferences persist within the current profile; the MO2 Chronicle validates the new preference vocabulary.
+**Filtering and preferences:** Text search, source/provider filtering, status filters, chapter navigation and existing mod-health filters must compose predictably. Reset clears the applied library filters. Jumping to a chapter or the next pending mod must reveal its target. View, gallery grouping, density and navigation preferences persist within the current profile; the MO2 Chronicle validates the new preference vocabulary.
 
 **Update Workshop:** Keep the full list, exact versions, risk reasons, reviewed selections and install states. The shorter visual route must preserve the same profile-bound source and file authority. A reviewed selection survives scrolling; a changed profile, source or execution context invalidates stale work.
 
@@ -92,6 +94,8 @@ The [native Rust workflow](https://github.com/Herbertofury/Modhunter/actions/wor
 No cropped/mod-count-limited lists, no viewport virtualization, no hidden results to manufacture speed, no silent install, no fabricated proof/rewards and no removed game modes. The standalone HTML, Rust desktop and MO2 plugin remain independently usable entry points. Failed work retains the last complete catalog. Account sign-in, changed page text and update hints never become permission to overwrite installed mods.
 
 Use cached markup, existing keyed DOM updates, bounded background work and measured allocation reductions. Changing a presentation preference must not repeat expensive source work. Lazily loading an image does not remove its mod record from the library.
+
+Compact rows omit only duplicate legacy cells that compact CSS already hid. Checklist state, J/K and Space, inspector completion, Undo and the explicit noncompact host fallback remain functional. Full galleries use flex wrapping with one container-width calculation; card contents keep their own grid. Resize observations are coalesced, and view/density changes do not reconfigure unrelated effects. These implementation choices require measured full-catalog proof rather than inferred performance claims.
 
 ## 06 / 0.12 implementation and evidence
 

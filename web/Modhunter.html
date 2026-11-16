@@ -477,7 +477,7 @@ html.realm-route #realmRoot[hidden]{display:none!important}html.realm-route #rea
 .realm-hero-banner{display:flex;align-items:center;justify-content:center;gap:19px;padding:10px;background:linear-gradient(90deg,transparent,#c2a66d12,#63867715,#c2a66d12,transparent);border-bottom:1px solid #8d987133;color:#c5b48e;font:800 10px system-ui;letter-spacing:.14em}.realm-hero-banner strong{font:900 12px Georgia,serif;color:#eee0bd;letter-spacing:.11em}.realm-welcome{color:#80b4ab}
 .realm-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(294px,355px);align-items:stretch;gap:15px;padding:17px clamp(12px,1.75vw,28px) 8px;max-width:2000px;margin:auto}
 .realm-game-shell{min-width:0;overflow:hidden;border:1px solid #6f7b5a80;background:linear-gradient(130deg,#142922,#101921);border-radius:9px;box-shadow:0 15px 55px #0009,0 0 0 1px #e7cc8922;position:relative}
-.realm-game-top{height:48px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 18px;border-bottom:1px solid #89987745;background:#152620ee}.realm-game-top>div:first-child{display:flex;align-items:center;gap:13px}.realm-game-top #realmBiome{font:900 13px Georgia,serif;letter-spacing:.13em;color:#f0ddad}.realm-game-top small{font:700 9px system-ui;letter-spacing:.11em;color:#95b9a8}.realm-game-top-right{display:flex;align-items:center;gap:8px}.realm-game-top-right>span{font:700 9px system-ui;letter-spacing:.09em;color:#dfb77c;margin-right:8px}.realm-tiny-button{border:1px solid #57726286;background:#0b1e24;color:#b9d9c7;padding:6px 9px;font:800 9px system-ui!important;border-radius:5px;white-space:nowrap}.realm-tiny-button:hover{background:#34584a}
+.realm-game-top{height:auto;min-height:48px;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;padding:8px 18px;border-bottom:1px solid #89987745;background:#152620ee}.realm-game-top>div:first-child{display:flex;align-items:center;flex-wrap:wrap;gap:4px 13px;min-width:0;max-width:100%}.realm-game-top #realmBiome{font:900 13px Georgia,serif;letter-spacing:.13em;color:#f0ddad}.realm-game-top small{font:700 9px system-ui;letter-spacing:.11em;color:#95b9a8}.realm-game-top-right{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px;min-width:0;max-width:100%;margin-left:auto}.realm-game-top-right>span{font:700 9px system-ui;letter-spacing:.09em;color:#dfb77c;margin-right:8px}.realm-tiny-button{border:1px solid #57726286;background:#0b1e24;color:#b9d9c7;padding:6px 9px;font:800 9px system-ui!important;border-radius:5px;white-space:nowrap}.realm-tiny-button:hover{background:#34584a}
 .realm-canvas-outer{height:clamp(450px,61vh,760px);position:relative;background:#182821;overflow:hidden;isolation:isolate}.realm-canvas-outer canvas{display:block;width:100%;height:100%;cursor:crosshair;touch-action:none;outline-offset:-5px}.realm-canvas-vignette{position:absolute;inset:0;pointer-events:none;box-shadow:inset 0 0 90px 28px #03110f80;mix-blend-mode:multiply}.realm-quick-hud{position:absolute;top:14px;left:14px;display:grid;gap:7px;width:154px;pointer-events:none}.realm-bar{position:relative;background:#061113c8;padding:5px 8px 6px;border:1px solid #70826860;border-radius:4px;box-shadow:0 3px 8px #0005}.realm-bar span{font:900 9px system-ui;letter-spacing:.055em;color:#e6dbba}.realm-bar b{float:right;font:800 9px system-ui;color:#f8eac8}.realm-bar i{clear:both;display:block;height:4px;background:#151d1b;margin-top:5px;border-radius:5px;overflow:hidden}.realm-bar i em{display:block;height:100%;background:#ca6569;width:100%;transition:width .25s}.realm-bar[data-stat="stamina"] i em{background:#6fc6ae}.realm-bar[data-stat="hunger"] i em{background:#d1b675}.realm-bar[data-stat="warmth"] i em{background:#8dc9e9}.realm-compass{position:absolute;top:13px;left:50%;transform:translateX(-50%);display:grid;text-align:center;gap:2px;color:#fff0cb;pointer-events:none;text-shadow:0 2px 10px #000}.realm-compass div{font:900 13px Georgia,serif;letter-spacing:.25em}.realm-compass span{font:800 10px system-ui;color:#d6e4cd}.realm-floating-notice,.realm-reticle-label{position:absolute;left:50%;bottom:78px;transform:translateX(-50%);background:#101e1fdd;padding:9px 16px;border:1px solid #aab08066;border-radius:5px;text-align:center;max-width:75%;font:750 12px Georgia,serif;letter-spacing:.03em;color:#f3dfac;pointer-events:none;text-shadow:0 2px 6px #000;animation:realmEntry 1s both}.realm-action-cue{position:absolute;right:14px;bottom:16px;border:1px solid #b0a47788;padding:8px 10px;background:#112728dd;color:#d5d9b8;max-width:260px;font:800 9px system-ui;letter-spacing:.09em;border-radius:4px;pointer-events:none}
 .realm-actionbar{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:1px;background:#344a3eaa}.realm-actionbar button{height:63px;background:#122320;color:#e1dabb;border:0;display:flex;justify-content:center;align-items:center;gap:9px;transition:background .14s}.realm-actionbar button:hover,.realm-actionbar button:focus-visible{background:#36594b}.realm-actionbar b{font:25px Georgia,serif;color:#edd19a}.realm-actionbar span{display:flex;flex-direction:column;text-align:left;gap:4px;font:900 9px system-ui;letter-spacing:.1em}.realm-actionbar small{font:800 8px system-ui;color:#7aab9d}.realm-world-footer{height:33px;padding:7px 14px;border-top:1px solid #69766455;display:flex;justify-content:space-between;gap:10px;font:750 9px system-ui;letter-spacing:.06em;color:#7eac9b}.realm-live-dot{display:inline-block;width:6px;height:6px;background:#7fd0a5;border-radius:50%;box-shadow:0 0 12px #7fd0a5}.realm-world-footer span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .realm-sidebar{background:linear-gradient(160deg,#13231e,#101923 70%,#141c22);border:1px solid #53695589;border-radius:8px;min-width:0;display:flex;flex-direction:column;max-height:calc(61vh + 146px);min-height:560px;overflow:hidden;box-shadow:0 12px 36px #0006}.realm-character{display:grid;grid-template-columns:54px 1fr auto;align-items:center;gap:10px;padding:16px 13px;border-bottom:1px solid #6a80564b;background:radial-gradient(ellipse at 25% 0,#ab98502f,transparent 66%)}.realm-character-portrait{height:54px;width:54px;border-radius:8px;border:1px solid #d4bf8b6d;background:radial-gradient(circle at 42% 25%,#71917d,#203e36 64%,#121d23);display:grid;place-items:center;color:#f5dfad;font:32px Georgia,serif;position:relative}.realm-character-portrait span{position:absolute;right:3px;bottom:0;font-size:12px}.realm-character small{display:block;font:800 9px system-ui;letter-spacing:.15em;color:#80c8ac}.realm-character strong{display:block;font:900 14px Georgia,serif;letter-spacing:.05em;color:#f4ddac}.realm-character>div:nth-child(2)>span{display:block;font:700 9px system-ui;color:#adc4b6;margin-top:4px}.realm-character-xp{min-width:52px;align-self:center}.realm-character-xp b{font:800 9px system-ui;display:block;text-align:right;color:#ecdaa5}.realm-character-xp i{display:block;background:#1a342a;height:4px;margin-top:7px;border-radius:5px}.realm-character-xp em{display:block;height:100%;background:#e4bf73;width:0%}
@@ -1085,6 +1085,11 @@ body[data-layout="compact"] .workbench-head{margin:0 0 10px;align-items:center;g
 body[data-layout="compact"] .workbench-head h2{font:600 15px/1.4 var(--mh-ui);color:var(--vault-text);letter-spacing:-.01em}
 body[data-layout="compact"] .library-description{display:none}
 body[data-layout="compact"] .toolbar-meta{font-size:10px;color:var(--vault-faint);text-align:right;max-width:40%;line-height:1.5}
+body[data-layout="compact"] .library-heading-tools{display:flex;align-items:center;justify-content:flex-end;gap:12px;max-width:60%;min-width:0}
+body[data-layout="compact"] .library-heading-tools .toolbar-meta{max-width:none;min-width:0}
+body[data-layout="compact"] .library-grouping{display:none;flex:none}
+body[data-layout="compact"][data-library-view="gallery"] .library-grouping{display:flex}
+body[data-layout="compact"] #galleryGrouping{background:var(--vault-input);border:1px solid var(--vault-line);color:var(--vault-text);border-radius:5px;min-height:32px;padding:4px 22px 4px 8px;font:11px var(--mh-ui);max-width:150px}
 body[data-layout="compact"] .controls{gap:8px;margin-bottom:10px;flex-wrap:wrap}
 body[data-layout="compact"] .searchbox{background:var(--vault-input);border-color:var(--vault-line);height:36px;min-height:36px;min-width:180px;border-radius:6px}
 body[data-layout="compact"] .searchbox input{color:var(--vault-text);background:transparent;border:0;font-size:12px}
@@ -1135,7 +1140,7 @@ body[data-layout="compact"] .detected-status.update,body[data-layout="compact"] 
 body[data-layout="compact"] .detected-status.update:before{content:"↑";font-weight:700;margin-right:4px}
 body[data-layout="compact"] .detected-status.review,body[data-layout="compact"] .detected-status.sign-in,body[data-layout="compact"] .detected-status.stale,body[data-layout="compact"] button.maintenance-status{background:var(--vault-warn-bg);color:var(--vault-warn);border-color:color-mix(in srgb,var(--vault-warn) 30%,transparent)}
 body[data-layout="compact"] .detected-status.blocked{color:var(--vault-error)}
-body[data-layout="compact"] .source-btn{font-size:10px;padding:4px 7px;min-height:25px;background:transparent;border-color:var(--vault-line);color:var(--vault-muted);border-radius:4px;max-width:100%}
+body[data-layout="compact"] .source-btn{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;padding:4px 7px;min-height:25px;background:transparent;border-color:var(--vault-line);color:var(--vault-muted);border-radius:4px;max-width:100%}
 body[data-layout="compact"] .source-btn:hover{background:var(--vault-hover);color:var(--vault-text)}
 body[data-layout="compact"] .source-btn.lookup{border-style:dashed;color:var(--vault-faint)}
 body[data-layout="compact"] .inspect-col{gap:4px}
@@ -1155,9 +1160,9 @@ body[data-layout="compact"] .list-footer button{color:var(--vault-brass);font-si
 body[data-layout="compact"][data-density="comfy"][data-library-view="list"] .mod-row{min-height:82px;padding-block:14px}
 body[data-layout="compact"][data-density="comfy"] .mod-title{font-size:13px}
 body[data-layout="compact"][data-library-view="gallery"] .list-header{display:none}
-body[data-layout="compact"][data-library-view="gallery"] .modlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:14px;align-items:start}
-body[data-layout="compact"][data-library-view="gallery"] .chapterbar{grid-column:1/-1;margin-top:8px;padding-left:0;height:28px;min-height:28px}
-body[data-layout="compact"][data-library-view="gallery"] .mod-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px 8px;align-content:start;padding:0 13px 12px;border:1px solid var(--vault-line);border-radius:9px;background:var(--vault-surface);overflow:hidden;min-height:273px;margin:0;box-shadow:0 2px 2px #0000000a;position:relative}
+body[data-layout="compact"][data-library-view="gallery"] .modlist{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start;align-content:flex-start}
+body[data-layout="compact"][data-library-view="gallery"] .chapterbar{flex:0 0 100%;width:100%;margin-top:8px;padding-left:0;height:28px;min-height:28px}
+body[data-layout="compact"][data-library-view="gallery"] .mod-row{display:grid;flex:0 0 calc((100% - var(--library-gap-total,70px))/var(--library-columns,6));grid-template-columns:minmax(0,1fr) auto;gap:9px 8px;align-content:start;padding:0 13px 12px;border:1px solid var(--vault-line);border-radius:9px;background:var(--vault-surface);overflow:hidden;min-height:273px;margin:0;box-shadow:0 2px 2px #0000000a;position:relative}
 body[data-layout="compact"][data-library-view="gallery"] .mod-row:hover{border-color:var(--vault-muted);background:var(--vault-surface);box-shadow:0 4px 12px #00000017}
 body[data-layout="compact"][data-library-view="gallery"] .mod-row[data-detected="update"]{border-top:2px solid var(--vault-green)}
 body[data-layout="compact"][data-library-view="gallery"] .mod-art{grid-column:1/-1;grid-row:1;width:calc(100% + 26px);height:120px;margin:0 -13px 2px;border:0;border-bottom:1px solid var(--vault-line);border-radius:0;background:var(--vault-raised);display:flex;align-items:center;justify-content:center;font-size:9px;padding-top:26px}
@@ -1166,6 +1171,8 @@ body[data-layout="compact"][data-library-view="gallery"] .mod-art:after{content:
 body[data-layout="compact"][data-library-view="gallery"] .mod-priority{position:absolute;right:10px;top:9px;border:1px solid var(--vault-line);background:var(--vault-surface);border-radius:4px;padding:3px 5px;font-size:9px;z-index:1}
 body[data-layout="compact"][data-library-view="gallery"] .mod-priority:before{content:"#"}
 body[data-layout="compact"][data-library-view="gallery"] .mod-primary{grid-column:1/-1;grid-row:2;min-height:47px;justify-content:flex-start}
+body[data-layout="compact"][data-library-view="gallery"][data-gallery-grouping="all"] .mod-primary{min-height:60px}
+body[data-layout="compact"][data-library-view="gallery"][data-gallery-grouping="all"] .mod-primary:before{content:attr(data-chapter-label);display:block;position:static;color:var(--vault-muted);font:500 9px/1.4 var(--mh-ui);letter-spacing:.02em;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 body[data-layout="compact"][data-library-view="gallery"] .mod-title{white-space:normal;line-height:1.4;display:-webkit-box!important;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere;max-height:2.8em}
 body[data-layout="compact"][data-library-view="gallery"] .mod-name-actions{align-items:flex-start}
 body[data-layout="compact"][data-library-view="gallery"] .mod-inline-locate{display:none}
@@ -1177,9 +1184,10 @@ body[data-layout="compact"][data-library-view="gallery"] .mod-source{grid-column
 body[data-layout="compact"][data-library-view="gallery"] .source-btn{border:0;padding:0;font-size:9px;min-height:27px}
 body[data-layout="compact"][data-library-view="gallery"] .inspect-col{grid-column:2;grid-row:5;padding-top:8px;border-top:1px solid var(--vault-soft)}
 body[data-layout="compact"][data-library-view="gallery"] .favorite-btn{display:inline-flex}
-body[data-layout="compact"][data-density="comfy"][data-library-view="gallery"] .modlist{grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:18px}
+body[data-layout="compact"][data-density="comfy"][data-library-view="gallery"] .modlist{gap:18px}
 body[data-layout="compact"][data-density="comfy"][data-library-view="gallery"] .mod-art{height:164px}
 body[data-layout="compact"] .empty-state{grid-column:1/-1;background:var(--vault-surface);border:1px dashed var(--vault-line);border-radius:8px;color:var(--vault-text);padding:44px 16px}
+body[data-layout="compact"][data-library-view="gallery"] .empty-state{flex:0 0 100%;width:100%}
 body[data-layout="compact"] .empty-state p{color:var(--vault-muted)}
 body[data-layout="compact"] .empty-state button{background:var(--vault-brass);color:var(--vault-brass-ink);border-color:var(--vault-brass)}
 /* Update review stays explicit, with concise status and full file evidence. */
@@ -1287,7 +1295,7 @@ body[data-layout="compact"] .toast button{color:var(--vault-brass)}
 }
 @media(max-width:1050px){
  body[data-layout="compact"]:not(.realm-route) .bodypad{padding:20px}
- body[data-layout="compact"] .list-header,body[data-layout="compact"] .mod-row{grid-template-columns:35px minmax(140px,1fr) 87px 115px 115px;gap:9px}
+ body[data-layout="compact"] .list-header,body[data-layout="compact"] .mod-row{grid-template-columns:35px minmax(140px,1fr) 87px 115px 130px;gap:9px}
  body[data-layout="compact"] .mod-source,body[data-layout="compact"] .list-header>span:nth-child(7){display:none}
  body[data-layout="compact"] .mod-art{height:35px;width:35px}
  body[data-layout="compact"] .library-view-switch button>span{display:none}
@@ -1360,13 +1368,12 @@ body[data-layout="compact"] .toast button{color:var(--vault-brass)}
  body[data-layout="compact"] .mod-author{font-size:9px}
  body[data-layout="compact"] .detected-status{font-size:9px;min-height:20px;padding:2px 5px}
  body[data-layout="compact"] .inspect-btn{font-size:10px;min-width:48px;height:26px;min-height:26px;padding:4px 6px}
- body[data-layout="compact"][data-library-view="gallery"] .modlist{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+ body[data-layout="compact"][data-library-view="gallery"] .modlist{gap:10px}
  body[data-layout="compact"][data-library-view="gallery"] .mod-row{padding:0 9px 10px;min-height:266px;gap:7px 5px}
  body[data-layout="compact"][data-library-view="gallery"] .mod-art{height:103px;width:calc(100% + 18px);margin-inline:-9px}
  body[data-layout="compact"][data-library-view="gallery"] .mod-title{font-size:11px}
  body[data-layout="compact"][data-library-view="gallery"] .mod-source{grid-column:1/-1;grid-row:5;padding-top:4px}
  body[data-layout="compact"][data-library-view="gallery"] .inspect-col{grid-column:1/-1;grid-row:6;padding-top:0;border:0;justify-content:flex-end}
- body[data-layout="compact"][data-density="comfy"][data-library-view="gallery"] .modlist{grid-template-columns:minmax(0,1fr)}
  body[data-layout="compact"][data-density="comfy"][data-library-view="gallery"] .mod-art{height:170px}
  body[data-layout="compact"] .workshop-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
  body[data-layout="compact"] .workshop-metric:nth-child(3){border-right:1px solid var(--vault-line)}
@@ -1451,6 +1458,7 @@ body[data-layout="compact"]:not(.realm-route) .activity-timeline li small{color:
 body[data-layout="compact"]:not(.realm-route) .activity-toolbar :is(input,select){color:var(--vault-text);background:var(--vault-input);border-color:var(--vault-line);border-radius:5px}
 body[data-layout="compact"]:not(.realm-route) .download-pulse{background:var(--vault-surface);border-color:var(--vault-line);border-radius:7px;box-shadow:none;padding:16px}
 body[data-layout="compact"]:not(.realm-route) .download-pulse-head p{color:var(--vault-muted);font-size:11px}
+body[data-layout="compact"]:not(.realm-route) .download-pulse-head h3 em{color:var(--vault-brass)}
 body[data-layout="compact"]:not(.realm-route) .download-pulse-stats span{background:var(--vault-bg);border-color:var(--vault-line);color:var(--vault-muted);border-radius:5px;font-size:10px;padding:9px 11px}
 body[data-layout="compact"]:not(.realm-route) .download-pulse-stats strong{color:var(--vault-text);font-size:21px;font-weight:550}
 body[data-layout="compact"]:not(.realm-route) .download-pulse-stats span:last-child strong{color:var(--vault-green)}
@@ -1461,6 +1469,7 @@ body[data-layout="compact"]:not(.realm-route) .download-ticket .ticket-status-do
 body[data-layout="compact"]:not(.realm-route) .ticket-complete .ticket-status-dot{background:var(--vault-brass)}
 body[data-layout="compact"]:not(.realm-route) .ticket-installed .ticket-status-dot{background:var(--vault-green)}
 body[data-layout="compact"]:not(.realm-route) .ticket-failed .ticket-status-dot,body[data-layout="compact"]:not(.realm-route) .ticket-removed .ticket-status-dot{background:var(--vault-error)}
+body[data-layout="compact"]:not(.realm-route) .workshop-downloads-heading{background:var(--vault-raised);border-color:var(--vault-line)}
 body[data-layout="compact"]:not(.realm-route) .workshop-downloads-heading strong{color:var(--vault-text);font-size:14px}
 body[data-layout="compact"]:not(.realm-route) .workshop-downloads-heading small{color:var(--vault-muted);font-size:11px}
 body[data-layout="compact"]:not(.realm-route) .workshop-downloads-heading>span{color:var(--vault-brass);font-size:11px}
@@ -1474,6 +1483,17 @@ body[data-layout="compact"]:not(.realm-route) .mo2-resolver input,body[data-layo
 body[data-layout="compact"]:not(.realm-route) .mo2-preview{background:var(--vault-raised);color:var(--vault-muted);border-color:var(--vault-brass)}
 body[data-layout="compact"]:not(.realm-route) .insight-chip.info{color:var(--vault-info)}
 body[data-layout="compact"]:not(.realm-route) .insight-chip.danger,body[data-layout="compact"]:not(.realm-route) .insight-problems{color:var(--vault-error)}
+
+/* Adventures retain their authored night palette on a deliberate inset
+   surface, including when the surrounding utility uses parchment mode. */
+body[data-layout="compact"]:not(.realm-route) #gameBoard{background:#202526;color:#ebe9df;border:1px solid #75664c;border-radius:9px;padding:18px}
+body[data-layout="compact"]:not(.realm-route) #gameBoard:before{height:1px;background:#b49a6a;box-shadow:none}
+body[data-layout="compact"]:not(.realm-route) #gameBoard .game-header h2{color:#f8edd4}
+body[data-layout="compact"]:not(.realm-route) #gameBoard .game-header p{color:#b3c2c2}
+body[data-layout="compact"]:not(.realm-route) #gameBoard .game-preview{background:#1c3036;color:#d8eee8;border-color:#647778}
+body[data-layout="compact"][data-theme="snow"] .mod-row.aether-target{background:var(--vault-selection);box-shadow:inset 3px 0 var(--vault-green)}
+body[data-layout="compact"][data-theme="snow"] .mod-row.aether-target .mod-primary .mod-title{color:var(--vault-text);text-shadow:none}
+body[data-layout="compact"][data-theme="snow"] .mod-row.aether-target .mod-priority{color:var(--vault-brass)}
 
 /* Corrections from the first real desktop/narrow screenshot and full-catalog
    comparison: preserve readable controls and let only file content scroll. */
@@ -1489,6 +1509,12 @@ body[data-layout="compact"] .operation-header{padding-right:40px}
  body[data-layout="compact"][data-density="compact"][data-library-view="list"] .mod-row{padding-block:4px}
  body[data-layout="compact"][data-density="compact"][data-library-view="list"] .mod-inline-locate{min-height:24px;height:24px}
 }
+@media(min-width:581px) and (max-width:1050px){
+ body[data-layout="compact"] .workspace-checkline{padding-bottom:8px;margin-bottom:10px}
+ body[data-layout="compact"] .workspace-summary{margin-bottom:10px}
+ body[data-layout="compact"] .workbench-head{margin-bottom:8px}
+ body[data-layout="compact"] .controls{margin-bottom:6px}
+}
 @media(max-width:580px){
  body[data-layout="compact"]:not(.realm-route) .bodypad{padding-top:14px}
  body[data-layout="compact"] .workspace-header{gap:9px}
@@ -1498,6 +1524,9 @@ body[data-layout="compact"] .operation-header{padding-right:40px}
  body[data-layout="compact"] .workspace-summary button{min-width:0;min-height:42px;flex-direction:column;justify-content:space-between;gap:1px;padding:5px 2px;line-height:1.2;white-space:normal;text-align:center}
  body[data-layout="compact"] .workspace-summary b{min-width:0;text-align:center}
  body[data-layout="compact"] .workbench-head{margin:0 0 9px}
+ body[data-layout="compact"] .library-heading-tools{flex-direction:column;align-items:flex-end;gap:4px;max-width:54%}
+ body[data-layout="compact"] #galleryGrouping{min-height:28px;font-size:10px;padding-block:3px}
+ body[data-layout="compact"]:not(.realm-route) #gameBoard{padding:12px}
  body[data-layout="compact"] .controls{display:grid;grid-template-columns:72px minmax(142px,1fr) minmax(0,1fr);gap:6px;align-items:center}
  body[data-layout="compact"] .searchbox{grid-column:1/-1;grid-row:1;width:calc(100% - 80px);margin-right:80px;max-width:none}
  body[data-layout="compact"] .reset-filters{grid-column:3;grid-row:1;justify-self:end;min-width:74px;min-height:36px;height:36px;padding:0 7px}
@@ -1751,7 +1780,7 @@ body[data-layout="compact"] .operation-header{padding-right:40px}
     <div class="game-bottom"><div><b>RECENT VICTORIES</b><div id="questFeed" class="quest-feed"><span>Verified update events appear here.</span></div></div><div><b>HALL OF FAME</b><div id="questLeaderboard" class="quest-leaderboard"><span>No ranked expeditions yet.</span></div></div></div>
    </section>
    <section class="workbench" id="workbench" tabindex="-1" aria-label="Installed mods and detected status">
-    <div class="workbench-head"><div><h2>Installed mods</h2><p class="library-description">Your collection. Every source, version and detail.</p></div><div class="toolbar-meta" id="resultsMeta">227 mods across 115 chapters</div></div>
+    <div class="workbench-head"><div><h2>Installed mods</h2><p class="library-description">Your collection. Every source, version and detail.</p></div><div class="library-heading-tools"><div class="toolbar-meta" id="resultsMeta">227 mods across 115 chapters</div><label class="library-grouping" for="galleryGrouping"><span class="mh-visually-hidden">Gallery grouping</span><select id="galleryGrouping" aria-label="Gallery grouping" title="Choose a continuous gallery or keep your chapter organization"><option value="all">All mods</option><option value="chapters">By chapter</option></select></label></div></div>
     <div class="controls" id="controls">
      <label class="searchbox" for="search"><span>⌕</span><input id="search" placeholder='Search mods, authors or notes' autocomplete="off" aria-label="Search mods"><kbd>Ctrl K</kbd><button id="clearSearch" title="Clear search" aria-label="Clear search">×</button></label>
      <div class="library-view-switch" role="group" aria-label="Library presentation"><button type="button" id="libraryList" title="List view" aria-label="List view" aria-pressed="true"><svg class="mh-icon" aria-hidden="true"><use href="#mh-list"/></svg><span>List</span></button><button type="button" id="libraryGallery" title="Gallery view" aria-label="Gallery view" aria-pressed="false"><svg class="mh-icon" aria-hidden="true"><use href="#mh-library"/></svg><span>Gallery</span></button></div><div class="select-pair"><select id="sortSelect" title="Sort within chapters" aria-label="Sort mods"><option value="priority">Priority ↑</option><option value="name">Name A–Z</option><option value="version">Installed version</option></select><button id="densityToggle" class="icon-button density-control" title="Switch to comfortable spacing" aria-label="Switch to comfortable spacing" aria-pressed="false"><svg class="mh-icon" aria-hidden="true"><use href="#mh-density"/></svg><span>Compact</span></button></div>
@@ -2248,6 +2277,7 @@ let STARTUP_REQUEST=null,STARTUP_ACCEPTED='',STARTUP_RETRY_AT=0,STARTUP_ERROR=''
 const DETECTED_CACHE=new WeakMap();
 let SEARCH_FRAME=null,WORKSHOP_SEARCH_FRAME=null,SAVE_TIMER=null,SAVE_REVISION=0,PROGRESS_SYNC_CHAIN=Promise.resolve();
 let RENDER_COUNTS=null,LOCAL_PLAN_CACHE=null,CATALOG_RENDER_REVISION=0;
+let APPLIED_FX_KEY='';
 let SOURCE_EDIT_REVISION=0,SOURCE_SYNCED_REVISION=0;
 const BRIDGE_READS=new Map(),SOURCE_CACHE=new WeakMap(),SEARCH_CACHE=new WeakMap(),HTML_CACHE=new WeakMap();
 const ROW_RENDER_CACHE=new WeakMap();
@@ -2257,7 +2287,7 @@ const SOURCE_DETAIL_READS=new WeakMap(),SOURCE_DETAILS=new WeakMap();
 let GAME=null,GAME_SEEN=-1,PROGRESS_READY=false,PROGRESS_TIMER=null,NATIVE_SELECTED='',VICTORY_ACTIVE=null,VICTORY_TIMERS=[],PRACTICE_CROWNED=false;
 const BADGE_META=[['first-blood','First Blood','⚔',1],['apprentice','Apprentice Smith','🔨',5],['veteran','Veteran of the Forge','🛡',10],['archmage','Master Enchanter','✦',25],['dragonborn','Dragonborn','🐉',50],['legend','Legendary Smith','♛',100],['world-eater','World-Eater Defeated','👑',null]];
 
-const BASE={rows:{},prefs:{filter:'all',insight:'all',query:'',sort:'priority',theme:'night',density:'compact',libraryView:'list',provider:'all',navExpanded:false,effect:'random',sound:false,focus:false,collapsed:[],autoCheckOnLaunch:true,vfxIntensity:'off',vfxShake:false,vfxTrails:false},lastSelected:null,verifiedRuntime:null};
+const BASE={rows:{},prefs:{filter:'all',insight:'all',query:'',sort:'priority',theme:'night',density:'compact',libraryView:'list',galleryGrouping:'all',provider:'all',navExpanded:false,effect:'random',sound:false,focus:false,collapsed:[],autoCheckOnLaunch:true,vfxIntensity:'off',vfxShake:false,vfxTrails:false},lastSelected:null,verifiedRuntime:null};
 let STORE=structuredClone(BASE),persistOK=true,focusedRowId='',lastUndo=null,openedId=null,toastTimer=null,activeFx=[],MO2_PENDING=[];
 const $=(id)=>document.getElementById(id);
 const txt=(v)=>String(v??'');
@@ -2455,9 +2485,20 @@ function setRows(node,entries,empty,preserveMoves=false){
     if(parsed.length!==missing.length)throw Error('The mod library markup could not be reconciled.');
     missing.forEach((entry,index)=>{entry.node=parsed[index]});
    }
-   const focused=document.activeElement,fragment=document.createDocumentFragment();
-   for(const entry of next)fragment.append(entry.node);
-   node.replaceChildren(fragment);
+   // Remove only absent/changed records, then move only nodes whose order has
+   // changed. Switching list to a flat priority gallery usually removes just
+   // chapter headers; detaching all surviving cards would force needless work.
+   const focused=document.activeElement,retained=new Set(next.map(entry=>entry.node));
+   const removed=previous.filter(entry=>!retained.has(entry.node));
+   if(missing.length+removed.length>Math.max(32,Math.max(previous.length,next.length)/3)){
+    // A large search contraction/expansion is one DOM replacement, retaining
+    // surviving nodes, rather than thousands of individual removal calls.
+    const fragment=document.createDocumentFragment();for(const entry of next)fragment.append(entry.node);node.replaceChildren(fragment);
+   }else{
+    for(const entry of removed)entry.node.remove();
+    let cursor=node.firstElementChild;
+    for(const entry of next){if(entry.node!==cursor)node.insertBefore(entry.node,cursor);cursor=entry.node.nextElementSibling;}
+   }
    if(focused?.isConnected&&node.contains(focused)&&document.activeElement!==focused)focused.focus({preventScroll:true});
    ROW_RENDER_CACHE.set(node,next);HTML_CACHE.delete(node);return;
   }
@@ -2521,12 +2562,17 @@ async function hydrateProgress(profile){const context=profileContext(),revision=
 } catch(ex){console.warn('MO2 profile save unavailable, local fallback:',ex.message);if(contextIsCurrent(context))SET('liveState','Local notes retained. MO2 Chronicle loading will retry: '+ex.message)}finally{if(contextIsCurrent(context)){PROGRESS_READY=hydrated;LOCAL_PLAN_CACHE=null;applyAppearance();$('search').value=STORE.prefs.query;render();if(hydrated)save(false)}}}
 
 function updateStorageIndicator(){const b=$('storageStatus');if(!b)return;b.textContent=persistOK?'◉ AUTO-SAVED LOCALLY':'⚠ SESSION ONLY · EXPORT JSON';b.style.color=persistOK?'var(--teal)':'var(--red)'}
-function updatePrefs(p){STORE.prefs={...STORE.prefs,...p};save(false);applyAppearance();if(Object.keys(p).some(k=>['filter','insight','query','sort','collapsed','provider'].includes(k)))render()}
+function flatGallery(){return STORE.prefs.libraryView==='gallery'&&STORE.prefs.galleryGrouping!=='chapters'}
+function updatePrefs(p){const wasFlat=flatGallery();STORE.prefs={...STORE.prefs,...p};save(false);applyAppearance();if(Object.keys(p).some(k=>['filter','insight','query','sort','collapsed','provider'].includes(k)))render();else if(wasFlat!==flatGallery()){renderList();paintNativeSelection()}}
+function setBodyPreference(key,value){if(document.body.dataset[key]!==value)document.body.dataset[key]=value}
 function applyAppearance(){
  // Native app preferences are global; Chronicle imports must not overwrite the
  // canonical desktop appearance. Standalone keeps its independent local theme.
  if(typeof window.modhunterRequestTheme==='function'&&['light','dark'].includes(window.ModhunterAppearance?.resolvedTheme))STORE.prefs.theme=window.ModhunterAppearance.resolvedTheme==='light'?'snow':'night';
- applyLibraryAppearance();document.body.dataset.theme=STORE.prefs.theme==='snow'?'snow':'night';document.body.dataset.density=STORE.prefs.density==='comfy'?'comfy':'compact';$('effectSelect').value=STORE.prefs.effect;$('soundToggle').textContent=STORE.prefs.sound?'♫':'♪̸';$('soundToggle').title=STORE.prefs.sound?'Mute sounds':'Enable sounds';$('soundToggle').setAttribute('aria-label',STORE.prefs.sound?'Effect sounds on':'Effect sounds off');$('themeToggle').textContent=STORE.prefs.theme==='snow'?'☾':'◐';document.body.dataset.focus=STORE.prefs.focus?'yes':'no';$('focusToggle').textContent=STORE.prefs.focus?'◉ Exit Focus':'◎ Focus';$('focusToggle').setAttribute('aria-pressed',String(Boolean(STORE.prefs.focus)));$('focusTop').textContent=STORE.prefs.focus?'◉':'▦';$('focusTop').setAttribute('aria-pressed',String(Boolean(STORE.prefs.focus)));$('fxIntensity').value=STORE.prefs.vfxIntensity||'legendary';$('fxShake').checked=STORE.prefs.vfxShake!==false;$('fxTrails').checked=STORE.prefs.vfxTrails!==false;window.AetherFX?.config({intensity:STORE.prefs.vfxIntensity||'legendary',shake:STORE.prefs.vfxShake!==false,trails:STORE.prefs.vfxTrails!==false,sound:STORE.prefs.sound})}
+ applyLibraryAppearance();setBodyPreference('theme',STORE.prefs.theme==='snow'?'snow':'night');setBodyPreference('density',STORE.prefs.density==='comfy'?'comfy':'compact');$('effectSelect').value=STORE.prefs.effect;$('soundToggle').textContent=STORE.prefs.sound?'♫':'♪̸';$('soundToggle').title=STORE.prefs.sound?'Mute sounds':'Enable sounds';$('soundToggle').setAttribute('aria-label',STORE.prefs.sound?'Effect sounds on':'Effect sounds off');$('themeToggle').textContent=STORE.prefs.theme==='snow'?'☾':'◐';setBodyPreference('focus',STORE.prefs.focus?'yes':'no');$('focusToggle').textContent=STORE.prefs.focus?'◉ Exit Focus':'◎ Focus';$('focusToggle').setAttribute('aria-pressed',String(Boolean(STORE.prefs.focus)));$('focusTop').textContent=STORE.prefs.focus?'◉':'▦';$('focusTop').setAttribute('aria-pressed',String(Boolean(STORE.prefs.focus)));$('fxIntensity').value=STORE.prefs.vfxIntensity||'legendary';$('fxShake').checked=STORE.prefs.vfxShake!==false;$('fxTrails').checked=STORE.prefs.vfxTrails!==false;
+ const fx={intensity:STORE.prefs.vfxIntensity||'legendary',shake:STORE.prefs.vfxShake!==false,trails:STORE.prefs.vfxTrails!==false,sound:STORE.prefs.sound},fxKey=JSON.stringify(fx);
+ if(window.AetherFX&&APPLIED_FX_KEY!==fxKey){window.AetherFX.config(fx);APPLIED_FX_KEY=fxKey}
+}
 function counts(){if(RENDER_COUNTS)return RENDER_COUNTS;const c={total:DATA.items.length,done:0,review:0,risky:0,unlinked:0,favorites:0,pending:0,updates:0};for(const m of DATA.items){const status=getStatus(m);if(status==='done')c.done++;if(status==='review')c.review++;if(status==='pending')c.pending++;if(isRisk(m))c.risky++;if(!getSrc(m).verified)c.unlinked++;if(isFav(m))c.favorites++;if(isUpdate(m))c.updates++;}return{...c,left:c.total-c.done,percent:c.total?Math.round(c.done/c.total*100):0}}
 const SET=(id,val)=>{const el=$(id);if(el)el.textContent=val};
 function renderStats(){const c=counts();SET('sidePercent',c.percent+'%');$('sideProgressFill').style.width=c.percent+'%';SET('sideDone',c.done);SET('sideRemaining',c.left);SET('sideDanger',c.risky);SET('heroPercent',c.percent+'%');SET('heroProgressLabel',`${c.done} / ${c.total} mods`);$('heroMotivation').textContent=c.percent===100?'SOVNGARDE IS YOURS':c.percent>=75?'THE FINAL ASSAULT':c.percent>=40?'THE TIDE TURNS':'THE JOURNEY BEGINS';document.querySelector('.orb-outer').style.setProperty('--percent',c.percent+'%');SET('metricTotal',c.total);SET('metricSections',DATA.groups.length+' hand-sorted sections');SET('metricDone',c.done);SET('metricRemaining',c.left+' left in the quest');SET('metricWatch',c.risky);SET('metricLinks',c.total-c.unlinked);SET('metricLinksSub',c.unlinked+' still need source confirmation');
@@ -2551,27 +2597,42 @@ function assessmentHTML(m){const audit=getAudit(m),out=[];
  if(m.update&&m.update.verdict==='current')out.unshift('<span class="tag compatible">✓ CURRENT</span>');
  if(m.update&&m.update.verdict==='newer-installed')out.unshift('<span class="tag compatible">✓ AHEAD OF SOURCE</span>');
  if(!out.length)out.push('<span class="tag unknown" title="No file-specific compatibility proof yet">NOT VERIFIED</span>');return out.join('');}
-function modHTML(m){const row=getRow(m.id);return cachedMarkup(MOD_MARKUP_CACHE,m,[CATALOG_RENDER_REVISION,BRIDGE.active,DATA.offline,row.status,row.favorite,row.installed,row.note,row.compat,row.url,m.thumbnailUrl,m.imageUrl,m.previewUrl,m.iconUrl,m.author,m.sourceUpdate,m.localAnalysis,m.modHealth,m.update,sourceTimePhase(m),LIVE_SCAN?.state==='running',LIVE_CONNECTED],()=>buildModHTML(m))}
-function buildModHTML(m){const s=getSrc(m),sourceText=s.verified?(SOURCES?.label(s.type)||'Source'):'Find source',note=getRow(m.id).note||m.screenshotNote||'',stat=getStatus(m),statusLabel=stat==='done'?'Clear completed status':stat==='review'?'Mark mod cleared':'Mark mod cleared';
+function modHTML(m){const row=getRow(m.id);return cachedMarkup(MOD_MARKUP_CACHE,m,[CATALOG_RENDER_REVISION,document.body.dataset.layout,BRIDGE.active,DATA.offline,row.status,row.favorite,row.installed,row.note,row.compat,row.url,m.thumbnailUrl,m.imageUrl,m.previewUrl,m.iconUrl,m.author,m.sourceUpdate,m.localAnalysis,m.modHealth,m.update,sourceTimePhase(m),LIVE_SCAN?.state==='running',LIVE_CONNECTED],()=>buildModHTML(m))}
+// Compact layout already hides these legacy cells. Omit only their duplicate
+// markup; state, keyboard completion and the on-demand inspector stay shared.
+// Keep the original cells for hosts that explicitly select a noncompact layout.
+function buildModHTML(m){const compact=document.body.dataset.layout==='compact',s=getSrc(m),sourceText=s.verified?(SOURCES?.label(s.type)||'Source'):'Find source',note=getRow(m.id).note||m.screenshotNote||'',stat=getStatus(m),statusLabel=stat==='done'?'Clear completed status':stat==='review'?'Mark mod cleared':'Mark mod cleared';
  return `<article class="mod-row ${classFor(m)}" id="row-${escapeHTML(m.id)}" data-id="${escapeHTML(m.id)}" data-detected="${escapeHTML(detectedStatus(m).kind)}">
- <div class="mod-status"><button class="complete-btn" data-act="complete" data-id="${m.id}" aria-label="${escapeHTML(statusLabel+' for '+m.name)}" title="${escapeHTML(statusLabel)}">${stat==='done'?'✓':stat==='review'?'!':''}</button></div>
+ ${compact?'':`<div class="mod-status"><button class="complete-btn" data-act="complete" data-id="${m.id}" aria-label="${escapeHTML(statusLabel+' for '+m.name)}" title="${escapeHTML(statusLabel)}">${stat==='done'?'✓':stat==='review'?'!':''}</button></div>`}
  ${thumbnailMarkup(m,false,s)}
  <div class="mod-priority">${m.priority}</div>
- <div class="mod-primary" data-priority="${m.priority}"><div class="mod-name-actions"><a class="mod-title source-title ${s.verified?'':'unknown'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHTML((s.verified?'Open source page for ':'Search for original source of ')+m.name)}" title="${escapeHTML(m.name+' — '+(s.verified?'Open original source':'Find original source'))}" data-act="source" data-id="${escapeHTML(m.id)}">${escapeHTML(m.name)}<span class="source-open-glyph" aria-hidden="true">↗</span></a>${BRIDGE.active?`<button class="mod-inline-locate" type="button" title="Reveal this mod in Mod Organizer 2" aria-label="Reveal ${escapeHTML(m.name)} in MO2" data-act="locate" data-id="${escapeHTML(m.id)}">⌖</button>`:''}</div>${modAuthor(m)?`<div class="mod-author" data-no-translate>${escapeHTML(modAuthor(m))}</div>`:''}${note?`<div class="mod-note ${/do not|ctd|crash|hard esp|incompati|needs update|bugs/i.test(note)?'warning-note':''}" title="${escapeHTML(note)}">${escapeHTML(note)}</div>`:''}${INSIGHTS?.chips(m)||''}${SOURCES?.chips(m)||''}</div>
+ <div class="mod-primary" data-priority="${m.priority}" data-chapter-label="${escapeHTML(m.group||GROUP_MAP.get(m.groupId)?.name||'')}"><div class="mod-name-actions"><a class="mod-title source-title ${s.verified?'':'unknown'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHTML((s.verified?'Open source page for ':'Search for original source of ')+m.name)}" title="${escapeHTML(m.name+' — '+(s.verified?'Open original source':'Find original source'))}" data-act="source" data-id="${escapeHTML(m.id)}">${escapeHTML(m.name)}<span class="source-open-glyph" aria-hidden="true">↗</span></a>${BRIDGE.active?`<button class="mod-inline-locate" type="button" title="Reveal this mod in Mod Organizer 2" aria-label="Reveal ${escapeHTML(m.name)} in MO2" data-act="locate" data-id="${escapeHTML(m.id)}">⌖</button>`:''}</div>${modAuthor(m)?`<div class="mod-author" data-no-translate>${escapeHTML(modAuthor(m))}</div>`:''}${note?`<div class="mod-note ${/do not|ctd|crash|hard esp|incompati|needs update|bugs/i.test(note)?'warning-note':''}" title="${escapeHTML(note)}">${escapeHTML(note)}</div>`:''}${INSIGHTS?.chips(m)||''}${SOURCES?.chips(m)||''}</div>
  <div class="mod-version" title="Installed version recorded by source">${escapeHTML(m.installedVersion||'Unknown')}${m.update?.latestVersion&&m.update.latestVersion!==m.installedVersion?`<small class="newer-version" title="Latest metadata, not necessarily compatible">→ ${escapeHTML(m.update.latestVersion)}</small>`:''}</div>
- <div class="mod-assessment">${detectedMarkup(m)}<span class="legacy-assessment">${assessmentHTML(m)}</span></div>
- <div class="mod-source"><a class="source-btn ${s.verified?'':'lookup'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" data-act="source" data-id="${m.id}" title="${escapeHTML(s.type==='creations'?'Exact Bethesda Creation listing. Install from in-game Creations menu.':s.verified?'Exact mod files page':'Search for the correct mod project; source not yet verified')}">${sourceText}</a></div>
+ <div class="mod-assessment">${detectedMarkup(m)}${compact?'':'<span class="legacy-assessment">'+assessmentHTML(m)+'</span>'}</div>
+ <div class="mod-source"><a class="source-btn ${s.verified?'':'lookup'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" data-act="source" data-id="${m.id}" title="${escapeHTML(sourceText+' — '+(s.type==='creations'?'Exact Bethesda Creation listing. Install from in-game Creations menu.':s.verified?'Exact mod files page':'Search for the correct mod project; source not yet verified'))}">${sourceText}</a></div>
  <div class="inspect-col">${BRIDGE.active&&m.nexusId?`<button class="file-download-btn" title="Choose an exact Nexus file in MO2" aria-label="Choose Nexus files for ${escapeHTML(m.name)}" data-act="files" data-id="${m.id}">${isUpdate(m)?'Review':'⇩'}</button>`:''}<button class="favorite-btn ${isFav(m)?'active':''}" title="${isFav(m)?'Remove bookmark':'Bookmark mod'}" aria-label="Bookmark ${escapeHTML(m.name)}" data-act="favorite" data-id="${m.id}">${isFav(m)?'★':'☆'}</button><button class="inspect-btn" title="Inspect mod, notes, compatibility and source" aria-label="Inspect ${escapeHTML(m.name)}" data-act="inspect" data-id="${m.id}">Details</button></div>
  </article>`}
 let GROUP_PROGRESS=new Map();function groupProgress(){GROUP_PROGRESS=new Map(DATA.groups.map(g=>[g.id,{done:0,total:0}]));for(const m of DATA.items){if(!GROUP_PROGRESS.has(m.groupId))GROUP_PROGRESS.set(m.groupId,{done:0,total:0});const o=GROUP_PROGRESS.get(m.groupId);o.total++;if(isDone(m))o.done++}}
 function renderChapters(){let needle=$('chapterSearch').value.trim().toLowerCase();const html=DATA.groups.filter(g=>!needle||g.name.toLowerCase().includes(needle)).map(g=>{const num=GROUP_PROGRESS.get(g.id)?.done||0;return `<button class="chapter-link" style="--group-clr:${PALETTE[g.color]||PALETTE.slate}" data-chapter="${g.id}" title="Jump to ${escapeHTML(g.name)}"><i></i><span>${escapeHTML(g.name)}</span><em>${num}/${g.count}</em></button>`}).join('');setHTML($('chapters'),html||'<div class="drawer-micro" style="padding:12px">No chapter found.</div>')}
-function renderList(){const visible=filtered(),byGroup=new Map();for(const m of visible){if(!byGroup.has(m.groupId))byGroup.set(m.groupId,[]);byGroup.get(m.groupId).push(m)}
- const entries=[];for(const g of DATA.groups){const ms=byGroup.get(g.id);if(!ms||!ms.length)continue;let sorted=[...ms];if(STORE.prefs.sort==='name')sorted.sort((a,b)=>a.name.localeCompare(b.name));else if(STORE.prefs.sort==='version')sorted.sort((a,b)=>a.installedVersion.localeCompare(b.installedVersion));else sorted.sort((a,b)=>a.priority-b.priority);
- const gd=GROUP_PROGRESS.get(g.id)?.done||0;const collapsed=STORE.prefs.collapsed.includes(g.id),pct=Math.round((gd/(g.count||1))*100);
- entries.push({key:'group:'+g.id,html:`<button class="chapterbar ${collapsed?'closed':''}" id="section-${g.id}" data-chapter-toggle="${g.id}" style="--chapter-color:${PALETTE[g.color]||PALETTE.slate}" aria-expanded="${!collapsed}"><span class="diamond">◆</span><strong>${escapeHTML(g.name)}</strong><span class="chapter-count">${gd}/${g.count}</span><span class="chapter-mini-progress"><i style="width:${pct}%"></i></span><span class="chapter-priority">#${g.startPriority}</span></button>`});
- if(!collapsed)for(const m of sorted)entries.push({key:'mod:'+m.id,html:modHTML(m)});}
+let VISIBLE_ROW_IDS=[];
+function sortMods(items){const sorted=[...items];if(STORE.prefs.sort==='name')sorted.sort((a,b)=>txt(a.name).localeCompare(txt(b.name)));else if(STORE.prefs.sort==='version')sorted.sort((a,b)=>txt(a.installedVersion).localeCompare(txt(b.installedVersion)));else sorted.sort((a,b)=>a.priority-b.priority);return sorted}
+function renderList(){
+ const visible=filtered(),byGroup=new Map();for(const m of visible){if(!byGroup.has(m.groupId))byGroup.set(m.groupId,[]);byGroup.get(m.groupId).push(m)}
+ const entries=[],renderedIds=[],addMod=m=>{entries.push({key:'mod:'+m.id,html:modHTML(m)});renderedIds.push(m.id)};
+ if(flatGallery()){
+  // A continuous gallery is globally sorted and includes every matching mod,
+  // even when its chapter was previously collapsed in the organized view.
+  for(const m of sortMods(visible))addMod(m);
+ }else for(const g of DATA.groups){
+  const ms=byGroup.get(g.id);if(!ms||!ms.length)continue;
+  const gd=GROUP_PROGRESS.get(g.id)?.done||0,collapsed=STORE.prefs.collapsed.includes(g.id),pct=Math.round((gd/(g.count||1))*100);
+  entries.push({key:'group:'+g.id,html:`<button class="chapterbar ${collapsed?'closed':''}" id="section-${g.id}" data-chapter-toggle="${g.id}" style="--chapter-color:${PALETTE[g.color]||PALETTE.slate}" aria-expanded="${!collapsed}"><span class="diamond">◆</span><strong>${escapeHTML(g.name)}</strong><span class="chapter-count">${gd}/${g.count}</span><span class="chapter-mini-progress"><i style="width:${pct}%"></i></span><span class="chapter-priority">#${g.startPriority}</span></button>`});
+  if(!collapsed)for(const m of sortMods(ms))addMod(m);
+ }
  setRows($('modList'),entries,`<div class="empty-state"><div class="empty-icon">ᛟ</div><h3>No foes in this chamber.</h3><p>Nothing matches your current search and filters.</p><button id="emptyReset">Clear filters</button></div>`);
- const listCounts=counts(),parts=[visible.length+' of '+DATA.items.length+' mods',byGroup.size+' chapters'];if(STORE.prefs.query)parts.push('query: '+STORE.prefs.query);SET('resultsMeta',parts.join(' · '));SET('listFooter',`YOU'VE REACHED THE END · ${visible.length} MATCHING MODS · ${listCounts.total-listCounts.unlinked} EXACT ORIGINAL SOURCES`);$('sortSelect').value=STORE.prefs.sort;const provider=$('providerFilter');if(provider)provider.value=STORE.prefs.provider||'all';}
+ VISIBLE_ROW_IDS=renderedIds;
+ const listCounts=counts(),parts=[visible.length+' of '+DATA.items.length+' mods',byGroup.size+' chapters'];if(STORE.prefs.query)parts.push('query: '+STORE.prefs.query);SET('resultsMeta',parts.join(' · '));SET('listFooter',`YOU'VE REACHED THE END · ${visible.length} MATCHING MODS · ${listCounts.total-listCounts.unlinked} EXACT ORIGINAL SOURCES`);$('sortSelect').value=STORE.prefs.sort;const provider=$('providerFilter');if(provider)provider.value=STORE.prefs.provider||'all';
+}
 function render(){renderProviderFilter();if(SEARCH_FRAME!==null){cancelAnimationFrame(SEARCH_FRAME);SEARCH_FRAME=null}RENDER_COUNTS=counts();try{groupProgress();renderStats();renderList();renderChapters();renderQuest();paintNativeSelection();renderWorkshop();renderInsightToolbar();renderSourceCoverage();renderWorkspace()}finally{RENDER_COUNTS=null}}
 function renderSearch(){SEARCH_FRAME=null;renderList();paintNativeSelection()}
 function scheduleSearchRender(){if(DATA.items.length<1000){renderSearch();return}if(SEARCH_FRAME===null)SEARCH_FRAME=requestAnimationFrame(renderSearch)}
@@ -2580,11 +2641,11 @@ function undoLast(){if(!lastUndo)return;const action=lastUndo;lastUndo=null;wind
 function centerOfRow(id){const el=$('row-'+id);if(!el)return{x:window.innerWidth*.5,y:window.innerHeight*.45};const r=el.getBoundingClientRect();return{x:Math.max(20,r.left+Math.min(r.width*.42,420)),y:r.top+r.height*.5}}
 function toggleDone(id,el){const m=ITEM_MAP.get(id);if(!m)return;const r=el?.closest('.mod-row')?.getBoundingClientRect();const pos=r?{x:r.left+Math.min(r.width*.44,450),y:r.top+r.height*.5}:centerOfRow(id);setStatus(m,isDone(m)?'pending':'done',true,pos);}
 function toast(message,action,actionLabel){const w=$('toastWrap');const el=document.createElement('div');el.className='toast';el.innerHTML=`<span>${escapeHTML(message)}</span>`;if(action){const b=document.createElement('button');b.textContent=actionLabel||'UNDO';b.addEventListener('click',()=>{action();el.remove()});el.append(b)}w.append(el);while(w.children.length>3)w.firstChild.remove();setTimeout(()=>{el.style.opacity='0';el.style.transition='opacity .2s';setTimeout(()=>el.remove(),220)},3600)}
-function nextPending(){const filteredPending=DATA.items.filter(m=>getStatus(m)==='pending');if(!filteredPending.length){toast('Everything is cleared or marked for review. Skyrim belongs to you.');return}let target=filteredPending.find(m=>m.priority>Number((ITEM_MAP.get(focusedRowId)||{}).priority||0))||filteredPending[0];STORE.prefs.filter='all';STORE.prefs.provider='all';STORE.prefs.query='';$('search').value='';if(STORE.prefs.collapsed.includes(target.groupId))STORE.prefs.collapsed=STORE.prefs.collapsed.filter(g=>g!==target.groupId);save();render();focusRow(target.id);}
+function nextPending(){const filteredPending=DATA.items.filter(m=>getStatus(m)==='pending');if(!filteredPending.length){toast('Everything is cleared or marked for review. Skyrim belongs to you.');return}let target=filteredPending.find(m=>m.priority>Number((ITEM_MAP.get(focusedRowId)||{}).priority||0))||filteredPending[0];STORE.prefs.filter='all';STORE.prefs.provider='all';STORE.prefs.query='';$('search').value='';if(!flatGallery()&&STORE.prefs.collapsed.includes(target.groupId))STORE.prefs.collapsed=STORE.prefs.collapsed.filter(g=>g!==target.groupId);save();render();focusRow(target.id);}
 function focusRow(id){const row=$('row-'+id);if(!row)return;focusedRowId=id;row.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'center'});row.classList.remove('focus-signal');void row.offsetWidth;row.classList.add('focus-signal');window.AetherFX?.select(row,{source:'app'});const b=row.querySelector(document.body.dataset.layout==='compact'?'[data-act="inspect"]':'[data-act="complete"]');if(b)b.focus({preventScroll:true});}
-function jumpChapter(id){STORE.prefs.filter='all';STORE.prefs.provider='all';STORE.prefs.query='';$('search').value='';if(STORE.prefs.collapsed.includes(id))STORE.prefs.collapsed=STORE.prefs.collapsed.filter(x=>x!==id);save();render();const el=$('section-'+id);el?.scrollIntoView({behavior:'smooth',block:'start'});$('sidebar').classList.remove('open')}
+function jumpChapter(id){if(flatGallery()){STORE.prefs.galleryGrouping='chapters';applyLibraryAppearance()}STORE.prefs.filter='all';STORE.prefs.provider='all';STORE.prefs.query='';$('search').value='';if(STORE.prefs.collapsed.includes(id))STORE.prefs.collapsed=STORE.prefs.collapsed.filter(x=>x!==id);save();render();const el=$('section-'+id);el?.scrollIntoView({behavior:'smooth',block:'start'});$('sidebar').classList.remove('open')}
 function resetFilters(){STORE.prefs.filter='all';STORE.prefs.insight='all';STORE.prefs.provider='all';STORE.prefs.query='';$('search').value='';save();render()}
-function toggleAllChapters(){const allClosed=STORE.prefs.collapsed.length===DATA.groups.length;STORE.prefs.collapsed=allClosed?[]:DATA.groups.map(g=>g.id);$('collapseAll').textContent=allClosed?'Collapse':'Expand';save();render();}
+function toggleAllChapters(){if(flatGallery()){STORE.prefs.galleryGrouping='chapters';applyLibraryAppearance()}const allClosed=STORE.prefs.collapsed.length===DATA.groups.length;STORE.prefs.collapsed=allClosed?[]:DATA.groups.map(g=>g.id);$('collapseAll').textContent=allClosed?'Collapse':'Expand';save();render();}
 function drawInspector(m){
  const drawer=$('detailDrawer');
  if(!drawer.classList.contains('open'))INSPECTOR_RETURN_FOCUS=document.activeElement?.closest('.mod-row')?document.activeElement:$('row-'+m.id)?.querySelector('.inspect-btn')||document.activeElement;
@@ -2920,9 +2981,24 @@ function thumbnailMarkup(mod,large=false,source=getSrc(mod)){
  const metadata=' data-provider-label="'+escapeHTML(label)+'"';
  return large?'<div class="mod-art mod-art-large'+artClass+'"'+metadata+'>'+inside+'</div>':'<button class="mod-art'+artClass+'" type="button" data-act="preview" data-id="'+id+'"'+metadata+' title="'+escapeHTML('Inspect '+mod.name)+'" aria-label="'+escapeHTML('Preview and inspect '+mod.name)+'">'+inside+'</button>';
 }
+function updateGalleryColumns(width){
+ if(STORE.prefs.libraryView!=='gallery')return;
+ const list=$('modList');if(!list)return;
+ const available=width??list.clientWidth;if(!(available>0))return;
+ const comfy=STORE.prefs.density==='comfy',narrow=innerWidth<=580,gap=comfy?18:narrow?10:14;
+ const columns=narrow?(comfy?1:2):Math.max(1,Math.floor((available+gap)/((comfy?260:200)+gap)));
+ const key=columns+':'+gap;if(list.dataset.galleryGeometry===key)return;
+ list.dataset.galleryGeometry=key;list.style.setProperty('--library-columns',String(columns));list.style.setProperty('--library-gap-total',((columns-1)*gap)+'px');
+}
 function applyLibraryAppearance(){
- document.body.dataset.libraryView=STORE.prefs.libraryView==='gallery'?'gallery':'list';
- document.body.dataset.nav=STORE.prefs.navExpanded?'expanded':'compact';
+ // Read one existing container width before changing the view. The outer
+ // gallery wraps complete cards instead of sizing thousands of grid tracks.
+ updateGalleryColumns();
+ setBodyPreference('libraryView',STORE.prefs.libraryView==='gallery'?'gallery':'list');
+ setBodyPreference('galleryGrouping',STORE.prefs.galleryGrouping==='chapters'?'chapters':'all');
+ if($('galleryGrouping'))$('galleryGrouping').value=document.body.dataset.galleryGrouping;
+ if($('sortSelect'))$('sortSelect').title=flatGallery()?'Sort all mods':'Sort within chapters';
+ setBodyPreference('nav',STORE.prefs.navExpanded?'expanded':'compact');
  for(const [id,value] of [['libraryList','list'],['libraryGallery','gallery']])$(id)?.setAttribute('aria-pressed',String(document.body.dataset.libraryView===value));
  const comfy=STORE.prefs.density==='comfy',density=$('densityToggle');
  if(density){density.setAttribute('aria-pressed',String(comfy));density.title=comfy?'Switch to compact spacing':'Switch to comfortable spacing';density.setAttribute('aria-label',density.title);density.querySelector('span').textContent=comfy?'Comfortable':'Compact'}
@@ -2949,6 +3025,10 @@ function openModContextMenu(row,x,y){
 }
 $('libraryList').onclick=()=>updatePrefs({libraryView:'list'});
 $('libraryGallery').onclick=()=>updatePrefs({libraryView:'gallery'});
+$('galleryGrouping').onchange=event=>updatePrefs({galleryGrouping:event.target.value==='chapters'?'chapters':'all'});
+let GALLERY_RESIZE_FRAME=null,GALLERY_OBSERVED_WIDTH=0;
+if(typeof ResizeObserver==='function')new ResizeObserver(entries=>{for(const entry of entries)if(entry.target===$('modList')&&entry.contentRect.width!==GALLERY_OBSERVED_WIDTH){GALLERY_OBSERVED_WIDTH=entry.contentRect.width;if(GALLERY_RESIZE_FRAME===null)GALLERY_RESIZE_FRAME=requestAnimationFrame(()=>{GALLERY_RESIZE_FRAME=null;updateGalleryColumns(GALLERY_OBSERVED_WIDTH)})}}).observe($('modList'));
+else window.addEventListener('resize',()=>updateGalleryColumns());
 $('providerFilter').onchange=event=>updatePrefs({provider:event.target.value});
 $('railToggle').onclick=()=>updatePrefs({navExpanded:!STORE.prefs.navExpanded});
 $('railTheme').onclick=()=>$('themeToggle').click();
@@ -3019,8 +3099,8 @@ document.addEventListener('keydown',e=>{
  if(e.altKey&&e.key.toLowerCase()==='u'){e.preventDefault();unifiedScroll('updateWorkshop');$('workshopSearch').focus();return;}
  if(e.altKey&&e.key.toLowerCase()==='r'&&BRIDGE.active){e.preventDefault();reviewNextWorkshopCandidate();return;}
  if(e.key.toLowerCase()==='f'){e.preventDefault();updatePrefs({focus:!STORE.prefs.focus});return}if(e.key.toLowerCase()==='n'){e.preventDefault();nextPending();return}if(e.key==='?'||e.key==='F1'){e.preventDefault();help(true);return}
- if(e.key.toLowerCase()==='j'||e.key.toLowerCase()==='k'){e.preventDefault();const ids=filtered().filter(m=>!STORE.prefs.collapsed.includes(m.groupId)).map(m=>m.id);if(!ids.length)return;let i=ids.indexOf(focusedRowId);i=(i+(e.key.toLowerCase()==='j'?1:-1)+ids.length)%ids.length;focusRow(ids[i]);return}
- if(e.code==='Space'&&focusedRowId){e.preventDefault();toggleDone(focusedRowId,$('row-'+focusedRowId)?.querySelector('[data-act="complete"]'))}
+ if(e.key.toLowerCase()==='j'||e.key.toLowerCase()==='k'){e.preventDefault();const ids=VISIBLE_ROW_IDS;if(!ids.length)return;let i=ids.indexOf(focusedRowId);i=(i+(e.key.toLowerCase()==='j'?1:-1)+ids.length)%ids.length;focusRow(ids[i]);return}
+ if(e.code==='Space'&&focusedRowId){e.preventDefault();toggleDone(focusedRowId,$('row-'+focusedRowId))}
 });
 // No remote privileges in the browser; the plugin serves a tokenized same-origin loopback endpoint.
 async function bridgeRequest(method,path,body){

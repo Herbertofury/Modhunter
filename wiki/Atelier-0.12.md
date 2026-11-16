@@ -14,6 +14,7 @@ The active profile and connection state remain above the library. A demonstratio
 | --- | --- |
 | **List** | Compact rows with preview, name, installed/observed versions, detected status, source and real actions |
 | **Gallery** | Image-forward cards built from the same complete mod records, with version/status context and Details |
+| **All mods / By chapter** | In Gallery, choose a continuous globally sorted collection or retain chapter headers and their saved collapse state |
 | **Compact / Comfortable** | Changes spacing and, in Gallery, card size without dropping records |
 | **Source** | Filters the current library to an actual provider or source state; the option reports its count |
 | **Search** | Searches names, authors, versions, notes and existing source/health evidence |
@@ -22,7 +23,9 @@ The active profile and connection state remain above the library. A demonstratio
 | **Details** or the preview | Opens the existing mod inspector and its real source, notes and compatibility controls |
 | Right-click or **Shift+F10** on a mod control | Opens contextual Details, source, bookmark and applicable file/MO2 actions |
 
-Text search retains qualified terms such as `author:`, `version:`, `note:` and `provider:`. **Ctrl+K** returns to the library and focuses search. The full library remains available: no result cap or viewport virtualization is used. Changing view or density preserves the existing row objects instead of rebuilding the catalog or repeating a provider scan.
+Text search retains qualified terms such as `author:`, `version:`, `note:` and `provider:`. **Ctrl+K** returns to the library and focuses search. The full library remains available: no result cap or viewport virtualization is used. Changing view or density preserves surviving row objects instead of rebuilding the catalog or repeating a provider scan.
+
+Gallery defaults to **All mods**, so small chapters do not leave most of a row empty. Every matching record appears, including records in chapters you previously collapsed. Chapter labels stay on the cards and in Details. **By chapter** restores the saved chapter organization; returning to List keeps the same saved collapsed chapters. Priority, Name and Installed version sort globally in All mods and within chapters in the organized views. **J / K** follows the displayed order. Selecting a chapter through Collections opens the organized view and reveals that chapter.
 
 A source filter stays active until changed or reset. Explicit chapter navigation and **Next pending** clear conflicting library filters so the requested target is actually revealed. Presentation preferences persist with the profile, including in the MO2 Chronicle. They do not alter enabled mods, installed files, load order or earned rewards.
 
@@ -66,9 +69,9 @@ The authoritative pipeline is [native-rust.yml](https://github.com/Herbertofury/
 | Acceptance layer | Current evidence / status |
 | --- | --- |
 | Shared UI and source syntax | Implemented; local JavaScript syntax checked after the normal build placeholder expansion |
-| Focused source regressions | Local targeted checks: 74 frontend/source/mod-intelligence Node tests, 5 Atelier Python contracts, 7 Chronicle tests passed before final candidate assembly; exact-head CI still required |
+| Focused source regressions | Local targeted checks: 76 frontend/source/mod-intelligence Node tests, 5 Atelier contracts and 7 Chronicle tests passed after the performance/grouping repairs; exact-head CI still required |
 | New gallery, filtering and keyboard interactions | Browser regression suite added; exact-head Chromium execution pending |
-| Equivalent 11,207-mod comparison | Harness checks the complete DOM, search of the last record, view/density preservation and alternating baseline/candidate measurements; results pending |
+| Equivalent 11,207-mod comparison | The first two candidates retained all records but showed blocking rendering regressions. A smaller compact DOM, keyed structural changes and full-card flex layout are implemented; the repaired candidate must pass the unchanged full-catalog comparison before release |
 | Actual native Windows WebView2 | Candidate launch, import, shell actions and screenshot acceptance pending |
 | Real Windows MO2 fixture | Candidate install/restore/profile acceptance pending; this does not substitute for the user's personal MO2 beta installation or accounts |
 | Installer / portable / MO2 checksums | Candidate pipeline packaging and downloadable-asset verification pending |

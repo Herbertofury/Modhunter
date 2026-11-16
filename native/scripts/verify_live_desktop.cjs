@@ -41,6 +41,7 @@ function clearCiPolicies(){
 function check(name,value){checks.push({name,passed:!!value});if(!value)throw Error('Failed: '+name);}
 function configureCiDisplay(width,height){
  if(process.platform!=='win32'||process.env.GITHUB_ACTIONS!=='true'||process.env.RUNNER_OS!=='Windows'||process.env.MODHUNTER_NATIVE_SMOKE!=='1')throw Error('Display changes require the disposable Windows CI fixture');
+ const change=Number.isInteger(width)&&Number.isInteger(height)&&width>0&&height>0;
  const script=`$ErrorActionPreference='Stop'
 Add-Type @'
 using System; using System.Runtime.InteropServices;
@@ -54,22 +55,28 @@ public static class ModhunterCiDisplay {
   public short LogPixels; public int BitsPerPel,Width,Height,DisplayFlags,Frequency;
   public int ICMMethod,ICMIntent,MediaType,DitherType,Reserved1,Reserved2,PanningWidth,PanningHeight;
  }
- [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern bool EnumDisplaySettings(string name,int mode,ref Mode value);
- [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern int ChangeDisplaySettings(ref Mode mode,int flags);
+ [DllImport("user32.dll",EntryPoint="EnumDisplaySettingsW",CharSet=CharSet.Unicode,ExactSpelling=true)] private static extern bool EnumDisplaySettings(string name,int mode,ref Mode value);
+ // PowerShell converts $null to an empty .NET string. Keep the API's required
+ // null device name inside C# so Windows selects the actual current display.
+ public static bool CurrentMode(ref Mode value) {
+  value.Size=(short)Marshal.SizeOf(typeof(Mode)); value.DriverExtra=0;
+  return EnumDisplaySettings(null,-1,ref value);
+ }
+ [DllImport("user32.dll",EntryPoint="ChangeDisplaySettingsW",CharSet=CharSet.Unicode,ExactSpelling=true)] public static extern int ChangeDisplaySettings(ref Mode mode,int flags);
  [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
 }
 '@
 $null=[ModhunterCiDisplay]::SetProcessDPIAware()
-$mode=[ModhunterCiDisplay+Mode]::new();$mode.Size=[Runtime.InteropServices.Marshal]::SizeOf($mode)
-if(![ModhunterCiDisplay]::EnumDisplaySettings($null,-1,[ref]$mode)){throw 'Current CI display mode unavailable'}
+$mode=[ModhunterCiDisplay+Mode]::new()
+if(![ModhunterCiDisplay]::CurrentMode([ref]$mode)){throw "Current CI display mode unavailable (DEVMODE size $($mode.Size), screen $([ModhunterCiDisplay]::GetSystemMetrics(0)) x $([ModhunterCiDisplay]::GetSystemMetrics(1)))"}
 $previous=@{width=$mode.Width;height=$mode.Height}
-$mode.Width=${width};$mode.Height=${height};$mode.Fields=0x180000
+${change?`$mode.Width=${width};$mode.Height=${height};$mode.Fields=0x180000
 if([ModhunterCiDisplay]::ChangeDisplaySettings([ref]$mode,2) -ne 0){throw 'Requested real CI display mode is unsupported'}
 if([ModhunterCiDisplay]::ChangeDisplaySettings([ref]$mode,0) -ne 0){throw 'Real CI display mode change failed'}
 $deadline=(Get-Date).AddSeconds(3)
 while(([ModhunterCiDisplay]::GetSystemMetrics(0) -ne ${width} -or [ModhunterCiDisplay]::GetSystemMetrics(1) -ne ${height}) -and (Get-Date) -lt $deadline){Start-Sleep -Milliseconds 100}
-if([ModhunterCiDisplay]::GetSystemMetrics(0) -ne ${width} -or [ModhunterCiDisplay]::GetSystemMetrics(1) -ne ${height}){throw 'Actual primary screen did not adopt the requested dimensions'}
+if([ModhunterCiDisplay]::GetSystemMetrics(0) -ne ${width} -or [ModhunterCiDisplay]::GetSystemMetrics(1) -ne ${height}){throw 'Actual primary screen did not adopt the requested dimensions'}`:''}
 $previous | ConvertTo-Json -Compress`;
  const result=spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{windowsHide:true,encoding:'utf8',timeout:15000});
  if(result.error||result.status!==0)throw Error('Real CI display configuration failed: '+(result.error?.message||result.stderr||result.stdout));
@@ -146,7 +153,8 @@ async function main(){
  // override is scoped to this disposable child, never the shipped launcher.
  const browserProfile=fs.mkdtempSync(path.join(path.dirname(output),'desktop-profile-'));
  phase='configure-real-ci-display';
- originalDisplay=configureCiDisplay(1920,1080);
+ originalDisplay=configureCiDisplay(null,null);
+ configureCiDisplay(1920,1080);
  phase='configure-isolated-webview2';
  setCiPolicy('UserDataFolder',browserProfile);
  setCiPolicy('AdditionalBrowserArguments',`--remote-debugging-port=${port} --remote-debugging-address=127.0.0.1`);
@@ -260,10 +268,10 @@ async function main(){
  }
  // The shared dashboard asks its native owner for a theme change; it cannot
  // invoke desktop commands or optimistically report an unsaved preference.
- await dashboard.locator('#themeToggle').click();
+ await dashboard.locator('#railTheme').click();
  await dashboard.waitForFunction(()=>document.body.dataset.theme==='night');
  await shell.waitForFunction(()=>document.documentElement.dataset.theme==='dark');
- await dashboard.locator('#themeToggle').click();
+ await dashboard.locator('#railTheme').click();
  await dashboard.waitForFunction(()=>document.body.dataset.theme==='snow');
  await shell.waitForFunction(()=>document.documentElement.dataset.theme==='light');
  check('native_dashboard_theme_control_acknowledged',true);

@@ -75,6 +75,7 @@ jobs:
           PYTHONPATH=. /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_frontend_responsiveness.py' -v
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_compact_workspace.py' -v
           PYTHONPATH=. /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_gallery_workspace.py' -v
+          PYTHONPATH=. /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_compact_completion.py' -v
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/test_watchtower_browser.py
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p test_watchtower_sources_ui.py -v
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/test_watchtower_native_ui.py
@@ -205,6 +206,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo clippy --manifest-path native/Cargo.toml --workspace --all-targets --locked -- -D warnings
       - name: Build Rust executable and Windows installer
+        id: build_windows
         working-directory: native/crates/modhunter-desktop
         run: npx --yes @tauri-apps/cli@2 build
       - name: Build portable Rust diagnostic CLI
@@ -226,6 +228,10 @@ jobs:
           $env:NODE_PATH = Join-Path $LiveTools 'node_modules'
           ./native/scripts/mo2_native_smoke.ps1 -RustCliPath "$PWD/native/target/release/modhunter-cli.exe" -QtBridgePath "$PWD/native/target/qt-bridge/Release/modhunter-qt-bridge.dll" -DesktopExecutable "$PWD/native/target/release/Modhunter.exe" -EvidenceDirectory "$PWD/native/target/live-mo2-smoke" -TimeoutSeconds 240
       - name: Install, launch and uninstall the exact Windows installer
+        # Installer acceptance is independent of the live MO2 UI harness. Keep
+        # its evidence on a failed candidate; any failed gate still blocks the
+        # Windows job, packaging and release.
+        if: ${{ !cancelled() && steps.build_windows.outcome == 'success' }}
         shell: pwsh
         run: |
           $InstallerVersion = python native/scripts/prepare_release.py --print-version

@@ -133,26 +133,44 @@ def assert_picker_footer_visible(page, description):
     return state
 
 
-def assert_gallery_actions(page, description):
+def assert_nexus_actions(page, description, allow_hidden_source=False):
     state = page.evaluate("""() => [...document.querySelectorAll('#modList .mod-row')]
       .filter(row=>row.querySelector('.file-download-btn'))
       .map(row=>({id:row.dataset.id,box:row.getBoundingClientRect().toJSON(),
         controls:[...row.querySelectorAll('.source-btn,.file-download-btn,.favorite-btn,.inspect-btn')]
-          .map(control=>({name:control.className,text:control.textContent,box:control.getBoundingClientRect().toJSON()}))}))""")
-    assert state, f"{description}: fixture never exercised a connected Nexus card"
+          .map(control=>{const range=document.createRange();range.selectNodeContents(control);
+            return {name:control.className,text:control.textContent,box:control.getBoundingClientRect().toJSON(),label:range.getBoundingClientRect().toJSON()};})}))""")
+    assert state, f"{description}: fixture never exercised connected Nexus actions"
     for row in state:
         box = row["box"]
+        if allow_hidden_source:
+            row["controls"] = [control for control in row["controls"] if "source-btn" not in control["name"] or control["box"]["width"] > 0]
         for control in row["controls"]:
             bounds = control["box"]
-            assert bounds["width"] > 0 and bounds["height"] > 0, f"{description}: hidden gallery action: {row}"
-            assert bounds["left"] >= box["left"] - 1 and bounds["right"] <= box["right"] + 1 and bounds["top"] >= box["top"] - 1 and bounds["bottom"] <= box["bottom"] + 1, f"{description}: gallery action exceeds card: {row}"
+            assert bounds["width"] > 0 and bounds["height"] > 0, f"{description}: hidden Nexus action: {row}"
+            assert bounds["left"] >= box["left"] - 1 and bounds["right"] <= box["right"] + 1 and bounds["top"] >= box["top"] - 1 and bounds["bottom"] <= box["bottom"] + 1, f"{description}: Nexus action exceeds record: {row}"
+            if "source-btn" not in control["name"]:
+                label = control["label"]
+                assert label["left"] >= bounds["left"] - 1 and label["right"] <= bounds["right"] + 1, f"{description}: action label overflows button: {row}"
         for index, first in enumerate(row["controls"]):
             for second in row["controls"][index + 1:]:
                 left, right = first["box"], second["box"]
                 overlap_x = min(left["right"], right["right"]) - max(left["left"], right["left"])
                 overlap_y = min(left["bottom"], right["bottom"]) - max(left["top"], right["top"])
-                assert overlap_x <= 0.5 or overlap_y <= 0.5, f"{description}: gallery actions overlap: {row}"
+                assert overlap_x <= 0.5 or overlap_y <= 0.5, f"{description}: Nexus actions overlap: {row}"
     return {"nexusCards": len(state), "firstCard": state[0], "minimumCardWidth": min(row["box"]["width"] for row in state)}
+
+
+def assert_flat_gallery_geometry(page, expected_count, description):
+    state = page.evaluate("""() => {const rows=[...document.querySelectorAll('#modList .mod-row')];
+      const boxes=rows.slice(0,12).map(row=>row.getBoundingClientRect().toJSON());
+      return {rows:rows.length,width:innerWidth,boxes,firstLine:boxes.filter(box=>Math.abs(box.top-boxes[0].top)<1).length};}""")
+    assert state["rows"] == expected_count, f"{description}: flat gallery lost records: {state}"
+    if state["width"] >= 1400:
+        assert state["firstLine"] >= 5, f"{description}: sparse chapters waste the flat gallery's first row: {state}"
+    for previous, current in zip(state["boxes"][:state["firstLine"]], state["boxes"][1:state["firstLine"]]):
+        assert previous["right"] <= current["left"] + 0.5, f"{description}: flat cards overlap: {state}"
+    return state
 
 
 def scroll_dashboard_to_top(page):
@@ -202,6 +220,8 @@ def capture_dashboard(browser, html, fixture, output, candidate):
             if candidate:
                 assert_no_overflow(page, shot)
                 state["geometry"] = assert_library_geometry(page, shot)
+                if width == 900:
+                    state["actionGeometry"] = assert_nexus_actions(page,shot,allow_hidden_source=True)
     page.set_viewport_size({"width": 1440, "height": 1000})
     set_dashboard_theme(page, "night")
     page.locator(".mod-row").first.locator(".inspect-btn").click()
@@ -230,16 +250,36 @@ def capture_dashboard(browser, html, fixture, output, candidate):
         settle(page)
         assert page.locator("body").get_attribute("data-library-view") == "gallery"
         assert page.locator("#modList .mod-row").count() == len(fixture["items"])
+        assert page.locator("#galleryGrouping").input_value() == "all"
+        flat_geometry = assert_flat_gallery_geometry(page,len(fixture["items"]),"real-catalog-flat-gallery")
         page.screenshot(path=str(output / "library-gallery-1440-dark.png"))
-        gallery_geometry = assert_gallery_actions(page, "library-gallery-1440-dark")
+        gallery_geometry = assert_nexus_actions(page, "library-gallery-1440-dark")
+        page.locator("#galleryGrouping").select_option("chapters");settle(page)
+        assert page.locator("#modList .mod-row").count() == len(fixture["items"])
+        scroll_dashboard_to_top(page)
+        page.screenshot(path=str(output / "library-gallery-by-chapter-1440-dark.png"))
+        group_id = page.locator("#modList [data-chapter-toggle]").first.get_attribute("data-chapter-toggle")
+        group_size = sum(item["groupId"] == group_id for item in fixture["items"])
+        assert group_size > 0
+        page.locator("#modList [data-chapter-toggle]").first.click()
+        assert page.locator("#modList .mod-row").count() == len(fixture["items"]) - group_size
+        page.locator("#galleryGrouping").select_option("all");settle(page)
+        assert_flat_gallery_geometry(page,len(fixture["items"]),"flat-gallery-restores-collapsed-chapter")
+        scroll_dashboard_to_top(page)
+        page.screenshot(path=str(output / "library-gallery-flat-restored-1440-dark.png"))
+        page.locator("#galleryGrouping").select_option("chapters")
+        assert page.locator("#modList [data-chapter-toggle]").first.get_attribute("aria-expanded") == "false"
+        page.locator("#modList [data-chapter-toggle]").first.click()
+        page.locator("#galleryGrouping").select_option("all")
+        assert page.locator("#modList .mod-row").count() == len(fixture["items"])
         review = page.locator('#modList .mod-row').filter(has=page.locator('.file-download-btn', has_text='Review')).first
         review.scroll_into_view_if_needed();settle(page)
         page.screenshot(path=str(output / "library-gallery-nexus-controls-1440-dark.png"))
-        states.append({"screenshot":"library-gallery-nexus-controls-1440-dark.png","theme":"night","geometry":gallery_geometry,**dimensions(page)})
+        states.append({"screenshot":"library-gallery-nexus-controls-1440-dark.png","theme":"night","geometry":gallery_geometry,"flatGeometry":flat_geometry,**dimensions(page)})
         scroll_dashboard_to_top(page)
         set_dashboard_theme(page, "snow")
         page.screenshot(path=str(output / "library-gallery-1440-light.png"))
-        assert_gallery_actions(page, "library-gallery-1440-light")
+        assert_nexus_actions(page, "library-gallery-1440-light")
         page.locator("#densityToggle").click()
         page.screenshot(path=str(output / "library-gallery-comfortable.png"))
         page.locator("#libraryList").click()
@@ -445,6 +485,9 @@ def capture_preserved_games(browser, html, output, candidate):
     def capture_game(name,width=1440,canvas="#realmCanvas"):
         realm.set_viewport_size({"width":width,"height":1000})
         scroll_dashboard_to_top(realm)
+        if canvas == "#realmCanvas":
+            world_time = realm.evaluate("__REALM_QA__.getState().world.worldTime")
+            realm.wait_for_function("started=>__REALM_QA__.getState().world.worldTime>=started+0.75",arg=world_time,timeout=15000)
         if canvas:
             realm.locator(canvas).wait_for(state="visible")
             realm.wait_for_function("selector=>{const canvas=document.querySelector(selector);return canvas.width>0&&canvas.height>0&&canvas.getContext('2d').getImageData(Math.floor(canvas.width/2),Math.floor(canvas.height/2),1,1).data[3]>0}",arg=canvas)
@@ -452,6 +495,13 @@ def capture_preserved_games(browser, html, output, candidate):
         realm.screenshot(path=str(output/filename));captured.append(filename)
         if candidate:
             assert_no_overflow(realm,filename)
+            if canvas == "#realmCanvas":
+                header = realm.evaluate("""() => ({box:document.querySelector('.realm-game-top').getBoundingClientRect().toJSON(),
+                  controls:[...document.querySelectorAll('.realm-game-top button')].map(button=>({text:button.textContent,box:button.getBoundingClientRect().toJSON()}))})""")
+                box = header["box"]
+                for control in header["controls"]:
+                    bounds = control["box"]
+                    assert bounds["width"]>0 and bounds["height"]>0 and bounds["left"]>=box["left"]-1 and bounds["right"]<=box["right"]+1 and bounds["top"]>=box["top"]-1 and bounds["bottom"]<=box["bottom"]+1, f"{filename}: clipped game header action: {header}"
 
     capture_game("shiverfell")
     realm.locator('button[data-panel="forge"]').click()
@@ -592,6 +642,8 @@ def benchmark(browser, variants, count, rounds):
         for name in (list(variants) if run % 2 == 0 else list(reversed(variants))):
             context = browser.new_context(viewport={"width": 1440, "height": 900}, reduced_motion="reduce")
             page = context.new_page(); page.set_default_timeout(60000)
+            metrics_session = context.new_cdp_session(page)
+            metrics_session.send("Performance.enable")
             page.set_content(variants[name], wait_until="load")
             page.wait_for_function("!!window.__ARSENAL_QA__")
             sample = page.evaluate("""async ({fixture,count})=>{
@@ -629,26 +681,49 @@ def benchmark(browser, variants, count, rounds):
                 assert all(sample[key] for key in ("survivingRowReusedDuringSearch", "survivingRowReusedAfterRestore", "survivingRowReusedAfterSort")), sample
             page.locator("#sortSelect").select_option("priority");settle(page)
 
-            def timed_click(selector):
+            metric_names = ("ScriptDuration", "LayoutDuration", "RecalcStyleDuration", "TaskDuration", "LayoutCount", "RecalcStyleCount", "Nodes", "JSHeapUsedSize")
+
+            def metrics_snapshot():
+                return {entry["name"]:entry["value"] for entry in metrics_session.send("Performance.getMetrics")["metrics"] if entry["name"] in metric_names}
+
+            def control_geometry(selector):
+                return page.locator(selector).evaluate("""element=>({scrollY,scrollX,viewport:{width:innerWidth,height:innerHeight},
+                  control:element.getBoundingClientRect().toJSON(),workspace:document.body.dataset.workspace,
+                  view:document.body.dataset.libraryView,density:document.body.dataset.density})""")
+
+            def timed_click(selector, label):
+                # Diagnostics are outside the original timed click+two-frame
+                # interval. They distinguish real style/layout/script work
+                # from Playwright actionability or automatic scroll waiting.
+                geometry_before = control_geometry(selector)
+                metrics_before = metrics_snapshot()
                 started = time.perf_counter()
                 page.locator(selector).click()
                 settle(page)
-                return (time.perf_counter() - started) * 1000
+                elapsed = (time.perf_counter() - started) * 1000
+                metrics_after = metrics_snapshot()
+                geometry_after = control_geometry(selector)
+                sample.setdefault("interactionDiagnostics", {})[label] = {
+                    "wallMs":elapsed,"metricsBefore":metrics_before,"metricsAfter":metrics_after,
+                    "metricDeltas":{key:metrics_after[key]-metrics_before[key] for key in metric_names if key in metrics_before and key in metrics_after},
+                    "geometryBefore":geometry_before,"geometryAfter":geometry_after,
+                }
+                return elapsed
 
-            sample["navigationUpdatesMs"] = timed_click('.workspace-tabs [data-workspace="updates"]')
+            sample["navigationUpdatesMs"] = timed_click('.workspace-tabs [data-workspace="updates"]', "navigationUpdates")
             assert page.locator("body").get_attribute("data-workspace") == "updates"
-            sample["navigationLibraryMs"] = timed_click('.workspace-tabs [data-workspace="mods"]')
+            sample["navigationLibraryMs"] = timed_click('.workspace-tabs [data-workspace="mods"]', "navigationLibrary")
             assert page.locator("body").get_attribute("data-workspace") == "mods"
             assert page.locator("#modList .mod-row").count() == count
-            sample["densityMs"] = timed_click("#densityToggle")
+            sample["densityMs"] = timed_click("#densityToggle", "density")
             assert page.locator("#modList .mod-row").count() == count
             page.locator("#densityToggle").click();settle(page)
             if name == "after":
-                sample["galleryMs"] = timed_click("#libraryGallery")
+                sample["galleryMs"] = timed_click("#libraryGallery", "gallery")
                 assert page.locator("#modList .mod-row").count() == count
-                sample["galleryDensityMs"] = timed_click("#densityToggle")
+                sample["galleryDensityMs"] = timed_click("#densityToggle", "galleryDensity")
                 assert page.locator("#modList .mod-row").count() == count
-                sample["listMs"] = timed_click("#libraryList")
+                sample["listMs"] = timed_click("#libraryList", "list")
                 assert page.locator("#modList .mod-row").count() == count
                 page.locator("#densityToggle").click();settle(page)
             if run:

@@ -24,6 +24,7 @@ let STARTUP_REQUEST=null,STARTUP_ACCEPTED='',STARTUP_RETRY_AT=0,STARTUP_ERROR=''
 const DETECTED_CACHE=new WeakMap();
 let SEARCH_FRAME=null,WORKSHOP_SEARCH_FRAME=null,SAVE_TIMER=null,SAVE_REVISION=0,PROGRESS_SYNC_CHAIN=Promise.resolve();
 let RENDER_COUNTS=null,LOCAL_PLAN_CACHE=null,CATALOG_RENDER_REVISION=0;
+let APPLIED_FX_KEY='';
 let SOURCE_EDIT_REVISION=0,SOURCE_SYNCED_REVISION=0;
 const BRIDGE_READS=new Map(),SOURCE_CACHE=new WeakMap(),SEARCH_CACHE=new WeakMap(),HTML_CACHE=new WeakMap();
 const ROW_RENDER_CACHE=new WeakMap();
@@ -33,7 +34,7 @@ const SOURCE_DETAIL_READS=new WeakMap(),SOURCE_DETAILS=new WeakMap();
 let GAME=null,GAME_SEEN=-1,PROGRESS_READY=false,PROGRESS_TIMER=null,NATIVE_SELECTED='',VICTORY_ACTIVE=null,VICTORY_TIMERS=[],PRACTICE_CROWNED=false;
 const BADGE_META=[['first-blood','First Blood','⚔',1],['apprentice','Apprentice Smith','🔨',5],['veteran','Veteran of the Forge','🛡',10],['archmage','Master Enchanter','✦',25],['dragonborn','Dragonborn','🐉',50],['legend','Legendary Smith','♛',100],['world-eater','World-Eater Defeated','👑',null]];
 
-const BASE={rows:{},prefs:{filter:'all',insight:'all',query:'',sort:'priority',theme:'night',density:'compact',libraryView:'list',provider:'all',navExpanded:false,effect:'random',sound:false,focus:false,collapsed:[],autoCheckOnLaunch:true,vfxIntensity:'off',vfxShake:false,vfxTrails:false},lastSelected:null,verifiedRuntime:null};
+const BASE={rows:{},prefs:{filter:'all',insight:'all',query:'',sort:'priority',theme:'night',density:'compact',libraryView:'list',galleryGrouping:'all',provider:'all',navExpanded:false,effect:'random',sound:false,focus:false,collapsed:[],autoCheckOnLaunch:true,vfxIntensity:'off',vfxShake:false,vfxTrails:false},lastSelected:null,verifiedRuntime:null};
 let STORE=structuredClone(BASE),persistOK=true,focusedRowId='',lastUndo=null,openedId=null,toastTimer=null,activeFx=[],MO2_PENDING=[];
 const $=(id)=>document.getElementById(id);
 const txt=(v)=>String(v??'');
@@ -231,9 +232,20 @@ function setRows(node,entries,empty,preserveMoves=false){
     if(parsed.length!==missing.length)throw Error('The mod library markup could not be reconciled.');
     missing.forEach((entry,index)=>{entry.node=parsed[index]});
    }
-   const focused=document.activeElement,fragment=document.createDocumentFragment();
-   for(const entry of next)fragment.append(entry.node);
-   node.replaceChildren(fragment);
+   // Remove only absent/changed records, then move only nodes whose order has
+   // changed. Switching list to a flat priority gallery usually removes just
+   // chapter headers; detaching all surviving cards would force needless work.
+   const focused=document.activeElement,retained=new Set(next.map(entry=>entry.node));
+   const removed=previous.filter(entry=>!retained.has(entry.node));
+   if(missing.length+removed.length>Math.max(32,Math.max(previous.length,next.length)/3)){
+    // A large search contraction/expansion is one DOM replacement, retaining
+    // surviving nodes, rather than thousands of individual removal calls.
+    const fragment=document.createDocumentFragment();for(const entry of next)fragment.append(entry.node);node.replaceChildren(fragment);
+   }else{
+    for(const entry of removed)entry.node.remove();
+    let cursor=node.firstElementChild;
+    for(const entry of next){if(entry.node!==cursor)node.insertBefore(entry.node,cursor);cursor=entry.node.nextElementSibling;}
+   }
    if(focused?.isConnected&&node.contains(focused)&&document.activeElement!==focused)focused.focus({preventScroll:true});
    ROW_RENDER_CACHE.set(node,next);HTML_CACHE.delete(node);return;
   }
@@ -297,12 +309,17 @@ async function hydrateProgress(profile){const context=profileContext(),revision=
 } catch(ex){console.warn('MO2 profile save unavailable, local fallback:',ex.message);if(contextIsCurrent(context))SET('liveState','Local notes retained. MO2 Chronicle loading will retry: '+ex.message)}finally{if(contextIsCurrent(context)){PROGRESS_READY=hydrated;LOCAL_PLAN_CACHE=null;applyAppearance();$('search').value=STORE.prefs.query;render();if(hydrated)save(false)}}}
 
 function updateStorageIndicator(){const b=$('storageStatus');if(!b)return;b.textContent=persistOK?'◉ AUTO-SAVED LOCALLY':'⚠ SESSION ONLY · EXPORT JSON';b.style.color=persistOK?'var(--teal)':'var(--red)'}
-function updatePrefs(p){STORE.prefs={...STORE.prefs,...p};save(false);applyAppearance();if(Object.keys(p).some(k=>['filter','insight','query','sort','collapsed','provider'].includes(k)))render()}
+function flatGallery(){return STORE.prefs.libraryView==='gallery'&&STORE.prefs.galleryGrouping!=='chapters'}
+function updatePrefs(p){const wasFlat=flatGallery();STORE.prefs={...STORE.prefs,...p};save(false);applyAppearance();if(Object.keys(p).some(k=>['filter','insight','query','sort','collapsed','provider'].includes(k)))render();else if(wasFlat!==flatGallery()){renderList();paintNativeSelection()}}
+function setBodyPreference(key,value){if(document.body.dataset[key]!==value)document.body.dataset[key]=value}
 function applyAppearance(){
  // Native app preferences are global; Chronicle imports must not overwrite the
  // canonical desktop appearance. Standalone keeps its independent local theme.
  if(typeof window.modhunterRequestTheme==='function'&&['light','dark'].includes(window.ModhunterAppearance?.resolvedTheme))STORE.prefs.theme=window.ModhunterAppearance.resolvedTheme==='light'?'snow':'night';
- applyLibraryAppearance();document.body.dataset.theme=STORE.prefs.theme==='snow'?'snow':'night';document.body.dataset.density=STORE.prefs.density==='comfy'?'comfy':'compact';$('effectSelect').value=STORE.prefs.effect;$('soundToggle').textContent=STORE.prefs.sound?'♫':'♪̸';$('soundToggle').title=STORE.prefs.sound?'Mute sounds':'Enable sounds';$('soundToggle').setAttribute('aria-label',STORE.prefs.sound?'Effect sounds on':'Effect sounds off');$('themeToggle').textContent=STORE.prefs.theme==='snow'?'☾':'◐';document.body.dataset.focus=STORE.prefs.focus?'yes':'no';$('focusToggle').textContent=STORE.prefs.focus?'◉ Exit Focus':'◎ Focus';$('focusToggle').setAttribute('aria-pressed',String(Boolean(STORE.prefs.focus)));$('focusTop').textContent=STORE.prefs.focus?'◉':'▦';$('focusTop').setAttribute('aria-pressed',String(Boolean(STORE.prefs.focus)));$('fxIntensity').value=STORE.prefs.vfxIntensity||'legendary';$('fxShake').checked=STORE.prefs.vfxShake!==false;$('fxTrails').checked=STORE.prefs.vfxTrails!==false;window.AetherFX?.config({intensity:STORE.prefs.vfxIntensity||'legendary',shake:STORE.prefs.vfxShake!==false,trails:STORE.prefs.vfxTrails!==false,sound:STORE.prefs.sound})}
+ applyLibraryAppearance();setBodyPreference('theme',STORE.prefs.theme==='snow'?'snow':'night');setBodyPreference('density',STORE.prefs.density==='comfy'?'comfy':'compact');$('effectSelect').value=STORE.prefs.effect;$('soundToggle').textContent=STORE.prefs.sound?'♫':'♪̸';$('soundToggle').title=STORE.prefs.sound?'Mute sounds':'Enable sounds';$('soundToggle').setAttribute('aria-label',STORE.prefs.sound?'Effect sounds on':'Effect sounds off');$('themeToggle').textContent=STORE.prefs.theme==='snow'?'☾':'◐';setBodyPreference('focus',STORE.prefs.focus?'yes':'no');$('focusToggle').textContent=STORE.prefs.focus?'◉ Exit Focus':'◎ Focus';$('focusToggle').setAttribute('aria-pressed',String(Boolean(STORE.prefs.focus)));$('focusTop').textContent=STORE.prefs.focus?'◉':'▦';$('focusTop').setAttribute('aria-pressed',String(Boolean(STORE.prefs.focus)));$('fxIntensity').value=STORE.prefs.vfxIntensity||'legendary';$('fxShake').checked=STORE.prefs.vfxShake!==false;$('fxTrails').checked=STORE.prefs.vfxTrails!==false;
+ const fx={intensity:STORE.prefs.vfxIntensity||'legendary',shake:STORE.prefs.vfxShake!==false,trails:STORE.prefs.vfxTrails!==false,sound:STORE.prefs.sound},fxKey=JSON.stringify(fx);
+ if(window.AetherFX&&APPLIED_FX_KEY!==fxKey){window.AetherFX.config(fx);APPLIED_FX_KEY=fxKey}
+}
 function counts(){if(RENDER_COUNTS)return RENDER_COUNTS;const c={total:DATA.items.length,done:0,review:0,risky:0,unlinked:0,favorites:0,pending:0,updates:0};for(const m of DATA.items){const status=getStatus(m);if(status==='done')c.done++;if(status==='review')c.review++;if(status==='pending')c.pending++;if(isRisk(m))c.risky++;if(!getSrc(m).verified)c.unlinked++;if(isFav(m))c.favorites++;if(isUpdate(m))c.updates++;}return{...c,left:c.total-c.done,percent:c.total?Math.round(c.done/c.total*100):0}}
 const SET=(id,val)=>{const el=$(id);if(el)el.textContent=val};
 function renderStats(){const c=counts();SET('sidePercent',c.percent+'%');$('sideProgressFill').style.width=c.percent+'%';SET('sideDone',c.done);SET('sideRemaining',c.left);SET('sideDanger',c.risky);SET('heroPercent',c.percent+'%');SET('heroProgressLabel',`${c.done} / ${c.total} mods`);$('heroMotivation').textContent=c.percent===100?'SOVNGARDE IS YOURS':c.percent>=75?'THE FINAL ASSAULT':c.percent>=40?'THE TIDE TURNS':'THE JOURNEY BEGINS';document.querySelector('.orb-outer').style.setProperty('--percent',c.percent+'%');SET('metricTotal',c.total);SET('metricSections',DATA.groups.length+' hand-sorted sections');SET('metricDone',c.done);SET('metricRemaining',c.left+' left in the quest');SET('metricWatch',c.risky);SET('metricLinks',c.total-c.unlinked);SET('metricLinksSub',c.unlinked+' still need source confirmation');
@@ -327,27 +344,42 @@ function assessmentHTML(m){const audit=getAudit(m),out=[];
  if(m.update&&m.update.verdict==='current')out.unshift('<span class="tag compatible">✓ CURRENT</span>');
  if(m.update&&m.update.verdict==='newer-installed')out.unshift('<span class="tag compatible">✓ AHEAD OF SOURCE</span>');
  if(!out.length)out.push('<span class="tag unknown" title="No file-specific compatibility proof yet">NOT VERIFIED</span>');return out.join('');}
-function modHTML(m){const row=getRow(m.id);return cachedMarkup(MOD_MARKUP_CACHE,m,[CATALOG_RENDER_REVISION,BRIDGE.active,DATA.offline,row.status,row.favorite,row.installed,row.note,row.compat,row.url,m.thumbnailUrl,m.imageUrl,m.previewUrl,m.iconUrl,m.author,m.sourceUpdate,m.localAnalysis,m.modHealth,m.update,sourceTimePhase(m),LIVE_SCAN?.state==='running',LIVE_CONNECTED],()=>buildModHTML(m))}
-function buildModHTML(m){const s=getSrc(m),sourceText=s.verified?(SOURCES?.label(s.type)||'Source'):'Find source',note=getRow(m.id).note||m.screenshotNote||'',stat=getStatus(m),statusLabel=stat==='done'?'Clear completed status':stat==='review'?'Mark mod cleared':'Mark mod cleared';
+function modHTML(m){const row=getRow(m.id);return cachedMarkup(MOD_MARKUP_CACHE,m,[CATALOG_RENDER_REVISION,document.body.dataset.layout,BRIDGE.active,DATA.offline,row.status,row.favorite,row.installed,row.note,row.compat,row.url,m.thumbnailUrl,m.imageUrl,m.previewUrl,m.iconUrl,m.author,m.sourceUpdate,m.localAnalysis,m.modHealth,m.update,sourceTimePhase(m),LIVE_SCAN?.state==='running',LIVE_CONNECTED],()=>buildModHTML(m))}
+// Compact layout already hides these legacy cells. Omit only their duplicate
+// markup; state, keyboard completion and the on-demand inspector stay shared.
+// Keep the original cells for hosts that explicitly select a noncompact layout.
+function buildModHTML(m){const compact=document.body.dataset.layout==='compact',s=getSrc(m),sourceText=s.verified?(SOURCES?.label(s.type)||'Source'):'Find source',note=getRow(m.id).note||m.screenshotNote||'',stat=getStatus(m),statusLabel=stat==='done'?'Clear completed status':stat==='review'?'Mark mod cleared':'Mark mod cleared';
  return `<article class="mod-row ${classFor(m)}" id="row-${escapeHTML(m.id)}" data-id="${escapeHTML(m.id)}" data-detected="${escapeHTML(detectedStatus(m).kind)}">
- <div class="mod-status"><button class="complete-btn" data-act="complete" data-id="${m.id}" aria-label="${escapeHTML(statusLabel+' for '+m.name)}" title="${escapeHTML(statusLabel)}">${stat==='done'?'✓':stat==='review'?'!':''}</button></div>
+ ${compact?'':`<div class="mod-status"><button class="complete-btn" data-act="complete" data-id="${m.id}" aria-label="${escapeHTML(statusLabel+' for '+m.name)}" title="${escapeHTML(statusLabel)}">${stat==='done'?'✓':stat==='review'?'!':''}</button></div>`}
  ${thumbnailMarkup(m,false,s)}
  <div class="mod-priority">${m.priority}</div>
- <div class="mod-primary" data-priority="${m.priority}"><div class="mod-name-actions"><a class="mod-title source-title ${s.verified?'':'unknown'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHTML((s.verified?'Open source page for ':'Search for original source of ')+m.name)}" title="${escapeHTML(m.name+' — '+(s.verified?'Open original source':'Find original source'))}" data-act="source" data-id="${escapeHTML(m.id)}">${escapeHTML(m.name)}<span class="source-open-glyph" aria-hidden="true">↗</span></a>${BRIDGE.active?`<button class="mod-inline-locate" type="button" title="Reveal this mod in Mod Organizer 2" aria-label="Reveal ${escapeHTML(m.name)} in MO2" data-act="locate" data-id="${escapeHTML(m.id)}">⌖</button>`:''}</div>${modAuthor(m)?`<div class="mod-author" data-no-translate>${escapeHTML(modAuthor(m))}</div>`:''}${note?`<div class="mod-note ${/do not|ctd|crash|hard esp|incompati|needs update|bugs/i.test(note)?'warning-note':''}" title="${escapeHTML(note)}">${escapeHTML(note)}</div>`:''}${INSIGHTS?.chips(m)||''}${SOURCES?.chips(m)||''}</div>
+ <div class="mod-primary" data-priority="${m.priority}" data-chapter-label="${escapeHTML(m.group||GROUP_MAP.get(m.groupId)?.name||'')}"><div class="mod-name-actions"><a class="mod-title source-title ${s.verified?'':'unknown'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHTML((s.verified?'Open source page for ':'Search for original source of ')+m.name)}" title="${escapeHTML(m.name+' — '+(s.verified?'Open original source':'Find original source'))}" data-act="source" data-id="${escapeHTML(m.id)}">${escapeHTML(m.name)}<span class="source-open-glyph" aria-hidden="true">↗</span></a>${BRIDGE.active?`<button class="mod-inline-locate" type="button" title="Reveal this mod in Mod Organizer 2" aria-label="Reveal ${escapeHTML(m.name)} in MO2" data-act="locate" data-id="${escapeHTML(m.id)}">⌖</button>`:''}</div>${modAuthor(m)?`<div class="mod-author" data-no-translate>${escapeHTML(modAuthor(m))}</div>`:''}${note?`<div class="mod-note ${/do not|ctd|crash|hard esp|incompati|needs update|bugs/i.test(note)?'warning-note':''}" title="${escapeHTML(note)}">${escapeHTML(note)}</div>`:''}${INSIGHTS?.chips(m)||''}${SOURCES?.chips(m)||''}</div>
  <div class="mod-version" title="Installed version recorded by source">${escapeHTML(m.installedVersion||'Unknown')}${m.update?.latestVersion&&m.update.latestVersion!==m.installedVersion?`<small class="newer-version" title="Latest metadata, not necessarily compatible">→ ${escapeHTML(m.update.latestVersion)}</small>`:''}</div>
- <div class="mod-assessment">${detectedMarkup(m)}<span class="legacy-assessment">${assessmentHTML(m)}</span></div>
- <div class="mod-source"><a class="source-btn ${s.verified?'':'lookup'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" data-act="source" data-id="${m.id}" title="${escapeHTML(s.type==='creations'?'Exact Bethesda Creation listing. Install from in-game Creations menu.':s.verified?'Exact mod files page':'Search for the correct mod project; source not yet verified')}">${sourceText}</a></div>
+ <div class="mod-assessment">${detectedMarkup(m)}${compact?'':'<span class="legacy-assessment">'+assessmentHTML(m)+'</span>'}</div>
+ <div class="mod-source"><a class="source-btn ${s.verified?'':'lookup'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" data-act="source" data-id="${m.id}" title="${escapeHTML(sourceText+' — '+(s.type==='creations'?'Exact Bethesda Creation listing. Install from in-game Creations menu.':s.verified?'Exact mod files page':'Search for the correct mod project; source not yet verified'))}">${sourceText}</a></div>
  <div class="inspect-col">${BRIDGE.active&&m.nexusId?`<button class="file-download-btn" title="Choose an exact Nexus file in MO2" aria-label="Choose Nexus files for ${escapeHTML(m.name)}" data-act="files" data-id="${m.id}">${isUpdate(m)?'Review':'⇩'}</button>`:''}<button class="favorite-btn ${isFav(m)?'active':''}" title="${isFav(m)?'Remove bookmark':'Bookmark mod'}" aria-label="Bookmark ${escapeHTML(m.name)}" data-act="favorite" data-id="${m.id}">${isFav(m)?'★':'☆'}</button><button class="inspect-btn" title="Inspect mod, notes, compatibility and source" aria-label="Inspect ${escapeHTML(m.name)}" data-act="inspect" data-id="${m.id}">Details</button></div>
  </article>`}
 let GROUP_PROGRESS=new Map();function groupProgress(){GROUP_PROGRESS=new Map(DATA.groups.map(g=>[g.id,{done:0,total:0}]));for(const m of DATA.items){if(!GROUP_PROGRESS.has(m.groupId))GROUP_PROGRESS.set(m.groupId,{done:0,total:0});const o=GROUP_PROGRESS.get(m.groupId);o.total++;if(isDone(m))o.done++}}
 function renderChapters(){let needle=$('chapterSearch').value.trim().toLowerCase();const html=DATA.groups.filter(g=>!needle||g.name.toLowerCase().includes(needle)).map(g=>{const num=GROUP_PROGRESS.get(g.id)?.done||0;return `<button class="chapter-link" style="--group-clr:${PALETTE[g.color]||PALETTE.slate}" data-chapter="${g.id}" title="Jump to ${escapeHTML(g.name)}"><i></i><span>${escapeHTML(g.name)}</span><em>${num}/${g.count}</em></button>`}).join('');setHTML($('chapters'),html||'<div class="drawer-micro" style="padding:12px">No chapter found.</div>')}
-function renderList(){const visible=filtered(),byGroup=new Map();for(const m of visible){if(!byGroup.has(m.groupId))byGroup.set(m.groupId,[]);byGroup.get(m.groupId).push(m)}
- const entries=[];for(const g of DATA.groups){const ms=byGroup.get(g.id);if(!ms||!ms.length)continue;let sorted=[...ms];if(STORE.prefs.sort==='name')sorted.sort((a,b)=>a.name.localeCompare(b.name));else if(STORE.prefs.sort==='version')sorted.sort((a,b)=>a.installedVersion.localeCompare(b.installedVersion));else sorted.sort((a,b)=>a.priority-b.priority);
- const gd=GROUP_PROGRESS.get(g.id)?.done||0;const collapsed=STORE.prefs.collapsed.includes(g.id),pct=Math.round((gd/(g.count||1))*100);
- entries.push({key:'group:'+g.id,html:`<button class="chapterbar ${collapsed?'closed':''}" id="section-${g.id}" data-chapter-toggle="${g.id}" style="--chapter-color:${PALETTE[g.color]||PALETTE.slate}" aria-expanded="${!collapsed}"><span class="diamond">◆</span><strong>${escapeHTML(g.name)}</strong><span class="chapter-count">${gd}/${g.count}</span><span class="chapter-mini-progress"><i style="width:${pct}%"></i></span><span class="chapter-priority">#${g.startPriority}</span></button>`});
- if(!collapsed)for(const m of sorted)entries.push({key:'mod:'+m.id,html:modHTML(m)});}
+let VISIBLE_ROW_IDS=[];
+function sortMods(items){const sorted=[...items];if(STORE.prefs.sort==='name')sorted.sort((a,b)=>txt(a.name).localeCompare(txt(b.name)));else if(STORE.prefs.sort==='version')sorted.sort((a,b)=>txt(a.installedVersion).localeCompare(txt(b.installedVersion)));else sorted.sort((a,b)=>a.priority-b.priority);return sorted}
+function renderList(){
+ const visible=filtered(),byGroup=new Map();for(const m of visible){if(!byGroup.has(m.groupId))byGroup.set(m.groupId,[]);byGroup.get(m.groupId).push(m)}
+ const entries=[],renderedIds=[],addMod=m=>{entries.push({key:'mod:'+m.id,html:modHTML(m)});renderedIds.push(m.id)};
+ if(flatGallery()){
+  // A continuous gallery is globally sorted and includes every matching mod,
+  // even when its chapter was previously collapsed in the organized view.
+  for(const m of sortMods(visible))addMod(m);
+ }else for(const g of DATA.groups){
+  const ms=byGroup.get(g.id);if(!ms||!ms.length)continue;
+  const gd=GROUP_PROGRESS.get(g.id)?.done||0,collapsed=STORE.prefs.collapsed.includes(g.id),pct=Math.round((gd/(g.count||1))*100);
+  entries.push({key:'group:'+g.id,html:`<button class="chapterbar ${collapsed?'closed':''}" id="section-${g.id}" data-chapter-toggle="${g.id}" style="--chapter-color:${PALETTE[g.color]||PALETTE.slate}" aria-expanded="${!collapsed}"><span class="diamond">◆</span><strong>${escapeHTML(g.name)}</strong><span class="chapter-count">${gd}/${g.count}</span><span class="chapter-mini-progress"><i style="width:${pct}%"></i></span><span class="chapter-priority">#${g.startPriority}</span></button>`});
+  if(!collapsed)for(const m of sortMods(ms))addMod(m);
+ }
  setRows($('modList'),entries,`<div class="empty-state"><div class="empty-icon">ᛟ</div><h3>No foes in this chamber.</h3><p>Nothing matches your current search and filters.</p><button id="emptyReset">Clear filters</button></div>`);
- const listCounts=counts(),parts=[visible.length+' of '+DATA.items.length+' mods',byGroup.size+' chapters'];if(STORE.prefs.query)parts.push('query: '+STORE.prefs.query);SET('resultsMeta',parts.join(' · '));SET('listFooter',`YOU'VE REACHED THE END · ${visible.length} MATCHING MODS · ${listCounts.total-listCounts.unlinked} EXACT ORIGINAL SOURCES`);$('sortSelect').value=STORE.prefs.sort;const provider=$('providerFilter');if(provider)provider.value=STORE.prefs.provider||'all';}
+ VISIBLE_ROW_IDS=renderedIds;
+ const listCounts=counts(),parts=[visible.length+' of '+DATA.items.length+' mods',byGroup.size+' chapters'];if(STORE.prefs.query)parts.push('query: '+STORE.prefs.query);SET('resultsMeta',parts.join(' · '));SET('listFooter',`YOU'VE REACHED THE END · ${visible.length} MATCHING MODS · ${listCounts.total-listCounts.unlinked} EXACT ORIGINAL SOURCES`);$('sortSelect').value=STORE.prefs.sort;const provider=$('providerFilter');if(provider)provider.value=STORE.prefs.provider||'all';
+}
 function render(){renderProviderFilter();if(SEARCH_FRAME!==null){cancelAnimationFrame(SEARCH_FRAME);SEARCH_FRAME=null}RENDER_COUNTS=counts();try{groupProgress();renderStats();renderList();renderChapters();renderQuest();paintNativeSelection();renderWorkshop();renderInsightToolbar();renderSourceCoverage();renderWorkspace()}finally{RENDER_COUNTS=null}}
 function renderSearch(){SEARCH_FRAME=null;renderList();paintNativeSelection()}
 function scheduleSearchRender(){if(DATA.items.length<1000){renderSearch();return}if(SEARCH_FRAME===null)SEARCH_FRAME=requestAnimationFrame(renderSearch)}
@@ -356,11 +388,11 @@ function undoLast(){if(!lastUndo)return;const action=lastUndo;lastUndo=null;wind
 function centerOfRow(id){const el=$('row-'+id);if(!el)return{x:window.innerWidth*.5,y:window.innerHeight*.45};const r=el.getBoundingClientRect();return{x:Math.max(20,r.left+Math.min(r.width*.42,420)),y:r.top+r.height*.5}}
 function toggleDone(id,el){const m=ITEM_MAP.get(id);if(!m)return;const r=el?.closest('.mod-row')?.getBoundingClientRect();const pos=r?{x:r.left+Math.min(r.width*.44,450),y:r.top+r.height*.5}:centerOfRow(id);setStatus(m,isDone(m)?'pending':'done',true,pos);}
 function toast(message,action,actionLabel){const w=$('toastWrap');const el=document.createElement('div');el.className='toast';el.innerHTML=`<span>${escapeHTML(message)}</span>`;if(action){const b=document.createElement('button');b.textContent=actionLabel||'UNDO';b.addEventListener('click',()=>{action();el.remove()});el.append(b)}w.append(el);while(w.children.length>3)w.firstChild.remove();setTimeout(()=>{el.style.opacity='0';el.style.transition='opacity .2s';setTimeout(()=>el.remove(),220)},3600)}
-function nextPending(){const filteredPending=DATA.items.filter(m=>getStatus(m)==='pending');if(!filteredPending.length){toast('Everything is cleared or marked for review. Skyrim belongs to you.');return}let target=filteredPending.find(m=>m.priority>Number((ITEM_MAP.get(focusedRowId)||{}).priority||0))||filteredPending[0];STORE.prefs.filter='all';STORE.prefs.provider='all';STORE.prefs.query='';$('search').value='';if(STORE.prefs.collapsed.includes(target.groupId))STORE.prefs.collapsed=STORE.prefs.collapsed.filter(g=>g!==target.groupId);save();render();focusRow(target.id);}
+function nextPending(){const filteredPending=DATA.items.filter(m=>getStatus(m)==='pending');if(!filteredPending.length){toast('Everything is cleared or marked for review. Skyrim belongs to you.');return}let target=filteredPending.find(m=>m.priority>Number((ITEM_MAP.get(focusedRowId)||{}).priority||0))||filteredPending[0];STORE.prefs.filter='all';STORE.prefs.provider='all';STORE.prefs.query='';$('search').value='';if(!flatGallery()&&STORE.prefs.collapsed.includes(target.groupId))STORE.prefs.collapsed=STORE.prefs.collapsed.filter(g=>g!==target.groupId);save();render();focusRow(target.id);}
 function focusRow(id){const row=$('row-'+id);if(!row)return;focusedRowId=id;row.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'center'});row.classList.remove('focus-signal');void row.offsetWidth;row.classList.add('focus-signal');window.AetherFX?.select(row,{source:'app'});const b=row.querySelector(document.body.dataset.layout==='compact'?'[data-act="inspect"]':'[data-act="complete"]');if(b)b.focus({preventScroll:true});}
-function jumpChapter(id){STORE.prefs.filter='all';STORE.prefs.provider='all';STORE.prefs.query='';$('search').value='';if(STORE.prefs.collapsed.includes(id))STORE.prefs.collapsed=STORE.prefs.collapsed.filter(x=>x!==id);save();render();const el=$('section-'+id);el?.scrollIntoView({behavior:'smooth',block:'start'});$('sidebar').classList.remove('open')}
+function jumpChapter(id){if(flatGallery()){STORE.prefs.galleryGrouping='chapters';applyLibraryAppearance()}STORE.prefs.filter='all';STORE.prefs.provider='all';STORE.prefs.query='';$('search').value='';if(STORE.prefs.collapsed.includes(id))STORE.prefs.collapsed=STORE.prefs.collapsed.filter(x=>x!==id);save();render();const el=$('section-'+id);el?.scrollIntoView({behavior:'smooth',block:'start'});$('sidebar').classList.remove('open')}
 function resetFilters(){STORE.prefs.filter='all';STORE.prefs.insight='all';STORE.prefs.provider='all';STORE.prefs.query='';$('search').value='';save();render()}
-function toggleAllChapters(){const allClosed=STORE.prefs.collapsed.length===DATA.groups.length;STORE.prefs.collapsed=allClosed?[]:DATA.groups.map(g=>g.id);$('collapseAll').textContent=allClosed?'Collapse':'Expand';save();render();}
+function toggleAllChapters(){if(flatGallery()){STORE.prefs.galleryGrouping='chapters';applyLibraryAppearance()}const allClosed=STORE.prefs.collapsed.length===DATA.groups.length;STORE.prefs.collapsed=allClosed?[]:DATA.groups.map(g=>g.id);$('collapseAll').textContent=allClosed?'Collapse':'Expand';save();render();}
 function drawInspector(m){
  const drawer=$('detailDrawer');
  if(!drawer.classList.contains('open'))INSPECTOR_RETURN_FOCUS=document.activeElement?.closest('.mod-row')?document.activeElement:$('row-'+m.id)?.querySelector('.inspect-btn')||document.activeElement;
@@ -696,9 +728,24 @@ function thumbnailMarkup(mod,large=false,source=getSrc(mod)){
  const metadata=' data-provider-label="'+escapeHTML(label)+'"';
  return large?'<div class="mod-art mod-art-large'+artClass+'"'+metadata+'>'+inside+'</div>':'<button class="mod-art'+artClass+'" type="button" data-act="preview" data-id="'+id+'"'+metadata+' title="'+escapeHTML('Inspect '+mod.name)+'" aria-label="'+escapeHTML('Preview and inspect '+mod.name)+'">'+inside+'</button>';
 }
+function updateGalleryColumns(width){
+ if(STORE.prefs.libraryView!=='gallery')return;
+ const list=$('modList');if(!list)return;
+ const available=width??list.clientWidth;if(!(available>0))return;
+ const comfy=STORE.prefs.density==='comfy',narrow=innerWidth<=580,gap=comfy?18:narrow?10:14;
+ const columns=narrow?(comfy?1:2):Math.max(1,Math.floor((available+gap)/((comfy?260:200)+gap)));
+ const key=columns+':'+gap;if(list.dataset.galleryGeometry===key)return;
+ list.dataset.galleryGeometry=key;list.style.setProperty('--library-columns',String(columns));list.style.setProperty('--library-gap-total',((columns-1)*gap)+'px');
+}
 function applyLibraryAppearance(){
- document.body.dataset.libraryView=STORE.prefs.libraryView==='gallery'?'gallery':'list';
- document.body.dataset.nav=STORE.prefs.navExpanded?'expanded':'compact';
+ // Read one existing container width before changing the view. The outer
+ // gallery wraps complete cards instead of sizing thousands of grid tracks.
+ updateGalleryColumns();
+ setBodyPreference('libraryView',STORE.prefs.libraryView==='gallery'?'gallery':'list');
+ setBodyPreference('galleryGrouping',STORE.prefs.galleryGrouping==='chapters'?'chapters':'all');
+ if($('galleryGrouping'))$('galleryGrouping').value=document.body.dataset.galleryGrouping;
+ if($('sortSelect'))$('sortSelect').title=flatGallery()?'Sort all mods':'Sort within chapters';
+ setBodyPreference('nav',STORE.prefs.navExpanded?'expanded':'compact');
  for(const [id,value] of [['libraryList','list'],['libraryGallery','gallery']])$(id)?.setAttribute('aria-pressed',String(document.body.dataset.libraryView===value));
  const comfy=STORE.prefs.density==='comfy',density=$('densityToggle');
  if(density){density.setAttribute('aria-pressed',String(comfy));density.title=comfy?'Switch to compact spacing':'Switch to comfortable spacing';density.setAttribute('aria-label',density.title);density.querySelector('span').textContent=comfy?'Comfortable':'Compact'}
@@ -725,6 +772,10 @@ function openModContextMenu(row,x,y){
 }
 $('libraryList').onclick=()=>updatePrefs({libraryView:'list'});
 $('libraryGallery').onclick=()=>updatePrefs({libraryView:'gallery'});
+$('galleryGrouping').onchange=event=>updatePrefs({galleryGrouping:event.target.value==='chapters'?'chapters':'all'});
+let GALLERY_RESIZE_FRAME=null,GALLERY_OBSERVED_WIDTH=0;
+if(typeof ResizeObserver==='function')new ResizeObserver(entries=>{for(const entry of entries)if(entry.target===$('modList')&&entry.contentRect.width!==GALLERY_OBSERVED_WIDTH){GALLERY_OBSERVED_WIDTH=entry.contentRect.width;if(GALLERY_RESIZE_FRAME===null)GALLERY_RESIZE_FRAME=requestAnimationFrame(()=>{GALLERY_RESIZE_FRAME=null;updateGalleryColumns(GALLERY_OBSERVED_WIDTH)})}}).observe($('modList'));
+else window.addEventListener('resize',()=>updateGalleryColumns());
 $('providerFilter').onchange=event=>updatePrefs({provider:event.target.value});
 $('railToggle').onclick=()=>updatePrefs({navExpanded:!STORE.prefs.navExpanded});
 $('railTheme').onclick=()=>$('themeToggle').click();
@@ -795,8 +846,8 @@ document.addEventListener('keydown',e=>{
  if(e.altKey&&e.key.toLowerCase()==='u'){e.preventDefault();unifiedScroll('updateWorkshop');$('workshopSearch').focus();return;}
  if(e.altKey&&e.key.toLowerCase()==='r'&&BRIDGE.active){e.preventDefault();reviewNextWorkshopCandidate();return;}
  if(e.key.toLowerCase()==='f'){e.preventDefault();updatePrefs({focus:!STORE.prefs.focus});return}if(e.key.toLowerCase()==='n'){e.preventDefault();nextPending();return}if(e.key==='?'||e.key==='F1'){e.preventDefault();help(true);return}
- if(e.key.toLowerCase()==='j'||e.key.toLowerCase()==='k'){e.preventDefault();const ids=filtered().filter(m=>!STORE.prefs.collapsed.includes(m.groupId)).map(m=>m.id);if(!ids.length)return;let i=ids.indexOf(focusedRowId);i=(i+(e.key.toLowerCase()==='j'?1:-1)+ids.length)%ids.length;focusRow(ids[i]);return}
- if(e.code==='Space'&&focusedRowId){e.preventDefault();toggleDone(focusedRowId,$('row-'+focusedRowId)?.querySelector('[data-act="complete"]'))}
+ if(e.key.toLowerCase()==='j'||e.key.toLowerCase()==='k'){e.preventDefault();const ids=VISIBLE_ROW_IDS;if(!ids.length)return;let i=ids.indexOf(focusedRowId);i=(i+(e.key.toLowerCase()==='j'?1:-1)+ids.length)%ids.length;focusRow(ids[i]);return}
+ if(e.code==='Space'&&focusedRowId){e.preventDefault();toggleDone(focusedRowId,$('row-'+focusedRowId))}
 });
 // No remote privileges in the browser; the plugin serves a tokenized same-origin loopback endpoint.
 async function bridgeRequest(method,path,body){

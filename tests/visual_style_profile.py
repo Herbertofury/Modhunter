@@ -1,6 +1,8 @@
 """Diagnose full-library CSS work without changing release acceptance timings.
 
-Every arm uses the same complete 11,207-record fixture and shipped source. The
+Every standard arm uses the same complete 11,207-record fixture and shipped source. An
+explicit control-only scaling diagnostic may render a smaller complete fixture;
+it is never release acceptance and does not cap or omit any fixture records. The
 optional CSS experiments exist only in fresh diagnostic page contexts. Ordinary
 click timings and instrumented selector traces are separate runs: selector
 statistics add overhead and are not performance acceptance measurements.
@@ -500,7 +502,7 @@ def compare_geometry(reference, variant):
             "examplesAreBoundedOnly":True}
 
 
-def pseudo_label_state(page):
+def pseudo_label_state(page, expected_count=11207):
     state = page.evaluate("""() => {
       const rows=[...document.querySelectorAll('#modList > .mod-row')],providers={},chapters={};
       let mismatches=0;const examples=[];
@@ -516,7 +518,7 @@ def pseudo_label_state(page):
       }
       return {rows:rows.length,mismatches,providerDistribution:providers,chapterDistribution:chapters,examples};
     }""")
-    assert state["rows"] == 11207 and not state["mismatches"], f"Gallery pseudo-labels differ from record metadata: {state}"
+    assert state["rows"] == expected_count and not state["mismatches"], f"Gallery pseudo-labels differ from record metadata: {state}"
     return state
 
 
@@ -936,7 +938,7 @@ def run_arm(browser, html, fixture, variant, actions, output, instrumented, chec
             result["completeLibrary"] = complete_geometry(page, len(fixture["items"]))
             result["computedStyles"] = computed_samples(page)
             if result["completeLibrary"]["view"] == "gallery":
-                result["pseudoLabels"] = pseudo_label_state(page)
+                result["pseudoLabels"] = pseudo_label_state(page,len(fixture["items"]))
             if deep_reference_directory is not None:
                 result["deepGeometry"] = record_deep_geometry(page,metrics,variant,action,deep_reference_directory)
             assert not errors, errors
@@ -961,6 +963,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=ROOT / "native/target/style-profile")
     parser.add_argument("--mods", type=int, default=11207)
+    parser.add_argument("--scaling-diagnostic",action="store_true",
+                        help="Explicit non-acceptance scaling study: render every record of a positive-sized fixture, control only and no tracing")
     parser.add_argument("--variants", default="control")
     parser.add_argument("--trace-variants", default="control")
     parser.add_argument("--actions", default="gallery,density,list")
@@ -971,7 +975,9 @@ def main():
     variants = args.variants.split(",")
     trace_variants = [name for name in args.trace_variants.split(",") if name]
     actions = args.actions.split(",")
-    if args.mods != 11207:
+    if args.scaling_diagnostic and (args.mods<1 or variants!=["control"] or trace_variants):
+        parser.error("Scaling diagnostics require a positive complete fixture, --variants control and --trace-variants ''")
+    if args.mods != 11207 and not args.scaling_diagnostic:
         parser.error("The focused diagnosis must use the same complete 11,207-record acceptance fixture")
     if any(name not in VARIANTS for name in variants + trace_variants) or "control" not in variants:
         parser.error(f"Variants must include control and be one of {', '.join(VARIANTS)}")
@@ -991,12 +997,13 @@ def main():
         long_item["name"]+=" — Representative long filename fixture — optional compatibility patch for multiple installed versions and localized archives"
         representative_fixture["profileName"]="Real source catalog · one synthetic long-name QA fixture"
     proof = {"ok": False, "purpose": "Focused CSS diagnosis only; does not replace full release acceptance",
+        "scopeAcceptance":False,"scalingDiagnostic":args.scaling_diagnostic,
         "candidateCommit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
         "sourceStatusAtStart": source_status(), "platform": platform.platform(), "assets": assets,
         "mods": args.mods, "fixtureSha256": hashlib.sha256(json.dumps(fixture, sort_keys=True).encode()).hexdigest(),
         "method": "One uninstrumented diagnostic trial per fresh-page CSS arm. Separate explicitly named trace modes may add overhead; never compare their absolute times to ordinary trials or release benchmarks. All records remain laid out; no virtualization, skipped layout, or caps.",
-        "traceMode":args.trace_mode,"selectorStatisticsRequired":args.trace_mode=="selectors",
-        "tracingCategories": TRACE_MODES[args.trace_mode], "traceParameters": trace_parameters(args.trace_mode),
+        "traceMode":args.trace_mode if trace_variants else "none","selectorStatisticsRequired":bool(trace_variants) and args.trace_mode=="selectors",
+        "tracingCategories": TRACE_MODES[args.trace_mode] if trace_variants else (), "traceParameters": trace_parameters(args.trace_mode) if trace_variants else None,
         "cacheHistogramScope":"Optional actual MPC bucket telemetry; before/after import and action snapshots outside interaction timers; unavailable is explicit",
         "traceSession": "One context.new_cdp_session(page) shared by Performance and Tracing",
         "instrumentedBrowserPolicy":"Fresh browser per instrumented arm; ordinary browser closed first",

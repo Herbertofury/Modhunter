@@ -1067,3 +1067,6 @@ body[data-layout="compact"] #workspaceScanProgress:not([value])::-webkit-progres
 
 /* The utility's OLED accent must not recolor the authored Adventures inset. */
 body[data-layout="compact"]:not(.realm-route) #gameBoard{--vault-primary:#d9bb83;--vault-primary-ink:#29251a;--vault-accent:#92bcaa;--vault-accent-bg:#243d32;--gold:#d9bb83;--teal:#92bcaa}
+
+/* Isolated layout-containment diagnostic; preserve content-based card sizing. */
+body[data-layout="compact"][data-library-view="gallery"] #modList > .mod-row{contain:layout}

@@ -3,8 +3,8 @@ name: Complete-library style diagnostics
 on:
   workflow_dispatch:
   push:
-    branches: ['diagnostics/atelier-style']
-    paths: ['tests/visual_style_profile.py', 'tests/visual_trace_probe.py', 'tests/visual_startup_trace.py', '.github/workflows/atelier-style-profile.yml']
+    branches: ['diagnostics/atelier-style', 'diagnostics/oled-gallery-layout']
+    paths: ['tests/visual_style_profile.py', 'tests/visual_trace_probe.py', 'tests/visual_startup_trace.py', 'tests/visual_surface_comparison.py', 'tests/visual_gallery_containment_qa.py', '.github/workflows/atelier-style-profile.yml']
 
 permissions:
   contents: read
@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   motion-comparison:
+    if: github.ref != 'refs/heads/diagnostics/oled-gallery-layout'
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     strategy:
@@ -57,3 +58,87 @@ jobs:
           path: native/target/motion-profile/
           if-no-files-found: error
           retention-days: 30
+  oled-gallery-layout:
+    if: github.ref == 'refs/heads/diagnostics/oled-gallery-layout'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 64
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare the existing browser and required font fixture
+        run: |
+          python3 -m venv /tmp/modhunter-oled-layout
+          /tmp/modhunter-oled-layout/bin/pip install -q playwright==1.57.0 Pillow==13.0.0
+          /tmp/modhunter-oled-layout/bin/python tests/prepare_ci_fonts.py --output native/target/oled-gallery-layout/ci-fonts.json
+          MODHUNTER_LAYOUT_BROWSER=$(/tmp/modhunter-oled-layout/bin/python -c "import shutil; print(shutil.which('chromium') or shutil.which('chromium-browser') or '')")
+          test -n "$MODHUNTER_LAYOUT_BROWSER" || { echo 'Required Chromium engine is unavailable'; exit 1; }
+          echo "MODHUNTER_LAYOUT_BROWSER=$MODHUNTER_LAYOUT_BROWSER" >> "$GITHUB_ENV"
+      - name: Check the diagnostic guards without launching a browser
+        run: |
+          PYTHONPATH=. /tmp/modhunter-oled-layout/bin/python tests/visual_surface_comparison.py --self-test
+          PYTHONPATH=. /tmp/modhunter-oled-layout/bin/python tests/visual_gallery_containment_qa.py --self-test
+      - name: Verify actual Gallery pixels, hit targets, focus and anchored effects
+        id: gallery_preflight
+        run: |
+          PYTHONPATH=. /tmp/modhunter-oled-layout/bin/python tests/visual_gallery_containment_qa.py --output native/target/oled-gallery-layout/preflight --executable-path "$MODHUNTER_LAYOUT_BROWSER" --font-receipt native/target/oled-gallery-layout/ci-fonts.json --control-ref 6ca747be97b98e17ea66c0fea9ef51be9b934e30
+      - name: Measure both actual sources with the complete library in ABBA order
+        if: ${{ !cancelled() && (success() || steps.gallery_preflight.outcome == 'failure') }}
+        run: |
+          /tmp/modhunter-oled-layout/bin/python - <<'PY'
+          import json, pathlib, subprocess
+          proof = json.loads(pathlib.Path('native/target/oled-gallery-layout/preflight/gallery-layout-containment-preflight.json').read_text())
+          assert proof['candidateCommit'] == subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          assert proof['controlCommit'] == '6ca747be97b98e17ea66c0fea9ef51be9b934e30'
+          assert proof['sourceDirty'] is False and not proof['sourceStatusAtStart'] and not proof['sourceStatusAtEnd']
+          assert len(proof['states']) == 52 and proof['semanticComparisonsPassed'] is True
+          if not proof['ok']:
+              assert proof['phase'] == 'complete-with-strict-pixel-failures' and proof['strictPixelFailures']
+              print('Preflight remains FAILED. Recording only the planned timing diagnostic; strict pixel failure is not waived.')
+          else:
+              assert proof['phase'] == 'complete' and not proof['strictPixelFailures']
+          PY
+          PYTHONPATH=. /tmp/modhunter-oled-layout/bin/python tests/visual_surface_comparison.py --mode gallery-layout-containment --output native/target/oled-gallery-layout/comparison --executable-path "$MODHUNTER_LAYOUT_BROWSER" --control-ref 6ca747be97b98e17ea66c0fea9ef51be9b934e30
+      - name: Preserve the complete isolated diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Modhunter-OLED-Gallery-Layout-Diagnostic
+          path: native/target/oled-gallery-layout/
+          if-no-files-found: error
+          retention-days: 90
+  oled-gallery-control-trace:
+    if: github.ref == 'refs/heads/diagnostics/oled-gallery-layout'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 6ca747be97b98e17ea66c0fea9ef51be9b934e30
+          fetch-depth: 64
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare unchanged control source and actual font prerequisite
+        run: |
+          python3 -m venv /tmp/modhunter-oled-selector
+          /tmp/modhunter-oled-selector/bin/pip install -q playwright==1.57.0
+          /tmp/modhunter-oled-selector/bin/python tests/prepare_ci_fonts.py --output native/target/oled-gallery-selector/ci-fonts.json
+          MODHUNTER_SELECTOR_BROWSER=$(/tmp/modhunter-oled-selector/bin/python -c "import shutil; print(shutil.which('chromium') or shutil.which('chromium-browser') or '')")
+          test -n "$MODHUNTER_SELECTOR_BROWSER" || { echo 'Required Chromium engine is unavailable'; exit 1; }
+          echo "MODHUNTER_SELECTOR_BROWSER=$MODHUNTER_SELECTOR_BROWSER" >> "$GITHUB_ENV"
+      - name: Trace one unchanged complete-library Gallery action
+        timeout-minutes: 8
+        run: |
+          PYTHONPATH=. /tmp/modhunter-oled-selector/bin/python tests/visual_style_profile.py --executable-path "$MODHUNTER_SELECTOR_BROWSER" --output native/target/oled-gallery-selector/profile --mods 11207 --motion no-preference --variants control --trace-variants control --actions gallery --trace-mode selectors
+      - name: Preserve control measurements and instrumented evidence separately
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Modhunter-OLED-Gallery-Control-Trace
+          path: native/target/oled-gallery-selector/
+          if-no-files-found: error
+          retention-days: 90

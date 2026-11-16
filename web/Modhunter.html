@@ -1647,6 +1647,9 @@ body[data-layout="compact"] #workspaceScanProgress:not([value])::-webkit-progres
 /* The utility's OLED accent must not recolor the authored Adventures inset. */
 body[data-layout="compact"]:not(.realm-route) #gameBoard{--vault-primary:#d9bb83;--vault-primary-ink:#29251a;--vault-accent:#92bcaa;--vault-accent-bg:#243d32;--gold:#d9bb83;--teal:#92bcaa}
 
+/* Isolated layout-containment diagnostic; preserve content-based card sizing. */
+body[data-layout="compact"][data-library-view="gallery"] #modList > .mod-row{contain:layout}
+
 .mod-insights{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px;align-items:center}
 .insight-chip{appearance:none;font:600 10px/1.35 var(--sans,system-ui);letter-spacing:.015em;border:1px solid color-mix(in srgb,var(--teal,#8bd4c2) 27%,transparent);border-radius:5px;background:color-mix(in srgb,var(--teal,#8bd4c2) 6%,transparent);color:var(--muted,#b4baca);padding:3px 6px;cursor:pointer;text-align:left;max-width:100%;white-space:normal}
 .insight-chip:hover,.insight-chip:focus-visible{outline:1px solid var(--gold,#dfbc7d);outline-offset:2px;color:var(--text,#ecebe5)}

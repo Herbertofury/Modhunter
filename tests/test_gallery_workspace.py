@@ -15,6 +15,86 @@ import test_frontend_responsiveness as harness
 PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=')
 
 
+# Read-only label oracles: declarations and child CSS rules are independent
+# in current CSSOM. Literal labels are checked against their actual attributes.
+CSS_STRING_DECODER = r"""function decodeCssString(value){
+ if(value.length<2||!['\"',"'"].includes(value[0])||value.at(-1)!==value[0])
+   throw new Error('Expected one resolved CSS string, got '+value);
+ let text='';
+ for(let at=1;at<value.length-1;at++){
+  if(value[at]!=='\\'){text+=value[at];continue;}
+  at++;const hex=value.slice(at,-1).match(/^[0-9a-fA-F]{1,6}/)?.[0];
+  if(hex){const point=parseInt(hex,16);text+=String.fromCodePoint(!point||point>0x10ffff||(point>=0xd800&&point<=0xdfff)?0xfffd:point);
+   at+=hex.length-1;if(/[\t\n\f\r ]/.test(value[at+1]||''))at++;}
+  else if(value[at]==='\r'){if(value[at+1]==='\n')at++;}
+  else if(value[at]!=='\n'&&value[at]!=='\f')text+=value[at];
+ }
+ return text;
+}"""
+
+LABEL_STATE_JS = """() => {""" + CSS_STRING_DECODER + r"""
+ const style=document.querySelector('style'),sheet=style.sheet;
+ const groups=[...sheet.cssRules].filter(rule=>rule instanceof CSSMediaRule&&
+   [...rule.cssRules].some(child=>child.selectorText?.includes('#modList > .mod-row .mod-art[data-provider-label=')));
+ const entries=groups.flatMap(group=>[...group.cssRules].map(rule=>{
+  const selector=rule.selectorText,kind=selector?.includes('.mod-art[data-provider-label=')?'provider':'chapter';
+  const prefix=kind==='provider'?'body[data-layout="compact"][data-library-view="gallery"] #modList > .mod-row .mod-art[data-provider-label=':
+    'body[data-layout="compact"][data-library-view="gallery"][data-gallery-grouping="all"] #modList > .mod-row .mod-primary[data-chapter-label=';
+  const suffix=kind==='provider'?']::after':']::before';
+  if(!selector?.startsWith(prefix)||!selector.endsWith(suffix)||rule.style.length!==1||rule.style[0]!=='content')
+    throw new Error('Label cache rule escaped its exact selector/content scope');
+  const content=rule.style.content,label=decodeCssString(content),selectorLabel=decodeCssString(selector.slice(prefix.length,-suffix.length));
+  if(selectorLabel!==label)throw new Error('Selector and literal label differ');
+  const matches=[...document.querySelectorAll(selector.replace(/::(?:before|after)$/,''))];
+  if(matches.some(element=>element.closest('.mod-row')?.parentElement!==document.getElementById('modList')))
+    throw new Error('Label rule matched outside direct library rows');
+  return {kind,label,content,selector,matchedIds:matches.map(element=>element.closest('.mod-row').dataset.id)};
+ }));
+ const rows=[...document.querySelectorAll('#modList > .mod-row')].map(row=>{
+  const art=row.querySelector('.mod-art'),primary=row.querySelector('.mod-primary'),rect=row.getBoundingClientRect();
+  const provider=art.dataset.providerLabel,chapter=primary.dataset.chapterLabel;
+  const providerContent=getComputedStyle(art,'::after').content,chapterContent=getComputedStyle(primary,'::before').content;
+  const resolvedProvider=decodeCssString(providerContent),resolvedChapter=decodeCssString(chapterContent);
+  return {id:row.dataset.id,provider,chapter,providerContent,chapterContent,resolvedProvider,resolvedChapter,
+    laidOut:rect.width>0&&rect.height>0,contain:getComputedStyle(row).contain,contentVisibility:getComputedStyle(row).contentVisibility};
+ });
+ let providerFallback=false,chapterFallback=false;
+ const walk=rules=>{for(const rule of rules){if(rule.style){
+   const content=rule.style.content.replace(/\s+/g,'');
+   if(content==='attr(data-provider-label)')providerFallback=true;
+   if(content==='attr(data-chapter-label)')chapterFallback=true;}if(rule.cssRules)walk(rule.cssRules);}};walk(sheet.cssRules);
+ return {rows,entries,groupCount:groups.length,groupConditions:groups.map(group=>group.conditionText),
+   nonce:style.nonce,originalSheet:style===window.__LABEL_ORIGINAL_STYLE__,styleNodes:document.querySelectorAll('style').length,
+   providerFallback,chapterFallback,groupSameAsRemembered:groups[0]===window.__LABEL_REMEMBERED_GROUP__,
+   rememberedGroupStillPresent:!!window.__LABEL_REMEMBERED_GROUP__&&[...sheet.cssRules].includes(window.__LABEL_REMEMBERED_GROUP__),
+   profileId:__ARSENAL_QA__.getCatalog().profileId,locale:document.documentElement.lang,
+   view:document.body.dataset.libraryView,grouping:document.body.dataset.galleryGrouping};
+}"""
+
+REMEMBER_LABEL_GROUP_JS = r"""() => {
+ window.__LABEL_REMEMBERED_GROUP__=[...document.querySelector('style').sheet.cssRules].find(rule=>
+  rule instanceof CSSMediaRule&&[...rule.cssRules].some(child=>child.selectorText?.includes('#modList > .mod-row .mod-art[data-provider-label=')));
+}"""
+
+def gallery_label_fixture(profile_id="profile-a", count=6) -> dict:
+    fixture = harness.catalog(profile=profile_id, count=count)
+    labels = ['QA "chapter" \\ path\n外觀', 'CR\r\nLF chapter', 'Édition — 遊戲',
+              'Tabs\tand control\x1f text', 'Original sources', 'Replacement \u0000 character']
+    providers = ['modrinth', 'QA "provider" \\ path\n外觀', 'lookup', 'nexus', 'creations', 'QA\tcontrol\x1f 非ASCII']
+    fixture['groups'] = []
+    for index, item in enumerate(fixture['items']):
+        chapter = labels[index % len(labels)]
+        fixture['groups'].append({'id':f'label-group-{index}', 'name':chapter, 'count':1,
+                                  'startPriority':index, 'color':'sky'})
+        provider = providers[index % len(providers)]
+        source = {} if provider == 'lookup' else {'type':provider, 'verified':True,
+                                                  'url':f'https://example.org/declared-qa-source/{index}'}
+        item.update(name=f'Label lifecycle fixture {index}', group=chapter, groupId=f'label-group-{index}',
+                    source=source, nexusId=0, author='', flags=[], audit={}, installedVersion='QA 1',
+                    update={'verdict':'current', 'latestVersion':'QA 1'})
+    fixture['profileName'] = 'Declared label lifecycle fixture'
+    return fixture
+
 class GalleryWorkspaceTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -928,6 +1008,167 @@ class GalleryWorkspaceTests(unittest.TestCase):
         self.assertIn('Standalone', self.page.locator('#connectionDetailsText').inner_text())
         self.page.locator('#connectionDetailsClose').click()
         self.assertFalse(self.page.locator('#connectionDetails').is_visible())
+
+    def activate_label_catalog(self, catalog):
+        self.page.evaluate("""async next=>{
+          window.__LABEL_ORIGINAL_STYLE__ ||= document.querySelector('style');
+          __RESP__.catalog=next;__RESP__.generation++;
+          await __ARSENAL_QA__.setCatalog(structuredClone(next));
+        }""", catalog)
+        self.page.locator('#libraryGallery').click()
+        self.page.locator('#galleryGrouping').select_option('all')
+
+    def assert_label_state(self, count, raw_providers=None):
+        self.page.wait_for_function("n=>document.querySelectorAll('#modList > .mod-row').length===n", arg=count)
+        self.page.evaluate("async()=>{await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame)}")
+        state=self.page.evaluate(LABEL_STATE_JS)
+        self.assertTrue(state['originalSheet'] and state['providerFallback'] and state['chapterFallback'],state)
+        self.assertEqual(state['groupCount'],1,state)
+        self.assertEqual(state['groupConditions'],['all'])
+        self.assertEqual((state['view'],state['grouping']),('gallery','all'))
+        self.assertEqual(len(state['rows']),count)
+        self.assertEqual(len({row['id'] for row in state['rows']}),count)
+        for row in state['rows']:
+            self.assertTrue(row['laidOut'],row)
+            self.assertEqual(row['contain'],'none')
+            self.assertEqual(row['contentVisibility'],'visible')
+            self.assertEqual(row['resolvedProvider'],row['provider'],row)
+            self.assertEqual(row['resolvedChapter'],row['chapter'],row)
+        providers=set(raw_providers or [row['provider'] for row in state['rows']])
+        if raw_providers is not None:
+            providers.update(self.page.evaluate("labels=>labels.map(label=>ModhunterI18n.translate(label))",list(raw_providers)))
+        chapters={row['chapter'] for row in state['rows']}
+        self.assertEqual({entry['label'] for entry in state['entries'] if entry['kind']=='provider'},providers,state)
+        self.assertEqual({entry['label'] for entry in state['entries'] if entry['kind']=='chapter'},chapters,state)
+        self.assertEqual(len(state['entries']),len(providers)+len(chapters),'Only current raw/translated labels may remain')
+        return state
+
+    def save_label_source(self, item_id, url):
+        self.page.locator(f'#row-{item_id} [data-act=inspect]').click()
+        self.page.locator('#drawerUrl').fill(url)
+        self.page.locator('#saveInspector').click()
+        self.page.wait_for_function("arg=>__ARSENAL_QA__.verifyRow(arg.id).state.url===arg.url",arg={'id':item_id,'url':url})
+        self.assertEqual(self.page.locator('#detailDrawer').get_attribute('aria-hidden'),'true')
+
+    def test_gallery_label_literals_preserve_escaping_fallback_and_nonce_without_row_changes(self):
+        nonce='bW9kaHVudGVyLWxhYmVsLXFh'
+        self.open(count=6,style_nonce=nonce)
+        style_count=self.page.locator('style').count()
+        self.assertEqual(style_count,len(re.findall(r'<style\b',self.html)),'Label caching must not insert a style node')
+        self.assertTrue(self.page.evaluate("""() => {
+          const probe=document.createElement('style');probe.textContent='.label-policy-probe{color:red}';
+          document.head.append(probe);const blocked=probe.sheet===null;probe.remove();return blocked;
+        }"""))
+        fixture=gallery_label_fixture()
+        self.activate_label_catalog(fixture)
+        initial=self.assert_label_state(6)
+        self.assertEqual(initial['nonce'],nonce)
+        self.assertEqual(initial['styleNodes'],style_count+1,'Only the existing Gallery geometry sheet may be added')
+        self.assertEqual(self.page.locator('style[data-library-geometry]').count(),1)
+        normalize=lambda value:value.replace('\r\n','\n').replace('\r','\n').replace('\0','\ufffd')
+        self.assertEqual([row['chapter'] for row in initial['rows']],[normalize(item['group']) for item in fixture['items']])
+        self.assertEqual(initial['rows'][1]['provider'],'QA "provider" \\ path\n外觀')
+        self.assertEqual(initial['rows'][5]['provider'],'QA\tcontrol\x1f 非ASCII')
+        self.page.evaluate(REMEMBER_LABEL_GROUP_JS)
+        self.page.evaluate("""() => {
+          window.__LABEL_ROWS__=[...document.querySelectorAll('#modList > .mod-row')];
+          window.__LABEL_MARKUP__=__LABEL_ROWS__.map(row=>row.outerHTML);
+        }""")
+        self.page.locator('#densityToggle').click()
+        self.page.locator('#galleryGrouping').select_option('chapters')
+        self.assertEqual(self.page.locator('#modList > .mod-row').count(),6)
+        self.assertEqual(self.page.locator('#modList > .chapterbar').count(),6)
+        self.page.locator('#galleryGrouping').select_option('all')
+        self.page.locator('#densityToggle').click()
+        reused=self.assert_label_state(6)
+        self.assertTrue(reused['groupSameAsRemembered'],reused)
+        self.assertEqual(reused['styleNodes'],initial['styleNodes'])
+        self.assertEqual(reused['entries'],initial['entries'])
+        self.assertTrue(self.page.evaluate("""() => [...document.querySelectorAll('#modList > .mod-row')].every(
+          (row,index)=>row===__LABEL_ROWS__[index]&&row.outerHTML===__LABEL_MARKUP__[index])"""),
+          'Presentation changes must preserve existing row nodes and markup')
+
+    def test_gallery_label_locale_changes_use_shipped_translation_without_rule_history(self):
+        self.open(count=6)
+        self.activate_label_catalog(gallery_label_fixture())
+        initial=self.assert_label_state(6)
+        raw=sorted({row['provider'] for row in initial['rows']})
+        chapters=[row['chapter'] for row in initial['rows']]
+        self.page.evaluate(REMEMBER_LABEL_GROUP_JS)
+        for name in ('locale-catalogs.js','preferences.js'):
+            self.page.add_script_tag(content=(harness.ROOT/'native/ui'/name).read_text())
+        translated=self.page.evaluate("()=>{ModhunterI18n.apply({locale:'es',theme:'dark'});return ModhunterI18n.translate('Source needed')}")
+        self.assertNotEqual(translated,'Source needed')
+        self.page.wait_for_function("label=>document.querySelector('#row-item-2 .mod-art').dataset.providerLabel===label",arg=translated)
+        spanish=self.assert_label_state(6,raw)
+        self.assertEqual(spanish['locale'],'es')
+        self.assertEqual(spanish['rows'][2]['provider'],translated)
+        self.assertEqual([row['chapter'] for row in spanish['rows']],chapters)
+        self.assertFalse(spanish['rememberedGroupStillPresent'],'The prior locale group must be removed')
+        self.page.evaluate("ModhunterI18n.apply({locale:'en'})")
+        self.page.wait_for_function("document.querySelector('#row-item-2 .mod-art').dataset.providerLabel==='Source needed'")
+        english=self.assert_label_state(6,raw)
+        self.assertEqual(english['locale'],'en')
+        self.assertEqual(english['rows'],initial['rows'])
+        self.assertEqual(len(english['entries']),len(initial['entries']))
+        self.assertEqual(english['styleNodes'],initial['styleNodes'])
+
+    def test_gallery_labels_refresh_for_real_source_edits_profiles_and_offline_import(self):
+        self.open(count=6)
+        self.activate_label_catalog(gallery_label_fixture())
+        initial=self.assert_label_state(6)
+        self.page.evaluate(REMEMBER_LABEL_GROUP_JS)
+        self.save_label_source('item-1','https://github.com/Herbertofury/Modhunter')
+        edited=self.assert_label_state(6)
+        self.assertEqual(edited['rows'][1]['provider'],'custom')
+        self.assertFalse(edited['rememberedGroupStillPresent'])
+        self.assertNotIn(initial['rows'][1]['provider'],[entry['label'] for entry in edited['entries']])
+        replacement=gallery_label_fixture(count=4)
+        for index,item in enumerate(replacement['items']):
+            item['group']='Current chapter '+str(index)+' — 新規';replacement['groups'][index]['name']=item['group']
+        self.activate_label_catalog(replacement)
+        current=self.assert_label_state(4)
+        self.assertEqual(current['profileId'],'profile-a')
+        self.assertTrue(all(row['chapter'].startswith('Current chapter ') for row in current['rows']))
+        other=gallery_label_fixture('label-profile-b',2)
+        for index,item in enumerate(other['items']):
+            item['source']={'type':'gitlab','verified':True,'url':f'https://gitlab.com/qa/fixture-{index}'}
+            item['group']='New profile chapter '+str(index);other['groups'][index]['name']=item['group']
+        self.activate_label_catalog(other)
+        swapped=self.assert_label_state(2)
+        self.assertEqual(swapped['profileId'],'label-profile-b')
+        self.assertEqual({row['provider'] for row in swapped['rows']},{'GitLab'})
+        # Deliberately exercise the unchanged generic CSS fallback for labels
+        # not in the catalog. Restore both exact attributes before continuing;
+        # this is a CSS probe, not a synthesized application operation result.
+        self.assertTrue(self.page.evaluate("""() => {"""+CSS_STRING_DECODER+r"""
+          const art=document.querySelector('#row-item-0 .mod-art'),primary=document.querySelector('#row-item-0 .mod-primary');
+          const originals=[art.getAttribute('data-provider-label'),primary.getAttribute('data-chapter-label')];
+          const labels=['Uncached "provider" \\ path\n未知','Uncached "chapter" \\ path\n未知'];
+          const groups=[...document.querySelector('style').sheet.cssRules].filter(rule=>rule instanceof CSSMediaRule&&
+            [...rule.cssRules].some(child=>child.selectorText?.includes('#modList > .mod-row .mod-art[data-provider-label=')));
+          try{
+            art.setAttribute('data-provider-label',labels[0]);primary.setAttribute('data-chapter-label',labels[1]);
+            const matched=groups.flatMap(group=>[...group.cssRules]).filter(rule=>
+              art.matches(rule.selectorText.replace(/::(?:before|after)$/,''))||primary.matches(rule.selectorText.replace(/::(?:before|after)$/, '')));
+            return !matched.length&&decodeCssString(getComputedStyle(art,'::after').content)===labels[0]&&
+              decodeCssString(getComputedStyle(primary,'::before').content)===labels[1];
+          }finally{art.setAttribute('data-provider-label',originals[0]);primary.setAttribute('data-chapter-label',originals[1]);}
+        }"""))
+        self.assertEqual(self.assert_label_state(2)['rows'],swapped['rows'])
+        self.context.route('http://label-offline.fixture.test/',lambda route:route.fulfill(content_type='text/html',body=self.html))
+        self.page.goto('http://label-offline.fixture.test/',wait_until='load')
+        self.page.wait_for_function('!!window.__ARSENAL_QA__')
+        self.page.evaluate("window.__LABEL_ORIGINAL_STYLE__=document.querySelector('style')")
+        offline=gallery_label_fixture('label-offline',3);offline['offline']=True
+        imported=self.page.evaluate('catalog=>window.modhunterImportCatalog(catalog)',offline)
+        self.assertEqual(imported,{'ok':True,'count':3,'profileId':'label-offline'})
+        self.page.locator('#libraryGallery').click()
+        self.page.locator('#galleryGrouping').select_option('all')
+        self.assertFalse(self.page.evaluate('__ARSENAL_QA__.live'))
+        self.assertEqual(self.assert_label_state(3)['profileId'],'label-offline')
+        self.save_label_source('item-1','https://github.com/Herbertofury/Modhunter/wiki')
+        self.assertEqual(self.assert_label_state(3)['rows'][1]['provider'],'custom')
 
 
 if __name__ == '__main__':

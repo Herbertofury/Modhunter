@@ -7,6 +7,8 @@ limit, or virtualization is used. Preview-stretch changes only atelier.css;
 flat-fill changes only app.js and atelier.css. Each immutable source candidate
 compares against exact C7 independently. This diagnostic does not replace
 Windows/release acceptance or waive any existing responsiveness ceiling.
+Pixel-only mismatches retain their strict failure but defer termination until
+all four planned arms are recorded; geometry/markup/state failures still abort.
 """
 from __future__ import annotations
 
@@ -170,14 +172,36 @@ def capture_state(page, output: Path, label: str, state: str, references: dict) 
 
 
 def validate_state(receipt: dict, label: str, state: str) -> None:
-    assert receipt["ok"], ("Actual-source geometry, markup or viewport pixels differ", label, state,
-                           receipt.get("comparison"), receipt["viewportScreenshot"])
+    # Preserve immediate semantic/layout failure. Pixel inequality remains in
+    # the immutable receipt and is rejected after the full planned schedule,
+    # so a raster mismatch cannot discard otherwise valid candidate timings.
+    comparison = receipt.get("comparison")
+    assert comparison is None or state_passed(comparison), (
+        "Actual-source geometry, markup or state differ", label, state, comparison)
+
+
+def require_strict_pixels(report: dict) -> None:
+    trials = report["trials"]
+    assert len(trials) == 4 and all(arm["measurementsComplete"] for arm in trials)
+    failures = [{"label": arm["label"], "state": state,
+                 "viewportScreenshot": receipt["viewportScreenshot"]}
+                for arm in trials for state, receipt in arm["states"].items()
+                if not receipt["viewportScreenshot"]["comparison"]["identical"]]
+    report["measurementsComplete"] = True
+    report["strictPixelFailures"] = failures
+    report["strictComparisonPassed"] = not failures
+    if failures:
+        report["phase"] = "complete-with-strict-pixel-failures"
+    assert not failures, (
+        "Strict zero-tolerance viewport comparisons failed after all four planned measurements",
+        len(failures))
 
 
 def run_arm(browser, html: str, fixture: dict, output: Path, round_number: int, variant: str,
             references: dict, checkpoint) -> dict:
     label = f"round-{round_number}-{variant}"
     arm = {"round": round_number, "variant": variant, "label": label, "ok": False,
+           "measurementsComplete": False, "strictComparisonPassed": False,
            "timingsMs": {}, "actions": {}, "states": {}, "errors": []}
     checkpoint(arm, label + ":starting")
     context = browser.new_context(viewport=VIEWPORT, reduced_motion="no-preference")
@@ -249,7 +273,9 @@ def run_arm(browser, html: str, fixture: dict, output: Path, round_number: int, 
         assert all(finite_time(value) for value in arm["timingsMs"].values()), arm["timingsMs"]
         assert len(arm["timingsMs"]) == 9 and len(arm["states"]) == 8
         assert not arm["errors"], arm["errors"]
-        arm["ok"] = True
+        arm["measurementsComplete"] = True
+        arm["strictComparisonPassed"] = all(receipt["ok"] for receipt in arm["states"].values())
+        arm["ok"] = arm["strictComparisonPassed"]
     except Exception as error:
         arm["errors"].append(f"{type(error).__name__}: {error}")
         checkpoint(arm, label + ":failed")
@@ -265,6 +291,8 @@ def worker(args) -> int:
     report = {"ok": False, "phase": "compiling-actual-sources", "runId": args.run_id,
         "mode": args.mode, "expectedChangedCompiledAssets": sorted(EXPECTED_ASSETS[args.mode]),
         "scopeAcceptance": False, "errors": [], "tracing": False, "cssOverrides": False,
+        "measurementsComplete": False, "strictComparisonPassed": False,
+        "pixelFailurePolicy": "Every raw pixel comparison remains zero-tolerance. Pixel-only failure is retained per state and rejected at completion after all four planned measurements; geometry, markup, state, endpoint, source and runtime failures remain immediate.",
         "warmupTrials": 0, "discardedTrials": 0, "order": [list(pair) for pair in ORDER],
         "motionPreference": "no-preference", "viewport": VIEWPORT,
         "themeSetup": "Fresh owned intercepted HTTP origin; ordinary persisted light preference for initial standalone and exact offline fixture profile. No native authority mock or partial-catalog warm-up.",
@@ -326,8 +354,8 @@ def worker(args) -> int:
                 for round_number, variant in ORDER:
                     arm = run_arm(browser, control_html if variant == "control" else candidate_html,
                                   fixture, args.output, round_number, variant, references, checkpoint)
-                    if not arm["ok"]:
-                        raise AssertionError("Actual-source comparison arm failed: " + arm["label"])
+                    if not arm["measurementsComplete"]:
+                        raise AssertionError("Actual-source measurement arm failed: " + arm["label"])
                 report["pairedTimings"] = []
                 for round_number in (1, 2):
                     pair = {arm["variant"]: arm for arm in report["trials"] if arm["round"] == round_number}
@@ -344,7 +372,7 @@ def worker(args) -> int:
         assert report["candidateCommitAtEnd"] == report["candidateCommit"], "Candidate commit changed during comparison"
         _, final_assets = acceptance.compile_dashboard()
         assert final_assets == candidate_assets, "Compiled source bytes changed during comparison"
-        assert len(report["trials"]) == 4 and all(arm["ok"] for arm in report["trials"])
+        require_strict_pixels(report)
         report["ok"] = True
         report["phase"] = "complete"
     except Exception as error:
@@ -447,6 +475,36 @@ def self_test() -> int:
     alpha = compare_pixels(reference, decoded_png(stream.getvalue()))
     assert not alpha["identical"] and alpha["changedPixels"] == 1 and alpha["bounds"] == [0, 0, 1, 1]
     assert not compare_pixels(reference, ((1, 1), bytes(4)))["identical"]
+    # A pixel-only mismatch must remain visible without ending a planned arm;
+    # every semantic/layout failure must still stop immediately.
+    clean_comparison = compare_state(state, state)
+    pixel_receipt = {"ok": False, "comparison": clean_comparison,
+                     "viewportScreenshot": {"comparison": pixel}}
+    validate_state(pixel_receipt, "candidate", "import")
+    assert pixel_receipt["ok"] is False and pixel_receipt["viewportScreenshot"]["comparison"]["identical"] is False
+    for field in ("exactGeometryEqual", "headerAndAncestorGeometryEqual", "orderedMarkupEqual", "stateEqual"):
+        bad = {**pixel_receipt, "comparison": {**clean_comparison, field: False}}
+        try:
+            validate_state(bad, "candidate", "import")
+        except AssertionError:
+            pass
+        else:
+            raise AssertionError("Deferred a non-pixel failure: " + field)
+    strict_report = {"trials": [{"label": str(index), "measurementsComplete": True,
+        "states": {"import": {"viewportScreenshot": {"comparison": compare_pixels(reference, reference)}}}}
+        for index in range(4)]}
+    require_strict_pixels(strict_report)
+    assert strict_report["strictComparisonPassed"] is True
+    strict_report["trials"][1]["states"]["import"] = pixel_receipt
+    try:
+        require_strict_pixels(strict_report)
+    except AssertionError:
+        assert strict_report["measurementsComplete"] is True
+        assert strict_report["strictComparisonPassed"] is False
+        assert strict_report["phase"] == "complete-with-strict-pixel-failures"
+        assert len(strict_report["strictPixelFailures"]) == 1
+    else:
+        raise AssertionError("A pixel mismatch incorrectly passed final comparison")
     assert EXPECTED_ASSETS["preview-stretch"] == {"mo2_update_arsenal/web/atelier.css"}
     assert EXPECTED_ASSETS["flat-fill"] == {"mo2_update_arsenal/web/app.js", "mo2_update_arsenal/web/atelier.css"}
     assert WORKER_SECONDS + process_owner.TERMINATE_GRACE_SECONDS + process_owner.KILL_GRACE_SECONDS <= 720

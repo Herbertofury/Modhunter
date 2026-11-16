@@ -3,16 +3,16 @@ on:
   workflow_dispatch:
   push:
     branches: ['diagnostics/atelier-style']
-    paths: ['tests/visual_raster_repeatability.py', 'tests/visual_surface_comparison.py', '.github/workflows/atelier-style-profile.yml']
+    paths: ['mo2_update_arsenal/web/atelier.css', 'tests/visual_preview_stretch_qa.py', 'tests/visual_surface_comparison.py', '.github/workflows/atelier-style-profile.yml']
 permissions:
   contents: read
 concurrency:
   group: modhunter-style-profile-${{ github.sha }}
   cancel-in-progress: true
 jobs:
-  raster-repeatability:
+  preview-stretch:
     runs-on: ubuntu-24.04
-    timeout-minutes: 7
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -20,23 +20,28 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Prepare the same engine and pinned fonts for unchanged C7
+      - name: Prepare the unchanged engine and verified font prerequisites
         run: |
           git fetch --no-tags origin 18883b32e0683dad8aed1dc87c6fe9ec577e12f2
-          python3 -m venv /tmp/modhunter-raster
-          /tmp/modhunter-raster/bin/pip install -q playwright==1.57.0 Pillow==13.0.0
+          python3 -m venv /tmp/modhunter-surface
+          /tmp/modhunter-surface/bin/pip install -q playwright==1.57.0 Pillow==13.0.0
           test -x /usr/local/share/chromium/chrome-linux/chrome
-          /tmp/modhunter-raster/bin/python tests/prepare_ci_fonts.py --output native/target/raster-proof/ci-fonts.json
-          /tmp/modhunter-raster/bin/python tests/visual_raster_repeatability.py --self-test
-      - name: Record six unmodified same-source viewport captures
-        timeout-minutes: 4
+          /tmp/modhunter-surface/bin/python tests/prepare_ci_fonts.py --output native/target/surface-proof/ci-fonts.json
+          node --test tests/frontend_runtime.test.cjs
+          /tmp/modhunter-surface/bin/python tests/visual_surface_comparison.py --self-test
+      - name: Verify complete preview cases at all three widths and both densities
+        timeout-minutes: 5
         run: |
-          PYTHONPATH=. /tmp/modhunter-raster/bin/python tests/visual_raster_repeatability.py --control-ref 18883b32e0683dad8aed1dc87c6fe9ec577e12f2 --executable-path /usr/local/share/chromium/chrome-linux/chrome --font-receipt native/target/raster-proof/ci-fonts.json --output native/target/raster-proof/comparison
-      - name: Preserve actual pixels and complete source-state evidence
+          PYTHONPATH=. /tmp/modhunter-surface/bin/python tests/visual_preview_stretch_qa.py --executable-path /usr/local/share/chromium/chrome-linux/chrome --font-receipt native/target/surface-proof/ci-fonts.json --output native/target/surface-proof/preflight
+      - name: Measure four fresh complete-library contexts with exact pixels
+        timeout-minutes: 12
+        run: |
+          PYTHONPATH=. /tmp/modhunter-surface/bin/python tests/visual_surface_comparison.py --mode preview-stretch --output native/target/surface-proof/comparison --control-ref 18883b32e0683dad8aed1dc87c6fe9ec577e12f2 --executable-path /usr/local/share/chromium/chrome-linux/chrome
+      - name: Preserve every timing, complete geometry and actual screenshot
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Modhunter-Raster-Repeatability-Proof
-          path: native/target/raster-proof/
+          name: Modhunter-Preview-Stretch-Proof
+          path: native/target/surface-proof/
           if-no-files-found: error
           retention-days: 90

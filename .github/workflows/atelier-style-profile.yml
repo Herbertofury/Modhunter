@@ -28,14 +28,13 @@ jobs:
         run: |
           python3 -m venv /tmp/modhunter-style
           /tmp/modhunter-style/bin/pip install -q playwright==1.57.0
-          /tmp/modhunter-style/bin/python -m playwright install --with-deps chromium
           MODHUNTER_PROFILE_BROWSER=$(/tmp/modhunter-style/bin/python -c "import shutil; print(shutil.which('chromium') or shutil.which('chromium-browser') or '')")
+          if [[ -z "$MODHUNTER_PROFILE_BROWSER" ]]; then
+            echo "::error::The preinstalled Chromium engine used by the prior diagnostics is unavailable."
+            exit 1
+          fi
           for MODHUNTER_PROFILE_COUNT in 250 1000 4000 11207; do
-            if [[ -n "$MODHUNTER_PROFILE_BROWSER" ]]; then
-              PYTHONPATH=. /tmp/modhunter-style/bin/python tests/visual_style_profile.py --executable-path "$MODHUNTER_PROFILE_BROWSER" --output "native/target/style-scaling/records-$MODHUNTER_PROFILE_COUNT" --mods "$MODHUNTER_PROFILE_COUNT" --scaling-diagnostic --variants control --trace-variants '' --actions gallery,density,list
-            else
-              PYTHONPATH=. /tmp/modhunter-style/bin/python tests/visual_style_profile.py --output "native/target/style-scaling/records-$MODHUNTER_PROFILE_COUNT" --mods "$MODHUNTER_PROFILE_COUNT" --scaling-diagnostic --variants control --trace-variants '' --actions gallery,density,list
-            fi
+            PYTHONPATH=. /tmp/modhunter-style/bin/python tests/visual_style_profile.py --executable-path "$MODHUNTER_PROFILE_BROWSER" --output "native/target/style-scaling/records-$MODHUNTER_PROFILE_COUNT" --mods "$MODHUNTER_PROFILE_COUNT" --scaling-diagnostic --variants control --trace-variants '' --actions gallery,density,list
           done
       - name: Preserve every complete-fixture timing receipt
         if: always()
@@ -43,37 +42,5 @@ jobs:
         with:
           name: Modhunter-Complete-Library-Scaling
           path: native/target/style-scaling/
-          if-no-files-found: error
-          retention-days: 30
-
-  startup-file-trace:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 6
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 64
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Prove file delivery before tracing the complete 1000-record diagnostic
-        run: |
-          python3 -m venv /tmp/modhunter-startup
-          /tmp/modhunter-startup/bin/pip install -q playwright==1.57.0
-          /tmp/modhunter-startup/bin/python -m playwright install --with-deps chromium
-          MODHUNTER_PROFILE_BROWSER=$(/tmp/modhunter-startup/bin/python -c "import shutil; print(shutil.which('chromium') or shutil.which('chromium-browser') or '')")
-          for MODHUNTER_PROFILE_COUNT in 32 1000; do
-            if [[ -n "$MODHUNTER_PROFILE_BROWSER" ]]; then
-              PYTHONPATH=. /tmp/modhunter-startup/bin/python tests/visual_startup_trace.py --executable-path "$MODHUNTER_PROFILE_BROWSER" --output "native/target/startup-file-trace/records-$MODHUNTER_PROFILE_COUNT" --mods "$MODHUNTER_PROFILE_COUNT"
-            else
-              PYTHONPATH=. /tmp/modhunter-startup/bin/python tests/visual_startup_trace.py --output "native/target/startup-file-trace/records-$MODHUNTER_PROFILE_COUNT" --mods "$MODHUNTER_PROFILE_COUNT"
-            fi
-          done
-      - name: Preserve actual trace files and bounded receipts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Modhunter-Startup-File-Trace
-          path: native/target/startup-file-trace/
           if-no-files-found: error
           retention-days: 30

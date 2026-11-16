@@ -69,7 +69,7 @@ jobs:
           MODHUNTER_REQUIRE_BROWSER: '1'
         run: |
           python3 -m venv /tmp/modhunter-qa
-          /tmp/modhunter-qa/bin/pip install -q playwright==1.57.0
+          /tmp/modhunter-qa/bin/pip install -q playwright==1.57.0 Pillow==13.0.0
           /tmp/modhunter-qa/bin/python tests/prepare_ci_fonts.py --output /tmp/modhunter-proof/ci-fonts.json
           # Tests already prefer this runner's Chromium. Avoid an unrelated apt
           # font installation when the actual required engine is available.
@@ -79,7 +79,7 @@ jobs:
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/updater_sss_browser_qa.py
           PYTHONPATH=. /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_frontend_responsiveness.py' -v
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_compact_workspace.py' -v
-          PYTHONPATH=. /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_gallery_workspace.py' -v
+          PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_gallery_workspace.py' -v
           PYTHONPATH=. /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_compact_completion.py' -v
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/test_watchtower_browser.py
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p test_watchtower_sources_ui.py -v

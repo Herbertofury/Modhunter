@@ -123,7 +123,7 @@ function renderWorkspace(){
  const aggregate={all:DATA.items.length,updates:0,maintenance:0,attention:0,current:0};
  for(const mod of DATA.items){const d=detectedStatus(mod);aggregate.updates+=Number(d.updateAvailable);aggregate.maintenance+=Number(d.maintenance);aggregate.attention+=Number(d.attention);aggregate.current+=Number(d.current)}
  for(const [key,value] of Object.entries(aggregate))SET('detected'+key[0].toUpperCase()+key.slice(1),value.toLocaleString());
- SET('workspaceProfile',LIVE_CATALOG?LIVE_CATALOG.profileName+' / '+(LIVE_CATALOG.game||'MO2')+' / '+DATA.items.length.toLocaleString()+' mods':DATA.offline?(DATA.profileName||'Imported profile')+' / read only':'Demo library / not your installed mods');
+ SET('workspaceProfile',LIVE_CATALOG?LIVE_CATALOG.profileName+' / '+(LIVE_CATALOG.game||'MO2')+' / '+DATA.items.length.toLocaleString()+(DATA.items.length===1?' mod':' mods'):DATA.offline?(DATA.profileName||'Imported profile')+' / read only':'Demo library / not your installed mods');
  const state=LIVE_SCAN?.state,active=state==='running';
  let status=!BRIDGE.active?'Read-only library':!LIVE_CONNECTED?'MO2 disconnected':active?'Checking sources':state==='error'?'Check failed':state==='cancelled'?'Check cancelled':state==='partial'?'Check finished with issues':state==='completed'?'Check complete':STARTUP_ERROR?'Automatic check unavailable':!PROGRESS_READY?'Loading saved preferences':sourceLinksPending()?'Syncing source edits':STORE.prefs.autoCheckOnLaunch?'Preparing automatic check':'Automatic checks off';
  SET('workspaceCheckStatus',status);
@@ -418,7 +418,7 @@ function renderList(){
  }
  setRows($('modList'),entries,`<div class="empty-state"><div class="empty-icon">ᛟ</div><h3>No foes in this chamber.</h3><p>Nothing matches your current search and filters.</p><button id="emptyReset">Clear filters</button></div>`);
  VISIBLE_ROW_IDS=renderedIds;
- const listCounts=counts(),parts=[visible.length+' of '+DATA.items.length+' mods',byGroup.size+(byGroup.size===1?' chapter':' chapters')];if(STORE.prefs.query)parts.push('query: '+STORE.prefs.query);SET('resultsMeta',parts.join(' · '));SET('listFooter',`YOU'VE REACHED THE END · ${visible.length} MATCHING MODS · ${listCounts.total-listCounts.unlinked} EXACT ORIGINAL SOURCES`);$('sortSelect').value=STORE.prefs.sort;const provider=$('providerFilter');if(provider)provider.value=STORE.prefs.provider||'all';
+ const listCounts=counts(),sourceCount=listCounts.total-listCounts.unlinked,parts=[visible.length+' of '+DATA.items.length+(DATA.items.length===1?' mod':' mods'),byGroup.size+(byGroup.size===1?' chapter':' chapters')];if(STORE.prefs.query)parts.push('query: '+STORE.prefs.query);SET('resultsMeta',parts.join(' · '));SET('listFooter',`YOU'VE REACHED THE END · ${visible.length} MATCHING MOD${visible.length===1?'':'S'} · ${sourceCount} EXACT ORIGINAL SOURCE${sourceCount===1?'':'S'}`);$('sortSelect').value=STORE.prefs.sort;const provider=$('providerFilter');if(provider)provider.value=STORE.prefs.provider||'all';
 }
 function render(){renderProviderFilter();if(SEARCH_FRAME!==null){cancelAnimationFrame(SEARCH_FRAME);SEARCH_FRAME=null}RENDER_COUNTS=counts();try{groupProgress();renderStats();renderList();renderChapters();renderQuest();paintNativeSelection();renderWorkshop();renderInsightToolbar();renderSourceCoverage();renderWorkspace()}finally{RENDER_COUNTS=null}}
 function renderSearch(){SEARCH_FRAME=null;renderList();paintNativeSelection()}
@@ -955,7 +955,7 @@ function activateLiveCatalog(c){
  $('advisoryToggle').querySelector('b').textContent='LIVE UPDATE SAFETY PROTOCOL';
  $('advisoryBody').innerHTML='<div><span>01 / RUNTIME</span><strong>Match executable + script extender.</strong><p>Native DLL releases must match this game runtime. Check each file description.</p></div><div><span>02 / DEPENDENCIES</span><strong>Check masters and requirements.</strong><p>Verify mod dependencies, ESL records, plugins and update steps.</p></div><div><span>03 / SAVE SAFETY</span><strong>Read changelogs before upgrades.</strong><p>Save-breaking changes, FOMOD variants, mid-save warnings and generated behaviors may require special handling.</p></div><div><span>04 / CONTROLLED INSTALL</span><strong>MO2 stays in charge.</strong><p>Back up the profile, download through MO2 and install with normal prompts. Nothing silently overwrites your load order.</p></div>';
  $('riskSubtitle').textContent='DLLs + runtime + risky masters';document.querySelector('.pagefooter').children[1].textContent='LOCAL-FIRST ARSENAL · LIVE MO2 + NEXUS INTELLIGENCE · PROFILE SAVE';document.querySelector('.pagefooter').firstElementChild.textContent=`ᛟ MO2 LIVE / ${c.game} / ${c.profileName}`;
- SET('liveProfile',c.profileName+' / '+c.game);SET('liveCount',c.items.length+' mods · '+c.groups.length+(c.groups.length===1?' chapter':' chapters'));setBridgeConnection(true,'Live session. Your active MO2 profile is authoritative; the checklist is saved per profile.');
+ SET('liveProfile',c.profileName+' / '+c.game);SET('liveCount',c.items.length+(c.items.length===1?' mod':' mods')+' · '+c.groups.length+(c.groups.length===1?' chapter':' chapters'));setBridgeConnection(true,'Live session. Your active MO2 profile is authoritative; the checklist is saved per profile.');
  $('liveSync').textContent='Snapshot: '+new Date().toLocaleTimeString();
  const chosen=STORE.prefs.filter;if(chosen==='updates'&&!c.items.some(isUpdate))STORE.prefs.filter='all';
  if(newProfile){closeInspector(false);}else{refreshInspectorInsights();if(openedId&&ITEM_MAP.has(openedId)){void loadModInsights(ITEM_MAP.get(openedId));void loadSourceDetails(ITEM_MAP.get(openedId));}}
@@ -1717,7 +1717,7 @@ function importOfflineCatalog(c){
  $('livePill').textContent='◈ LOCAL MO2 SNAPSHOT';
  $('livePill').classList.remove('connected');
  $('liveProfile').textContent=c.profileName+' / '+c.game;
- $('liveCount').textContent=c.items.length+' imported mods · '+c.groups.length+' sections';
+ $('liveCount').textContent=c.items.length+(c.items.length===1?' imported mod':' imported mods')+' · '+c.groups.length+' sections';
  $('liveUpdateCount').textContent='Not remotely verified';
  $('liveCached').textContent='Source links are advisory until scanned through MO2';
  $('liveSync').textContent='On-demand read-only profile import';

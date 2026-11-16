@@ -440,14 +440,98 @@ class GalleryWorkspaceTests(unittest.TestCase):
         self.assertTrue(self.page.locator('#detailDrawer').evaluate('e=>e.classList.contains("open")'))
 
     def test_thumbnail_failure_keeps_mod_and_all_actions(self):
+        # Exercise genuine alpha artwork in cover-fit mode, as in the separate
+        # preview fixture; this is not a provider screenshot metadata claim.
+        import hashlib
+        import os
+        from io import BytesIO
+        from pathlib import Path
+        from PIL import Image, ImageColor
+
+        fixture = json.loads((harness.ROOT / 'tests/fixtures/visual_public_catalog.json').read_text())
+        source = next(record for record in fixture['sources'] if record['slug'] == 'iris')
+        artwork = (harness.ROOT / 'tests/fixtures' / source['thumbnailFile']).read_bytes()
+        self.assertEqual(len(artwork), source['bytes'])
+        self.assertEqual(hashlib.sha256(artwork).hexdigest(), source['sha256'])
+        with Image.open(BytesIO(artwork)) as image:
+            alpha = image.convert('RGBA').getchannel('A')
+            self.assertEqual(alpha.size, (96, 96))
+            self.assertEqual(alpha.crop((43, 43, 53, 53)).getextrema(), (0, 0))
+
+        def assert_center_matte(art, loaded):
+            # The source has a fully transparent center. Inspect actual rendered
+            # pixels instead of testing that a particular CSS declaration exists.
+            matte = ImageColor.getcolor(art.evaluate('e=>getComputedStyle(e).backgroundColor'), 'RGBA')
+            self.assertEqual(matte[3], 255)
+            with Image.open(BytesIO(art.screenshot(animations='allow'))) as image:
+                image = image.convert('RGBA')
+                center_x, center_y = image.width // 2, image.height // 2
+                pixels = [image.getpixel((x, y)) for y in range(center_y - 4, center_y + 5)
+                          for x in range(center_x - 4, center_x + 5)]
+            if loaded:
+                self.assertEqual(set(pixels), {matte}, 'Fallback glyph/text shows through a loaded alpha image')
+            else:
+                self.assertTrue(any(pixel != matte for pixel in pixels), 'Failed-image fallback pictogram is not painted')
+
+        output = os.environ.get('MODHUNTER_QA_OUTPUT')
+        if output:
+            output = Path(output)
+            output.mkdir(parents=True, exist_ok=True)
+
+        def retain_preview(name, full_page=False):
+            if output:
+                self.page.screenshot(path=str(output / name), full_page=full_page,
+                                     animations='allow', caret='hide')
+
         self.open(count=1)
+        self.page.route(source['thumbnailUrl'], lambda route: route.fulfill(content_type=source['mimeType'], body=artwork))
+        self.page.evaluate("""async source=>{
+          const item=__RESP__.catalog.items[0];item.name=source.name;
+          item.source={type:'modrinth',verified:true,url:source.projectUrl};
+          item.update.thumbnailUrl=source.thumbnailUrl;item.update.thumbnailKind='image';
+          await __ARSENAL_QA__.setCatalog(structuredClone(__RESP__.catalog));
+        }""", source)
+        self.page.locator('#libraryGallery').click()
+        for width in (1440, 390):
+            self.page.set_viewport_size({'width': width, 'height': 900})
+            for theme in ('night', 'snow'):
+                if self.page.locator('body').get_attribute('data-theme') != theme:
+                    self.page.evaluate("document.getElementById('themeToggle').click()")
+                self.page.wait_for_function('theme=>document.body.dataset.theme===theme', arg=theme)
+                art = self.page.locator('#row-item-0 .mod-art')
+                self.page.wait_for_function("""() => {
+                  const image=document.querySelector('#row-item-0 .mod-preview-image');
+                  return image?.complete && image.naturalWidth===96 && !image.hidden;
+                }""")
+                self.assertEqual(art.locator('img').evaluate('e=>getComputedStyle(e).objectFit'), 'cover')
+                representative = (width, theme) in ((1440, 'night'), (390, 'snow'))
+                if representative:
+                    retain_preview(f'thumbnail-alpha-library-{width}-{theme}.png', full_page=True)
+                assert_center_matte(art, loaded=True)
+                art.click()
+                drawer = self.page.locator('#drawerContent .mod-art')
+                self.page.wait_for_function("""() => {
+                  const image=document.querySelector('#drawerContent .mod-preview-image');
+                  return image?.complete && image.naturalWidth===96 && !image.hidden;
+                }""")
+                if representative:
+                    retain_preview(f'thumbnail-alpha-inspector-{width}-{theme}.png')
+                assert_center_matte(drawer, loaded=True)
+                self.page.locator('#drawerClose').click()
+
         self.page.route('https://cdn.modrinth.com/data/fixture/missing.png', lambda route: route.fulfill(status=404, content_type='text/plain', body='Fixture missing image'))
         self.page.evaluate("async()=>{__RESP__.catalog.items[0].update.thumbnailUrl='https://cdn.modrinth.com/data/fixture/missing.png';await __ARSENAL_QA__.setCatalog(structuredClone(__RESP__.catalog));}")
-        self.page.locator('#libraryGallery').click()
         self.page.wait_for_function('document.querySelector("#row-item-0 .mod-preview-image")?.hidden===true')
         self.assertEqual(self.page.locator('#modList .mod-row').count(), 1)
         self.assertTrue(self.page.locator('#row-item-0 .inspect-btn').is_visible())
         self.assertIn('No preview supplied', self.page.locator('#row-item-0').inner_text())
+        retain_preview('thumbnail-failed-library-390-snow.png', full_page=True)
+        assert_center_matte(self.page.locator('#row-item-0 .mod-art'), loaded=False)
+        self.page.locator('#row-item-0 .mod-art').click()
+        self.page.wait_for_function('document.querySelector("#drawerContent .mod-preview-image")?.hidden===true')
+        retain_preview('thumbnail-failed-inspector-390-snow.png')
+        assert_center_matte(self.page.locator('#drawerContent .mod-art'), loaded=False)
+        self.assertTrue(self.page.locator('#drawerClose').is_visible())
 
     def test_offline_connection_details_are_actionable(self):
         # The public standalone file must describe its state without a native host.

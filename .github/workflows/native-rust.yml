@@ -208,7 +208,9 @@ jobs:
       - name: Build Rust executable and Windows installer
         id: build_windows
         working-directory: native/crates/modhunter-desktop
-        run: npx --yes @tauri-apps/cli@2 build
+        # Ship the same tested bytes in NSIS and portable. This single-format
+        # release does not use Tauri's per-bundle-type updater identification.
+        run: npx --yes @tauri-apps/cli@2.12.2 build --no-binary-patching
       - name: Build portable Rust diagnostic CLI
         run: cargo build --manifest-path native/Cargo.toml --release --locked -p modhunter-core
       - name: Verify the exact release CLI and packaged archive helper

@@ -6,23 +6,7 @@ The Windows desktop, profile import/cache engine, connection probing, tab lifecy
 
 MO2's Python/Qt plugin remains the supported in-process adapter for MO2's authenticated Nexus bridge, native downloads, FOMOD installer, focus and verified rewards. A small Qt Core C++ helper bridges the protected callback-sender binding needed by MO2 2.5.2's public file-list integration. The dashboard/game presentation remains HTML/CSS/JavaScript. Public site adapters, import/cache and plugin analysis run in Rust.
 
-## 0.12.0: library browsing and release packages
-
-Use **List** for compact version, provider and update comparisons, or **Gallery** for available project artwork. Gallery defaults to **All mods**; **By chapter** restores chapter organization and saved chapter-collapse choices. Search, provider filters and sorting keep the complete matching library available. Density and navigation choices persist with the current profile. The details panel retains source identity, notes and update actions; artwork is displayed only when supplied by the supported source.
-
-The 0.12.0 packaging layout includes these assets. Consult [GitHub Releases](https://github.com/Herbertofury/Modhunter/releases) for published availability; this source document does not establish that final runtime acceptance or publication has completed.
-
-| Asset | Purpose |
-| --- | --- |
-| `Modhunter_0.12.0_x64-setup.exe` | Windows installer, including WebView2 runtime setup when required. |
-| `Modhunter-Rust-Windows.zip` | Portable desktop, matching MO2 components, setup instructions and build identity. |
-| `Modhunter-0.12.0-MO2-Plugin.zip` | Independent MO2 plugin package with the matching compiled helpers and installer scripts. |
-| `Modhunter-0.12.0-Standalone.zip` | Independent `Modhunter.html`, `BUILD_INFO.json` and internal `SHA256SUMS.txt`. |
-| `Modhunter-0.12.0-Verification.zip` and `SHA256SUMS.txt` | Validated public receipts/screenshots and checksums for the downloadable release assets. |
-
-The release pipeline requires the exact compiled Windows app, complete-library measurements, installer, actual MO2 fixture and browser evidence before publication. The [Atelier guide](https://github.com/Herbertofury/Modhunter/wiki/Atelier-0.12) records the accepted checkpoint and any remaining runtime limits when those results are available.
-
-## Capabilities retained from 0.11.0: reviewed downloads, recovery and app upkeep
+## 0.11.0: reviewed downloads, actual file recovery and app upkeep
 
 Watchtower now carries a chosen external archive from its exact source identity into a complete file review and MO2's native installer. Update files stay bound to the chosen profile, game/runtime and installed mod. Separate new content requires a new mod name. A different file, changed source, profile round-trip or lost acknowledgement cannot silently reuse an earlier installation decision.
 

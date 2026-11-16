@@ -70,7 +70,6 @@ jobs:
         run: |
           python3 -m venv /tmp/modhunter-qa
           /tmp/modhunter-qa/bin/pip install -q playwright==1.57.0
-          /tmp/modhunter-qa/bin/python tests/prepare_ci_fonts.py --output /tmp/modhunter-proof/ci-fonts.json
           # Tests already prefer this runner's Chromium. Avoid an unrelated apt
           # font installation when the actual required engine is available.
           if ! command -v chromium >/dev/null && ! command -v chromium-browser >/dev/null; then
@@ -84,7 +83,6 @@ jobs:
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/test_watchtower_browser.py
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p test_watchtower_sources_ui.py -v
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/test_watchtower_native_ui.py
-          PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/ci_font_rendering_qa.py
           PYTHONPATH=. /tmp/modhunter-qa/bin/python scripts/benchmark_dashboard_render.py --baseline-ref 63e5df3e3ef218ae72ce58b5e4502165c40ca604 --output /tmp/modhunter-proof/dashboard-render-comparison.json
       - name: Upload browser proof
         if: always()
@@ -109,7 +107,6 @@ jobs:
         run: |
           python3 -m venv /tmp/modhunter-visual
           /tmp/modhunter-visual/bin/pip install -q playwright==1.57.0
-          /tmp/modhunter-visual/bin/python tests/prepare_ci_fonts.py --output /tmp/modhunter-visual-proof/ci-fonts.json
           if ! command -v chromium >/dev/null && ! command -v chromium-browser >/dev/null; then
             /tmp/modhunter-visual/bin/python -m playwright install --with-deps chromium
           fi

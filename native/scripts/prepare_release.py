@@ -110,6 +110,70 @@ WATCHTOWER_BROWSER_SOURCES = (
     "tests/fixtures/watchtower_native_fixture.js", "tests/test_watchtower_browser.py",
 )
 NATIVE_MANAGER_SOURCES = ('native/ui/watchtower.html', 'native/ui/watchtower.css', 'native/ui/watchtower.js', 'native/ui/watchtower-review.js', 'native/ui/watchtower-maintenance.js', 'native/ui/watchtower-inventory.js', 'native/ui/watchtower-queue.js', 'native/ui/watchtower-notices.js', 'native/ui/watchtower-native.css', 'native/ui/locale-catalogs.js', 'native/ui/preferences.js', 'native/ui/preferences.css', 'tests/test_watchtower_native_ui.py', 'tests/test_watchtower_browser.py', 'tests/fixtures/watchtower_native_fixture.js')
+NATIVE_MANAGER_SOURCES += ('tests/prepare_ci_fonts.py',)
+CJK_TEXT = '外觀、隱私與維護'
+CJK_EXPECTED_FONT = {
+    'upstreamRepository': 'notofonts/noto-cjk',
+    'upstreamCommit': 'f8d157532fbfaeda587e826d4cd5b21a49186f7c',
+    'fileName': 'NotoSansCJKtc-Regular.otf', 'familyName': 'Noto Sans CJK TC',
+    'postScriptName': 'NotoSansCJKtc-Regular', 'bytes': 16435884,
+    'sha256': 'dce08bd4fd91aa8aa76ed8fea4b694c2dfb8550f67871e326843212ddbeb88b4',
+}
+CJK_FILES = {
+    'Sans/OTF/TraditionalChinese/NotoSansCJKtc-Regular.otf': {
+        'bytes': 16435884, 'sha256': CJK_EXPECTED_FONT['sha256'],
+        'gitBlob': 'f9376bae1d421520f73a3c6c9d50b22f89548301'},
+    'Sans/LICENSE': {'bytes': 4301,
+        'sha256': '6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2',
+        'gitBlob': 'd952d62c065f3f35fb83a173496e90b21525aef3'},
+}
+FONT_SUPPLEMENT_COMMIT = '925ebb8364f5ec2cb0614305900782f44d32a3ab'
+FONT_SUPPLEMENTS = {
+    'Noto Sans Runic': {
+        'path': 'hinted/ttf/NotoSansRunic/NotoSansRunic-Regular.ttf',
+        'bytes': 9044, 'sha256': '49e540798dedccf24301437fb5ea5c8a3f42143b1b6c108c1d48c78a41c4ce0f',
+        'gitBlob': '114595f54023e304a3e66c9f904da56e5d1b13f4',
+        'postScriptName': 'NotoSansRunic-Regular', 'text': 'ᛟᚠ'},
+    'Noto Sans Symbols2': {
+        'path': 'hinted/ttf/NotoSansSymbols2/NotoSansSymbols2-Regular.ttf',
+        'bytes': 656852, 'sha256': '876598db5f1e3bef2bc77c4d94c5b0d5d2c1620be4878a06f18fb5434e331688',
+        'gitBlob': '45df8301c7bdfaccff52e30a0973132e94b2e95d',
+        'postScriptName': 'NotoSansSymbols2-Regular', 'text': '⌖'},
+}
+FONT_PREREQUISITE_FILES = {
+    **CJK_FILES,
+    **{font['path']: {key: font[key] for key in ('bytes', 'sha256', 'gitBlob')}
+       for font in FONT_SUPPLEMENTS.values()},
+    'LICENSE': {'bytes': 4377,
+                'sha256': '0dab92d0544f7b233403f14b84a663bdbfa746982eda629e7f4f9ffe1b036feb',
+                'gitBlob': 'c82d72e422e2d08c5ab439b6bac7c2177ea0c565'},
+}
+FONT_VERIFIED_FILES = {
+    CJK_EXPECTED_FONT['familyName']: {key: CJK_EXPECTED_FONT[key]
+                                    for key in ('bytes', 'sha256', 'postScriptName')},
+    **{family: {key: font[key] for key in ('bytes', 'sha256', 'postScriptName')}
+       for family, font in FONT_SUPPLEMENTS.items()},
+}
+FONT_RENDERING_SOURCES = (
+    'tests/ci_font_rendering_qa.py', 'tests/prepare_ci_fonts.py',
+    'tests/visual_release_qa.py', 'tests/test_frontend_responsiveness.py',
+)
+FONT_RENDERING_ASSETS = tuple('mo2_update_arsenal/web/' + name for name in (
+    'app.template.html', 'style.css', 'aether_fx.css', 'realm.css', 'siege.css',
+    'atelier.css', 'mod_insights.css', 'source_insights.css', 'source_insights.js',
+    'mod_insights.js', 'app.js', 'catalog.json', 'aether_fx.js', 'realm.js', 'siege.js',
+    'realm_layout.html', 'siege_layout.html', 'MO2_Source_Exporter.ps1',
+))
+FONT_RENDERING_CHECKS = {
+    'mo2-locate': ('#modList .mod-inline-locate', '⌖', 'Noto Sans Symbols2', True),
+    'runic-crest': ('.realm-brand-rune', 'ᛟ', 'Noto Sans Runic', False),
+    'ember-rune': ('.realm-actionbar [data-action="spell"] > b', 'ᚠ', 'Noto Sans Runic', False),
+    'rift-rune': ('.realm-run-card:has([data-action="start-rift"]) .realm-run-icon', 'ᛟ', 'Noto Sans Runic', False),
+    'zoom-in': ('button[data-action="zoom-in"]', '＋', 'Noto Sans CJK TC', True),
+    'zoom-out': ('button[data-action="zoom-out"]', '－', 'Noto Sans CJK TC', True),
+}
+FONT_RENDERING_SCREENSHOTS = {'ci-font-library.png': (1440, 1000),
+                            'ci-font-expedition.png': (900, 1000)}
 NATIVE_MANAGER_CHECKS = {'duplicate_report_preserves_whole_mod_and_file_ownership', 'cleanup_requires_a_matching_preview_and_confirmation', 'inventory_caches_complete_results_and_reveals_exact_ids', 'review_preserves_complete_selection_and_exact_install_ids', 'global_preferences_preserve_unsaved_edits_and_switch_language', 'unknown_native_outcome_remains_visible_and_cannot_be_discarded', 'support_export_uses_the_exact_preview_identity', 'new_content_requires_an_explicit_new_target', 'application_reset_requires_exact_phrase_and_preview', 'native_substates_update_without_watchstore_revision', 'readiness_identifies_live_and_offline_profiles_without_scanning', 'notice_click_uses_only_opaque_id_and_opens_current_native_item', 'fomod_selection_is_explicitly_advisory', 'retained_reviews_remain_visible_without_replay', 'retention_requires_exact_preview_and_explicit_confirmation', 'four_locales_preserve_names_focus_and_theme', 'shared_queue_controls_preserve_action_boundaries', 'notice_list_is_private_and_accepts_native_substate_updates', 'stale_notice_rejection_never_opens_a_target', 'lost_acknowledgement_refreshes_submission_state'}
 NATIVE_MANAGER_SCREENSHOTS = {'watchtower-exact-notice.png', 'watchtower-file-review.png', 'watchtower-duplicates.png', 'watchtower-file-inventory.png', 'watchtower-preferences-zh.png', 'watchtower-support-preview.png', 'watchtower-preferences-es.png'}
 QT_FORWARD_SOURCES = (
@@ -338,7 +402,7 @@ def reject_credentials(value: object, description: str) -> None:
         require(SECRET_TEXT.search(value) is None, f"Credential text must not appear in public proof: {description}")
 
 
-def png_bytes(path: Path) -> bytes:
+def png_bytes(path: Path, expected_dimensions: tuple[int, int] | None = None) -> bytes:
     data = bounded_bytes(path, PNG_LIMIT)
     require(data.startswith(b"\x89PNG\r\n\x1a\n"), f"Not a PNG screenshot: {path.name}")
     offset, seen_header, seen_data, seen_end = 8, False, False, False
@@ -354,6 +418,8 @@ def png_bytes(path: Path) -> bytes:
             require(kind == b"IHDR" and length == 13, f"PNG has no valid image header: {path.name}")
             width, height = struct.unpack(">II", payload[:8])
             require(0 < width <= 65535 and 0 < height <= 65535, f"Invalid PNG dimensions: {path.name}")
+            require(expected_dimensions is None or (width, height) == expected_dimensions,
+                    f"Unexpected PNG screenshot dimensions: {path.name}")
             seen_header = True
         elif kind == b"IHDR":
             raise ReleaseError(f"PNG has duplicate image headers: {path.name}")
@@ -590,6 +656,158 @@ def validate_native_manager_ui(report: dict, commit: str) -> None:
             and all(isinstance(check, dict) and check.get("passed") is True for check in checks)
             and {check.get("name") for check in checks} == NATIVE_MANAGER_CHECKS,
             "Native review manager proof failed, repeated or omitted a required interaction")
+
+
+def font_coverage(text: str) -> dict:
+    return {'text': text, 'method': 'fc-query FreeType/fontconfig charset',
+            'glyphs': [{'character': char, 'codepoint': f'U+{ord(char):04X}', 'covered': True}
+                       for char in dict.fromkeys(text)]}
+
+
+def validate_font_prerequisite(receipt: dict) -> None:
+    """Bind CI-only font installation and cmap checks to the verified upstream bytes."""
+    expected = CJK_EXPECTED_FONT
+    require(isinstance(receipt, dict) and type(receipt.get('schema')) is int
+            and receipt.get('schema') == 1 and receipt.get('ok') is True
+            and receipt.get('scriptSha256') == file_hash(ROOT / 'tests/prepare_ci_fonts.py')
+            and receipt.get('upstreamRepository') == expected['upstreamRepository']
+            and receipt.get('upstreamCommit') == expected['upstreamCommit']
+            and receipt.get('license') == 'OFL-1.1'
+            and receipt.get('fontFamily') == expected['familyName']
+            and isinstance(receipt.get('registeredFamily'), str)
+            and expected['familyName'] in receipt.get('registeredFamily', '').split(',')
+            and receipt.get('registeredPostScriptName') == expected['postScriptName'],
+            'CJK font preparation does not identify the current verified prerequisite')
+    files = receipt.get('files')
+    require(isinstance(files, list) and len(files) == len(FONT_PREREQUISITE_FILES)
+            and all(isinstance(entry, dict) and isinstance(entry.get('path'), str) for entry in files)
+            and {entry['path'] for entry in files} == set(FONT_PREREQUISITE_FILES),
+            'CI font preparation omitted, repeated or added a font or license file')
+    for path, identity in FONT_PREREQUISITE_FILES.items():
+        matches = [entry for entry in files if isinstance(entry, dict) and entry.get('path') == path]
+        require(len(matches) == 1 and all(matches[0].get(key) == value for key, value in identity.items()),
+                f'CI font preparation changed the pinned font or license: {path}')
+    require(receipt.get('glyphCoverage') == font_coverage(CJK_TEXT),
+            'CI font preparation omitted the Chinese heading cmap proof')
+    supplements = receipt.get('supplementalFonts')
+    require(isinstance(supplements, list) and len(supplements) == len(FONT_SUPPLEMENTS)
+            and all(isinstance(font, dict) and isinstance(font.get('fontFamily'), str) for font in supplements)
+            and {font['fontFamily'] for font in supplements} == set(FONT_SUPPLEMENTS),
+            'CI font preparation omitted or repeated a required supplemental face')
+    for family, identity in FONT_SUPPLEMENTS.items():
+        font = next(font for font in supplements if font['fontFamily'] == family)
+        require(font.get('upstreamRepository') == 'notofonts/noto-fonts'
+                and font.get('upstreamCommit') == FONT_SUPPLEMENT_COMMIT
+                and font.get('license') == 'OFL-1.1'
+                and all(font.get(key) == identity[key] for key in ('path', 'bytes', 'sha256'))
+                and isinstance(font.get('registeredFamily'), str)
+                and family in font['registeredFamily'].split(',')
+                and font.get('registeredPostScriptName') == identity['postScriptName']
+                and font.get('glyphCoverage') == font_coverage(identity['text']),
+                f'CI font preparation changed the pinned face or glyph coverage: {family}')
+    require(receipt.get('supplementalGlyphCoverage') == {'fullwidthZoom': {
+                'fontFamily': expected['familyName'], 'postScriptName': expected['postScriptName'],
+                **font_coverage('＋－')}},
+            'CI font preparation omitted the fullwidth zoom glyph coverage')
+
+
+def validate_cjk_font(proof: dict, receipt: dict, receipt_hash: str) -> None:
+    """Reject translated DOM text that was never rendered with actual CJK glyphs."""
+    validate_font_prerequisite(receipt)
+    expected = CJK_EXPECTED_FONT
+    coverage = font_coverage(CJK_TEXT)
+    require(isinstance(proof, dict) and proof.get('schema') == 1 and proof.get('ok') is True
+            and proof.get('locale') == 'zh-TW' and proof.get('text') == CJK_TEXT
+            and proof.get('visible') is True and proof.get('inViewport') is True
+            and proof.get('receivesPointer') is True
+            and proof.get('expectedFont') == expected
+            and proof.get('fontReceiptSha256') == receipt_hash
+            and proof.get('glyphCoverage') == coverage and receipt.get('glyphCoverage') == coverage,
+            'CJK rendered-font proof is missing, invisible or disconnected from its pinned font')
+    fonts = proof.get('fonts')
+    require(isinstance(fonts, list) and bool(fonts)
+            and all(isinstance(font, dict) and type(font.get('glyphCount')) is int
+                    and font['glyphCount'] >= 0 for font in fonts),
+            'CJK rendered-font proof omitted actual Chromium font usage')
+    matched = sum(font['glyphCount'] for font in fonts
+                  if font.get('familyName') == expected['familyName']
+                  and font.get('postScriptName') == expected['postScriptName']
+                  and font.get('isCustomFont') is False)
+    require(matched == sum(font['glyphCount'] for font in fonts) == len(CJK_TEXT)
+            and proof.get('matchedGlyphCount') == proof.get('expectedGlyphCount') == len(CJK_TEXT),
+            'CJK rendered-font proof did not paint every required glyph with the verified face')
+
+
+def validate_ci_font_rendering(report: dict, commit: str, receipt: dict, receipt_hash: str) -> None:
+    """Require actual dashboard and practice-game glyph use, not DOM strings alone."""
+    validate_font_prerequisite(receipt)
+    require(isinstance(report, dict) and type(report.get('schema')) is int and report.get('schema') == 1
+            and report.get('kind') == 'ci-font-rendering' and report.get('ok') is True
+            and report.get('phase') == 'complete' and report.get('errors') == []
+            and report.get('candidateCommit') == commit and report.get('sourceDirty') is False
+            and report.get('sourceStatusAtStart') == [] and report.get('sourceStatusAtEnd') == [],
+            'CI glyph rendering requires a complete, error-free receipt from the clean candidate')
+    for key, paths in (('sourceFiles', FONT_RENDERING_SOURCES), ('assets', FONT_RENDERING_ASSETS)):
+        sources = report.get(key)
+        require(isinstance(sources, dict) and set(sources) == set(paths)
+                and all(sources[path] == file_hash(ROOT / path) for path in paths),
+                f'CI glyph rendering does not match the exact tested {key}')
+    require(report.get('fontHelperSha256') == receipt['scriptSha256']
+            and report.get('fontReceiptSha256') == receipt_hash
+            and report.get('verifiedFontFiles') == FONT_VERIFIED_FILES,
+            'CI glyph rendering is disconnected from the verified font prerequisite')
+    require(type(report.get('catalogRows')) is int and report['catalogRows'] == 227
+            and isinstance(report.get('catalogFixtureSha256'), str)
+            and re.fullmatch(r'[0-9a-f]{64}', report['catalogFixtureSha256']) is not None
+            and isinstance(report.get('browserVersion'), str) and bool(report['browserVersion'])
+            and isinstance(report.get('requestedExecutable'), str) and bool(report['requestedExecutable']),
+            'CI glyph rendering omitted its complete fixture or actual browser identity')
+    require(report.get('game') == {'profileId': 'practice', 'connected': False, 'mode': 'expedition',
+                                  'actualCanvasDrawn': True, 'enteredThroughUi': True},
+            'CI glyph rendering did not enter and draw the offline practice expedition')
+    zoom = report.get('zoomInteraction')
+    require(isinstance(zoom, dict) and set(zoom) == {'original', 'increased', 'restored'}
+            and all(type(value) in (int, float) and math.isfinite(value) and value > 0 for value in zoom.values())
+            and zoom['increased'] > zoom['original'] and zoom['restored'] == zoom['original'],
+            'CI glyph rendering did not verify the actual zoom controls and restoration')
+    checks = report.get('checks')
+    require(report.get('requiredChecks') == list(FONT_RENDERING_CHECKS)
+            and isinstance(checks, list) and len(checks) == len(FONT_RENDERING_CHECKS)
+            and all(isinstance(check, dict) for check in checks)
+            and [check.get('name') for check in checks] == list(FONT_RENDERING_CHECKS),
+            'CI glyph rendering omitted, repeated or reordered a required glyph check')
+    for check in checks:
+        name = check['name']
+        selector, text, family, interactive = FONT_RENDERING_CHECKS[name]
+        postscript = FONT_VERIFIED_FILES[family]['postScriptName']
+        require(check.get('ok') is True and check.get('selector') == selector
+                and type(check.get('nodeIndex')) is int and check['nodeIndex'] == 0
+                and check.get('expectedText') == check.get('text') == text
+                and check.get('expectedFamily') == family and check.get('expectedPostScriptName') == postscript
+                and check.get('visible') is True and check.get('inViewport') is True
+                and (not interactive or check.get('receivesPointer') is True),
+                f'CI glyph check is missing, invisible or targets a different control: {name}')
+        rect = check.get('rect')
+        viewport = FONT_RENDERING_SCREENSHOTS['ci-font-library.png' if name == 'mo2-locate'
+                                             else 'ci-font-expedition.png']
+        require(isinstance(rect, dict) and set(rect) == {'x', 'y', 'width', 'height'}
+                and all(type(value) in (int, float) and math.isfinite(value) for value in rect.values())
+                and rect['x'] >= 0 and rect['y'] >= 0 and rect['width'] > 0 and rect['height'] > 0
+                and rect['x'] + rect['width'] <= viewport[0] and rect['y'] + rect['height'] <= viewport[1],
+                f'CI glyph check has no finite visible rectangle: {name}')
+        fonts = check.get('fonts')
+        require(isinstance(fonts, list) and bool(fonts)
+                and all(isinstance(font, dict) and type(font.get('glyphCount')) is int
+                        and font['glyphCount'] >= 0 for font in fonts),
+                f'CI glyph check omitted actual Chromium font usage: {name}')
+        matched = sum(font['glyphCount'] for font in fonts
+                      if font.get('familyName') == family and font.get('postScriptName') == postscript
+                      and font.get('isCustomFont') is False)
+        require(type(check.get('matchedGlyphCount')) is int
+                and check['matchedGlyphCount'] == matched == sum(font['glyphCount'] for font in fonts) == 1,
+                f'CI glyph check did not render its glyph with the verified face: {name}')
+    require(report.get('screenshots') == list(FONT_RENDERING_SCREENSHOTS),
+            'CI glyph rendering omitted its actual dashboard or expedition screenshot')
 
 
 def validate_mo2(result: dict, receipt: dict) -> None:
@@ -1062,7 +1280,20 @@ def prepare(artifacts_dir: Path, output_dir: Path, commit: str, run_url: str) ->
     public["browser/watchtower-browser.json"] = public_json(watchtower_browser)
     manager_ui = read_json(browser / "native-manager-ui.json")
     validate_native_manager_ui(manager_ui, commit)
+    font_path = browser / 'ci-fonts.json'
+    # Both actual-font receipts bind these original bytes. Parse/credential-check
+    # the bounded snapshot once and publish it unchanged, including JSON escapes.
+    font_bytes = bounded_bytes(font_path, JSON_LIMIT)
+    font_receipt = json_object(font_bytes, font_path.name)
+    font_hash = hashlib.sha256(font_bytes).hexdigest()
+    validate_cjk_font(manager_ui.get('cjkFontProof'), font_receipt, font_hash)
+    font_rendering = read_json(browser / 'ci-font-rendering.json')
+    validate_ci_font_rendering(font_rendering, commit, font_receipt, font_hash)
     public["browser/native-manager-ui.json"] = public_json(manager_ui)
+    public['browser/ci-fonts.json'] = font_bytes
+    public['browser/ci-font-rendering.json'] = public_json(font_rendering)
+    for name, dimensions in FONT_RENDERING_SCREENSHOTS.items():
+        public['browser/' + name] = png_bytes(browser / name, dimensions)
     for name in NATIVE_MANAGER_SCREENSHOTS:
         public["browser/" + name] = png_bytes(browser / name)
     for name in WATCHTOWER_SCREENSHOTS:
@@ -1078,7 +1309,9 @@ def prepare(artifacts_dir: Path, output_dir: Path, commit: str, run_url: str) ->
     for screenshot in screenshots:
         relative = screenshot.relative_to(browser)
         require(all(part not in (".", "..") and not any(c in part for c in "\\:\r\n") for part in relative.parts), "Unsafe browser screenshot path")
-        public["browser/" + relative.as_posix()] = png_bytes(screenshot)
+        public_name = "browser/" + relative.as_posix()
+        if public_name not in public:
+            public[public_name] = png_bytes(screenshot)
     # All proof is validated before creating final output. Build in an adjacent
     # temporary directory and publish it only after copy/checksum verification.
     expected_binary_hashes = {portable.name: portable_digest, installer.name: file_hash(installer)}
@@ -1142,7 +1375,66 @@ def self_test() -> None:
                                "testsRun":len(NATIVE_MANAGER_CHECKS),"skipped":0,
                                "sourceFiles":{name:file_hash(ROOT/name) for name in NATIVE_MANAGER_SOURCES},
                                "checks":[{"name":name,"passed":True} for name in sorted(NATIVE_MANAGER_CHECKS)]}
+            coverage = font_coverage(CJK_TEXT)
+            self.font_receipt = {'schema': 1, 'ok': True,
+                'scope': 'Synthetic validator fixture; no font installation or glyph rendering',
+                'scriptSha256': file_hash(ROOT / 'tests/prepare_ci_fonts.py'),
+                'upstreamRepository': CJK_EXPECTED_FONT['upstreamRepository'],
+                'upstreamCommit': CJK_EXPECTED_FONT['upstreamCommit'],
+                'license': 'OFL-1.1',
+                'fontFamily': CJK_EXPECTED_FONT['familyName'],
+                'registeredFamily': CJK_EXPECTED_FONT['familyName'],
+                'registeredPostScriptName': CJK_EXPECTED_FONT['postScriptName'],
+                'files': [{'path': path, **identity} for path, identity in FONT_PREREQUISITE_FILES.items()],
+                'glyphCoverage': coverage,
+                'supplementalFonts': [{'upstreamRepository': 'notofonts/noto-fonts',
+                    'upstreamCommit': FONT_SUPPLEMENT_COMMIT, 'license': 'OFL-1.1',
+                    'fontFamily': family, 'registeredFamily': family,
+                    'registeredPostScriptName': font['postScriptName'],
+                    **{key: font[key] for key in ('path', 'bytes', 'sha256')},
+                    'glyphCoverage': font_coverage(font['text'])} for family, font in FONT_SUPPLEMENTS.items()],
+                'supplementalGlyphCoverage': {'fullwidthZoom': {
+                    'fontFamily': CJK_EXPECTED_FONT['familyName'],
+                    'postScriptName': CJK_EXPECTED_FONT['postScriptName'], **font_coverage('＋－')}}}
+            # The real helper escapes non-ASCII characters. Re-serializing this
+            # JSON through public_json must not alter the hash-bound ZIP member.
+            (self.browser / 'ci-fonts.json').write_bytes((json.dumps(self.font_receipt, indent=2) + '\n').encode())
+            self.manager_ui['cjkFontProof'] = {'schema': 1, 'ok': True, 'locale': 'zh-TW',
+                'scope': 'Synthetic validator fixture; no Chromium glyph rendering',
+                'text': CJK_TEXT, 'visible': True, 'inViewport': True, 'receivesPointer': True,
+                'expectedFont': dict(CJK_EXPECTED_FONT), 'expectedGlyphCount': len(CJK_TEXT),
+                'matchedGlyphCount': len(CJK_TEXT), 'glyphCoverage': coverage,
+                'fontReceiptSha256': file_hash(self.browser / 'ci-fonts.json'),
+                'fonts': [{'familyName': CJK_EXPECTED_FONT['familyName'],
+                           'postScriptName': CJK_EXPECTED_FONT['postScriptName'],
+                           'glyphCount': len(CJK_TEXT), 'isCustomFont': False}]}
             self.write_json(self.browser / "native-manager-ui.json",self.manager_ui)
+            self.font_rendering = {'schema': 1, 'kind': 'ci-font-rendering', 'ok': True,
+                'scope': 'Synthetic validator fixture; no Chromium glyph or practice game execution',
+                'candidateCommit': self.commit, 'sourceDirty': False,
+                'sourceStatusAtStart': [], 'sourceStatusAtEnd': [], 'phase': 'complete', 'errors': [],
+                'sourceFiles': {name: file_hash(ROOT / name) for name in FONT_RENDERING_SOURCES},
+                'assets': {name: file_hash(ROOT / name) for name in FONT_RENDERING_ASSETS},
+                'fontReceiptSha256': file_hash(self.browser / 'ci-fonts.json'),
+                'fontHelperSha256': self.font_receipt['scriptSha256'],
+                'verifiedFontFiles': {family: dict(identity) for family, identity in FONT_VERIFIED_FILES.items()},
+                'catalogRows': 227, 'catalogFixtureSha256': 'c' * 64,
+                'browserVersion': '157.0.0.0', 'requestedExecutable': '/synthetic/chromium',
+                'game': {'profileId': 'practice', 'connected': False, 'mode': 'expedition',
+                         'actualCanvasDrawn': True, 'enteredThroughUi': True},
+                'zoomInteraction': {'original': 48, 'increased': 54, 'restored': 48},
+                'requiredChecks': list(FONT_RENDERING_CHECKS), 'checks': [],
+                'screenshots': list(FONT_RENDERING_SCREENSHOTS)}
+            for name, (selector, text, family, _) in FONT_RENDERING_CHECKS.items():
+                postscript = FONT_VERIFIED_FILES[family]['postScriptName']
+                self.font_rendering['checks'].append({'name': name, 'ok': True,
+                    'selector': selector, 'nodeIndex': 0, 'expectedText': text, 'text': text,
+                    'expectedFamily': family, 'expectedPostScriptName': postscript,
+                    'visible': True, 'inViewport': True, 'receivesPointer': True,
+                    'rect': {'x': 10, 'y': 10, 'width': 30, 'height': 30}, 'matchedGlyphCount': 1,
+                    'fonts': [{'familyName': family, 'postScriptName': postscript,
+                               'isCustomFont': False, 'glyphCount': 1}]})
+            self.write_json(self.browser / 'ci-font-rendering.json', self.font_rendering)
             self.cli_bytes = b"non-executable synthetic test fixture"
             self.cli_hash = hashlib.sha256(self.cli_bytes).hexdigest()
             binding={"nativeBindingSchema":1,"candidateCommit":self.commit,"sourceDirty":False,"executableSha256":self.cli_hash,
@@ -1269,6 +1561,8 @@ def self_test() -> None:
             (self.browser / "review.png").write_bytes(image)
             for name in WATCHTOWER_SCREENSHOTS | NATIVE_MANAGER_SCREENSHOTS:
                 (self.browser / name).write_bytes(image)
+            for name, dimensions in FONT_RENDERING_SCREENSHOTS.items():
+                (self.browser / name).write_bytes(self.png(*dimensions))
             (self.mo2 / "fixture-settings.ini").write_text("not public")
             (self.mo2 / "mo2.log").write_text("not public")
             (self.browser / "session.json").write_text('{"token":"must never be selected"}')
@@ -1278,10 +1572,11 @@ def self_test() -> None:
             path.write_bytes(b"\xef\xbb\xbf" + public_json(value))
 
         @staticmethod
-        def png():
+        def png(width=1, height=1):
             def chunk(kind, content):
                 return struct.pack(">I", len(content)) + kind + content + struct.pack(">I", zlib.crc32(kind + content) & 0xFFFFFFFF)
-            return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(b"\0\0\0\0\0")) + chunk(b"IEND", b"")
+            pixels = (b'\0' + b'\0' * (width * 4)) * height
+            return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(pixels)) + chunk(b"IEND", b"")
 
         def write_portable(self, commit=None, *, build_version=None, include_helper=True, helper_bytes=None, include_qt_helper=True, qt_bytes=None):
             with ZipFile(self.zip_path, "w") as archive:
@@ -1462,12 +1757,22 @@ def self_test() -> None:
                 expected = {"windows/desktop-live.json", "windows/desktop-live.png", "BUILD_INFO.json", "windows/qt-forward.json", "windows/native-smoke.json", "windows/watchtower-smoke.json", "windows/archive-review-proof.json", "mo2/result.json", "mo2/native-receipt.json", "mo2/mo2-fixture.png", "browser/review.png", "browser/watchtower-browser.json"}
                 expected.update("browser/" + name for name in WATCHTOWER_SCREENSHOTS | NATIVE_MANAGER_SCREENSHOTS)
                 expected.add("browser/native-manager-ui.json")
+                expected.update({'browser/ci-fonts.json', 'browser/ci-font-rendering.json'})
+                expected.update('browser/' + name for name in FONT_RENDERING_SCREENSHOTS)
                 expected.update({"windows/installer-smoke.json", "windows/installed-native-smoke.json",
                                  "windows/installed-desktop.png", "windows/native-library-performance.json", "visual/visual-release.json"})
                 expected.update("windows/" + name for name in LIVE_DESKTOP_SCREENSHOTS)
                 expected.update("visual/" + name for name in VISUAL_SCREENSHOTS)
                 self.assertEqual(set(names), expected)
                 self.assertTrue(all(PurePosixPath(name).suffix in (".json", ".png") for name in names))
+                raw_font = (self.browser / 'ci-fonts.json').read_bytes()
+                self.assertNotEqual(raw_font, public_json(self.font_receipt))
+                self.assertEqual(archive.read('browser/ci-fonts.json'), raw_font)
+                digest = hashlib.sha256(archive.read('browser/ci-fonts.json')).hexdigest()
+                self.assertEqual(json.loads(archive.read('browser/native-manager-ui.json'))['cjkFontProof']['fontReceiptSha256'], digest)
+                self.assertEqual(json.loads(archive.read('browser/ci-font-rendering.json'))['fontReceiptSha256'], digest)
+                for name in FONT_RENDERING_SCREENSHOTS:
+                    self.assertEqual(archive.read('browser/' + name), (self.browser / name).read_bytes())
 
         def test_plugin_installer_is_bound_to_the_tested_script(self):
             with ZipFile(self.zip_path) as archive:
@@ -1691,6 +1996,179 @@ def self_test() -> None:
                 with self.assertRaises(ReleaseError):validate_native_manager_ui(report,self.commit)
             (self.browser/"native-manager-ui.json").unlink()
             with self.assertRaises(ReleaseError):prepare(self.artifacts,self.output,self.commit,self.run)
+            self.assertFalse(self.output.exists())
+
+        def test_cjk_glyph_proof_is_mandatory_and_rejects_missing_or_substituted_faces(self):
+            from copy import deepcopy
+            original = self.manager_ui['cjkFontProof']
+            digest = file_hash(self.browser / 'ci-fonts.json')
+            for change in (
+                lambda p: p.update(ok=False), lambda p: p.update(visible=False),
+                lambda p: p.update(inViewport=False), lambda p: p.update(receivesPointer=False),
+                lambda p: p.update(text='Preferences'), lambda p: p.update(locale='en'),
+                lambda p: p.update(fontReceiptSha256='0'*64), lambda p: p.update(matchedGlyphCount=7),
+                lambda p: p['glyphCoverage']['glyphs'][0].update(covered=False),
+                lambda p: p['fonts'][0].update(glyphCount=7),
+                lambda p: p['fonts'][0].update(familyName='Missing glyph fallback'),
+                lambda p: p['fonts'][0].update(postScriptName='Unknown'),
+                lambda p: p['fonts'][0].update(isCustomFont=True), lambda p: p.update(fonts=[]),
+            ):
+                proof = deepcopy(original); change(proof)
+                with self.assertRaises(ReleaseError): validate_cjk_font(proof, self.font_receipt, digest)
+            self.manager_ui.pop('cjkFontProof')
+            self.write_json(self.browser / 'native-manager-ui.json', self.manager_ui)
+            with self.assertRaises(ReleaseError): prepare(self.artifacts, self.output, self.commit, self.run)
+            self.assertFalse(self.output.exists())
+
+        def test_cjk_prerequisite_cannot_be_omitted_or_reused_from_a_different_helper(self):
+            from copy import deepcopy
+            digest = file_hash(self.browser / 'ci-fonts.json')
+            for change in (
+                lambda r: r.update(scriptSha256='0'*64), lambda r: r.update(ok=False),
+                lambda r: r.update(upstreamCommit='0'*40), lambda r: r.update(registeredFamily=None),
+                lambda r: r.update(registeredPostScriptName='Unknown'), lambda r: r['files'].pop(),
+                lambda r: r['files'][0].update(sha256='0'*64),
+                lambda r: r['files'][0].update(bytes=1),
+                lambda r: r['glyphCoverage']['glyphs'][0].update(covered=False),
+            ):
+                receipt = deepcopy(self.font_receipt); change(receipt)
+                with self.assertRaises(ReleaseError):
+                    validate_cjk_font(self.manager_ui['cjkFontProof'], receipt, digest)
+            (self.browser / 'ci-fonts.json').unlink()
+            with self.assertRaises(ReleaseError): prepare(self.artifacts, self.output, self.commit, self.run)
+            self.assertFalse(self.output.exists())
+
+        def test_ci_glyph_evidence_requires_report_and_exact_validated_screenshots(self):
+            for name in ('ci-font-rendering.json', *FONT_RENDERING_SCREENSHOTS):
+                path = self.browser / name
+                original = path.read_bytes()
+                path.unlink()
+                with self.subTest(missing=name), self.assertRaises(ReleaseError):
+                    prepare(self.artifacts, self.output, self.commit, self.run)
+                self.assertFalse(self.output.exists())
+                path.write_bytes(original)
+            for name, dimensions in FONT_RENDERING_SCREENSHOTS.items():
+                path = self.browser / name
+                original = path.read_bytes()
+                path.write_bytes(self.png(dimensions[0] - 1, dimensions[1]))
+                with self.subTest(wrong_dimensions=name), self.assertRaisesRegex(ReleaseError, 'dimensions'):
+                    prepare(self.artifacts, self.output, self.commit, self.run)
+                self.assertFalse(self.output.exists())
+                damaged = bytearray(original)
+                damaged[-1] ^= 1
+                path.write_bytes(damaged)
+                with self.subTest(damaged=name), self.assertRaisesRegex(ReleaseError, 'PNG checksum'):
+                    prepare(self.artifacts, self.output, self.commit, self.run)
+                self.assertFalse(self.output.exists())
+                path.write_bytes(original)
+
+        def test_ci_glyph_evidence_rejects_wrong_source_receipt_and_partial_execution(self):
+            from copy import deepcopy
+            digest = file_hash(self.browser / 'ci-fonts.json')
+            for index, mutate in enumerate((
+                lambda r: r.update(schema=True), lambda r: r.update(kind='translated-text-only'),
+                lambda r: r.update(ok=False), lambda r: r.update(phase='dashboard-glyph-proven'),
+                lambda r: r.update(errors=['Renderer failed']), lambda r: r.update(candidateCommit='b'*40),
+                lambda r: r.update(sourceDirty=True), lambda r: r.update(sourceStatusAtStart=['M app.js']),
+                lambda r: r.update(sourceStatusAtEnd=['M app.js']),
+                lambda r: r['sourceFiles'].update({FONT_RENDERING_SOURCES[0]: '0'*64}),
+                lambda r: r['sourceFiles'].pop(FONT_RENDERING_SOURCES[1]),
+                lambda r: r['sourceFiles'].update({'untested.py': '0'*64}),
+                lambda r: r['assets'].update({'mo2_update_arsenal/web/app.js': '0'*64}),
+                lambda r: r['assets'].pop(FONT_RENDERING_ASSETS[0]),
+                lambda r: r['assets'].update({'untested.css': '0'*64}),
+                lambda r: r.update(fontHelperSha256='0'*64), lambda r: r.update(fontReceiptSha256='0'*64),
+                lambda r: r['verifiedFontFiles']['Noto Sans Runic'].update(sha256='0'*64),
+                lambda r: r['verifiedFontFiles'].pop('Noto Sans Symbols2'),
+                lambda r: r.update(requiredChecks=[]), lambda r: r['checks'].pop(),
+                lambda r: r['checks'].__setitem__(0, r['checks'][1]),
+                lambda r: r.update(catalogRows=226), lambda r: r.update(catalogFixtureSha256='invalid'),
+                lambda r: r.update(browserVersion=''), lambda r: r.update(requestedExecutable=''),
+                lambda r: r['screenshots'].pop(),
+            )):
+                report = deepcopy(self.font_rendering)
+                mutate(report)
+                with self.subTest(case=index), self.assertRaises(ReleaseError):
+                    validate_ci_font_rendering(report, self.commit, self.font_receipt, digest)
+
+        def test_ci_glyph_prerequisite_rejects_substituted_fonts_licenses_and_coverage(self):
+            from copy import deepcopy
+            for path in FONT_PREREQUISITE_FILES:
+                for key, value in (('bytes', 1), ('sha256', '0'*64), ('gitBlob', '0'*40)):
+                    receipt = deepcopy(self.font_receipt)
+                    next(entry for entry in receipt['files'] if entry['path'] == path)[key] = value
+                    with self.subTest(path=path, key=key), self.assertRaises(ReleaseError):
+                        validate_font_prerequisite(receipt)
+            for index, mutate in enumerate((
+                lambda r: r['files'].append(dict(r['files'][0])),
+                lambda r: r['supplementalFonts'].pop(),
+                lambda r: r['supplementalFonts'].__setitem__(0, r['supplementalFonts'][1]),
+                lambda r: r['supplementalFonts'][0].update(upstreamCommit='0'*40),
+                lambda r: r['supplementalFonts'][1].update(registeredPostScriptName='Unknown'),
+                lambda r: r['supplementalFonts'][0]['glyphCoverage']['glyphs'][1].update(covered=False),
+                lambda r: r['supplementalFonts'][1]['glyphCoverage'].update(text='x'),
+                lambda r: r['supplementalGlyphCoverage']['fullwidthZoom']['glyphs'][0].update(covered=False),
+                lambda r: r.update(supplementalGlyphCoverage={}),
+            )):
+                receipt = deepcopy(self.font_receipt)
+                mutate(receipt)
+                with self.subTest(case=index), self.assertRaises(ReleaseError):
+                    validate_font_prerequisite(receipt)
+
+        def test_ci_glyph_checks_require_actual_visible_face_usage_for_every_control(self):
+            from copy import deepcopy
+            digest = file_hash(self.browser / 'ci-fonts.json')
+            for index, (name, (_, _, _, interactive)) in enumerate(FONT_RENDERING_CHECKS.items()):
+                changes = [lambda c: c.update(ok=False), lambda c: c.update(selector='body'),
+                    lambda c: c.update(nodeIndex=True), lambda c: c.update(text='missing'),
+                    lambda c: c.update(expectedText='missing'), lambda c: c.update(visible=False),
+                    lambda c: c.update(inViewport=False), lambda c: c.update(matchedGlyphCount=True),
+                    lambda c: c['rect'].update(width=0), lambda c: c['rect'].update(x=float('nan')),
+                    lambda c: c['rect'].update(y=1000), lambda c: c.update(fonts=[]),
+                    lambda c: c['fonts'][0].update(familyName='Missing glyph fallback'),
+                    lambda c: c['fonts'][0].update(postScriptName='Unknown'),
+                    lambda c: c['fonts'][0].update(isCustomFont=True),
+                    lambda c: c['fonts'][0].update(glyphCount=True),
+                    lambda c: c['fonts'][0].update(glyphCount=-1),
+                    lambda c: c['fonts'][0].update(glyphCount=0),
+                    lambda c: c['fonts'].append({'familyName': 'Fallback', 'glyphCount': 1})]
+                if interactive:
+                    changes.append(lambda c: c.update(receivesPointer=False))
+                for case, mutate in enumerate(changes):
+                    report = deepcopy(self.font_rendering)
+                    mutate(report['checks'][index])
+                    with self.subTest(name=name, case=case), self.assertRaises(ReleaseError):
+                        validate_ci_font_rendering(report, self.commit, self.font_receipt, digest)
+            # A decorative rune need not be a pointer target; unused font faces
+            # reported by Chromium are harmless only when their glyph count is 0.
+            report = deepcopy(self.font_rendering)
+            for check in report['checks']:
+                check['fonts'].append({'familyName': 'Unused fallback', 'glyphCount': 0})
+                if not FONT_RENDERING_CHECKS[check['name']][3]:
+                    check['receivesPointer'] = False
+            validate_ci_font_rendering(report, self.commit, self.font_receipt, digest)
+
+        def test_ci_glyph_game_requires_actual_practice_canvas_and_zoom_restoration(self):
+            from copy import deepcopy
+            digest = file_hash(self.browser / 'ci-fonts.json')
+            for key, value in (('profileId', 'live'), ('connected', True), ('mode', 'title'),
+                               ('actualCanvasDrawn', False), ('enteredThroughUi', False)):
+                report = deepcopy(self.font_rendering)
+                report['game'][key] = value
+                with self.subTest(game=key), self.assertRaises(ReleaseError):
+                    validate_ci_font_rendering(report, self.commit, self.font_receipt, digest)
+            for key, value in (('original', True), ('original', 0), ('increased', float('inf')),
+                               ('increased', 48), ('restored', 54), ('restored', float('nan'))):
+                report = deepcopy(self.font_rendering)
+                report['zoomInteraction'][key] = value
+                with self.subTest(zoom=key, value=value), self.assertRaises(ReleaseError):
+                    validate_ci_font_rendering(report, self.commit, self.font_receipt, digest)
+
+        def test_raw_font_receipt_remains_credential_checked_before_publication(self):
+            self.font_receipt['token'] = 'must-never-be-published'
+            self.write_json(self.browser / 'ci-fonts.json', self.font_receipt)
+            with self.assertRaisesRegex(ReleaseError, 'Credential field'):
+                prepare(self.artifacts, self.output, self.commit, self.run)
             self.assertFalse(self.output.exists())
 
         def test_archive_gate_rejects_wrong_binary_helper_source_and_missing_case(self):

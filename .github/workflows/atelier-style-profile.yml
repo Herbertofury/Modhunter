@@ -42,6 +42,7 @@ jobs:
         run: |
           python3 -m venv /tmp/modhunter-style
           /tmp/modhunter-style/bin/pip install -q playwright==1.57.0
+          /tmp/modhunter-style/bin/python tests/prepare_ci_fonts.py --output native/target/motion-profile/ci-fonts.json
           MODHUNTER_PROFILE_BROWSER=$(/tmp/modhunter-style/bin/python -c "import shutil; print(shutil.which('chromium') or shutil.which('chromium-browser') or '')")
           if [[ -z "$MODHUNTER_PROFILE_BROWSER" ]]; then
             echo "::error::The preinstalled Chromium engine used by the prior diagnostics is unavailable."

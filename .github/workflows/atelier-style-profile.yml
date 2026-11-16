@@ -14,9 +14,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  scaling:
+  motion-comparison:
     runs-on: ubuntu-24.04
     timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: reduced
+            motion: reduce
+            variants: 'control,zero-reduced-transitions'
+          - name: normal
+            motion: no-preference
+            variants: 'control,no-row-transitions'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -24,7 +34,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Measure complete fixtures at explicit diagnostic sizes
+      - name: Compare complete-library interactions under the actual motion preference
+        env:
+          PROFILE_VARIANTS: ${{ matrix.variants }}
+          PROFILE_MOTION: ${{ matrix.motion }}
+          PROFILE_NAME: ${{ matrix.name }}
         run: |
           python3 -m venv /tmp/modhunter-style
           /tmp/modhunter-style/bin/pip install -q playwright==1.57.0
@@ -33,14 +47,12 @@ jobs:
             echo "::error::The preinstalled Chromium engine used by the prior diagnostics is unavailable."
             exit 1
           fi
-          for MODHUNTER_PROFILE_COUNT in 250 1000 4000 11207; do
-            PYTHONPATH=. /tmp/modhunter-style/bin/python tests/visual_style_profile.py --executable-path "$MODHUNTER_PROFILE_BROWSER" --output "native/target/style-scaling/records-$MODHUNTER_PROFILE_COUNT" --mods "$MODHUNTER_PROFILE_COUNT" --scaling-diagnostic --variants control --trace-variants '' --actions gallery,density,list
-          done
-      - name: Preserve every complete-fixture timing receipt
+          PYTHONPATH=. /tmp/modhunter-style/bin/python tests/visual_style_profile.py --executable-path "$MODHUNTER_PROFILE_BROWSER" --output "native/target/motion-profile/$PROFILE_NAME" --mods 11207 --motion "$PROFILE_MOTION" --variants "$PROFILE_VARIANTS" --trace-variants '' --actions gallery,density,list
+      - name: Preserve both complete-library timing and geometry receipts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Modhunter-Complete-Library-Scaling
-          path: native/target/style-scaling/
+          name: Modhunter-Library-Motion-${{ matrix.name }}
+          path: native/target/motion-profile/
           if-no-files-found: error
           retention-days: 30

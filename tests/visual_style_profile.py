@@ -139,6 +139,43 @@ VARIANTS = {
       document.head.append(style);
       return {changedRules:1,description:'Give every complete library row a local stacking context; retain all records, geometry, overflow and controls'};
     }""",
+    "zero-reduced-transitions": r"""() => {
+      const changed=[];
+      const universal=selector=>{
+        const parts=selector.replace(/\s+/g,'').replace(/::/g,':').split(',').map(part=>part.replace(/^\*(?=:)/,''));
+        return parts.length===3&&new Set(parts).size===3&&['*',':before',':after'].every(part=>parts.includes(part));
+      };
+      const walk=(sheet,media=[])=>{for(const rule of sheet.cssRules){
+        const conditions=rule.media?[...media,rule.media.mediaText]:media;
+        if(rule.selectorText&&universal(rule.selectorText)&&conditions.some(condition=>/prefers-reduced-motion\s*:\s*reduce/.test(condition))){
+          const before={cssText:rule.style.cssText,property:rule.style.getPropertyValue('transition-property'),
+            duration:rule.style.getPropertyValue('transition-duration'),delay:rule.style.getPropertyValue('transition-delay'),
+            animationDuration:rule.style.getPropertyValue('animation-duration'),scrollBehavior:rule.style.getPropertyValue('scroll-behavior')};
+          if(!(Number.parseFloat(before.duration)>0))throw Error('Expected positive legacy universal transition duration');
+          rule.style.setProperty('transition','none','important');
+          const after={cssText:rule.style.cssText,property:rule.style.getPropertyValue('transition-property'),
+            duration:rule.style.getPropertyValue('transition-duration'),delay:rule.style.getPropertyValue('transition-delay'),
+            animationDuration:rule.style.getPropertyValue('animation-duration'),scrollBehavior:rule.style.getPropertyValue('scroll-behavior')};
+          if(after.property!=='none'||after.duration!=='0s'||after.delay!=='0s'||before.animationDuration!==after.animationDuration||before.scrollBehavior!==after.scrollBehavior)
+            throw Error('Reduced-motion experiment changed more than CSS transitions');
+          changed.push({selector:rule.selectorText,media:conditions,before,after});
+        }
+        if(rule.cssRules)walk(rule,conditions);
+      }};
+      for(const sheet of document.styleSheets)walk(sheet);
+      if(changed.length!==1)throw Error('Expected exactly one global reduced-motion rule, got '+changed.length);
+      return {changedRules:changed.length,changed,
+        description:'Disable transitions in the exact existing universal reduced-motion rule; preserve keyframe animation duration, all record data and final styles'};
+    }""",
+    "no-row-transitions": """() => {
+      const style=document.createElement('style');style.dataset.diagnosticVariant='no-row-transitions';
+      const nonce=document.querySelector('style[nonce]')?.nonce;if(nonce)style.nonce=nonce;
+      style.textContent='body[data-layout="compact"] #modList > .mod-row{transition:none!important}';
+      document.head.append(style);
+      return {changedRules:1,selector:'body[data-layout="compact"] #modList > .mod-row',declaration:'transition:none!important',
+        nonPromotable:true,motionDifference:'The diagnostic also removes the normal hover background fade; this is not a production fix',
+        description:'Isolate the cost of existing complete-row background transitions without changing descendants or record layout'};
+    }""",
     "no-universal-scrollbar": r"""() => {
       let changedRules=0;const selectors=[];
       const walk=sheet=>{for(let index=sheet.cssRules.length-1;index>=0;index--){
@@ -203,6 +240,7 @@ VARIANTS["stable-isolated"] = """() => {
 }""" % (VARIANTS["stable-descendant-display"], VARIANTS["isolated-cards"])
 
 LIFECYCLE_VARIANTS = {"stable-descendant-display","isolated-cards","stable-isolated"}
+MOTION_VARIANTS = {"zero-reduced-transitions","no-row-transitions"}
 
 
 def write_json(path, value):
@@ -298,7 +336,8 @@ def computed_samples(page):
         'border-top-width','border-top-color','border-bottom-width','border-bottom-color',
         'font-family','font-size','line-height','padding-top','padding-right','padding-bottom','padding-left',
         'grid-template-columns','grid-template-rows','flex-basis','flex-grow','flex-shrink','flex-wrap','flex-direction',
-        'align-items','align-content','gap','white-space','overflow','isolation'];
+        'align-items','align-content','gap','white-space','overflow','isolation',
+        'transition-property','transition-duration','transition-delay'];
       const selectors=['#workbench','.library-grouping','#modList','#modList .mod-row',
         '#modList .mod-primary','#modList .mod-title','#modList .mod-art',
         '#modList .mod-version','#modList .inspect-col','#modList .file-download-btn'];
@@ -522,6 +561,23 @@ def pseudo_label_state(page, expected_count=11207):
     return state
 
 
+def record_markup_fingerprint(page,expected_count):
+    """Compare all record markup/metadata without expensive pseudo-style reads."""
+    records=page.evaluate("() => [...document.querySelectorAll('#modList > .mod-row')].map(row=>row.outerHTML)")
+    assert len(records)==expected_count,"Record metadata fingerprint omitted rows"
+    encoded=json.dumps(records,separators=(",",":"),ensure_ascii=False).encode()
+    return {"rows":len(records),"sha256":hashlib.sha256(encoded).hexdigest(),"bytes":len(encoded),
+        "scope":"Complete outerHTML of every record in order: text, source identities, controls, accessible labels and all attributes; no sampling"}
+
+
+def allowed_motion_style(variant,selector,property,before,after):
+    if variant=="zero-reduced-transitions":
+        return (property=="transition-property" and after=="none") or (property in ("transition-duration","transition-delay") and after=="0s")
+    if variant=="no-row-transitions" and selector=="#modList .mod-row":
+        return (property=="transition-property" and after=="none") or (property in ("transition-duration","transition-delay") and after=="0s")
+    return False
+
+
 def visible_record_hit_tests(page, selector):
     result=page.locator(selector).evaluate("""row=>{
       const names=['.mod-art','.mod-priority','.mod-title','.file-download-btn','.favorite-btn','.inspect-btn'];
@@ -540,7 +596,7 @@ def visible_record_hit_tests(page, selector):
     return result
 
 
-def capture_lifecycle_frames(browser, html, variant, fixture, output):
+def capture_lifecycle_frames(browser, html, variant, fixture, output, motion="reduce"):
     """Inspect real interactions separately from the complete-library clocks.
 
     Frozen public project icons retain their actual project identity. The second
@@ -549,12 +605,15 @@ def capture_lifecycle_frames(browser, html, variant, fixture, output):
     """
     destination=output/"frames"/variant
     destination.mkdir(parents=True,exist_ok=True)
-    result={"ok":False,"screenshots":[],"hitTests":[],"scope":"Actual compiled application with deterministic API fixtures; separate from timed 11,207-record trials"}
-    context=browser.new_context(viewport={"width":1440,"height":1000},reduced_motion="reduce")
+    result={"ok":False,"screenshots":[],"hitTests":[],"motionPreference":motion,"scope":"Actual compiled application with deterministic API fixtures; separate from timed 11,207-record trials"}
+    context=browser.new_context(viewport={"width":1440,"height":1000},reduced_motion=motion)
     page=context.new_page();errors=[]
     page.on("pageerror",lambda error:errors.append(str(error)))
     def capture(name):
         acceptance.settle(page)
+        # Preserve normal-motion timing in the benchmark. Only final-state
+        # review frames wait for actual finite library transitions to finish.
+        page.wait_for_function("() => !document.getAnimations().some(animation=>animation.constructor.name==='CSSTransition'&&animation.effect?.target?.closest?.('#modList')&&animation.playState==='running')")
         raw=page.screenshot(path=str(destination/name))
         result["screenshots"].append({"file":str((destination/name).relative_to(output)),"sha256":hashlib.sha256(raw).hexdigest(),"bytes":len(raw)})
     try:
@@ -610,7 +669,7 @@ def capture_lifecycle_frames(browser, html, variant, fixture, output):
             screenshotNote=source["description"],audit={},source={"type":"modrinth","verified":True,"url":source["projectUrl"]},
             update={"verdict":"candidate" if index%3==0 else "current","latestVersion":"QA 2.0" if index%3==0 else "QA 1.0",
                 "source":"visual-acceptance-fixture","thumbnailUrl":source["thumbnailUrl"],"thumbnailKind":"icon"})
-    context=browser.new_context(viewport={"width":1440,"height":1000},reduced_motion="reduce")
+    context=browser.new_context(viewport={"width":1440,"height":1000},reduced_motion=motion)
     page=context.new_page();page.on("pageerror",lambda error:errors.append(str(error)))
     assets={source["thumbnailUrl"]:source for source in sources}
     def route(request):
@@ -843,8 +902,8 @@ def full_page_transport_preflight(session, page, destination, result, trace_mode
     result["ok"] = True
 
 
-def run_arm(browser, html, fixture, variant, actions, output, instrumented, checkpoint, trace_mode="selectors", deep_reference_directory=None):
-    context = browser.new_context(viewport={"width": 1440, "height": 900}, reduced_motion="reduce")
+def run_arm(browser, html, fixture, variant, actions, output, instrumented, checkpoint, trace_mode="selectors", deep_reference_directory=None, motion="reduce", compare_markup=False):
+    context = browser.new_context(viewport={"width": 1440, "height": 900}, reduced_motion=motion)
     page = context.new_page()
     # Profiling deliberately slows rule matching; this is a diagnostic deadline,
     # not an acceptance target or a relaxation of the ordinary browser suite.
@@ -856,11 +915,14 @@ def run_arm(browser, html, fixture, variant, actions, output, instrumented, chec
     tracing = metrics if instrumented else None
     arm = {"variant": variant, "instrumented": instrumented, "ok": False, "actions": [],
            "browserVersion":browser.version,"freshBrowserForTrace":instrumented,
-           "traceMode":trace_mode if instrumented else "none"}
+           "traceMode":trace_mode if instrumented else "none","motionPreference":motion,
+           "deepGeometryEnabled":deep_reference_directory is not None,"completeMarkupComparisonEnabled":compare_markup}
     checkpoint(arm)
     try:
         page.set_content(html, wait_until="load")
         page.wait_for_function("!!window.__ARSENAL_QA__")
+        arm["reducedMotionMediaMatches"]=page.evaluate("matchMedia('(prefers-reduced-motion:reduce)').matches")
+        assert arm["reducedMotionMediaMatches"]==(motion=="reduce"),"Browser motion emulation does not match the requested mode"
         arm["cssExperiment"] = page.evaluate(VARIANTS[variant])
         arm["cacheHistogram"] = {"beforeImport":cache_histogram_snapshot(metrics)}
         page.evaluate("fixture=>window.modhunterImportCatalog(fixture)", fixture)
@@ -872,6 +934,8 @@ def run_arm(browser, html, fixture, variant, actions, output, instrumented, chec
         arm["cacheHistogram"]["importDelta"] = cache_histogram_delta(arm["cacheHistogram"]["beforeImport"],arm["cacheHistogram"]["afterImport"])
         arm["initial"] = complete_geometry(page, len(fixture["items"]))
         arm["initialComputedStyles"] = computed_samples(page)
+        if compare_markup:
+            arm["initialRecordMarkup"]=record_markup_fingerprint(page,len(fixture["items"]))
         if deep_reference_directory is not None:
             arm["initialDeepGeometry"] = record_deep_geometry(page,metrics,variant,"initial",deep_reference_directory)
         checkpoint(arm)
@@ -939,6 +1003,8 @@ def run_arm(browser, html, fixture, variant, actions, output, instrumented, chec
             result["computedStyles"] = computed_samples(page)
             if result["completeLibrary"]["view"] == "gallery":
                 result["pseudoLabels"] = pseudo_label_state(page,len(fixture["items"]))
+            if compare_markup:
+                result["recordMarkup"]=record_markup_fingerprint(page,len(fixture["items"]))
             if deep_reference_directory is not None:
                 result["deepGeometry"] = record_deep_geometry(page,metrics,variant,action,deep_reference_directory)
             assert not errors, errors
@@ -968,6 +1034,10 @@ def main():
     parser.add_argument("--variants", default="control")
     parser.add_argument("--trace-variants", default="control")
     parser.add_argument("--actions", default="gallery,density,list")
+    parser.add_argument("--motion",choices=("reduce","no-preference"),default="reduce",
+                        help="Explicit browser motion preference; default retains the existing reduced-motion diagnostic")
+    parser.add_argument("--representative-frames",action="store_true",
+                        help="Capture actual final-state review frames and hit targets separately from full-library clocks; does not enable deep DOMSnapshot checks")
     parser.add_argument("--trace-mode", choices=tuple(TRACE_MODES), default="selectors",
                         help="Timeline intentionally omits selector/per-node debug instrumentation; selectors retains the original strict statistics gate")
     parser.add_argument("--executable-path", type=Path, help="Explicit Chromium binary; otherwise retain the acceptance harness's system-first selection")
@@ -983,7 +1053,13 @@ def main():
         parser.error(f"Variants must include control and be one of {', '.join(VARIANTS)}")
     if any(action not in ACTIONS for action in actions) or actions[0] != "gallery":
         parser.error("Actions must start with gallery and use gallery,density,list")
+    if "zero-reduced-transitions" in variants+trace_variants and args.motion!="reduce":
+        parser.error("zero-reduced-transitions requires --motion reduce")
+    if "no-row-transitions" in variants+trace_variants and args.motion!="no-preference":
+        parser.error("no-row-transitions requires --motion no-preference")
     lifecycle_comparison=bool(set(variants)&LIFECYCLE_VARIANTS)
+    motion_comparison=bool(set(variants)&MOTION_VARIANTS)
+    capture_frames=lifecycle_comparison or args.representative_frames
     if lifecycle_comparison and variants[0]!="control":
         parser.error("Complete descendant comparisons require the unchanged control arm first")
     args.output.mkdir(parents=True, exist_ok=True)
@@ -991,13 +1067,15 @@ def main():
     fixture["offline"] = True
     html, assets = acceptance.compile_dashboard()
     representative_fixture=None
-    if lifecycle_comparison:
+    if capture_frames:
         representative_fixture=acceptance.screenshot_catalog()
         long_item=next(item for item in representative_fixture["items"] if item.get("nexusId") and item.get("update",{}).get("verdict")=="candidate")
         long_item["name"]+=" — Representative long filename fixture — optional compatibility patch for multiple installed versions and localized archives"
         representative_fixture["profileName"]="Real source catalog · one synthetic long-name QA fixture"
     proof = {"ok": False, "purpose": "Focused CSS diagnosis only; does not replace full release acceptance",
         "scopeAcceptance":False,"scalingDiagnostic":args.scaling_diagnostic,
+        "motionPreference":args.motion,"representativeFramesRequested":capture_frames,
+        "completeRecordMarkupComparison":motion_comparison,
         "candidateCommit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
         "sourceStatusAtStart": source_status(), "platform": platform.platform(), "assets": assets,
         "mods": args.mods, "fixtureSha256": hashlib.sha256(json.dumps(fixture, sort_keys=True).encode()).hexdigest(),
@@ -1042,10 +1120,10 @@ def main():
                             proof[field][existing] = arm
                         write_json(receipt, proof)
                     arm=run_arm(browser, html, fixture, variant, actions, args.output, instrumented, checkpoint,args.trace_mode,
-                        Path(references) if lifecycle_comparison and not instrumented else None)
-                    if lifecycle_comparison and not instrumented:
+                        Path(references) if lifecycle_comparison and not instrumented else None,args.motion,motion_comparison and not instrumented)
+                    if capture_frames and not instrumented:
                         try:
-                            arm["visualChecks"]=capture_lifecycle_frames(browser,html,variant,representative_fixture,args.output)
+                            arm["visualChecks"]=capture_lifecycle_frames(browser,html,variant,representative_fixture,args.output,args.motion)
                         except Exception as error:
                             arm["visualChecks"]={"ok":False,"error":f"{type(error).__name__}: {error}"}
                             arm["ok"]=False
@@ -1055,6 +1133,8 @@ def main():
             reference_states.update({row["action"]: row.get("computedStyles", {}) for row in control["actions"]})
             reference_geometry = {"initial":control.get("initial", {})}
             reference_geometry.update({row["action"]:row.get("completeLibrary", {}) for row in control["actions"]})
+            reference_markup={"initial":control.get("initialRecordMarkup",{})}
+            reference_markup.update({row["action"]:row.get("recordMarkup",{}) for row in control["actions"]})
             for arm in proof["ordinaryTrials"]:
                 states = {"initial": arm.get("initialComputedStyles", {})}
                 states.update({row["action"]: row.get("computedStyles", {}) for row in arm["actions"]})
@@ -1070,7 +1150,7 @@ def main():
                 arm["geometryComparisonsFromControl"] = {
                     state:compare_geometry(reference_geometry.get(state, {}), sample)
                     for state,sample in geometry.items()}
-                if arm["variant"] in ({"persistent-flex", "persistent-flex-cssom"}|LIFECYCLE_VARIANTS) and any(
+                if arm["variant"] in ({"persistent-flex", "persistent-flex-cssom"}|LIFECYCLE_VARIANTS|MOTION_VARIANTS) and any(
                     comparison["differenceCount"] for comparison in arm["geometryComparisonsFromControl"].values()
                 ):
                     arm["ok"] = False
@@ -1083,6 +1163,19 @@ def main():
                     if any(not difference["allowed"] for difference in arm["computedStyleDifferencesFromControl"]):
                         arm["ok"]=False
                         arm["computedStyleError"]="A computed property changed outside the explicitly approved experiment"
+                if motion_comparison:
+                    markup={"initial":arm.get("initialRecordMarkup",{})}
+                    markup.update({row["action"]:row.get("recordMarkup",{}) for row in arm["actions"]})
+                    arm["recordMarkupComparisons"]={state:{"rows":sample.get("rows"),
+                        "identical":bool(sample.get("sha256")) and sample==reference_markup.get(state)} for state,sample in markup.items()}
+                    if not all(comparison["identical"] for comparison in arm["recordMarkupComparisons"].values()):
+                        arm["ok"]=False
+                        arm["recordMarkupError"]="Complete record text, metadata, controls or attributes changed"
+                    for difference in arm["computedStyleDifferencesFromControl"]:
+                        difference["allowed"]=allowed_motion_style(arm["variant"],difference["selector"],difference["property"],difference["control"],difference["variant"])
+                    if any(not difference["allowed"] for difference in arm["computedStyleDifferencesFromControl"]):
+                        arm["ok"]=False
+                        arm["computedStyleError"]="A final computed property changed beyond the explicitly audited transition policy"
             proof["sourceStatusAtEnd"] = source_status()
             proof["ok"] = not proof["sourceStatusAtEnd"] and all(arm["ok"] for field in ("ordinaryTrials", "selectorTraces") for arm in proof[field])
         finally:

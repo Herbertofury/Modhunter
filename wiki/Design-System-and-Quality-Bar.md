@@ -95,6 +95,8 @@ No cropped/mod-count-limited lists, no viewport virtualization, no hidden result
 
 Use cached markup, existing keyed DOM updates, bounded background work and measured allocation reductions. Changing a presentation preference must not repeat expensive source work. Lazily loading an image does not remove its mod record from the library.
 
+Rows removed by an explicit filter or collapsed chapter may be retained without a parent for later reuse. Only unchanged inactive rows qualify. Catalog, profile, locale, metadata and image-failure checks prevent stale state from returning; selected controls and active effects keep their existing lifecycle. Every matching row remains in the rendered document. This cache has no offscreen container and no arbitrary record limit.
+
 Compact rows omit only duplicate legacy cells that compact CSS already hid. Checklist state, J/K and Space, inspector completion, Undo and the explicit noncompact host fallback remain functional. Full galleries use flex wrapping with one container-width calculation; card contents keep their own grid. Resize observations are coalesced, and view/density changes do not reconfigure unrelated effects. These implementation choices require measured full-catalog proof rather than inferred performance claims.
 
 ## 06 / 0.12 implementation and evidence

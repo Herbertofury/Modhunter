@@ -3,7 +3,7 @@
 # ⚔️ MODHUNTER
 ### THE UNFINISHED WORLD
 
-**Repair your load order · Hunt unfinished mods · Build a legend**
+**Browse your mods · Review every update · Keep your world intact**
 
 ![Version](https://img.shields.io/badge/Rust-v0.12-cfa76d?style=for-the-badge&labelColor=17272c)
 ![Play](https://img.shields.io/badge/Play-Offline-70d6b0?style=for-the-badge&labelColor=17272c)
@@ -13,17 +13,17 @@
 
 ![Modhunter hero](https://raw.githubusercontent.com/Herbertofury/Modhunter/main/screenshots/modhunter-menu.png)
 
-> **Welcome, Hunter.** Your unfinished mod list is more than a maintenance backlog. It becomes your bestiary, quests and battles.
+> **Welcome to the Mod Vault.** Browse your complete collection, review exact sources and files, and keep verified backups when installing updates. Your unfinished world still holds quests, battles and rewards when you want to explore it.
 
-| Enter the world | Standalone requirement | Optional link |
+| Choose an entry point | Requirement | Optional connection |
 | :-- | :-- | :-- |
-| **[Portable HTML](https://github.com/Herbertofury/Modhunter/blob/main/web/Modhunter.html)** | A modern browser | MO2 localhost |
-| **[Rust Desktop](Rust-Desktop.md)** | Windows and WebView2; compiled EXE/installer | MO2 localhost + Find MO2 |
+| **[Rust Desktop](Rust-Desktop.md)** | Windows and WebView2; installer or portable app | Find MO2 for live updating |
 | **[MO2 Plugin](MO2-Plugin.md)** | Mod Organizer 2 | Desktop or browser |
+| **[Standalone HTML](Standalone-HTML.md)** | A modern browser | MO2 local bridge |
 
 **[MO2 2.5.3b12 / Skyrim SE testing](MO2-253-Testing.md)** | **[GameSync update-checking technique map](GameSync-Update-Techniques.md)**
 
-## ✦ One product · One Command Center
+## Library and updates
 
 **[Download the Rust Windows app](https://github.com/Herbertofury/Modhunter/releases)** · **[Rust installation and test evidence](Rust-Desktop)** · **[Atelier 0.12 visual update](Atelier-0.12)**
 
@@ -58,6 +58,6 @@ Keep the real MO2 load order updated first. The combined interface includes the 
 
 ## A single world, three independent gateways
 
-The HTML is an entirely portable play surface. The desktop app is a dedicated multi-tab Chromium shell. The MO2 plugin alone owns live profile inspection and verified update rewards. Optional loopback communication allows them to share the same active game/profile identity without requiring any of the other installations.
+The standalone HTML carries the complete dashboard and games in a portable browser file. The desktop app uses Rust for its window and native operations, with WebView2 displaying the shared interface. The MO2 plugin owns live profile inspection and verified update rewards. Optional loopback communication allows them to share the same active game/profile identity without requiring any of the other installations.
 
 **Release preservation:** all 36 original v0.1–v0.8 deliverables, including the authentic GIFs and historical source/plugin ZIPs, are recovered and SHA-256 audited. The [Rust release workflow](https://github.com/Herbertofury/Modhunter/actions/workflows/native-rust.yml) adds actual Windows application and MO2 fixture gates; its run receipts distinguish them from account-specific Nexus and FOMOD acceptance.

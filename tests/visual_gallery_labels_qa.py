@@ -191,10 +191,10 @@ LABEL_STATE_JS = """() => {""" + CSS_STRING_DECODER + r"""
     laidOut:rect.width>0&&rect.height>0,contain:getComputedStyle(row).contain,contentVisibility:getComputedStyle(row).contentVisibility};
  });
  let providerFallback=false,chapterFallback=false;
- const walk=rules=>{for(const rule of rules){if(rule.cssRules)walk(rule.cssRules);else if(rule.style){
+ const walk=rules=>{for(const rule of rules){if(rule.style){
    const content=rule.style.content.replace(/\s+/g,'');
    if(content==='attr(data-provider-label)')providerFallback=true;
-   if(content==='attr(data-chapter-label)')chapterFallback=true;}}};walk(sheet.cssRules);
+   if(content==='attr(data-chapter-label)')chapterFallback=true;}if(rule.cssRules)walk(rule.cssRules);}};walk(sheet.cssRules);
  return {rows,entries,groupCount:groups.length,groupConditions:groups.map(group=>group.conditionText),
    nonce:style.nonce,originalSheet:style===window.__LABEL_ORIGINAL_STYLE__,styleNodes:document.querySelectorAll('style').length,
    providerFallback,chapterFallback,groupSameAsRemembered:groups[0]===window.__LABEL_REMEMBERED_GROUP__,
@@ -235,7 +235,7 @@ def label_snapshot(page, variant: str, name: str, expected_count: int, raw_provi
     assert result['view']=='gallery' and result['grouping']=='all'
     assert len(result['rows'])==expected_count and len({row['id'] for row in result['rows']})==expected_count
     assert result['originalSheet'] and result['nonce']=='bW9kaHVudGVyLWxhYmVsLXFh'
-    assert result['providerFallback'] and result['chapterFallback'], 'Original attr() fallback was removed'
+    assert result['providerFallback'] and result['chapterFallback'], ('Original attr() fallback was removed', result)
     for row in result['rows']:
         assert row['laidOut'] and row['contain']=='none' and row['contentVisibility']=='visible', row
         assert row['resolvedProvider']==row['provider'] and row['resolvedChapter']==row['chapter'], row

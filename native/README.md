@@ -24,7 +24,7 @@ The release gate binds Windows WebView2, archive-helper, Chromium interaction an
 
 ## MO2 2.5.3b12 / Skyrim SE setup
 
-Run **Check_MO2_Readiness.bat** before installing and read **START-HERE-MO2-253.md** in the portable folder. The checker is read-only with respect to MO2/game data and can save a credential-free report. This release adds a self-tested Qt 6.11 runtime path, validated version-label strategies and persisted service-outage cooldowns. It retains the actual MO2 2.5.2 acceptance suite and adds separate compiled Qt 6.11.1/PyQt 6.11.0 tests; exact beta-12 application and personal account acceptance are not implied. Do not replace MO2's runtime DLLs.
+Run **Check_MO2_Readiness.bat** before installing and read **START-HERE-MO2-253.md** in the portable folder. The checker is read-only with respect to MO2/game data and can save a credential-free report. Current readiness support includes a self-tested Qt 6.11 runtime path, validated version-label strategies and persisted service-outage cooldowns. The actual MO2 2.5.2 acceptance suite and separate compiled Qt 6.11.1/PyQt 6.11.0 tests remain required; exact beta-12 application and personal account acceptance are not implied. Do not replace MO2's runtime DLLs.
 
 See the repository [setup guide](../wiki/MO2-253-Testing.md) and [GameSync technique map](../wiki/GameSync-Update-Techniques.md).
 

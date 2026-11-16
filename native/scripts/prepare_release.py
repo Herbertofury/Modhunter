@@ -17,6 +17,7 @@ import ast
 import hashlib
 import importlib.util
 import json
+import math
 import re
 import shutil
 import stat
@@ -24,7 +25,7 @@ import struct
 import tempfile
 import tomllib
 import zlib
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from urllib.parse import urlsplit
 from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile, ZipInfo
 
@@ -195,6 +196,27 @@ INSTALLER_CHECKS = {
     "nsis_removes_current_user_registration",
     "installer_artifacts_stayed_unchanged",
     "candidate_source_stayed_unchanged",
+}
+NATIVE_LIBRARY_COUNT = 11207
+NATIVE_LIBRARY_FIXTURE_SHA = "afd855e4ac76f284630ffb4ed6d9dc37280113c9559aef4402516795b7fef0a0"
+NATIVE_LIBRARY_FIXTURE_BYTES = 4696493
+NATIVE_LIBRARY_ACTIONS = {
+    "listDensity": ("list", "comfy"),
+    "listDensityReset": ("list", "compact"),
+    "gallery": ("gallery", "compact"),
+    "galleryDensity": ("gallery", "comfy"),
+    "list": ("list", "comfy"),
+    "finalDensityReset": ("list", "compact"),
+}
+NATIVE_LIBRARY_CHECKS = {
+    "packaged_offline_dashboard", "owned_webview_profile", "owned_native_foreground",
+    "visible_native_document", "fresh_list_compact", "import_complete",
+    "exact_last_item_search", "search_restore_survivor", "no_renderer_errors",
+    "unchanged_executable",
+} | {name + "_complete" for name in NATIVE_LIBRARY_ACTIONS}
+NATIVE_LIBRARY_METRICS = {
+    "ScriptDuration", "LayoutDuration", "RecalcStyleDuration", "TaskDuration",
+    "LayoutCount", "RecalcStyleCount", "Nodes", "JSHeapUsedSize",
 }
 VISUAL_SCREENSHOTS = {
     f"{variant}/{name}" for variant in ("before", "after") for name in (
@@ -381,6 +403,94 @@ def validate_native_binding(report:dict,commit:str,executable_hash:str)->None:
     require(isinstance(sources,dict) and set(sources)==set(expected)
             and all(sources[name]==file_hash(ROOT/name) for name in expected),
             "Native fixture source hashes do not match this release")
+
+
+def validate_native_library(report: dict, commit: str, executable_hash: str) -> None:
+    """Require actual complete-library native proof; retain timings without inventing a speed budget."""
+    validate_native_binding(report, commit, executable_hash)
+    require(report.get("schemaVersion") == 1 and report.get("ok") is True
+            and report.get("nativeWebView2") is True and report.get("phase") == "complete"
+            and report.get("errors") == [], "Native library performance did not complete without errors")
+    require(report.get("scriptSha256") == file_hash(ROOT / "native/scripts/measure_native_library.cjs")
+            and report.get("launcherSha256") == file_hash(ROOT / "native/scripts/benchmark_native_library.ps1"),
+            "Native library performance launcher or measurement worker differs from the candidate")
+    require(type(report.get("records")) is int and report["records"] == NATIVE_LIBRARY_COUNT
+            and report.get("fixtureSha256") == NATIVE_LIBRARY_FIXTURE_SHA
+            and type(report.get("fixtureBytes")) is int and report["fixtureBytes"] == NATIVE_LIBRARY_FIXTURE_BYTES,
+            "Native library performance did not use the exact shared 11,207-record fixture")
+    checks = report.get("checks")
+    require(isinstance(checks, list) and len(checks) == len(NATIVE_LIBRARY_CHECKS)
+            and all(isinstance(row, dict) and row.get("passed") is True for row in checks)
+            and {row.get("name") for row in checks} == NATIVE_LIBRARY_CHECKS,
+            "Native library performance omitted or failed a required runtime/interaction check")
+
+    def finite(value, positive=False):
+        return type(value) in (int, float) and math.isfinite(value) and (not positive or value > 0)
+
+    engine, initial = report.get("engine"), report.get("initial")
+    require(type(report.get("nativeProcessId")) is int and report["nativeProcessId"] > 0
+            and isinstance(engine, dict)
+            and all(isinstance(engine.get(name), str) and engine[name].strip()
+                    for name in ("protocolVersion", "product", "revision", "userAgent", "jsVersion", "executable"))
+            and re.fullmatch(r"[^\s/]+/[0-9][^\s]*", engine["product"]) is not None
+            and "Windows" in engine["userAgent"]
+            and PureWindowsPath(engine["executable"]).name.lower() == "msedgewebview2.exe"
+            and PureWindowsPath(engine["executable"]).is_absolute(),
+            "Native library performance does not identify the actual Windows WebView2 engine")
+    require(isinstance(initial, dict) and initial.get("url") == "http://tauri.localhost/Modhunter.html"
+            and initial.get("visibilityState") == "visible"
+            and initial.get("view") == "list" and initial.get("density") == "compact"
+            and type(initial.get("prefersReducedMotion")) is bool
+            and type(initial.get("documentHasFocus")) is bool
+            and all(finite(initial.get(name), positive=True) for name in ("width", "height", "devicePixelRatio")),
+            "Native library performance omitted the visible packaged native viewport and initial state")
+
+    def geometry(value, view, density, label):
+        require(isinstance(value, dict) and type(value.get("rows")) is int
+                and value["rows"] == NATIVE_LIBRARY_COUNT and value.get("lastId") == "item-11206"
+                and value.get("completeOrderedIds") is True and value.get("allLaidOut") is True
+                and value.get("noContentVisibility") is True
+                and value.get("view") == view and value.get("density") == density,
+                f"Native library performance dropped, hid or reordered records at {label}")
+        viewport = value.get("viewport")
+        require(isinstance(viewport, dict)
+                and all(finite(viewport.get(name), positive=True) for name in ("width", "height", "devicePixelRatio"))
+                and all(isinstance(value.get(name), dict)
+                        and all(finite(value[name].get(side), positive=True) for side in ("width", "height"))
+                        for name in ("firstRect", "lastRect")),
+                f"Native library performance omitted actual laid-out geometry at {label}")
+
+    geometry(report.get("importGeometry"), "list", "compact", "import")
+    geometry(report.get("restoreGeometry"), "list", "compact", "search restoration")
+    timings, interactions = report.get("timingsMs"), report.get("interactions")
+    require(isinstance(timings, dict) and set(timings) == {"render", "lastItemSearch", "searchRestore"} | set(NATIVE_LIBRARY_ACTIONS)
+            and all(finite(value, positive=True) for value in timings.values()),
+            "Native library performance timings must be complete, positive and finite")
+    require(isinstance(interactions, dict) and set(interactions) == set(NATIVE_LIBRARY_ACTIONS),
+            "Native library performance omitted a List/Gallery/density interaction")
+    for name, (view, density) in NATIVE_LIBRARY_ACTIONS.items():
+        action = interactions[name]
+        require(isinstance(action, dict) and finite(action.get("wallMs"), positive=True)
+                and action["wallMs"] == timings[name], f"Native library interaction timing differs: {name}")
+        geometry(action.get("completeLibrary"), view, density, name)
+        require(all(isinstance(action.get(key), dict) and set(action[key]) == NATIVE_LIBRARY_METRICS
+                    and all(finite(value) for value in action[key].values())
+                    for key in ("metricsBefore", "metricsAfter", "metricDeltas")),
+                f"Native library performance omitted finite engine cost measurements at {name}")
+    isolation = report.get("isolation")
+    require(isinstance(isolation, dict) and isolation.get("schemaVersion") == 1
+            and isolation.get("ok") is True and isolation.get("cleanupErrors") == []
+            and type(isolation.get("policyValuesRemoved")) is int and isolation["policyValuesRemoved"] == 2
+            and finite(isolation.get("elapsedMs"), positive=True),
+            "Native library performance did not restore its owned configuration and WebView2 policies")
+    folders = isolation.get("restoredFolders")
+    require(isinstance(folders, list) and len(folders) == 2
+            and all(isinstance(row, dict) and row.get("manifestMatched") is True
+                    and type(row.get("originalExisted")) is bool and isinstance(row.get("path"), str)
+                    and PureWindowsPath(row["path"]).is_absolute()
+                    and PureWindowsPath(row["path"]).name.lower() == "com.modhunter.desktop" for row in folders)
+            and len({str(PureWindowsPath(row["path"])).lower() for row in folders}) == 2,
+            "Native library performance did not restore both complete known-folder manifests")
 
 
 def validate_archive_report(report:dict,commit:str,cli_hash:str)->None:
@@ -747,9 +857,9 @@ def component_assets(portable: Path, staged: Path) -> None:
 def release_notes(commit: str, run_url: str, repository_url: str, installer_name: str) -> str:
     return f"""# Modhunter {VERSION} — Atelier / The Mod Vault
 
-The Windows desktop, MO2 profile import/cache engine, connection checks, tab lifecycle and native dialogs now run in Rust. Microsoft Edge WebView2 renders the existing dashboard and all game modes. The shipped desktop does not require Node or Electron.
+Atelier gives your mod collection a new image-forward gallery, a precise compact list, and a consistent dark/light workspace. Source identities, installed and detected versions, exact-file review and real installation results stay close to the mod you are managing.
 
-MO2's Python/Qt plugin remains the in-process adapter for MO2's authenticated Nexus connection, native downloads, interactive FOMOD installer, focus and verified rewards. Dashboard/game presentation remains HTML/CSS/JavaScript.
+This release continues the Rust desktop introduced in earlier versions. WebView2 renders the shared dashboard and preserved game modes; MO2 retains authenticated Nexus downloads and its native installer, including FOMOD choices. The Windows app does not require Node or Electron.
 
 ## 0.12.0: image-forward mod browsing and a compact desktop
 
@@ -904,6 +1014,9 @@ def prepare(artifacts_dir: Path, output_dir: Path, commit: str, run_url: str) ->
     public["windows/installer-smoke.json"] = public_json(installer_report)
     public["windows/installed-native-smoke.json"] = public_json(installed_launch)
     public["windows/installed-desktop.png"] = png_bytes(windows / "installer-smoke/native-launch/fixture-desktop.png")
+    native_library = read_json(windows / "native-library-performance/native-library-performance.json")
+    validate_native_library(native_library, commit, native_report["executableSha256"])
+    public["windows/native-library-performance.json"] = public_json(native_library)
     visual_report = read_json(visual / "visual-release.json")
     validate_visual_report(visual_report, commit)
     public["visual/visual-release.json"] = public_json(visual_report)
@@ -991,7 +1104,7 @@ def self_test() -> None:
             self.mo2 = self.artifacts / "Modhunter-MO2-Native-Proof"
             self.browser = self.artifacts / "Modhunter-Rust-Browser-Proof"
             self.visual = self.artifacts / "Modhunter-Visual-Release-Proof" / "visual-release"
-            for path in (self.windows / "release/bundle/nsis", self.windows / "native-smoke", self.windows / "watchtower-smoke", self.windows / "qt-bridge/Release", self.windows / "qt-forward", self.windows / "live-mo2-smoke", self.windows / "installer-smoke/native-launch", self.mo2, self.browser, self.visual):
+            for path in (self.windows / "release/bundle/nsis", self.windows / "native-smoke", self.windows / "watchtower-smoke", self.windows / "qt-bridge/Release", self.windows / "qt-forward", self.windows / "live-mo2-smoke", self.windows / "installer-smoke/native-launch", self.windows / "native-library-performance", self.mo2, self.browser, self.visual):
                 path.mkdir(parents=True)
             self.native = {"ok": True, "nativeWebView2": True, "shellIpc": True, "exportDownloadVerified": True, "gameViewNativeIpcDenied": "1"}
             self.watchtower = {"ok": True, "nativeWebView2": True, "watchtowerSchema": 1,
@@ -1086,6 +1199,37 @@ def self_test() -> None:
             self.write_json(self.windows / "installer-smoke/installer-smoke.json", self.installer_proof)
             self.write_json(self.windows / "installer-smoke/native-launch/native-smoke.json", self.native)
             (self.windows / "installer-smoke/native-launch/fixture-desktop.png").write_bytes(image)
+            def library_geometry(view="list", density="compact"):
+                return {"rows": NATIVE_LIBRARY_COUNT, "completeOrderedIds": True, "lastId": "item-11206",
+                        "allLaidOut": True, "noContentVisibility": True, "view": view, "density": density,
+                        "viewport": {"width": 1440, "height": 900, "devicePixelRatio": 1},
+                        "firstRect": {"width": 900, "height": 64}, "lastRect": {"width": 900, "height": 64}}
+            self.native_library = {**binding, "sourceFiles": dict(binding["sourceFiles"]),
+                "schemaVersion": 1, "ok": True, "nativeWebView2": True, "nativeProcessId": 1234,
+                "phase": "complete", "errors": [], "scope": "Synthetic release-validator fixture; no Windows renderer execution",
+                "scriptSha256": file_hash(ROOT / "native/scripts/measure_native_library.cjs"),
+                "launcherSha256": file_hash(ROOT / "native/scripts/benchmark_native_library.ps1"),
+                "fixtureSha256": NATIVE_LIBRARY_FIXTURE_SHA, "fixtureBytes": NATIVE_LIBRARY_FIXTURE_BYTES,
+                "records": NATIVE_LIBRARY_COUNT,
+                "checks": [{"name": name, "passed": True} for name in sorted(NATIVE_LIBRARY_CHECKS)],
+                "engine": {"protocolVersion": "1.3", "product": "Chrome/150.0.0.0", "revision": "synthetic",
+                           "userAgent": "Synthetic validator fixture Windows", "jsVersion": "15.0",
+                           "executable": r"C:\Program Files\Microsoft\EdgeWebView\Application\150.0.0.0\msedgewebview2.exe"},
+                "initial": {"url": "http://tauri.localhost/Modhunter.html", "view": "list", "density": "compact",
+                            "width": 1440, "height": 900, "devicePixelRatio": 1, "visibilityState": "visible",
+                            "prefersReducedMotion": False, "documentHasFocus": True},
+                "importGeometry": library_geometry(), "restoreGeometry": library_geometry(),
+                "timingsMs": {"render": 100, "lastItemSearch": 50, "searchRestore": 100,
+                              **{name: 100 for name in NATIVE_LIBRARY_ACTIONS}},
+                "interactions": {name: {"wallMs": 100, "completeLibrary": library_geometry(*state),
+                    "metricsBefore": {key: 1 for key in NATIVE_LIBRARY_METRICS},
+                    "metricsAfter": {key: 2 for key in NATIVE_LIBRARY_METRICS},
+                    "metricDeltas": {key: 1 for key in NATIVE_LIBRARY_METRICS}} for name, state in NATIVE_LIBRARY_ACTIONS.items()},
+                "isolation": {"schemaVersion": 1, "ok": True, "cleanupErrors": [], "policyValuesRemoved": 2,
+                    "elapsedMs": 1000, "restoredFolders": [
+                        {"path": r"C:\Users\runner\AppData\Roaming\com.modhunter.desktop", "originalExisted": True, "manifestMatched": True},
+                        {"path": r"C:\Users\runner\AppData\Local\com.modhunter.desktop", "originalExisted": False, "manifestMatched": True}]}}
+            self.write_json(self.windows / "native-library-performance/native-library-performance.json", self.native_library)
             sample = {"rows": 11207, "complete": True, "allLaidOut": True, "noContentVisibility": True,
                       "renderMs": 100, "lastItemSearchMs": 50}
             self.visual_proof = {"ok": True, "candidateCommit": self.commit, "baselineCommit": VISUAL_BASELINE,
@@ -1297,7 +1441,7 @@ def self_test() -> None:
                 expected.update("browser/" + name for name in WATCHTOWER_SCREENSHOTS | NATIVE_MANAGER_SCREENSHOTS)
                 expected.add("browser/native-manager-ui.json")
                 expected.update({"windows/installer-smoke.json", "windows/installed-native-smoke.json",
-                                 "windows/installed-desktop.png", "visual/visual-release.json"})
+                                 "windows/installed-desktop.png", "windows/native-library-performance.json", "visual/visual-release.json"})
                 expected.update("windows/" + name for name in LIVE_DESKTOP_SCREENSHOTS)
                 expected.update("visual/" + name for name in VISUAL_SCREENSHOTS)
                 self.assertEqual(set(names), expected)
@@ -1344,6 +1488,86 @@ def self_test() -> None:
                 with self.assertRaises(ReleaseError):
                     prepare(self.artifacts, self.output, self.commit, self.run)
                 self.assertFalse(self.output.exists())
+
+        def test_native_library_receipt_is_mandatory_and_published_exactly(self):
+            proof = self.windows / "native-library-performance/native-library-performance.json"
+            proof.unlink()
+            with self.assertRaisesRegex(ReleaseError, "Required artifact is missing"):
+                prepare(self.artifacts, self.output, self.commit, self.run)
+            self.assertFalse(self.output.exists())
+            self.write_json(proof, self.native_library)
+            prepare(self.artifacts, self.output, self.commit, self.run)
+            with ZipFile(self.output / VERIFICATION_NAME) as archive:
+                self.assertEqual(json.loads(archive.read("windows/native-library-performance.json")), self.native_library)
+
+        def test_native_library_rejects_stale_identity_fixture_or_partial_checks(self):
+            from copy import deepcopy
+            changes = (
+                lambda r: r.update(candidateCommit="b"*40), lambda r: r.update(sourceDirty=True),
+                lambda r: r.update(executableSha256="0"*64), lambda r: r.update(nativeBindingSchema=0),
+                lambda r: r["sourceFiles"].pop(next(iter(r["sourceFiles"]))),
+                lambda r: r.update(scriptSha256="0"*64), lambda r: r.update(launcherSha256="0"*64),
+                lambda r: r.update(fixtureSha256="0"*64), lambda r: r.update(fixtureBytes=1),
+                lambda r: r.update(records=11206), lambda r: r.update(phase="gallery-starting"),
+                lambda r: r.update(errors=["native renderer failed"]), lambda r: r.update(ok=False),
+                lambda r: r["checks"].pop(), lambda r: r["checks"][0].update(passed=False),
+                lambda r: r["checks"].__setitem__(0, dict(r["checks"][1])),
+            )
+            for change in changes:
+                report = deepcopy(self.native_library); change(report)
+                self.write_json(self.windows / "native-library-performance/native-library-performance.json", report)
+                with self.assertRaises(ReleaseError):
+                    prepare(self.artifacts, self.output, self.commit, self.run)
+                self.assertFalse(self.output.exists())
+
+        def test_native_library_rejects_hidden_missing_or_wrong_view_records_at_every_phase(self):
+            from copy import deepcopy
+            for phase in ("importGeometry", "restoreGeometry", *NATIVE_LIBRARY_ACTIONS):
+                for key, invalid in (("rows", 11206), ("completeOrderedIds", False), ("allLaidOut", False),
+                                     ("noContentVisibility", False), ("lastId", "item-9999"),
+                                     ("view", "other"), ("density", "other")):
+                    with self.subTest(phase=phase, field=key):
+                        report = deepcopy(self.native_library)
+                        geometry = report[phase] if phase.endswith("Geometry") else report["interactions"][phase]["completeLibrary"]
+                        geometry[key] = invalid
+                        with self.assertRaises(ReleaseError):
+                            validate_native_library(report, self.commit, self.cli_hash)
+
+        def test_native_library_requires_finite_timings_without_invented_speed_budget(self):
+            from copy import deepcopy
+            for name in self.native_library["timingsMs"]:
+                for invalid in (0, -1, True, float("nan"), float("inf"), float("-inf")):
+                    report = deepcopy(self.native_library); report["timingsMs"][name] = invalid
+                    with self.subTest(metric=name, value=invalid), self.assertRaises(ReleaseError):
+                        validate_native_library(report, self.commit, self.cli_hash)
+            report = deepcopy(self.native_library)
+            report["interactions"]["gallery"]["metricDeltas"]["LayoutDuration"] = float("nan")
+            with self.assertRaises(ReleaseError):
+                validate_native_library(report, self.commit, self.cli_hash)
+            report = deepcopy(self.native_library)
+            report["timingsMs"]["gallery"] = report["interactions"]["gallery"]["wallMs"] = 1_000_000
+            validate_native_library(report, self.commit, self.cli_hash)
+
+        def test_native_library_rejects_synthetic_runtime_or_failed_state_restoration(self):
+            from copy import deepcopy
+            changes = (
+                lambda r: r.update(nativeWebView2=False), lambda r: r.update(nativeProcessId=0),
+                lambda r: r["engine"].update(executable=r"C:\Chromium\chrome.exe"),
+                lambda r: r["engine"].update(product=""),
+                lambda r: r["initial"].update(url="http://127.0.0.1/"),
+                lambda r: r["initial"].update(visibilityState="hidden"),
+                lambda r: r["initial"].update(width=float("nan")),
+                lambda r: r["isolation"].update(ok=False),
+                lambda r: r["isolation"].update(cleanupErrors=["restore failed"]),
+                lambda r: r["isolation"].update(policyValuesRemoved=1),
+                lambda r: r["isolation"]["restoredFolders"].pop(),
+                lambda r: r["isolation"]["restoredFolders"][0].update(manifestMatched=False),
+                lambda r: r["isolation"]["restoredFolders"].__setitem__(0, dict(r["isolation"]["restoredFolders"][1])),
+            )
+            for change in changes:
+                report = deepcopy(self.native_library); change(report)
+                with self.assertRaises(ReleaseError):
+                    validate_native_library(report, self.commit, self.cli_hash)
 
         def test_component_archives_keep_every_mo2_file_and_exact_tested_html(self):
             # Extra nested content proves selection keeps the complete plugin,

@@ -39,6 +39,29 @@ function clearCiPolicies(){
  }
 }
 function check(name,value){checks.push({name,passed:!!value});if(!value)throw Error('Failed: '+name);}
+// WebView2 cancels native appearance-protocol navigation outside Chromium. Its
+// CDP navigation signal can stay pending even after the actual page and native
+// preference acknowledge the change, so later Locator actions wait forever.
+// Send real pointer input after independently checking visibility, stability,
+// enabled state and hit testing. Do not invoke DOM click() or application hooks.
+async function nativePointerClick(page,selector){
+ await page.waitForFunction(selector=>{
+  const element=document.querySelector(selector);if(!element||element.disabled)return false;
+  const rect=element.getBoundingClientRect(),style=getComputedStyle(element);
+  if(!rect.width||!rect.height||style.visibility!=='visible'||style.display==='none')return false;
+  const x=rect.x+rect.width/2,y=rect.y+rect.height/2;
+  return x>=0&&y>=0&&x<innerWidth&&y<innerHeight&&element.contains(document.elementFromPoint(x,y));
+ },selector);
+ const point=await page.evaluate(async selector=>{
+  const element=document.querySelector(selector),first=element.getBoundingClientRect();
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+  const rect=element.getBoundingClientRect(),x=rect.x+rect.width/2,y=rect.y+rect.height/2;
+  if(element.disabled||!element.isConnected||['x','y','width','height'].some(key=>Math.abs(first[key]-rect[key])>.5)
+   ||!element.contains(document.elementFromPoint(x,y)))throw Error('Native pointer target is not stable and actionable: '+selector);
+  return {x,y};
+ },selector);
+ await page.mouse.click(point.x,point.y);
+}
 function configureCiDisplay(width,height){
  if(process.platform!=='win32'||process.env.GITHUB_ACTIONS!=='true'||process.env.RUNNER_OS!=='Windows'||process.env.MODHUNTER_NATIVE_SMOKE!=='1')throw Error('Display changes require the disposable Windows CI fixture');
  const change=Number.isInteger(width)&&Number.isInteger(height)&&width>0&&height>0;
@@ -268,23 +291,30 @@ async function main(){
  }
  // The shared dashboard asks its native owner for a theme change; it cannot
  // invoke desktop commands or optimistically report an unsaved preference.
- await dashboard.locator('#railTheme').click();
+ // WebView2 deliberately intercepts modhunter-appearance:// without navigating
+ // the document. Wait for both canonical acknowledgements below, not for the
+ // browser navigation that the native on_navigation handler intentionally denies.
+ phase='native-theme-shortcut-dark';
+ await nativePointerClick(dashboard,'#railTheme');
  await dashboard.waitForFunction(()=>document.body.dataset.theme==='night');
  await shell.waitForFunction(()=>document.documentElement.dataset.theme==='dark');
- await dashboard.locator('#railTheme').click();
+ phase='native-theme-shortcut-light';
+ await nativePointerClick(dashboard,'#railTheme');
  await dashboard.waitForFunction(()=>document.body.dataset.theme==='snow');
  await shell.waitForFunction(()=>document.documentElement.dataset.theme==='light');
  check('native_dashboard_theme_control_acknowledged',true);
- await dashboard.locator('#libraryGallery').click();
+ phase='native-gallery';
+ await nativePointerClick(dashboard,'#libraryGallery');
  await dashboard.waitForFunction(()=>document.body.dataset.libraryView==='gallery');
  check('native_gallery_retains_live_catalog',await dashboard.locator('#modList .mod-row').count()===facts.names.length);
  nativeWindow(null,null,path.join(path.dirname(output),'desktop-window-gallery-light.png'));
- await dashboard.locator('#modList .inspect-btn').first().click();
- await dashboard.locator('#detailDrawer.open').waitFor();
+ phase='native-inspector';
+ await nativePointerClick(dashboard,'#modList .inspect-btn');
+ await dashboard.waitForFunction(()=>{const drawer=document.querySelector('#detailDrawer.open');if(!drawer)return false;const rect=drawer.getBoundingClientRect();return rect.width>0&&rect.left>=-1&&rect.right<=innerWidth+1;});
  nativeWindow(null,null,path.join(path.dirname(output),'desktop-window-inspector-light.png'));
  await dashboard.keyboard.press('Escape');
- check('native_inspector_returns_focus',await dashboard.locator('#modList .inspect-btn').first().evaluate(e=>document.activeElement===e));
- await dashboard.locator('#libraryList').click();
+ check('native_inspector_returns_focus',await dashboard.evaluate(()=>document.activeElement===document.querySelector('#modList .inspect-btn')));
+ await nativePointerClick(dashboard,'#libraryList');
  // Restore an explicit baseline theme; system preferences are preserved too.
  await shell.locator('#openWatchtower').click();
  await watchtower.locator('#globalTheme').selectOption(originalTheme);
@@ -306,7 +336,7 @@ main().catch(async error=>{
  if(browser)for(const page of browser.contexts().flatMap(c=>c.pages())){
   try{
    const url=new URL(page.url());
-   const state=await page.evaluate(()=>({title:document.title,source:document.getElementById('sourceText')?.textContent,message:document.getElementById('message')?.textContent,sessionChoices:document.querySelectorAll('#mo2Sessions option').length}));
+   const state=await page.evaluate(()=>({title:document.title,source:document.getElementById('sourceText')?.textContent,message:document.getElementById('message')?.textContent,sessionChoices:document.querySelectorAll('#mo2Sessions option').length,rootTheme:document.documentElement.dataset.theme,dashboardTheme:document.body?.dataset.theme}));
    failureViews.push({path:url.pathname,...state});
    if(url.pathname.endsWith('/shell.html'))await page.screenshot({path:path.join(path.dirname(output),'desktop-failure.png')});
   }catch{}

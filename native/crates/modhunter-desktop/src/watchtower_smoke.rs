@@ -82,6 +82,10 @@ impl Drop for FixtureServer {
 }
 
 fn respond(mut stream: TcpStream, token: &str, version: u64) -> Result<()> {
+    // Accepted Winsock sockets inherit the nonblocking listener's mode. The
+    // per-connection worker uses bounded blocking reads/writes, including when
+    // WebView2 sends its request after accept or splits the headers into packets.
+    stream.set_nonblocking(false).map_err(err)?;
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
         .map_err(err)?;

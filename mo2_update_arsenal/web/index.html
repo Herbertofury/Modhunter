@@ -1162,7 +1162,7 @@ body[data-layout="compact"][data-density="comfy"] .mod-title{font-size:13px}
 body[data-layout="compact"][data-library-view="gallery"] .list-header{display:none}
 body[data-layout="compact"][data-library-view="gallery"] .modlist{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start;align-content:flex-start}
 body[data-layout="compact"][data-library-view="gallery"] .chapterbar{flex:0 0 100%;width:100%;margin-top:8px;padding-left:0;height:28px;min-height:28px}
-body[data-layout="compact"][data-library-view="gallery"] .mod-row{display:grid;flex:0 0 calc((100% - var(--library-gap-total,70px))/var(--library-columns,6));grid-template-columns:minmax(0,1fr) auto;gap:9px 8px;align-content:start;padding:0 13px 12px;border:1px solid var(--vault-line);border-radius:9px;background:var(--vault-surface);overflow:hidden;min-height:273px;margin:0;box-shadow:0 2px 2px #0000000a;position:relative}
+body[data-layout="compact"][data-library-view="gallery"] .mod-row{display:grid;flex:0 0 calc((100% - 70px)/6);grid-template-columns:minmax(0,1fr) auto;gap:9px 8px;align-content:start;padding:0 13px 12px;border:1px solid var(--vault-line);border-radius:9px;background:var(--vault-surface);overflow:hidden;min-height:273px;margin:0;box-shadow:0 2px 2px #0000000a;position:relative}
 body[data-layout="compact"][data-library-view="gallery"] .mod-row:hover{border-color:var(--vault-muted);background:var(--vault-surface);box-shadow:0 4px 12px #00000017}
 body[data-layout="compact"][data-library-view="gallery"] .mod-row[data-detected="update"]{border-top:2px solid var(--vault-green)}
 body[data-layout="compact"][data-library-view="gallery"] .mod-art{grid-column:1/-1;grid-row:1;width:calc(100% + 26px);height:120px;margin:0 -13px 2px;border:0;border-bottom:1px solid var(--vault-line);border-radius:0;background:var(--vault-raised);display:flex;align-items:center;justify-content:center;font-size:9px;padding-top:26px}
@@ -2981,6 +2981,7 @@ function thumbnailMarkup(mod,large=false,source=getSrc(mod)){
  const metadata=' data-provider-label="'+escapeHTML(label)+'"';
  return large?'<div class="mod-art mod-art-large'+artClass+'"'+metadata+'>'+inside+'</div>':'<button class="mod-art'+artClass+'" type="button" data-act="preview" data-id="'+id+'"'+metadata+' title="'+escapeHTML('Inspect '+mod.name)+'" aria-label="'+escapeHTML('Preview and inspect '+mod.name)+'">'+inside+'</button>';
 }
+let GALLERY_GEOMETRY_RULE=null;
 function updateGalleryColumns(width){
  if(STORE.prefs.libraryView!=='gallery')return;
  const list=$('modList');if(!list)return;
@@ -2988,7 +2989,20 @@ function updateGalleryColumns(width){
  const comfy=STORE.prefs.density==='comfy',narrow=innerWidth<=580,gap=comfy?18:narrow?10:14;
  const columns=narrow?(comfy?1:2):Math.max(1,Math.floor((available+gap)/((comfy?260:200)+gap)));
  const key=columns+':'+gap;if(list.dataset.galleryGeometry===key)return;
- list.dataset.galleryGeometry=key;list.style.setProperty('--library-columns',String(columns));list.style.setProperty('--library-gap-total',((columns-1)*gap)+'px');
+ // Geometry belongs to the card boxes. Inheriting these values through every
+ // title, action and pseudo-element made density changes recalculate the whole
+ // catalogue. One guarded CSSOM rule preserves the exact same columns without
+ // adding per-record styles or touching the full set of laid-out cards.
+ const basis=`calc((100% - ${(columns-1)*gap}px) / ${columns})`;
+ if(!GALLERY_GEOMETRY_RULE){
+  const style=document.createElement('style');style.dataset.libraryGeometry='';
+  // Packaged Tauri pages authorize their inline styles with a per-page nonce.
+  // Keep that policy intact when the desktop adds this runtime sizing rule.
+  const nonce=document.querySelector('style[nonce]')?.nonce;if(nonce)style.nonce=nonce;
+  style.textContent='body[data-layout="compact"][data-library-view="gallery"] #modList > .mod-row {flex-basis:'+basis+'}';
+  document.head.append(style);GALLERY_GEOMETRY_RULE=style.sheet.cssRules[0];
+ }else GALLERY_GEOMETRY_RULE.style.setProperty('flex-basis',basis);
+ list.dataset.galleryGeometry=key;
 }
 function applyLibraryAppearance(){
  // Read one existing container width before changing the view. The outer

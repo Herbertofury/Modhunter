@@ -22,6 +22,7 @@ from pathlib import Path
 import platform
 import shutil
 import subprocess
+import tempfile
 import time
 
 import visual_release_qa as acceptance
@@ -119,6 +120,23 @@ VARIANTS = {
       document.head.append(style);
       return {changedRules:2,description:'Keep the library a flex container in List and Gallery; List children remain full width with zero gap. Gallery declarations are unchanged.'};
     }""",
+    "stable-descendant-display": """() => {
+      const style=document.createElement('style');style.dataset.diagnosticVariant='stable-descendant-display';
+      const nonce=document.querySelector('style[nonce]')?.nonce;if(nonce)style.nonce=nonce;
+      style.textContent=`
+        body[data-layout="compact"][data-library-view="list"] #modList > .mod-row > .mod-art{display:flex}
+        body[data-layout="compact"][data-library-view="list"] #modList > .mod-row .mod-title{display:flow-root!important}
+        @media(min-width:761px){body[data-layout="compact"][data-library-view="list"] #modList > .mod-row > .mod-version{display:flex;flex-direction:column;align-items:stretch;gap:0}}`;
+      document.head.append(style);
+      return {changedRules:3,description:'Keep three row-descendant display types stable; preserve List dimensions and Gallery CSS without changing the outer library layout'};
+    }""",
+    "isolated-cards": """() => {
+      const style=document.createElement('style');style.dataset.diagnosticVariant='isolated-cards';
+      const nonce=document.querySelector('style[nonce]')?.nonce;if(nonce)style.nonce=nonce;
+      style.textContent='body[data-layout="compact"] #modList > .mod-row{isolation:isolate}';
+      document.head.append(style);
+      return {changedRules:1,description:'Give every complete library row a local stacking context; retain all records, geometry, overflow and controls'};
+    }""",
     "no-universal-scrollbar": r"""() => {
       let changedRules=0;const selectors=[];
       const walk=sheet=>{for(let index=sheet.cssRules.length-1;index>=0;index--){
@@ -175,6 +193,14 @@ VARIANTS["persistent-flex-cssom"] = """() => {
   return {changedRules:flex.changedRules+geometry.changedRules,experiments:[flex,geometry],
     description:'Combine independently specified persistent-flex and CSSOM geometry experiments'};
 }""" % (VARIANTS["persistent-flex"], VARIANTS["cssom-geometry"])
+
+VARIANTS["stable-isolated"] = """() => {
+  const display=(%s)(),isolation=(%s)();
+  return {changedRules:display.changedRules+isolation.changedRules,experiments:[display,isolation],
+    description:'Combine stable descendant displays and isolated complete rows; no other CSS change'};
+}""" % (VARIANTS["stable-descendant-display"], VARIANTS["isolated-cards"])
+
+LIFECYCLE_VARIANTS = {"stable-descendant-display","isolated-cards","stable-isolated"}
 
 
 def write_json(path, value):
@@ -269,8 +295,8 @@ def computed_samples(page):
       const properties=['display','position','width','height','min-height','color','background-color',
         'border-top-width','border-top-color','border-bottom-width','border-bottom-color',
         'font-family','font-size','line-height','padding-top','padding-right','padding-bottom','padding-left',
-        'grid-template-columns','grid-template-rows','flex-basis','flex-grow','flex-shrink','flex-wrap',
-        'align-items','align-content','gap','white-space','overflow'];
+        'grid-template-columns','grid-template-rows','flex-basis','flex-grow','flex-shrink','flex-wrap','flex-direction',
+        'align-items','align-content','gap','white-space','overflow','isolation'];
       const selectors=['#workbench','.library-grouping','#modList','#modList .mod-row',
         '#modList .mod-primary','#modList .mod-title','#modList .mod-art',
         '#modList .mod-version','#modList .inspect-col','#modList .file-download-btn'];
@@ -278,6 +304,166 @@ def computed_samples(page):
         if(!element)return [selector,null];const style=getComputedStyle(element);
         return [selector,Object.fromEntries(properties.map(property=>[property,style.getPropertyValue(property)]))];}));
     }""")
+
+
+def deep_row_geometry(page, session):
+    """Read every affected descendant, text range and actual pseudo layout box.
+
+    The complete arrays are transient comparison input, not an unbounded JSON
+    report. DOMSnapshot supplies real pseudo-element layout bounds that normal
+    DOM rectangle APIs cannot expose. All reads occur outside action clocks.
+    """
+    rows = page.evaluate("""() => {
+      const selectors={art:'.mod-art',title:'.mod-title',glyph:'.source-open-glyph',version:'.mod-version',
+        newer:'.newer-version',priority:'.mod-priority',assessment:'.mod-assessment',source:'.mod-source',actions:'.inspect-col'};
+      const pseudos=[['artBefore','art','::before'],['artAfter','art','::after'],
+        ['primaryBefore','primary','::before'],['priorityBefore','priority','::before'],['versionBefore','version','::before']];
+      const pseudoProperties=['display','content','position','left','top','right','bottom','width','height',
+        'font','margin-top','margin-right','margin-bottom','margin-left','padding-top','padding-right','padding-bottom','padding-left'];
+      const targetProperties=['display','flex-direction','align-items','gap','isolation','white-space','overflow','font','color'];
+      return [...document.querySelectorAll('#modList > .mod-row')].map(row=>{
+        const origin=row.getBoundingClientRect();
+        const box=b=>[b.left-origin.left,b.top-origin.top,b.width,b.height];
+        const elements=Object.fromEntries(Object.entries(selectors).map(([key,selector])=>[key,row.querySelector(selector)]));
+        elements.primary=row.querySelector('.mod-primary');
+        const rectangles=Object.fromEntries(Object.entries(selectors).map(([key])=>[key,elements[key]?box(elements[key].getBoundingClientRect()):null]));
+        const ranges=element=>{if(!element)return [];const result=[];
+          const walker=document.createTreeWalker(element,NodeFilter.SHOW_TEXT);let node;
+          while(node=walker.nextNode()){if(!node.textContent.trim())continue;
+            const range=document.createRange();range.selectNodeContents(node);
+            result.push(...[...range.getClientRects()].map(box));}return result;};
+        const installed=[];
+        if(elements.version)for(const node of elements.version.childNodes)if(node.nodeType===Node.TEXT_NODE&&node.textContent.trim()){
+          const range=document.createRange();range.selectNodeContents(node);installed.push(...[...range.getClientRects()].map(box));}
+        const pseudoStyles=Object.fromEntries(pseudos.map(([key,owner,pseudo])=>{
+          const style=getComputedStyle(elements[owner],pseudo);
+          return [key,Object.fromEntries(pseudoProperties.map(name=>[name,style.getPropertyValue(name)]))];}));
+        const computed=Object.fromEntries([['row',row],['art',elements.art],['title',elements.title],['version',elements.version]].map(([key,element])=>{
+          const style=getComputedStyle(element);return [key,Object.fromEntries(targetProperties.map(name=>[name,style.getPropertyValue(name)]))];}));
+        return {id:row.dataset.id,rectangles,textRanges:{title:ranges(elements.title),installed},pseudoStyles,computed,
+          semantics:{text:row.textContent,labels:[...row.querySelectorAll('[aria-label]')].map(e=>[e.getAttribute('data-act'),e.getAttribute('aria-label')]),
+            provider:elements.art.getAttribute('data-provider-label'),chapter:elements.primary.getAttribute('data-chapter-label')}};
+      });
+    }""")
+    snapshot = session.send("DOMSnapshot.captureSnapshot", {"computedStyles":[],"includeDOMRects":True})
+    strings = snapshot["strings"]
+    document = snapshot["documents"][0]
+    nodes,layout = document["nodes"],document["layout"]
+    parents = nodes["parentIndex"]
+    attributes = nodes.get("attributes",[])
+    classes,identifiers,record_ids = {},{},{}
+    for index,flattened in enumerate(attributes):
+        for offset in range(0,len(flattened),2):
+            key,value = strings[flattened[offset]],strings[flattened[offset+1]]
+            if key=="class":classes[index]=set(value.split())
+            elif key=="id":identifiers[index]=value
+            elif key=="data-id":record_ids[index]=value
+    roots = [index for index,value in identifiers.items() if value=="modList"]
+    assert len(roots)==1, "DOMSnapshot did not contain the exact library root"
+    root = roots[0]
+    row_nodes = {index:record_ids[index] for index,value in classes.items()
+                 if "mod-row" in value and parents[index]==root and index in record_ids}
+    assert len(row_nodes)==len(rows), "DOMSnapshot lost complete library rows"
+    bounds = {index:layout["bounds"][position] for position,index in enumerate(layout["nodeIndex"])}
+    owners = {"mod-art":{"before":"artBefore","after":"artAfter"},
+              "mod-primary":{"before":"primaryBefore"},"mod-priority":{"before":"priorityBefore"},
+              "mod-version":{"before":"versionBefore"}}
+    pseudo_bounds = {row["id"]:{key:None for key in row["pseudoStyles"]} for row in rows}
+    rare = nodes.get("pseudoType",{"index":[],"value":[]})
+    for node_index,type_index in zip(rare["index"],rare["value"]):
+        pseudo_type = strings[type_index]
+        owner = parents[node_index]
+        key = next((mapping[pseudo_type] for name,mapping in owners.items()
+                    if name in classes.get(owner,set()) and pseudo_type in mapping),None)
+        if key is None:continue
+        ancestor = owner
+        while ancestor>=0 and ancestor not in row_nodes and ancestor!=root:ancestor=parents[ancestor]
+        if ancestor not in row_nodes:continue
+        identifier = row_nodes[ancestor]
+        if node_index in bounds:
+            box,origin = bounds[node_index],bounds[ancestor]
+            pseudo_bounds[identifier][key]=[box[0]-origin[0],box[1]-origin[1],box[2],box[3]]
+    for row in rows:
+        row["pseudoBounds"]=pseudo_bounds[row["id"]]
+        for key,style in row["pseudoStyles"].items():
+            if style["display"]!="none" and style["content"] not in ("none","normal"):
+                assert row["pseudoBounds"][key] is not None, f"Missing actual visible pseudo bounds for {row['id']} {key}"
+    return rows
+
+
+def allowed_lifecycle_style(variant, state, target, property, before, after):
+    if variant not in LIFECYCLE_VARIANTS:return False
+    if variant in ("isolated-cards","stable-isolated") and target=="row" and property=="isolation":
+        return before=="auto" and after=="isolate"
+    if variant not in ("stable-descendant-display","stable-isolated") or state not in ("initial","list"):return False
+    allowed = {("art","display"):("block","flex"),("title","display"):("block","flow-root"),
+               ("version","display"):("block","flex"),("version","flex-direction"):("row","column"),
+               ("version","align-items"):("normal","stretch"),("version","gap"):("normal","0px")}
+    return allowed.get((target,property))==(before,after)
+
+
+def compare_deep_rows(reference, rows, variant, state):
+    differences=[];total=0;allowed=Counter()
+    def mismatch(path,left,right):
+        nonlocal total
+        total+=1
+        if len(differences)<20:differences.append({"path":path,"control":left,"variant":right})
+    def compare(left,right,path):
+        if isinstance(left,(int,float)) and isinstance(right,(int,float)):
+            if abs(left-right)>.1:mismatch(path,left,right)
+        elif isinstance(left,dict) and isinstance(right,dict):
+            if left.keys()!=right.keys():mismatch(path+".keys",list(left),list(right))
+            for key in left.keys()&right.keys():compare(left[key],right[key],path+"."+key)
+        elif isinstance(left,list) and isinstance(right,list):
+            if len(left)!=len(right):mismatch(path+".length",len(left),len(right))
+            for index,(a,b) in enumerate(zip(left,right)):compare(a,b,f"{path}[{index}]")
+        elif left!=right:mismatch(path,left,right)
+    if len(reference)!=len(rows):mismatch("rows",len(reference),len(rows))
+    for index,(before,after) in enumerate(zip(reference,rows)):
+        prefix=f"row[{index}]({after['id']})"
+        compare(before["id"],after["id"],prefix+".id")
+        for key in ("rectangles","textRanges","pseudoBounds","pseudoStyles","semantics"):
+            compare(before[key],after[key],prefix+"."+key)
+        for target,properties in before["computed"].items():
+            for property,value in properties.items():
+                actual=after["computed"][target][property]
+                if value==actual:continue
+                if allowed_lifecycle_style(variant,state,target,property,value,actual):allowed[(target,property,value,actual)]+=1
+                else:mismatch(prefix+f".computed.{target}.{property}",value,actual)
+    return {"comparedRows":len(reference),"toleranceCssPixels":.1,"differenceCount":total,
+            "examples":differences,"examplesAreBoundedOnly":True,
+            "allowedComputedDifferences":[{"target":key[0],"property":key[1],"control":key[2],"variant":key[3],"rows":count} for key,count in allowed.items()]}
+
+
+def deep_geometry_receipt(rows):
+    encoded=json.dumps(rows,separators=(",",":"),sort_keys=True).encode()
+    distributions={}
+    for field in ("rectangles","textRanges","pseudoBounds"):
+        for key in rows[0][field] if rows else []:
+            values=Counter(json.dumps(row[field][key],separators=(",",":")) for row in rows)
+            distributions[field+"."+key]={"distinct":len(values),
+                "sha256":hashlib.sha256(json.dumps(sorted(values.items()),separators=(",",":")).encode()).hexdigest()}
+    return {"rows":len(rows),"firstId":rows[0]["id"] if rows else None,"lastId":rows[-1]["id"] if rows else None,
+            "sha256":hashlib.sha256(encoded).hexdigest(),"transientSerializedBytes":len(encoded),"distributions":distributions,
+            "scope":"Every row descendant/text/pseudo box, computed pseudo style and accessible label; complete arrays compared transiently, no record sampling"}
+
+
+def record_deep_geometry(page, session, variant, state, reference_directory):
+    """Keep one complete state in memory at a time and publish compact proof."""
+    rows = deep_row_geometry(page,session)
+    result = deep_geometry_receipt(rows)
+    path = reference_directory / (state+".json.gz")
+    if variant=="control":
+        with gzip.open(path,"wt",encoding="utf-8") as stream:
+            json.dump(rows,stream,separators=(",",":"))
+        result["comparison"] = {"comparedRows":len(rows),"differenceCount":0,
+            "examples":[],"allowedComputedDifferences":[],"reference":True}
+    else:
+        assert path.is_file(), "Complete control geometry was not recorded for "+state
+        with gzip.open(path,"rt",encoding="utf-8") as stream:
+            reference=json.load(stream)
+        result["comparison"] = compare_deep_rows(reference,rows,variant,state)
+    return result
 
 
 def compare_geometry(reference, variant):
@@ -288,24 +474,30 @@ def compare_geometry(reference, variant):
     layout-unit rounding, not a changed row height, offset or card column.
     """
     differences = []
+    difference_count = 0
+    def add_difference(value):
+        nonlocal difference_count
+        difference_count+=1
+        if len(differences)<20:differences.append(value)
     for key in ("rows", "uniqueIds", "firstId", "lastId"):
         if reference.get(key) != variant.get(key):
-            differences.append({"field":key,"control":reference.get(key),"variant":variant.get(key)})
+            add_difference({"field":key,"control":reference.get(key),"variant":variant.get(key)})
     for key in ("listGeometry", "rowGeometry", "chapterGeometry", "emptyGeometry"):
         before, after = reference.get(key, []), variant.get(key, [])
         if key == "listGeometry":
             before, after = [before], [after]
         if len(before) != len(after):
-            differences.append({"field":key,"controlCount":len(before),"variantCount":len(after)})
+            add_difference({"field":key,"controlCount":len(before),"variantCount":len(after)})
         for index, (left, right) in enumerate(zip(before, after)):
             if len(left) != len(right) or any(
                 abs(a-b) > .1 if isinstance(a, (int,float)) and isinstance(b, (int,float)) else a != b
                 for a,b in zip(left,right)
             ):
-                differences.append({"field":key,"index":index,"control":left,"variant":right})
+                add_difference({"field":key,"index":index,"control":left,"variant":right})
     return {"comparedRows":len(reference.get("rowGeometry", [])),
             "comparedChapters":len(reference.get("chapterGeometry", [])),
-            "toleranceCssPixels":.1,"differenceCount":len(differences),"differences":differences}
+            "toleranceCssPixels":.1,"differenceCount":difference_count,"differences":differences,
+            "examplesAreBoundedOnly":True}
 
 
 def pseudo_label_state(page):
@@ -326,6 +518,131 @@ def pseudo_label_state(page):
     }""")
     assert state["rows"] == 11207 and not state["mismatches"], f"Gallery pseudo-labels differ from record metadata: {state}"
     return state
+
+
+def visible_record_hit_tests(page, selector):
+    result=page.locator(selector).evaluate("""row=>{
+      const names=['.mod-art','.mod-priority','.mod-title','.file-download-btn','.favorite-btn','.inspect-btn'];
+      return {id:row.dataset.id,tests:names.flatMap(selector=>{const element=row.querySelector(selector);
+        if(!element)return [];const box=element.getBoundingClientRect();
+        if(!box.width||!box.height||box.top<0||box.bottom>innerHeight||box.left<0||box.right>innerWidth)return [];
+        const hit=document.elementFromPoint(box.left+box.width/2,box.top+box.height/2);
+        return [{selector,box:box.toJSON(),hitClass:hit?.className||'',hitRow:hit?.closest('.mod-row')?.dataset.id,
+          receivesPointer:element===hit||element.contains(hit),pointerEvents:getComputedStyle(element).pointerEvents}];})};
+    }""")
+    assert result["tests"], "No actual visible card controls were hit-tested"
+    for test in result["tests"]:
+        assert test["hitRow"]==result["id"], f"Card stacking sent a pointer into another surface: {test}"
+        if test["selector"]!=".mod-priority":
+            assert test["receivesPointer"], f"Visible card control is occluded: {test}"
+    return result
+
+
+def capture_lifecycle_frames(browser, html, variant, fixture, output):
+    """Inspect real interactions separately from the complete-library clocks.
+
+    Frozen public project icons retain their actual project identity. The second
+    catalog retains real source identities and explicitly labels one synthetic
+    long filename. No screenshot or interaction substitutes for full-row gates.
+    """
+    destination=output/"frames"/variant
+    destination.mkdir(parents=True,exist_ok=True)
+    result={"ok":False,"screenshots":[],"hitTests":[],"scope":"Actual compiled application with deterministic API fixtures; separate from timed 11,207-record trials"}
+    context=browser.new_context(viewport={"width":1440,"height":1000},reduced_motion="reduce")
+    page=context.new_page();errors=[]
+    page.on("pageerror",lambda error:errors.append(str(error)))
+    def capture(name):
+        acceptance.settle(page)
+        raw=page.screenshot(path=str(destination/name))
+        result["screenshots"].append({"file":str((destination/name).relative_to(output)),"sha256":hashlib.sha256(raw).hexdigest(),"bytes":len(raw)})
+    try:
+        context.route("http://style-records.modhunter.invalid/",lambda request:request.fulfill(content_type="text/html",body=acceptance.fixture_page(html,fixture)))
+        page.goto("http://style-records.modhunter.invalid/",wait_until="load")
+        page.wait_for_function("document.getElementById('livePill').classList.contains('connected')")
+        page.wait_for_function("__RESP__.counts['GET progress']>=1")
+        page.wait_for_function("n=>document.querySelectorAll('#modList > .mod-row').length===n",arg=len(fixture["items"]))
+        page.evaluate(VARIANTS[variant]);acceptance.settle(page)
+        acceptance.scroll_dashboard_to_top(page)
+        acceptance.assert_library_geometry(page,"diagnostic-list/"+variant)
+        capture("long-name-list.png")
+        page.locator("#libraryGallery").click();acceptance.settle(page)
+        acceptance.scroll_dashboard_to_top(page)
+        result["galleryGeometry"]=acceptance.assert_flat_gallery_geometry(page,len(fixture["items"]),"diagnostic-gallery/"+variant)
+        result["actionGeometry"]=acceptance.assert_nexus_actions(page,"diagnostic-gallery/"+variant)
+        row=page.locator('#modList .mod-row').filter(has=page.locator('.file-download-btn',has_text='Review')).first
+        row.scroll_into_view_if_needed();acceptance.settle(page)
+        row_id=row.get_attribute("id")
+        result["hitTests"].append(visible_record_hit_tests(page,"#"+row_id))
+        capture("long-name-gallery.png")
+        inspect=row.locator('[data-act="inspect"]')
+        inspect.focus();page.keyboard.press("j");acceptance.settle(page)
+        selected=page.locator("#modList .mod-row.aether-target")
+        assert selected.count()==1,"Normal J navigation did not select one actual row"
+        selected.scroll_into_view_if_needed();acceptance.settle(page)
+        result["selectedId"]=selected.get_attribute("data-id")
+        result["hitTests"].append(visible_record_hit_tests(page,"#"+selected.get_attribute("id")))
+        capture("selected-gallery.png")
+        row.scroll_into_view_if_needed();inspect.focus();page.keyboard.press("Shift+F10");page.keyboard.press("ArrowDown")
+        page.locator("#modContextMenu").wait_for(state="visible")
+        result["contextMenu"]=acceptance.assert_context_menu_geometry(page,"diagnostic-menu/"+variant)
+        assert page.locator('#modContextMenu [role="menuitem"]').evaluate_all("nodes=>nodes.every(node=>{const b=node.getBoundingClientRect(),hit=document.elementFromPoint(b.left+b.width/2,b.top+b.height/2);return node===hit||node.contains(hit)})"),"Context-menu controls are occluded"
+        capture("context-menu.png")
+        page.keyboard.press("Escape")
+        assert inspect.evaluate("element=>element===document.activeElement"),"Menu did not return focus"
+        inspect.click();page.locator("#detailDrawer.open").wait_for(state="visible");acceptance.settle(page)
+        assert page.locator("#drawerClose").evaluate("element=>{const b=element.getBoundingClientRect(),hit=document.elementFromPoint(b.left+b.width/2,b.top+b.height/2);return element===hit||element.contains(hit)}"),"Inspector close control is occluded"
+        capture("inspector.png")
+        page.locator("#drawerClose").click()
+        assert not page.locator("#detailDrawer").is_visible(),"Inspector did not close"
+        assert page.locator("#modList > .mod-row").count()==len(fixture["items"]),"Representative interactions lost records"
+        assert not errors,errors
+    finally:
+        context.close()
+    manifest=json.loads((ROOT/"tests/fixtures/visual_public_catalog.json").read_text("utf-8"))
+    sources=manifest["sources"]
+    artwork=acceptance.dashboard.catalog(profile="style-diagnostic-public-artwork",count=len(sources))
+    artwork.update(profileName="Official project artwork · synthetic installed versions",game="minecraft",gameRuntime="QA fixture")
+    artwork["groups"][0]["name"]="Public Modrinth projects / artwork acceptance"
+    for index,(item,source) in enumerate(zip(artwork["items"],sources)):
+        item.update(name=source["name"],group=artwork["groups"][0]["name"],installedVersion="QA 1.0",author="",nexusId=0,
+            screenshotNote=source["description"],audit={},source={"type":"modrinth","verified":True,"url":source["projectUrl"]},
+            update={"verdict":"candidate" if index%3==0 else "current","latestVersion":"QA 2.0" if index%3==0 else "QA 1.0",
+                "source":"visual-acceptance-fixture","thumbnailUrl":source["thumbnailUrl"],"thumbnailKind":"icon"})
+    context=browser.new_context(viewport={"width":1440,"height":1000},reduced_motion="reduce")
+    page=context.new_page();page.on("pageerror",lambda error:errors.append(str(error)))
+    assets={source["thumbnailUrl"]:source for source in sources}
+    def route(request):
+        url=request.request.url
+        if url=="http://style-artwork.modhunter.invalid/":
+            request.fulfill(content_type="text/html",body=acceptance.fixture_page(html,artwork))
+        elif url in assets:
+            source=assets[url];raw=(ROOT/"tests/fixtures"/source["thumbnailFile"]).read_bytes()
+            assert hashlib.sha256(raw).hexdigest()==source["sha256"]
+            request.fulfill(content_type=source["mimeType"],body=raw)
+        else:request.abort()
+    context.route("**/*",route)
+    try:
+        page.goto("http://style-artwork.modhunter.invalid/",wait_until="load")
+        page.wait_for_function("document.getElementById('livePill').classList.contains('connected')")
+        page.wait_for_function("__RESP__.counts['GET progress']>=1")
+        page.wait_for_function("n=>document.querySelectorAll('#modList > .mod-row').length===n",arg=len(sources))
+        page.evaluate(VARIANTS[variant]);page.locator("#libraryGallery").click();acceptance.settle(page)
+        for image in page.locator("#modList .mod-preview-image").all():
+            image.scroll_into_view_if_needed()
+            page.wait_for_function("image=>image.complete&&image.naturalWidth>0",arg=image.element_handle())
+        assert page.locator("#modList .mod-preview-image").count()==len(sources)
+        for theme in ("night","snow"):
+            acceptance.set_dashboard_theme(page,theme);acceptance.scroll_dashboard_to_top(page)
+            result["hitTests"].append(visible_record_hit_tests(page,"#row-item-0"))
+            capture("official-artwork-"+("dark" if theme=="night" else "light")+".png")
+        result["artworkProvenance"]={"manifest":"tests/fixtures/visual_public_catalog.json","projects":len(sources),
+            "sources":[{"projectUrl":source["projectUrl"],"sha256":source["sha256"]} for source in sources]}
+        result["pageErrors"]=errors
+        assert not errors,errors
+        result["ok"]=True
+        return result
+    finally:
+        context.close()
 
 
 def start_root_observer(page):
@@ -524,7 +841,7 @@ def full_page_transport_preflight(session, page, destination, result, trace_mode
     result["ok"] = True
 
 
-def run_arm(browser, html, fixture, variant, actions, output, instrumented, checkpoint, trace_mode="selectors"):
+def run_arm(browser, html, fixture, variant, actions, output, instrumented, checkpoint, trace_mode="selectors", deep_reference_directory=None):
     context = browser.new_context(viewport={"width": 1440, "height": 900}, reduced_motion="reduce")
     page = context.new_page()
     # Profiling deliberately slows rule matching; this is a diagnostic deadline,
@@ -553,6 +870,8 @@ def run_arm(browser, html, fixture, variant, actions, output, instrumented, chec
         arm["cacheHistogram"]["importDelta"] = cache_histogram_delta(arm["cacheHistogram"]["beforeImport"],arm["cacheHistogram"]["afterImport"])
         arm["initial"] = complete_geometry(page, len(fixture["items"]))
         arm["initialComputedStyles"] = computed_samples(page)
+        if deep_reference_directory is not None:
+            arm["initialDeepGeometry"] = record_deep_geometry(page,metrics,variant,"initial",deep_reference_directory)
         checkpoint(arm)
         if tracing:
             arm["transportPreflight"] = {"ok":False,"completionDeadlineSeconds":3,
@@ -618,11 +937,15 @@ def run_arm(browser, html, fixture, variant, actions, output, instrumented, chec
             result["computedStyles"] = computed_samples(page)
             if result["completeLibrary"]["view"] == "gallery":
                 result["pseudoLabels"] = pseudo_label_state(page)
+            if deep_reference_directory is not None:
+                result["deepGeometry"] = record_deep_geometry(page,metrics,variant,action,deep_reference_directory)
             assert not errors, errors
-            result["ok"] = True
+            result["ok"] = not result.get("deepGeometry",{}).get("comparison",{}).get("differenceCount",0)
             checkpoint(arm)
             print(f"STYLE_PROFILE {variant} {action} wall={elapsed:.1f}ms style={result['metricDeltas'].get('RecalcStyleDuration', 0):.3f}s rows={result['completeLibrary']['rows']}", flush=True)
-        arm["ok"] = True
+        arm["ok"] = all(result["ok"] for result in arm["actions"]) and not arm.get("initialDeepGeometry",{}).get("comparison",{}).get("differenceCount",0)
+        if not arm["ok"]:
+            arm["geometryError"] = "The diagnostic CSS changed descendant/text/pseudo geometry, semantics or an unapproved computed property; timings remain recorded but equivalence is rejected"
     except Exception as error:
         arm["error"] = f"{type(error).__name__}: {error}"
         print(f"STYLE_PROFILE {variant} failed: {arm['error']}", flush=True)
@@ -654,10 +977,19 @@ def main():
         parser.error(f"Variants must include control and be one of {', '.join(VARIANTS)}")
     if any(action not in ACTIONS for action in actions) or actions[0] != "gallery":
         parser.error("Actions must start with gallery and use gallery,density,list")
+    lifecycle_comparison=bool(set(variants)&LIFECYCLE_VARIANTS)
+    if lifecycle_comparison and variants[0]!="control":
+        parser.error("Complete descendant comparisons require the unchanged control arm first")
     args.output.mkdir(parents=True, exist_ok=True)
     fixture = acceptance.dashboard.catalog(count=args.mods)
     fixture["offline"] = True
     html, assets = acceptance.compile_dashboard()
+    representative_fixture=None
+    if lifecycle_comparison:
+        representative_fixture=acceptance.screenshot_catalog()
+        long_item=next(item for item in representative_fixture["items"] if item.get("nexusId") and item.get("update",{}).get("verdict")=="candidate")
+        long_item["name"]+=" — Representative long filename fixture — optional compatibility patch for multiple installed versions and localized archives"
+        representative_fixture["profileName"]="Real source catalog · one synthetic long-name QA fixture"
     proof = {"ok": False, "purpose": "Focused CSS diagnosis only; does not replace full release acceptance",
         "candidateCommit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
         "sourceStatusAtStart": source_status(), "platform": platform.platform(), "assets": assets,
@@ -669,12 +1001,13 @@ def main():
         "traceSession": "One context.new_cdp_session(page) shared by Performance and Tracing",
         "instrumentedBrowserPolicy":"Fresh browser per instrumented arm; ordinary browser closed first",
         "retainedTraceLimitBytes": RETAINED_TRACE_LIMIT,
+        "deepGeometryScope":"All 11,207 descendant rectangles, title/installed text ranges, actual DOMSnapshot pseudo bounds, pseudo styles and semantics; exact allowed style changes only. Complete reference arrays are transient; published distributions/digests and discrepancy examples are bounded." if lifecycle_comparison else None,
         "ordinaryTrials": [], "selectorTraces": []}
     receipt = args.output / "style-profile.json"
     write_json(receipt, proof)
     assert not proof["sourceStatusAtStart"], "Focused CI profile requires clean committed source"
     from playwright.sync_api import sync_playwright
-    with sync_playwright() as runtime:
+    with sync_playwright() as runtime, tempfile.TemporaryDirectory(prefix="modhunter-style-geometry-") as references:
         launch = {"headless": True, "args": ["--no-sandbox", "--disable-dev-shm-usage"]}
         executable = str(args.executable_path) if args.executable_path else shutil.which("chromium") or shutil.which("chromium-browser")
         if executable:
@@ -701,7 +1034,15 @@ def main():
                         else:
                             proof[field][existing] = arm
                         write_json(receipt, proof)
-                    run_arm(browser, html, fixture, variant, actions, args.output, instrumented, checkpoint,args.trace_mode)
+                    arm=run_arm(browser, html, fixture, variant, actions, args.output, instrumented, checkpoint,args.trace_mode,
+                        Path(references) if lifecycle_comparison and not instrumented else None)
+                    if lifecycle_comparison and not instrumented:
+                        try:
+                            arm["visualChecks"]=capture_lifecycle_frames(browser,html,variant,representative_fixture,args.output)
+                        except Exception as error:
+                            arm["visualChecks"]={"ok":False,"error":f"{type(error).__name__}: {error}"}
+                            arm["ok"]=False
+                        checkpoint(arm)
             control = next(arm for arm in proof["ordinaryTrials"] if arm["variant"] == "control")
             reference_states = {"initial": control.get("initialComputedStyles", {})}
             reference_states.update({row["action"]: row.get("computedStyles", {}) for row in control["actions"]})
@@ -722,11 +1063,19 @@ def main():
                 arm["geometryComparisonsFromControl"] = {
                     state:compare_geometry(reference_geometry.get(state, {}), sample)
                     for state,sample in geometry.items()}
-                if arm["variant"] in ("persistent-flex", "persistent-flex-cssom") and any(
+                if arm["variant"] in ({"persistent-flex", "persistent-flex-cssom"}|LIFECYCLE_VARIANTS) and any(
                     comparison["differenceCount"] for comparison in arm["geometryComparisonsFromControl"].values()
                 ):
                     arm["ok"] = False
-                    arm["geometryError"] = "Persistent-flex experiment changed actual layout; inspect every-row geometry comparisons"
+                    arm["geometryError"] = "Diagnostic CSS changed actual layout; inspect every-row geometry comparisons"
+                if lifecycle_comparison:
+                    targets={"#modList .mod-row":"row","#modList .mod-art":"art","#modList .mod-title":"title","#modList .mod-version":"version"}
+                    for difference in arm["computedStyleDifferencesFromControl"]:
+                        difference["allowed"]=allowed_lifecycle_style(arm["variant"],difference["state"],targets.get(difference["selector"]),
+                            difference["property"],difference["control"],difference["variant"])
+                    if any(not difference["allowed"] for difference in arm["computedStyleDifferencesFromControl"]):
+                        arm["ok"]=False
+                        arm["computedStyleError"]="A computed property changed outside the explicitly approved experiment"
             proof["sourceStatusAtEnd"] = source_status()
             proof["ok"] = not proof["sourceStatusAtEnd"] and all(arm["ok"] for field in ("ordinaryTrials", "selectorTraces") for arm in proof[field])
         finally:

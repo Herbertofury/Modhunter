@@ -21,9 +21,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: page-attached-selectors
-            variants: 'control'
-            traces: 'control'
+          - name: complete-card-rendering-arms
+            variants: 'control,stable-descendant-display,isolated-cards,stable-isolated'
+            traces: ''
     steps:
       - uses: actions/checkout@v4
         with:
@@ -31,7 +31,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Profile all library records in actual Chromium
+      - name: Compare complete-library rendering in actual Chromium
         env:
           PROFILE_VARIANTS: ${{ matrix.variants }}
           PROFILE_TRACES: ${{ matrix.traces }}
@@ -41,11 +41,11 @@ jobs:
           /tmp/modhunter-style/bin/python -m playwright install --with-deps chromium
           MODHUNTER_PROFILE_BROWSER=$(/tmp/modhunter-style/bin/python -c "import shutil; print(shutil.which('chromium') or shutil.which('chromium-browser') or '')")
           if [[ -n "$MODHUNTER_PROFILE_BROWSER" ]]; then
-            PYTHONPATH=. /tmp/modhunter-style/bin/python tests/visual_style_profile.py --executable-path "$MODHUNTER_PROFILE_BROWSER" --output native/target/style-profile --mods 11207 --variants "$PROFILE_VARIANTS" --trace-variants "$PROFILE_TRACES" --actions gallery --trace-mode timeline
+            PYTHONPATH=. /tmp/modhunter-style/bin/python tests/visual_style_profile.py --executable-path "$MODHUNTER_PROFILE_BROWSER" --output native/target/style-profile --mods 11207 --variants "$PROFILE_VARIANTS" --trace-variants "$PROFILE_TRACES" --actions gallery,density,list
           else
-            PYTHONPATH=. /tmp/modhunter-style/bin/python tests/visual_style_profile.py --output native/target/style-profile --mods 11207 --variants "$PROFILE_VARIANTS" --trace-variants "$PROFILE_TRACES" --actions gallery --trace-mode timeline
+            PYTHONPATH=. /tmp/modhunter-style/bin/python tests/visual_style_profile.py --output native/target/style-profile --mods 11207 --variants "$PROFILE_VARIANTS" --trace-variants "$PROFILE_TRACES" --actions gallery,density,list
           fi
-      - name: Preserve selector measurements and traces
+      - name: Preserve complete-library comparisons and rendered frames
         if: always()
         uses: actions/upload-artifact@v4
         with:

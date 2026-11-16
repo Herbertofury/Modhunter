@@ -173,6 +173,32 @@ def assert_flat_gallery_geometry(page, expected_count, description):
     return state
 
 
+def assert_context_menu_geometry(page, description):
+    state = page.evaluate("""() => {
+      const menu=document.getElementById('modContextMenu');
+      return {width:innerWidth,height:innerHeight,box:menu.getBoundingClientRect().toJSON(),
+        title:menu.querySelector('.context-title')?.textContent,
+        controls:[...menu.querySelectorAll('[role="menuitem"]')].map(element=>{
+          const range=document.createRange();range.selectNodeContents(element);
+          return {label:element.textContent,box:element.getBoundingClientRect().toJSON(),
+            text:range.getBoundingClientRect().toJSON(),disabled:element.disabled,focused:element===document.activeElement};
+        })};
+    }""")
+    box = state["box"]
+    assert box["width"] > 0 and box["height"] > 0, f"{description}: menu is not rendered: {state}"
+    assert box["left"] >= 0 and box["top"] >= 0 and box["right"] <= state["width"] + 1 and box["bottom"] <= state["height"] + 1, f"{description}: menu exceeds viewport: {state}"
+    assert len(state["controls"]) >= 4, f"{description}: Nexus actions missing: {state}"
+    assert any(control["focused"] for control in state["controls"]), f"{description}: keyboard focus left menu: {state}"
+    for control in state["controls"]:
+        bounds, text = control["box"], control["text"]
+        assert not control["disabled"] and bounds["width"] > 0 and bounds["height"] > 0, f"{description}: unavailable menu action: {control}"
+        assert bounds["left"] >= box["left"] and bounds["right"] <= box["right"] + 1 and bounds["top"] >= box["top"] and bounds["bottom"] <= box["bottom"] + 1, f"{description}: menu action escapes panel: {control}"
+        assert text["left"] >= bounds["left"] - 1 and text["right"] <= bounds["right"] + 1 and text["top"] >= bounds["top"] - 1 and text["bottom"] <= bounds["bottom"] + 1, f"{description}: clipped action label: {control}"
+    for previous, current in zip(state["controls"], state["controls"][1:]):
+        assert previous["box"]["bottom"] <= current["box"]["top"] + 0.5, f"{description}: menu actions overlap: {state}"
+    return state
+
+
 def scroll_dashboard_to_top(page):
     # A focused control can restore an ancestor's scroll offset after a theme
     # switch. Reset actual scroll containers, not just the window, and wait for
@@ -246,6 +272,29 @@ def capture_dashboard(browser, html, fixture, output, candidate):
         assert page.locator("#search").evaluate("e=>e===document.activeElement"), "Search shortcut lost focus"
     page.screenshot(path=str(output / "library-focus-1440-dark.png"))
     if candidate:
+        for width, theme in ((1440, "night"), (390, "snow")):
+            page.set_viewport_size({"width":width,"height":1000 if width > 400 else 844})
+            set_dashboard_theme(page,theme);scroll_dashboard_to_top(page)
+            row = page.locator('#modList .mod-row').filter(has=page.locator('.file-download-btn',has_text='Review')).first
+            row.scroll_into_view_if_needed()
+            inspect = row.locator('[data-act="inspect"]')
+            if width == 1440:
+                inspect.focus();page.keyboard.press("Shift+F10");page.keyboard.press("ArrowDown")
+            else:
+                bounds = row.bounding_box()
+                row.click(button="right",position={"x":bounds["width"]-6,"y":bounds["height"]-6})
+                page.locator('#modContextMenu [data-context-act="inspect"]').hover()
+            page.locator("#modContextMenu").wait_for(state="visible");settle(page)
+            shot = f"library-context-menu-{width}-{'dark' if theme=='night' else 'light'}.png"
+            geometry = assert_context_menu_geometry(page,shot)
+            page.screenshot(path=str(output / shot))
+            states.append({"screenshot":shot,"theme":theme,"contextMenu":geometry,**dimensions(page)})
+            page.keyboard.press("Escape")
+            assert not page.locator("#modContextMenu").is_visible()
+            assert inspect.evaluate("element=>element===document.activeElement"), "Context menu did not restore Details focus"
+            assert page.locator("#modList .mod-row").count() == len(fixture["items"])
+        page.set_viewport_size({"width":1440,"height":1000})
+        set_dashboard_theme(page,"night");scroll_dashboard_to_top(page)
         page.locator("#libraryGallery").click()
         settle(page)
         assert page.locator("body").get_attribute("data-library-view") == "gallery"
@@ -634,12 +683,21 @@ def capture_shell(browser, ref, output, candidate):
     context.close()
 
 
-def benchmark(browser, variants, count, rounds):
+def benchmark(browser, variants, count, rounds, checkpoint=None):
     fixture = dashboard.catalog(count=count)
     fixture["offline"] = True
     result = {"mods": count, "rounds": rounds, "fixtureSha256": hashlib.sha256(json.dumps(fixture, sort_keys=True).encode()).hexdigest(), "method": "Complete baseline and candidate source variants; one warmup then alternating variant order, new contexts, complete import + frame/layout, exact last-item search, all DOM results preserved. Search/import timing method is unchanged from candidate1. Additional view/navigation timings use real clicks through frame/layout, after search completes. Browser fixture only; excludes native import and provider I/O.", "variants": {name: [] for name in variants}}
     for run in range(rounds + 1):
         for name in (list(variants) if run % 2 == 0 else list(reversed(variants))):
+            def record_phase(phase, sample):
+                # Persist only outside measured intervals. A later action
+                # timeout must not erase already completed sample phases.
+                result["inProgress"] = {"run":run,"warmup":run == 0,"variant":name,"phase":phase,"sample":sample}
+                if checkpoint:
+                    checkpoint(result)
+                print(f"BENCHMARK {'warmup' if run == 0 else 'run '+str(run)} {name} {phase}", flush=True)
+
+            record_phase("starting", {})
             context = browser.new_context(viewport={"width": 1440, "height": 900}, reduced_motion="reduce")
             page = context.new_page(); page.set_default_timeout(60000)
             metrics_session = context.new_cdp_session(page)
@@ -659,11 +717,13 @@ def benchmark(browser, variants, count, rounds):
               return {renderMs,rows:rows.length,complete,allLaidOut,noContentVisibility};
             }""", {"fixture": fixture, "count": count})
             assert sample["complete"] and sample["allLaidOut"] and sample["noContentVisibility"], sample
+            record_phase("import-complete", sample)
             start = time.perf_counter()
             page.locator("#search").fill(f"Unique Fixture {count-1}")
             page.wait_for_function("document.querySelectorAll('#modList .mod-row').length===1")
             assert page.locator("#modList .mod-row").get_attribute("data-id") == f"item-{count-1}"
             sample["lastItemSearchMs"] = (time.perf_counter() - start) * 1000
+            record_phase("search-complete", sample)
             sample["survivingRowReusedDuringSearch"] = page.evaluate("document.querySelector('#modList .mod-row')===window.__VISUAL_SURVIVOR__")
             page.locator("#search").fill("")
             page.wait_for_function("n=>document.querySelectorAll('#modList .mod-row').length===n", arg=count)
@@ -672,6 +732,7 @@ def benchmark(browser, variants, count, rounds):
               library:document.querySelector('#modList').querySelectorAll('*').length,
               row:document.querySelector('#modList .mod-row').querySelectorAll('*').length,
               previewImages:document.querySelectorAll('#modList .mod-preview-image').length})""")
+            record_phase("restore-complete", sample)
             start = time.perf_counter()
             page.locator("#sortSelect").select_option("name");settle(page)
             sample["sortMs"] = (time.perf_counter() - start) * 1000
@@ -679,6 +740,7 @@ def benchmark(browser, variants, count, rounds):
             sample["survivingRowReusedAfterSort"] = page.evaluate("id=>document.getElementById('row-'+id)===window.__VISUAL_SURVIVOR__", f"item-{count-1}")
             if name == "after":
                 assert all(sample[key] for key in ("survivingRowReusedDuringSearch", "survivingRowReusedAfterRestore", "survivingRowReusedAfterSort")), sample
+            record_phase("sort-complete", sample)
             page.locator("#sortSelect").select_option("priority");settle(page)
 
             metric_names = ("ScriptDuration", "LayoutDuration", "RecalcStyleDuration", "TaskDuration", "LayoutCount", "RecalcStyleCount", "Nodes", "JSHeapUsedSize")
@@ -708,6 +770,8 @@ def benchmark(browser, variants, count, rounds):
                     "metricDeltas":{key:metrics_after[key]-metrics_before[key] for key in metric_names if key in metrics_before and key in metrics_after},
                     "geometryBefore":geometry_before,"geometryAfter":geometry_after,
                 }
+                sample[label + "Ms"] = elapsed
+                record_phase(label + "-complete", sample)
                 return elapsed
 
             sample["navigationUpdatesMs"] = timed_click('.workspace-tabs [data-workspace="updates"]', "navigationUpdates")
@@ -728,9 +792,14 @@ def benchmark(browser, variants, count, rounds):
                 page.locator("#densityToggle").click();settle(page)
             if run:
                 result["variants"][name].append(sample)
+            record_phase("sample-complete", sample)
             context.close()
     metrics = ("renderMs", "lastItemSearchMs", "sortMs", "navigationUpdatesMs", "navigationLibraryMs", "densityMs", "galleryMs", "galleryDensityMs", "listMs")
     result["medians"] = {name: {metric: statistics.median(row[metric] for row in samples) for metric in metrics if all(metric in row for row in samples)} for name, samples in result["variants"].items()}
+    result.pop("inProgress", None)
+    result["completed"] = True
+    if checkpoint:
+        checkpoint(result)
     return result
 
 
@@ -772,7 +841,12 @@ def main():
                 proof.setdefault("preservedGames", {})[name] = capture_preserved_games(browser, html, output, name == "after")
             if not args.skip_benchmark:
                 print(f"Measuring complete {args.mods:,}-mod source variants…", flush=True)
-                proof["completeLibrary"] = benchmark(browser, {name: value[0] for name, value in compiled.items()}, args.mods, args.rounds)
+                def checkpoint_benchmark(value):
+                    proof["completeLibrary"] = value
+                    temporary = args.output / "visual-release.json.tmp"
+                    temporary.write_text(json.dumps(proof, indent=2), encoding="utf-8")
+                    temporary.replace(args.output / "visual-release.json")
+                proof["completeLibrary"] = benchmark(browser, {name: value[0] for name, value in compiled.items()}, args.mods, args.rounds, checkpoint_benchmark)
             proof["sourceStatusAtEnd"] = subprocess.check_output(["git","status","--porcelain","--untracked-files=all"],cwd=ROOT,text=True).splitlines()
             proof["sourceDirty"] = bool(proof["sourceStatusAtStart"] or proof["sourceStatusAtEnd"])
             end_commit = subprocess.check_output(["git","rev-parse","HEAD"],cwd=ROOT,text=True).strip()

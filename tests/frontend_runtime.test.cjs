@@ -179,6 +179,45 @@ test('cosmetic settings leave catalog DOM intact; large searches keep all record
  assert.equal(h.nodes.get('modList').writes,writes+1);
 });
 
+test('gallery geometry reuses one card rule without inherited subtree writes',async()=>{
+ const h=harness({live:false,count:3});await h.settle();
+ const list=h.nodes.get('modList'),sheets=[],values=[];
+ list.clientWidth=1324;
+ h.context.document.querySelector('style[nonce]').nonce='packaged-style-nonce';
+ list.style.setProperty=(name)=>{throw Error('Gallery geometry must not inherit '+name+' through every record');};
+ h.context.document.head={append(style){
+  assert.equal(style.nonce,'packaged-style-nonce','Packaged styles retain the desktop CSP nonce');
+  assert.match(style.textContent,/\[data-library-view="gallery"\] #modList > \.mod-row/);
+  const initial=style.textContent.match(/flex-basis:([^}]+)/)[1];values.push(initial);
+  style.sheet={cssRules:[{style:{setProperty(name,value){assert.equal(name,'flex-basis');values.push(value);}}}]};
+  sheets.push(style);
+ }};
+ h.api.updatePrefs({libraryView:'gallery'});
+ assert.equal(values.at(-1),'calc((100% - 70px) / 6)');
+ const first=values.length,writes=list.writes;
+ h.api.updatePrefs({theme:'snow',navExpanded:true});
+ h.context.dispatchEvent({type:'resize'});
+ assert.equal(values.length,first,'Unchanged columns must not invalidate card styles');
+ assert.equal(list.writes,writes,'Presentation changes must retain the rendered records');
+ h.api.updatePrefs({density:'comfy'});
+ assert.equal(values.at(-1),'calc((100% - 54px) / 4)');
+ list.clientWidth=950;h.context.dispatchEvent({type:'resize'});
+ assert.equal(values.at(-1),'calc((100% - 36px) / 3)');
+ h.context.innerWidth=390;list.clientWidth=284;h.context.dispatchEvent({type:'resize'});
+ assert.equal(values.at(-1),'calc((100% - 0px) / 1)');
+ h.api.updatePrefs({density:'compact'});
+ assert.equal(values.at(-1),'calc((100% - 10px) / 2)');
+ h.context.innerWidth=1440;list.clientWidth=1324;h.context.dispatchEvent({type:'resize'});
+ assert.equal(values.at(-1),'calc((100% - 70px) / 6)');
+ h.api.updatePrefs({libraryView:'list'});const beforeListResize=values.length;
+ list.clientWidth=1110;h.context.dispatchEvent({type:'resize'});
+ assert.equal(values.length,beforeListResize,'List-only resizing must not mutate gallery rules');
+ h.api.updatePrefs({libraryView:'gallery'});
+ assert.equal(values.at(-1),'calc((100% - 56px) / 5)');
+ assert.equal(sheets.length,1,'Resize and density changes reuse the same CSS rule');
+ assert.equal(h.qa.getCatalog().items.length,3);
+});
+
 test('native appearance survives profile imports and theme controls await canonical preferences',async()=>{
  const h=harness({live:false,count:2});await h.settle();const requests=[];
  h.context.modhunterRequestTheme=theme=>{requests.push(theme);return true};

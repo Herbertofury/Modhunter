@@ -728,6 +728,7 @@ function thumbnailMarkup(mod,large=false,source=getSrc(mod)){
  const metadata=' data-provider-label="'+escapeHTML(label)+'"';
  return large?'<div class="mod-art mod-art-large'+artClass+'"'+metadata+'>'+inside+'</div>':'<button class="mod-art'+artClass+'" type="button" data-act="preview" data-id="'+id+'"'+metadata+' title="'+escapeHTML('Inspect '+mod.name)+'" aria-label="'+escapeHTML('Preview and inspect '+mod.name)+'">'+inside+'</button>';
 }
+let GALLERY_GEOMETRY_RULE=null;
 function updateGalleryColumns(width){
  if(STORE.prefs.libraryView!=='gallery')return;
  const list=$('modList');if(!list)return;
@@ -735,7 +736,20 @@ function updateGalleryColumns(width){
  const comfy=STORE.prefs.density==='comfy',narrow=innerWidth<=580,gap=comfy?18:narrow?10:14;
  const columns=narrow?(comfy?1:2):Math.max(1,Math.floor((available+gap)/((comfy?260:200)+gap)));
  const key=columns+':'+gap;if(list.dataset.galleryGeometry===key)return;
- list.dataset.galleryGeometry=key;list.style.setProperty('--library-columns',String(columns));list.style.setProperty('--library-gap-total',((columns-1)*gap)+'px');
+ // Geometry belongs to the card boxes. Inheriting these values through every
+ // title, action and pseudo-element made density changes recalculate the whole
+ // catalogue. One guarded CSSOM rule preserves the exact same columns without
+ // adding per-record styles or touching the full set of laid-out cards.
+ const basis=`calc((100% - ${(columns-1)*gap}px) / ${columns})`;
+ if(!GALLERY_GEOMETRY_RULE){
+  const style=document.createElement('style');style.dataset.libraryGeometry='';
+  // Packaged Tauri pages authorize their inline styles with a per-page nonce.
+  // Keep that policy intact when the desktop adds this runtime sizing rule.
+  const nonce=document.querySelector('style[nonce]')?.nonce;if(nonce)style.nonce=nonce;
+  style.textContent='body[data-layout="compact"][data-library-view="gallery"] #modList > .mod-row {flex-basis:'+basis+'}';
+  document.head.append(style);GALLERY_GEOMETRY_RULE=style.sheet.cssRules[0];
+ }else GALLERY_GEOMETRY_RULE.style.setProperty('flex-basis',basis);
+ list.dataset.galleryGeometry=key;
 }
 function applyLibraryAppearance(){
  // Read one existing container width before changing the view. The outer

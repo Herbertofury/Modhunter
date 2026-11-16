@@ -1,16 +1,19 @@
-"""Bounded, actual-source C7/C8 library-width comparison in Chromium.
+"""Bounded actual-source Gallery surface comparison with exact viewport pixels.
 
 Four fresh page contexts alternate C7 -> candidate, candidate -> C7 in one
 browser. Every measured arm imports the exact complete 11,207-record native
 fixture. No CSS override, tracing, sampled geometry, warm-up exclusion, result
-limit, or virtualization is used. This diagnostic does not replace Windows or
-release acceptance and does not waive any existing responsiveness ceiling.
+limit, or virtualization is used. Preview-stretch changes only atelier.css;
+flat-fill changes only app.js and atelier.css. Each immutable source candidate
+compares against exact C7 independently. This diagnostic does not replace
+Windows/release acceptance or waive any existing responsiveness ceiling.
 """
 from __future__ import annotations
 
 import argparse
 import gzip
 import hashlib
+import io
 import json
 import math
 import os
@@ -24,6 +27,7 @@ import uuid
 import visual_release_qa as acceptance
 import visual_style_profile as profile
 import visual_startup_trace as process_owner
+from PIL import Image, ImageChops
 
 ROOT = acceptance.ROOT
 CONTROL_REF = "18883b32e0683dad8aed1dc87c6fe9ec577e12f2"
@@ -31,9 +35,13 @@ COUNT = 11207
 FIXTURE_SHA = "afd855e4ac76f284630ffb4ed6d9dc37280113c9559aef4402516795b7fef0a0"
 FIXTURE_BYTES = 4696493
 WORKER_SECONDS = 690
-REPORT_NAME = "width-comparison.json"
+REPORT_NAME = "surface-comparison.json"
 VIEWPORT = {"width": 1028, "height": 633}
-OWNED_URL = "http://modhunter-width.invalid/"
+OWNED_URL = "http://modhunter-surface.invalid/"
+EXPECTED_ASSETS = {
+    "preview-stretch": {"mo2_update_arsenal/web/atelier.css"},
+    "flat-fill": {"mo2_update_arsenal/web/app.js", "mo2_update_arsenal/web/atelier.css"},
+}
 ACTIONS = (
     ("listDensity", "#densityToggle", "list", "comfy"),
     ("listDensityReset", "#densityToggle", "list", "compact"),
@@ -94,6 +102,48 @@ def state_passed(comparison: dict) -> bool:
         "exactGeometryEqual", "headerAndAncestorGeometryEqual", "orderedMarkupEqual", "stateEqual"))
 
 
+def decoded_png(data: bytes) -> tuple[tuple[int, int], bytes]:
+    with Image.open(io.BytesIO(data)) as image:
+        assert image.format == "PNG", "Viewport artifact is not a PNG"
+        rgba = image.convert("RGBA")
+        return rgba.size, rgba.tobytes()
+
+
+def compare_pixels(reference: tuple, current: tuple) -> dict:
+    before_size, before = reference
+    after_size, after = current
+    if before_size != after_size:
+        return {"identical": False, "referenceSize": list(before_size), "candidateSize": list(after_size),
+                "changedPixels": None, "bounds": None, "reason": "Viewport image dimensions differ"}
+    if before == after:
+        return {"identical": True, "changedPixels": 0, "bounds": None,
+                "width": before_size[0], "height": before_size[1], "tolerance": 0}
+    diff = ImageChops.difference(Image.frombytes("RGBA", before_size, before),
+                                Image.frombytes("RGBA", after_size, after))
+    red, green, blue, alpha = diff.split()
+    mask = ImageChops.lighter(ImageChops.lighter(red, green), ImageChops.lighter(blue, alpha))
+    return {"identical": False, "changedPixels": sum(1 for value in mask.tobytes() if value),
+            "bounds": list(mask.getbbox()), "width": before_size[0], "height": before_size[1], "tolerance": 0}
+
+
+def capture_viewport(page, output: Path, label: str, state: str, references: dict) -> dict:
+    path = output / f"{label}-{state}.png"
+    data = page.screenshot(path=str(path), full_page=False, animations="allow", caret="hide", timeout=30000)
+    decoded = decoded_png(data)
+    assert decoded[0] == (VIEWPORT["width"], VIEWPORT["height"]), decoded[0]
+    receipt = {"file": path.name, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(),
+               "decodedRgbaSha256": hashlib.sha256(decoded[1]).hexdigest(), "width": decoded[0][0],
+               "height": decoded[0][1], "capture": "Actual viewport PNG; animations remain active; only blinking text caret hidden; no clipping, cropping, scaling or style normalization"}
+    images = references.setdefault("_viewport_images", {})
+    if state not in images:
+        images[state] = (decoded, path.name)
+        receipt.update(reference=True, comparison=compare_pixels(decoded, decoded))
+    else:
+        previous, filename = images[state]
+        receipt.update(referenceFile=filename, comparison=compare_pixels(previous, decoded))
+    return receipt
+
+
 def capture_state(page, output: Path, label: str, state: str, references: dict) -> dict:
     geometry = profile.complete_geometry(page, COUNT)
     assert all(row[0] == f"item-{index}" for index, row in enumerate(geometry["rowGeometry"])), (
@@ -113,9 +163,15 @@ def capture_state(page, output: Path, label: str, state: str, references: dict) 
         receipt["reference"] = True
     else:
         receipt["comparison"] = compare_state(references[state], data)
-        assert state_passed(receipt["comparison"]), ("Actual-source layout or semantics differ", label, state,
-                                                       receipt["comparison"])
+    receipt["viewportScreenshot"] = capture_viewport(page, output, label, state, references)
+    receipt["ok"] = receipt["viewportScreenshot"]["comparison"]["identical"] and (
+        "comparison" not in receipt or state_passed(receipt["comparison"]))
     return receipt
+
+
+def validate_state(receipt: dict, label: str, state: str) -> None:
+    assert receipt["ok"], ("Actual-source geometry, markup or viewport pixels differ", label, state,
+                           receipt.get("comparison"), receipt["viewportScreenshot"])
 
 
 def run_arm(browser, html: str, fixture: dict, output: Path, round_number: int, variant: str,
@@ -154,21 +210,23 @@ def run_arm(browser, html: str, fixture: dict, output: Path, round_number: int, 
         arm["timingsMs"]["render"] = page.evaluate(IMPORT_JS, fixture)
         assert page.evaluate("document.body.dataset.theme") == "snow", "Imported profile lost its ordinary saved theme"
         arm["states"]["import"] = capture_state(page, output, label, "import", references)
-        page.evaluate("window.__WIDTH_SURVIVOR__=document.querySelector('#modList .mod-row:last-child')")
+        validate_state(arm["states"]["import"], label, "import")
+        page.evaluate("window.__SURFACE_SURVIVOR__=document.querySelector('#modList .mod-row:last-child')")
         started = time.perf_counter()
         page.locator("#search").fill("Unique Fixture 11206")
         page.wait_for_function("""() => {const rows=document.querySelectorAll('#modList .mod-row');
           return rows.length===1&&rows[0].dataset.id==='item-11206';}""")
         arm["timingsMs"]["lastItemSearch"] = (time.perf_counter() - started) * 1000
-        assert page.evaluate("document.querySelector('#modList .mod-row')===window.__WIDTH_SURVIVOR__")
+        assert page.evaluate("document.querySelector('#modList .mod-row')===window.__SURFACE_SURVIVOR__")
         started = time.perf_counter()
         page.locator("#search").fill("")
         page.wait_for_function("document.querySelectorAll('#modList .mod-row').length===11207")
         acceptance.settle(page)
         arm["timingsMs"]["searchRestore"] = (time.perf_counter() - started) * 1000
-        assert page.evaluate("document.getElementById('row-item-11206')===window.__WIDTH_SURVIVOR__")
+        assert page.evaluate("document.getElementById('row-item-11206')===window.__SURFACE_SURVIVOR__")
         arm["searchSurvivorPreserved"] = True
         arm["states"]["restore"] = capture_state(page, output, label, "restore", references)
+        validate_state(arm["states"]["restore"], label, "restore")
         for name, selector, view, density in ACTIONS:
             checkpoint(arm, label + ":" + name + ":starting")
             before = profile.metric_snapshot(metrics)
@@ -183,10 +241,11 @@ def run_arm(browser, html: str, fixture: dict, output: Path, round_number: int, 
                 "metricDeltas": {key: after[key] - before[key] for key in before}}
             validate_endpoint(endpoint)
             arm["states"][name] = capture_state(page, output, label, name, references)
+            validate_state(arm["states"][name], label, name)
             assert arm["states"][name]["view"] == view and arm["states"][name]["density"] == density
             assert not arm["errors"], arm["errors"]
             checkpoint(arm, label + ":" + name + ":complete")
-            print(f"WIDTH_COMPARISON {label} {name} {elapsed:.3f}ms", flush=True)
+            print(f"SURFACE_COMPARISON {label} {name} {elapsed:.3f}ms", flush=True)
         assert all(finite_time(value) for value in arm["timingsMs"].values()), arm["timingsMs"]
         assert len(arm["timingsMs"]) == 9 and len(arm["states"]) == 8
         assert not arm["errors"], arm["errors"]
@@ -204,6 +263,7 @@ def run_arm(browser, html: str, fixture: dict, output: Path, round_number: int, 
 def worker(args) -> int:
     report_path = args.output / REPORT_NAME
     report = {"ok": False, "phase": "compiling-actual-sources", "runId": args.run_id,
+        "mode": args.mode, "expectedChangedCompiledAssets": sorted(EXPECTED_ASSETS[args.mode]),
         "scopeAcceptance": False, "errors": [], "tracing": False, "cssOverrides": False,
         "warmupTrials": 0, "discardedTrials": 0, "order": [list(pair) for pair in ORDER],
         "motionPreference": "no-preference", "viewport": VIEWPORT,
@@ -212,7 +272,8 @@ def worker(args) -> int:
         "sourceStatusAtStart": profile.source_status(), "platform": platform.platform(), "trials": [],
         "method": "Two opposite-order actual-source trials in fresh contexts of one Chromium process. Each imports the same full 11,207-record snapshot, searches/restores the final record, then clicks all six native-equivalent density/view controls. Action timer is real click through the second animation frame including guard removal/hover-style assertion. Complete geometry and markup checks are outside each timer. No trace, CSS override, hidden results, sample exclusion or native-performance claim.",
         "metricsScope": "CDP elapsed task/style/layout metrics bracket the click timer but their requests are outside it. They are not CPU time, exclusive categories, or proof of a particular style-flush cause.",
-        "comparisonScope": "Complete ordered record outerHTML hash; every row, chapter header, empty-state and list rectangle; all list headers and the complete container ancestor chain. Exact geometry equality is required in addition to the existing 0.1px diagnostic comparison."}
+        "comparisonScope": "Complete ordered record outerHTML hash; every row, chapter header, empty-state and list rectangle; all list headers and the complete container ancestor chain. Exact geometry equality is required in addition to the existing 0.1px diagnostic comparison. Every state's actual viewport PNG is decoded to RGBA and compared pixel-for-pixel with the matching C7 state; no tolerance or image normalization.",
+        "screenshotTiming": "After complete state geometry/markup collection, outside every interaction clock. CSS animations remain active. Only blinking text caret is hidden by the screenshot API; focus, hover, styling and viewport are not changed."}
     def save():
         profile.write_json(report_path, report)
     def checkpoint(arm, phase):
@@ -228,7 +289,8 @@ def worker(args) -> int:
         control_html, control_assets = acceptance.compile_dashboard(CONTROL_REF)
         candidate_html, candidate_assets = acceptance.compile_dashboard()
         changed = [name for name in control_assets if control_assets[name] != candidate_assets[name]]
-        assert changed == [acceptance.WEB + "app.js"], ("Candidate must change only the compiled application script", changed)
+        assert set(changed) == EXPECTED_ASSETS[args.mode] and len(changed) == len(EXPECTED_ASSETS[args.mode]), (
+            "Candidate compiled asset changes do not match the selected isolated experiment", args.mode, changed)
         report["sources"] = {"control": {"assets": control_assets, "htmlSha256": hashlib.sha256(control_html.encode()).hexdigest()},
                              "candidate": {"assets": candidate_assets, "htmlSha256": hashlib.sha256(candidate_html.encode()).hexdigest()},
                              "changedCompiledAssets": changed}
@@ -243,7 +305,7 @@ def worker(args) -> int:
         save()
         from playwright.sync_api import sync_playwright
         with sync_playwright() as runtime:
-            marker = "--modhunter-width-comparison=" + args.run_id
+            marker = "--modhunter-surface-comparison=" + args.run_id
             browser = runtime.chromium.launch(headless=True, executable_path=str(args.executable_path),
                 timeout=30000, args=["--no-sandbox", "--disable-dev-shm-usage", marker])
             try:
@@ -298,10 +360,11 @@ def supervise(args) -> int:
         raise ValueError("Refusing to overwrite a previous diagnostic receipt; choose a fresh output directory")
     run_id = uuid.uuid4().hex
     command = [sys.executable, str(Path(__file__).resolve()), "--worker", "--run-id", run_id,
-               "--output", str(args.output), "--control-ref", args.control_ref,
+               "--output", str(args.output), "--control-ref", args.control_ref, "--mode", args.mode,
                "--executable-path", str(args.executable_path)]
-    profile.write_json(report_path, {"ok": False, "phase": "starting-owned-worker", "runId": run_id, "errors": []})
-    log_path = args.output / "width-comparison.log"
+    profile.write_json(report_path, {"ok": False, "phase": "starting-owned-worker", "runId": run_id,
+                                   "mode": args.mode, "errors": []})
+    log_path = args.output / "surface-comparison.log"
     cleanup = None
     timed_out = False
     started = time.monotonic()
@@ -317,11 +380,11 @@ def supervise(args) -> int:
             # original process start ticks and PGID==PID before any signal.
             # This custom inert marker starts no trace or performance feature.
             cleanup = process_owner.cleanup_owned_processes(
-                process, partial, log_path, "--modhunter-width-comparison=" + run_id)
+                process, partial, log_path, "--modhunter-surface-comparison=" + run_id)
             code = process.poll()
         if code not in (0, None) and cleanup is None:
             cleanup = process_owner.cleanup_owned_processes(
-                process, json.loads(report_path.read_text()), log_path, "--modhunter-width-comparison=" + run_id)
+                process, json.loads(report_path.read_text()), log_path, "--modhunter-surface-comparison=" + run_id)
     report = json.loads(report_path.read_text())
     report.update(workerExitCode=code, workerDeadlineSeconds=WORKER_SECONDS,
                   maximumExternalSeconds=WORKER_SECONDS + process_owner.TERMINATE_GRACE_SECONDS + process_owner.KILL_GRACE_SECONDS,
@@ -333,7 +396,7 @@ def supervise(args) -> int:
         report.setdefault("errors", []).append(
             f"Owned comparison exceeded {WORKER_SECONDS}s at {report.get('phase')}" if timed_out else f"Owned comparison exited {code}")
     profile.write_json(report_path, report)
-    print(json.dumps({key: report.get(key) for key in ("ok", "phase", "candidateCommit", "controlCommit",
+    print(json.dumps({key: report.get(key) for key in ("ok", "phase", "mode", "candidateCommit", "controlCommit",
         "browserVersion", "resolvedExecutable", "pairedTimings", "errors", "externallyTimedOut")}))
     return 0 if report["ok"] else 1
 
@@ -370,15 +433,32 @@ def self_test() -> int:
         assert not state_passed(compare_state(state, altered)), field
     assert all(not finite_time(value) for value in (0, -1, True, float("inf"), float("nan")))
     assert finite_time(1.25)
+    image = Image.new("RGBA", (3, 2), (10, 20, 30, 255))
+    stream = io.BytesIO(); image.save(stream, format="PNG")
+    reference = decoded_png(stream.getvalue())
+    assert compare_pixels(reference, reference)["identical"]
+    image.putpixel((2, 1), (11, 20, 30, 255))
+    stream = io.BytesIO(); image.save(stream, format="PNG")
+    pixel = compare_pixels(reference, decoded_png(stream.getvalue()))
+    assert pixel["identical"] is False and pixel["changedPixels"] == 1 and pixel["bounds"] == [2, 1, 3, 2]
+    image = Image.new("RGBA", (3, 2), (10, 20, 30, 255))
+    image.putpixel((0, 0), (10, 20, 30, 254))
+    stream = io.BytesIO(); image.save(stream, format="PNG")
+    alpha = compare_pixels(reference, decoded_png(stream.getvalue()))
+    assert not alpha["identical"] and alpha["changedPixels"] == 1 and alpha["bounds"] == [0, 0, 1, 1]
+    assert not compare_pixels(reference, ((1, 1), bytes(4)))["identical"]
+    assert EXPECTED_ASSETS["preview-stretch"] == {"mo2_update_arsenal/web/atelier.css"}
+    assert EXPECTED_ASSETS["flat-fill"] == {"mo2_update_arsenal/web/app.js", "mo2_update_arsenal/web/atelier.css"}
     assert WORKER_SECONDS + process_owner.TERMINATE_GRACE_SECONDS + process_owner.KILL_GRACE_SECONDS <= 720
-    print("Width comparison endpoint, full geometry/markup and deadline self-tests passed")
+    print("Surface comparison endpoint, full geometry/markup, exact pixels and deadline self-tests passed")
     return 0
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, default=ROOT / "native/target/width-comparison")
+    parser.add_argument("--output", type=Path, default=ROOT / "native/target/surface-comparison")
     parser.add_argument("--control-ref", default=CONTROL_REF)
+    parser.add_argument("--mode", choices=tuple(EXPECTED_ASSETS))
     parser.add_argument("--executable-path", type=Path)
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--worker", action="store_true", help=argparse.SUPPRESS)
@@ -386,6 +466,8 @@ def main() -> int:
     args = parser.parse_args()
     if args.self_test:
         return self_test()
+    if not args.mode:
+        parser.error("Choose exactly one isolated source experiment with --mode")
     if not args.executable_path or not args.executable_path.expanduser().is_file():
         parser.error("Pass the exact Chromium executable used by the ordinary performance job")
     args.executable_path = args.executable_path.expanduser().resolve()

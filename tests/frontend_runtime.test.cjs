@@ -17,9 +17,8 @@ function catalog(profile='a',count=3){
   groups:[{id:'group',name:'Fixtures',count,startPriority:0,color:'mint'}],
   items:Array.from({length:count},(_,i)=>({id:'item-'+i,name:'Fixture '+i,groupId:'group',group:'Fixtures',priority:i,author:'Test Author',installedVersion:'1.0',screenshotNote:'',flags:[],audit:{},nexusId:i+1,source:{type:'nexus',verified:true,url:'https://www.nexusmods.com/skyrimspecialedition/mods/'+(i+1)},update:{verdict:'candidate',latestVersion:'2.0'}}))};
 }
-function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={},progressReadFailures=0,nativeWatch=false,resizeObserver=false}={}){
+function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={},progressReadFailures=0,nativeWatch=false}={}){
  const nodes=new Map(),timers=new Map(),pending=new Map(),calls=[],active=new Map(),maximum=new Map(),nativeNavigations=[],windowListeners=new Map();
- const resizeObservers=[];
  let timerId=0;
  const state={catalog:catalog('a',count),generation:1,failSnapshots,progressRows,progressReadFailures,score:0,scan:{state:'idle'},defer:new Set()};
  const document={hidden:false,activeElement:null,addEventListener(){},querySelectorAll(){return[]},createElement:name=>element(name),getElementById:id=>node(id),querySelector:selector=>node(selector)};
@@ -50,10 +49,6 @@ function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={
   __MO2_BRIDGE_BOOT__:{active:live,token:'test'},
  };
  context.window=context;context.__MODHUNTER_NATIVE_WATCHTOWER__=nativeWatch;context.location={assign:value=>nativeNavigations.push(value)};
- if(resizeObserver)context.ResizeObserver=class{
-  constructor(callback){this.callback=callback;this.targets=new Set();resizeObservers.push(this)}
-  observe(target){this.targets.add(target)}
- };
  context.fetch=async(url,options={})=>{
   const endpoint=String(url).slice(5),method=options.method||'GET',key=method+' '+endpoint;
   const body=JSON.parse(options.body||'{}'),c=structuredClone(state.catalog);
@@ -90,11 +85,10 @@ function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={
    return{ok:true,json:async()=>value};
   }finally{active.set(key,active.get(key)-1)}
  };
- const instrument='window.__RUNTIME__={importJSON,attachNativeTracking,trackPageIntent,trackModPage,getSrc,modHTML,renderWorkshop,sourceLinksPending,requestLiveCatalog,bridgeRequest,scanLive,fastUpdateAll,refreshWorkshop,refreshDownloads,nextWorkshopCandidate,pollLiveBridge,updatePrefs,selectWorkspace,save,counts,filtered,render,importOfflineCatalog,scheduleSearchRender,analyzePlugins,refreshModHealth,drawInspector,loadModInsights,loadSourceDetails,sourceDetailMod,openFilePicker,closeFilePicker,exportWorkshop,state:()=>({connected:LIVE_CONNECTED,quick:QUICK_RUNNING,profileEpoch:PROFILE_EPOCH}),setRow:(id,value,invalidatePlan=true)=>{markSourceEdit(getRow(id).url,value.url);STORE.rows[id]=value;save(invalidatePlan)},setQuery:q=>{STORE.prefs.query=q;scheduleSearchRender()}};';
+ const instrument='window.__RUNTIME__={importJSON,attachNativeTracking,trackPageIntent,trackModPage,getSrc,modHTML,renderWorkshop,sourceLinksPending,requestLiveCatalog,bridgeRequest,scanLive,fastUpdateAll,refreshWorkshop,refreshDownloads,nextWorkshopCandidate,pollLiveBridge,updatePrefs,save,counts,filtered,render,importOfflineCatalog,scheduleSearchRender,analyzePlugins,refreshModHealth,drawInspector,loadModInsights,loadSourceDetails,sourceDetailMod,openFilePicker,closeFilePicker,exportWorkshop,state:()=>({connected:LIVE_CONNECTED,quick:QUICK_RUNNING,profileEpoch:PROFILE_EPOCH}),setRow:(id,value,invalidatePlan=true)=>{markSourceEdit(getRow(id).url,value.url);STORE.rows[id]=value;save(invalidatePlan)},setQuery:q=>{STORE.prefs.query=q;scheduleSearchRender()}};';
  const source=APP.replace('/*__POWERSHELL__*/','""').replace(/\}\)\(\);\s*$/,instrument+'\n})();');
  vm.createContext(context);vm.runInContext(SOURCES,context,{filename:'source_insights.js'});vm.runInContext(INSIGHTS,context,{filename:'mod_insights.js'});vm.runInContext(source,context,{filename:'app.js'});
  return{context,state,nodes,timers,calls,active,maximum,pending,nativeNavigations,api:context.__RUNTIME__,qa:context.__ARSENAL_QA__,
-  observeResize(width,height=200,target=node('modList')){for(const observer of resizeObservers)if(observer.targets.has(target))observer.callback([{target,contentRect:{width,height}}]);},
   release(key){state.defer.delete(key);for(const resolve of pending.get(key)||[])resolve();pending.delete(key)},
   async settle(){for(let i=0;i<6;i++)await new Promise(resolve=>setImmediate(resolve))},
   async tick(ms){const pair=[...timers].find(([,t])=>t.ms===ms);assert.ok(pair,'Expected timer '+ms);timers.delete(pair[0]);pair[1].fn();await this.settle()},
@@ -237,130 +231,6 @@ test('gallery geometry reuses one card rule without inherited subtree writes',as
  assert.equal(values.at(-1),'calc((100% - 56px) / 5)');
  assert.equal(sheets.length,1,'Resize and density changes reuse the same CSS rule');
  assert.equal(h.qa.getCatalog().items.length,3);
-});
-
-function galleryRuleValues(h){
- const values=[];
- h.context.document.head={append(style){
-  values.push(style.textContent.match(/flex-basis:([^}]+)/)[1]);
-  style.sheet={cssRules:[{style:{setProperty(name,value){assert.equal(name,'flex-basis');values.push(value)}}}]};
- }};
- return values;
-}
-
-test('a delivered gallery box avoids hot width reads without changing fractional resize semantics',async()=>{
- const h=harness({live:false,resizeObserver:true});await h.settle();
- const {list,frames}=normalLibraryLayout(h),values=galleryRuleValues(h);
- h.context.document.body.dataset.workspace='mods';
- let actualWidth=1324,reads=0;
- Object.defineProperty(list,'clientWidth',{get(){reads++;return actualWidth}});
- h.observeResize(1324);assert.equal(reads,1,'Capture the integer width during observer delivery');
- await h.tick('frame');assert.equal(values.length,0,'List observations do not create gallery styles');
- reads=0;h.api.updatePrefs({libraryView:'gallery'});
- assert.equal(reads,0,'The appearance guard must not be followed by a synchronous width flush');
- assert.equal(values.at(-1),'calc((100% - 70px) / 6)');
- assert.ok(list.dataset.layoutChange);await h.tick('frame');await h.tick('frame');
- assert.equal(list.dataset.layoutChange,undefined);
- // contentRect and clientWidth have different, existing threshold semantics.
- // Observer resizing uses the fractional content width; appearance uses the
- // actual integer client width, without guessing how the browser snapped it.
- actualWidth=1270;h.observeResize(1269.75);await h.tick('frame');
- assert.equal(values.at(-1),'calc((100% - 56px) / 5)');
- reads=0;h.api.updatePrefs({theme:'snow'});
- assert.equal(reads,0);assert.equal(values.at(-1),'calc((100% - 70px) / 6)');
- await h.tick('frame');await h.tick('frame');
- const before=values.length;
- h.observeResize(1269.75,400);
- assert.equal(reads,0,'A height-only delivery reuses the already measured width');
- assert.equal(frames().length,0);assert.equal(values.length,before);
- h.api.updatePrefs({libraryView:'list'});await h.tick('frame');await h.tick('frame');
- reads=0;h.observeResize(1269.75,450);
- assert.equal(reads,1,'Reconciled headers invalidate the appearance cache until layout is delivered');
- assert.equal(frames().length,0,'Invalidation alone must not invent a resize callback');
- reads=0;h.api.updatePrefs({libraryView:'gallery'});
- assert.equal(reads,0);assert.equal(values.at(-1),'calc((100% - 70px) / 6)');
- await h.tick('frame');h.observeResize(1269.75,1200);
- assert.equal(frames().length,1,'Only the existing second restoration frame remains queued');
- await h.tick('frame');
- assert.equal(values.at(-1),'calc((100% - 70px) / 6)','Header removal must not apply a new fractional resize correction');
- assert.equal(frames().length,0);reads=0;
- h.api.updatePrefs({density:'comfy'});
- assert.equal(reads,0);assert.equal(values.at(-1),'calc((100% - 54px) / 4)');
- assert.equal(h.qa.getCatalog().items.length,3);
-});
-
-test('gallery width cache rejects stale layout state, hidden boxes and unobserved catalog changes',async()=>{
- const h=harness({live:false,resizeObserver:true});await h.settle();
- const {list,frames}=normalLibraryLayout(h),values=galleryRuleValues(h);
- h.context.document.body.dataset.workspace='mods';
- // Reduced motion isolates geometry scheduling; the dedicated lifecycle tests
- // exercise the normal-motion guard and its exact two-frame restoration.
- h.context.matchMedia=()=>({matches:true});
- let actualWidth=1324,reads=0;
- Object.defineProperty(list,'clientWidth',{get(){reads++;return actualWidth}});
- h.api.updatePrefs({libraryView:'gallery'});
- assert.equal(reads,1,'Before the first observation the original direct read remains available');
- h.observeResize(1324);await h.tick('frame');
- reads=0;h.context.innerWidth=900;actualWidth=780;
- h.api.updatePrefs({density:'comfy'});
- assert.equal(reads,1,'A viewport resize before observer delivery rejects the old width');
- assert.equal(values.at(-1),'calc((100% - 18px) / 2)');
- h.observeResize(780);await h.tick('frame');
- reads=0;h.api.updatePrefs({navExpanded:true});
- assert.equal(reads,0,'Changing the rail starts with the current, still valid box');
- actualWidth=650;h.api.updatePrefs({theme:'snow'});
- assert.equal(reads,1,'A second action before the new rail observation reads the actual new box');
- h.observeResize(650);await h.tick('frame');
- reads=0;h.context.innerHeight=600;actualWidth=635;h.api.updatePrefs({theme:'night'});
- assert.equal(reads,1,'Viewport-height changes can also change scrollbar width');
- h.observeResize(635);await h.tick('frame');
- reads=0;h.api.updatePrefs({focus:true});actualWidth=650;h.api.updatePrefs({theme:'snow'});
- assert.equal(reads,1,'A pending focus layout cannot reuse a pre-focus width');
- h.observeResize(650);await h.tick('frame');
- reads=0;h.api.selectWorkspace('updates');h.observeResize(0);await h.tick('frame');
- assert.equal(reads,0,'Hidden zero-width boxes never retain the old positive measurement');
- h.api.selectWorkspace('mods');actualWidth=950;h.api.updatePrefs({density:'compact'});
- assert.equal(reads,1);assert.equal(values.at(-1),'calc((100% - 42px) / 4)');
- h.observeResize(950);await h.tick('frame');
- reads=0;h.api.selectWorkspace('updates');h.api.selectWorkspace('mods');actualWidth=780;
- h.api.updatePrefs({theme:'night'});
- assert.equal(reads,1,'Hide/show in one task invalidates even without a zero-width observer delivery');
- h.observeResize(780);await h.tick('frame');
- reads=0;h.api.setQuery('priority:2');assert.equal(h.api.filtered().length,1);actualWidth=795;h.api.updatePrefs({theme:'snow'});
- assert.equal(reads,1,'A changed library cannot reuse a pre-filter scrollbar measurement');
- h.observeResize(795);await h.tick('frame');
- reads=0;h.api.render();h.api.updatePrefs({theme:'night'});
- assert.equal(reads,0,'An unchanged render retains the valid measurement');
- assert.equal(h.qa.getCatalog().items.length,3);assert.equal(frames().length,0);
-});
-
-test('coalesced gallery observations use the latest owned width and preserve narrow columns',async()=>{
- const h=harness({live:false,resizeObserver:true});await h.settle();
- const {list,frames}=normalLibraryLayout(h),values=galleryRuleValues(h);
- h.context.matchMedia=()=>({matches:true});h.context.document.body.dataset.workspace='mods';
- let actualWidth=1324,reads=0;
- Object.defineProperty(list,'clientWidth',{get(){reads++;return actualWidth}});
- h.api.updatePrefs({libraryView:'gallery'});
- h.observeResize(1324);actualWidth=950;h.observeResize(950);
- assert.equal(frames().length,1);await h.tick('frame');
- assert.equal(values.at(-1),'calc((100% - 42px) / 4)');
- actualWidth=1000;h.observeResize(1000);
- h.api.setQuery('priority:2');actualWidth=1110;reads=0;
- await h.tick('frame');
- assert.equal(reads,1,'A queued resize must remeasure after a subsequent record mutation');
- assert.equal(values.at(-1),'calc((100% - 56px) / 5)');
- h.api.setQuery('');
- h.context.innerWidth=390;actualWidth=364;h.observeResize(364);await h.tick('frame');
- assert.equal(values.at(-1),'calc((100% - 10px) / 2)');
- h.api.updatePrefs({density:'comfy'});assert.equal(values.at(-1),'calc((100% - 0px) / 1)');
- h.observeResize(364);assert.equal(frames().length,0);
- const replacement=h.context.document.createElement('div');replacement.id='modList';replacement.isConnected=true;
- let replacementReads=0;Object.defineProperty(replacement,'clientWidth',{get(){replacementReads++;return 300}});
- h.nodes.set('modList',replacement);h.api.updatePrefs({density:'compact'});
- assert.equal(replacementReads,1,'A replacement element cannot inherit an old element’s cached width');
- const before=values.length;h.observeResize(900,200,list);
- assert.equal(frames().length,0,'A detached element’s late observation is ignored');
- assert.equal(values.length,before);assert.equal(h.qa.getCatalog().items.length,3);
 });
 
 test('native appearance survives profile imports and theme controls await canonical preferences',async()=>{

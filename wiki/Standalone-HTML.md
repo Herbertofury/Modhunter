@@ -4,9 +4,9 @@
 
 ## Versioned standalone package
 
-The 0.12.0 release pipeline prepares `Modhunter-0.12.0-Standalone.zip` independently from the Windows app and MO2 plugin packages. Check [GitHub Releases](https://github.com/Herbertofury/Modhunter/releases) for published availability; a source version or CI artifact alone does not establish that the release has passed all final gates.
+Download [Modhunter-0.12.0-Standalone.zip](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter-0.12.0-Standalone.zip) for the independently packaged dashboard and games. Its HTML is identical to the shared dashboard in the tested Windows/MO2 package, and the archive retains its build identity and checksums. The [Atelier release guide](Atelier-0.12) links the actual runtime proof and before/after screenshots.
 
-When available, verify the ZIP against the release's `SHA256SUMS.txt`, extract it, and open `Modhunter.html`. Its `BUILD_INFO.json` identifies the tested version, commit and workflow; its internal `SHA256SUMS.txt` covers the extracted files. The release packager copies the exact tested HTML from the validated portable package. The unversioned source download above follows `main` and may represent a different checkpoint.
+Verify the ZIP against the release's `SHA256SUMS.txt`, extract it, and open `Modhunter.html`. Its `BUILD_INFO.json` identifies the tested version, commit and workflow; its internal `SHA256SUMS.txt` covers the extracted files. The release packager copies the exact tested HTML from the validated portable package. The unversioned source download above follows `main` and may represent a different checkpoint.
 
 For a specific tested commit, the [standalone verification workflow](https://github.com/Herbertofury/Modhunter/actions/workflows/build-workshop.yml) supplies a `Modhunter-Standalone-HTML` artifact with the HTML, build identity and SHA-256 checksum. This is standalone browser evidence; the Windows/MO2 app and matching Rust helper come from the [Windows releases](https://github.com/Herbertofury/Modhunter/releases), after their separate native checks pass. Older HTML and archives under `web/` and `dist/` remain historical outputs.
 

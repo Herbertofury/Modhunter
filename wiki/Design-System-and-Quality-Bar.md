@@ -103,7 +103,7 @@ Compact rows omit only duplicate legacy cells that compact CSS already hid. Chec
 
 Atelier 0.12 implements the compact navigation rail, list/gallery switch, density control, provider filter, authentic artwork forwarding, themed details and context menus, and profile-persisted library preferences. Rust shell, Watchtower and native preferences share the restrained palette; the legacy companion remains preserved. The update, recovery and game owners remain authoritative.
 
-The [Atelier 0.12 guide](Atelier-0.12) separates implemented behavior from candidate verification. Native Windows, exact-head browser/performance results, final screenshots and release publication must be filled from the successful candidate run. A local Chromium launch blocked by runner IPC permissions is recorded as an unexecuted local test, never a pass.
+The [Atelier 0.12 guide](Atelier-0.12) records the published [v0.12.0 release](https://github.com/Herbertofury/Modhunter/releases/tag/v0.12.0), actual before/after screenshots, exact Windows and browser results, full-library timings and runtime limits from [main run 43947174658](https://github.com/Herbertofury/Modhunter/actions/runs/43947174658), commit `0f2d399244dbe0cc69e82521c497f006832678c3`. These observations establish that release only; later changes must meet the same gates. Local browser execution blocked by runner IPC permissions is recorded as unexecuted, with the actual CI runtime proof identified separately.
 
 ### Reference study
 

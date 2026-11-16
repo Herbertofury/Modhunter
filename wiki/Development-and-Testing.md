@@ -4,7 +4,7 @@
 
 The [native workflow](https://github.com/Herbertofury/Modhunter/actions/workflows/native-rust.yml) compiles and launches the actual Windows app, tests the production plugin inside an official MO2 2.5.2 fixture instance, runs Rust tests and strict Clippy, and executes browser and lifecycle regressions. See [Rust Desktop](Rust-Desktop.md) for the evidence boundaries and [native/README.md](../native/README.md) for build commands. Downloadable receipts identify each passing check and the compiled commit. The older acceptance notes below describe their original checkpoints.
 
-These are required gates, not a declaration that the current source has passed final release acceptance. The [Atelier evidence guide](Atelier-0.12.md) records the accepted candidate and measured results once available. Source snapshots, diagnostic experiments and synthetic release-validator tests retain their own scope.
+These are required gates for each release. The [Atelier evidence guide](Atelier-0.12.md) records the published v0.12.0 build, its actual main-run measurements, public download verification and runtime limits. Source snapshots, diagnostic experiments and synthetic release-validator tests retain their own scope; they do not replace final native acceptance.
 
 `tests/test_scan_lifecycle.py` covers stale completions, errors and progress, including A→B→A; `tests/test_source_identity.py` covers source authority and route-preserving URL cleanup. `tests/frontend_runtime.test.cjs` checks polling, stale reads, cosmetic rendering and source identity. `tests/test_frontend_responsiveness.py` runs the compiled dashboard in actual Chromium. CI requires the browser with `MODHUNTER_REQUIRE_BROWSER=1`, so a missing browser cannot silently pass that gate.
 

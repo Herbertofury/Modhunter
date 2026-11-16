@@ -11,7 +11,9 @@
 
 </div>
 
-![Modhunter hero](https://raw.githubusercontent.com/Herbertofury/Modhunter/main/screenshots/modhunter-menu.png)
+![Modhunter Gallery with authentic project artwork](https://raw.githubusercontent.com/Herbertofury/Modhunter/baa123997577cba697d3ac991ac6090a0ecb2159/screenshots/v0.12.0/gallery-dark.png)
+
+*Actual shared-dashboard capture. Public project names and icons are authentic; installed versions and update states are test fixtures.*
 
 > **Welcome to the Mod Vault.** Browse your complete collection, review exact sources and files, and keep verified backups when installing updates. Your unfinished world still holds quests, battles and rewards when you want to explore it.
 
@@ -25,9 +27,11 @@
 
 ## Library and updates
 
-**[Download the Rust Windows app](https://github.com/Herbertofury/Modhunter/releases)** · **[Rust installation and test evidence](Rust-Desktop)** · **[Atelier 0.12 visual update](Atelier-0.12)**
+**[Windows installer](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter_0.12.0_x64-setup.exe)** · **[Portable package](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter-Rust-Windows.zip)** · **[Release, components and checksums](https://github.com/Herbertofury/Modhunter/releases/tag/v0.12.0)** · **[Atelier guide](Atelier-0.12)**
 
-The Atelier workspace adds an image-forward gallery, compact and comfortable list views, provider filtering, a collapsible navigation rail and coordinated dark and light themes. Real source artwork appears when the exact mod record supplies it. The complete library, reviewed update workflow, backup and recovery controls, and every existing adventure remain available. See the [Atelier guide](Atelier-0.12) for controls, actual screenshots and candidate verification status.
+The Atelier workspace adds an image-forward gallery, compact and comfortable list views, provider filtering, a collapsible navigation rail and coordinated dark and light themes. Real source artwork appears when the exact mod record supplies it. The complete library, reviewed update workflow, backup and recovery controls, and every existing adventure remain available. See the [Atelier guide](Atelier-0.12) for controls, actual before/after screenshots and the final release verification scope.
+
+Release **v0.12.0** uses commit [`0f2d399244dbe0cc69e82521c497f006832678c3`](https://github.com/Herbertofury/Modhunter/tree/0f2d399244dbe0cc69e82521c497f006832678c3), tested in the [final main-branch workflow](https://github.com/Herbertofury/Modhunter/actions/runs/43947174658). [Get started](Getting-Started) with a read-only profile import, then connect MO2 when you want live update operations.
 
 The current desktop uses Rust for the shell, parallel profile importer, metadata cache, native operations and MO2 discovery. The shared dashboard and complete games continue in WebView2; MO2's Python adapter retains its native Nexus/download/install integration. Earlier combined archives below preserve the previous Electron release series.
 

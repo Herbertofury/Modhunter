@@ -2,7 +2,13 @@
 
 [Home](Home) · [Design standard](Design-System-and-Quality-Bar) · [Rust desktop](Rust-Desktop) · [Update Workshop](Update-Workshop) · [Watchtower](Watchtower)
 
-**Atelier 0.12 is the implemented visual update for Modhunter's Rust desktop and shared mod dashboard.** Candidate 7 completed its functional pipeline, including actual Windows, MO2 and installer checks. Release preparation rejected its native Gallery timing against the fixed performance limit. The C8 source now includes the accepted font, transparent-preview, count-copy and filtered-row-cache followups; its final integrated pipeline and publication remain pending.
+**Atelier 0.12 brings a compact List and image-forward Gallery to Modhunter's complete library, with coordinated dark and light themes across the Rust desktop and shared dashboard.** Review exact update evidence, keep your source and version context, and manage the same collection through the view that suits it.
+
+**[Windows installer](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter_0.12.0_x64-setup.exe)** · **[Portable Windows app](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter-Rust-Windows.zip)** · **[Release and all components](https://github.com/Herbertofury/Modhunter/releases/tag/v0.12.0)**
+
+![Atelier Gallery with authentic project artwork](https://raw.githubusercontent.com/Herbertofury/Modhunter/baa123997577cba697d3ac991ac6090a0ecb2159/screenshots/v0.12.0/gallery-dark.png)
+
+*Actual dashboard capture. Project names and artwork come from official public records; displayed installed versions and update states are deterministic test fixtures.*
 
 ## Your library, with more control over the view
 
@@ -62,83 +68,75 @@ Dark mode uses warm charcoal and oxidized green; light mode uses parchment and w
 
 We studied the official [Sims 4 Mod Manager](https://gametimedev.de/S4MM/) and [tabs documentation](https://s4mm-wiki.gametimedev.de/en/how-to-use/tabs). Its image-forward grouping and compact controls informed the layout work. Modhunter's source evidence, version comparison, reviewed-update workflow and fantasy identity remain its own. The [official historical gallery screenshot](https://www.gametimedev.de/images/screenshot.png) used for composition study is labeled Alpha v0.1; it is not presented as the current version or a measured competitor benchmark.
 
-## Candidate verification and release evidence
+## Actual before and after
 
-The authoritative pipeline is [native-rust.yml](https://github.com/Herbertofury/Modhunter/actions/workflows/native-rust.yml). The latest completed functional checkpoint is **candidate 7**, commit [`18883b32e0683dad8aed1dc87c6fe9ec577e12f2`](https://github.com/Herbertofury/Modhunter/tree/18883b32e0683dad8aed1dc87c6fe9ec577e12f2), tested by [Actions run 43926185167](https://github.com/Herbertofury/Modhunter/actions/runs/43926185167). Its clean source, tested executable and retained receipts were checked against that commit. Successful functional jobs do not constitute release acceptance: C7 exceeded the native Gallery limit, and its Linux screenshots exposed missing font coverage.
+These are original runtime captures of the same 227-mod catalog. The v0.11.0 comparison uses commit `1a99a66d346b1593273afc7c2b12e2d493c8d5e0`; the released capture uses `0f2d399244dbe0cc69e82521c497f006832678c3`. Source URLs and mod names are retained, while operational states are controlled fixtures. The screenshots are not mockups or generated artwork.
 
-| Verification layer | Proven C7 result / remaining boundary |
+### v0.11.0 Library
+
+![v0.11.0 Library using the same catalog](https://raw.githubusercontent.com/Herbertofury/Modhunter/baa123997577cba697d3ac991ac6090a0ecb2159/screenshots/v0.12.0/before-library.png)
+
+### Atelier Library
+
+![Atelier compact Library using the same catalog](https://raw.githubusercontent.com/Herbertofury/Modhunter/baa123997577cba697d3ac991ac6090a0ecb2159/screenshots/v0.12.0/after-library.png)
+
+The compact desktop row remains 48 pixels high. In the final same-run comparison, the first row moved from 352.8 to 313.2 pixels at a 1440-pixel width, and from 348.8 to 341.7 at 900 pixels. At 390 pixels, rows became 64 instead of 76 pixels high; the extra controls place the first row 18 pixels lower. These are measured fixture layouts, not a promise of the same visible-row count for every profile.
+
+### Light theme and update review
+
+![Atelier Gallery in the light theme](https://raw.githubusercontent.com/Herbertofury/Modhunter/baa123997577cba697d3ac991ac6090a0ecb2159/screenshots/v0.12.0/gallery-light.png)
+
+![Update Workshop with source and version evidence](https://raw.githubusercontent.com/Herbertofury/Modhunter/baa123997577cba697d3ac991ac6090a0ecb2159/screenshots/v0.12.0/update-workshop.png)
+
+[Inspect the narrow light Library](https://raw.githubusercontent.com/Herbertofury/Modhunter/baa123997577cba697d3ac991ac6090a0ecb2159/screenshots/v0.12.0/library-narrow-light.png) · [Exact-file review at narrow width](https://raw.githubusercontent.com/Herbertofury/Modhunter/baa123997577cba697d3ac991ac6090a0ecb2159/screenshots/v0.12.0/exact-file-narrow-light.png) · [Actual Windows desktop](https://raw.githubusercontent.com/Herbertofury/Modhunter/baa123997577cba697d3ac991ac6090a0ecb2159/screenshots/v0.12.0/native-desktop-dark.png) · [FX Studio and the preserved adventures](https://raw.githubusercontent.com/Herbertofury/Modhunter/baa123997577cba697d3ac991ac6090a0ecb2159/screenshots/v0.12.0/fx-studio.png)
+
+## Verification and performance
+
+Release **v0.12.0** packages commit [`0f2d399244dbe0cc69e82521c497f006832678c3`](https://github.com/Herbertofury/Modhunter/tree/0f2d399244dbe0cc69e82521c497f006832678c3) from [main-branch run 43947174658](https://github.com/Herbertofury/Modhunter/actions/runs/43947174658). The [Verification archive](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter-0.12.0-Verification.zip) preserves selected runtime receipts, build identities and screenshots. The [public checksum manifest](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/SHA256SUMS.txt) covers the release files; downloaded installer, portable and component bytes were checked against the tested build. Full browser/visual captures remain with the linked workflow artifacts.
+
+| Surface | Final release evidence |
 | --- | --- |
-| Source and lifecycle contracts | Rust, Python and JavaScript contract jobs passed, including **48 frontend runtime tests** and **35 release-validator self-tests** |
-| Gallery and native-manager browser controls | **14/14 actual Chromium Gallery cases** and **20/20 native-manager browser fixture cases passed**; the latter are browser tests, not Windows execution |
-| Before/after visual record | **112 actual Chromium screenshots** retained and audited against 18 authored asset hashes; missing CJK, Runic and symbol glyphs prevent treating this as complete visual acceptance |
-| Actual Windows desktop | Offline import/export passed; **16/16 MO2-connected desktop checks passed**, including native theme acknowledgement, wide/narrow layouts, Gallery, Details and focus restoration |
-| Native Watchtower | **26/26 checks passed** for owned page/session, download, privacy, browser-resource and notification fixtures, including the anonymous public HTTPS observation |
-| Official MO2 2.5.2 fixture | **30/30 checks passed** with the production plugin and actual Qt binding, including exact archive installation, backup, original-byte recovery, wrong-target rejection and later-edit preservation |
-| Exact Windows installer | **15/15 checks passed** for installation, matching executable/archive-helper bytes, installed WebView2 launch, uninstallation and preservation of the external fixture profile |
-| Complete 11,207-mod native renderer | **16/16 structural/runtime checks passed**; every ordered record remained laid out, and all six view/density endpoints removed the temporary guard and restored the original hover transition |
-| Release preparation | **Rejected:** native List → Gallery was **5711.6653 ms**, above the unchanged **5000 ms** limit. No C7 release asset set was created |
-| Final integrated candidate and publication | Pending a successful same-commit pipeline, release preparation, public asset downloads and live Wiki readback |
+| Source and lifecycle contracts | 280 Rust tests; 489 Python cases with 29 environment-specific skips, followed by the required actual-browser suites; 51 frontend runtime cases and 43 release-validator self-tests |
+| Shared Gallery and native-manager browser fixtures | 19 Gallery and 20 native-manager actual Chromium cases; no skipped manager cases |
+| Before/after visual comparison | 112 original screenshots, exact source hashes and the complete 11,207-record comparison |
+| Font and preview edges | Eight real Chinese-heading glyphs, six dashboard/game font probes and six alpha/failed-preview captures verified; the installation shield and Expedition timer fixes were inspected in actual final captures |
+| Actual Windows WebView2 desktop and Watchtower | 16 connected desktop, 26 Watchtower and 16 complete-library checks; all nine fixed performance ceilings, six Qt forward-runtime checks and 26 archive-review checks passed |
+| Production plugin inside official MO2 2.5.2 | 30 separate native-fixture checks and 31 connected-desktop fixture checks, including exact archive installation, verification and complete content restoration |
+| Exact installer | 15 actual install, installed-launch and uninstall checks; installed and portable executable bytes match |
+| Published downloads | All six direct downloads returned HTTP 200; sizes, published SHA-256 digests, internal checksum manifests, all four archive build identities and the tested/installed executable matched |
 
-C7 retains separate [Windows evidence](https://github.com/Herbertofury/Modhunter/actions/runs/43926185167/artifacts/14257168216), [MO2 evidence](https://github.com/Herbertofury/Modhunter/actions/runs/43926185167/artifacts/14257096633), [Chromium interaction evidence](https://github.com/Herbertofury/Modhunter/actions/runs/43926185167/artifacts/14256577119) and [visual comparison evidence](https://github.com/Herbertofury/Modhunter/actions/runs/43926185167/artifacts/14255599458). Downloaded artifact bytes matched their API SHA-256 digests and passed ZIP integrity checks. The portable, native-tested and installed executable hashes matched. These CI artifacts are verification inputs, not a published release.
 
-### Accepted followups in the C8 source
+### Complete-library timings
 
-| Followup | Actual evidence and its scope |
+The benchmark imports the complete 11,207-record renderer fixture, searches its exact last item, restores every result, and uses the real List/Gallery/density controls. Matching rows are not capped or virtualized, and content-visibility skipping is not used. The fixture SHA-256 is `afd855e4ac76f284630ffb4ed6d9dc37280113c9559aef4402516795b7fef0a0`.
+
+| Operation | Final Windows WebView2 sample |
 | --- | --- |
-| Linux CI font coverage | [D17 run 43930545746](https://github.com/Herbertofury/Modhunter/actions/runs/43930545746), commit `ef28a2caf684f4b6aea8e685e08a5ec7ae463fe6`: **20/20 native-manager browser cases passed**. Chromium reported the expected real font faces for all eight glyphs in the Chinese heading and six dashboard/game probes. The [artifact](https://github.com/Herbertofury/Modhunter/actions/runs/43930545746/artifacts/14257714055) includes `ci-fonts.json`, `ci-font-rendering.json` and inspected Chinese/library/expedition PNGs. Pinned fonts are a CI prerequisite; they do not alter the product font stack or retroactively repair C7 captures |
-| Transparent artwork and failed-image fallback | [D24 run 43936598227](https://github.com/Herbertofury/Modhunter/actions/runs/43936598227), commit `8f0927fe747d66c65a22b40015c086543500162e`: **14/14 actual Gallery cases passed**, with six retained PNGs in the [artifact](https://github.com/Herbertofury/Modhunter/actions/runs/43936598227/artifacts/14261945234). Genuine, hash-verified transparent artwork has a clean backdrop in Gallery and Details; a real 404 exposes the intended fallback. Cover-fit use of the icon fixture is explicitly an edge case, not a provider screenshot claim |
-| Singular library counts | The [C8 source checkpoint](https://github.com/Herbertofury/Modhunter/tree/e1761de4d4b27af977ddb666b40afbe8765c7e95) preserves the accepted preview fix and adds singular mod/source/chapter wording with all four locale entries. Local string/translation checks preserved plural output. This copy change is not represented as a separately completed native run |
-| Repeated-filter restoration | [D27 run 43941770501](https://github.com/Herbertofury/Modhunter/actions/runs/43941770501), commit `0373ddd9a78b0bb0f8db5c2af1129b5cbe201531`: **51 Node contracts and 19/19 actual Gallery cases passed**. The [artifact](https://github.com/Herbertofury/Modhunter/actions/runs/43941770501/artifacts/14263391190) retains all 32 complete-library states and 24 restored transition endpoints. Search restoration improved in both paired rounds; Gallery had no consistent improvement. The cache retains only unchanged inactive rows removed by explicit filters/collapsed chapters, with profile/catalog/locale ownership and image-failure checks. It does not remove matching results |
+| Complete renderer import | 3.656 s |
+| Exact last-item search | 0.584 s |
+| Restore the full search result | 2.392 s |
+| List density change | 1.838 s |
+| List → Gallery | 4.465 s |
+| Gallery density change | 3.528 s |
+| Gallery → List | 3.371 s |
 
-D27's strict pixel comparison still recorded small border-raster differences, including in an unchanged control; the raw failures remain in its receipt. Its acceptance is limited to the reviewed restoration improvement and functional/geometry checks, not a claim that every comparison pixel matched or that the Windows Gallery limit has passed. C8 integrates these followups, but final native, MO2, browser, visual and packaging evidence must bind the final combined commit.
+Native measurement environment: **Edge WebView2 156.0.4314.58**, **1028 × 633 pixels, DPR 1**, **normal motion, light theme, visible foreground window**, one raw sample from the final main run. All 16 complete-library runtime checks and the fixed publication ceilings passed; each view/density endpoint restored ordinary hover feedback within the measured two-frame boundary. These renderer timings exclude Rust filesystem import, provider/network I/O and installation. Large complete-library changes still take measurable work; the results are not timing guarantees for another computer.
 
-These results use owned fixtures. They do not establish the user's personal MO2 beta installation, authenticated Nexus account/download behavior, arbitrary FOMOD choices or in-game mod compatibility. The local Linux executor cannot launch Chromium because of its IPC environment; the browser evidence above comes from actual Chromium in CI.
+The same-run Linux browser comparison remains separately recorded in `visual/visual-release.json`. It uses three measured rounds with alternating baseline/candidate order. Different viewport, motion and hardware prevent treating browser and Windows numbers as a cross-runtime speedup comparison. Diagnostic history, including rejected performance experiments, remains in the repository's [motion evidence](https://github.com/Herbertofury/Modhunter/blob/0f2d399244dbe0cc69e82521c497f006832678c3/native/evidence/atelier-motion-diagnostics-0.12.0.json) and [followup evidence](https://github.com/Herbertofury/Modhunter/blob/0f2d399244dbe0cc69e82521c497f006832678c3/native/evidence/atelier-followup-diagnostics-0.12.0.json).
 
-### Complete-library performance: release gate still open
+### What these checks do not establish
 
-Both runtimes use the same **11,207-record** snapshot from `test_frontend_responsiveness.catalog`, with `offline=True`, SHA-256 `afd855e4ac76f284630ffb4ed6d9dc37280113c9559aef4402516795b7fef0a0`. Every record remains present and laid out, including the last searchable item; no result cap, viewport virtualization or content-visibility skipping is used. Import runs through the shipped entrypoint and two animation frames; view/density measurements use real controls and the existing two-frame endpoint.
+The runtime suites use owned fixtures. They do not establish the user's personal MO2 beta installation, authenticated Nexus account/download behavior, arbitrary FOMOD choices or in-game compatibility of a particular collection. Real source-page observations are separate from verified compatible releases; browser sign-in never becomes a provider API grant. Offline checklist actions remain practice and cannot award verified-update progression.
 
-The following are **C7 measurements**, not measurements of the final combined C8 source. The visual artifact contains `visual-release/visual-release.json`; the Windows artifact contains `native-library-performance/native-library-performance.json`.
+## Download and build identity
 
-| Operation | Chromium v0.11.0 median, same C7 run | Chromium C7 median | Windows WebView2 C7 raw sample |
-| --- | --- | --- | --- |
-| Complete renderer import | 7.699 s | 9.416 s | 4.334 s |
-| Exact last-item search | 0.773 s | 0.894 s | 0.646 s |
-| Search restoration | Not recorded separately | Not recorded separately | 3.246 s |
-| List density change | 1.091 s | 3.689 s | 1.843 s |
-| List → Gallery | New view | **12.203 s** | **5.712 s** |
-| Gallery density change | New view | **7.896 s** | **3.132 s** |
-| Gallery → List | New view | **8.233 s** | **3.840 s** |
-
-Chromium **157.0.8103.0** ran on Linux at 1440 × 900 with reduced motion, one warmup and three measured rounds with alternating variant order. The Windows result is **one raw sample** from WebView2 **156.0.4314.58**, at its actual 1028 × 633 viewport, DPR 1, light theme and normal motion, with foreground ownership and document visibility checked. Different hardware, viewport and motion settings prevent treating these columns as a cross-runtime speedup comparison. Rust filesystem import, MO2/provider I/O and installation are outside the renderer timings.
-
-C7 repairs the measured bulk-transition defect and restores normal hover feedback within the tested endpoint, but its Gallery result still exceeds the native release ceiling by **711.6653 ms**. D27's browser search-restoration samples improved from **3695.5021 → 2659.2301 ms** and **3189.9253 → 2694.3523 ms** (28.0% and 15.5%); that is a narrower benefit, not native Gallery acceptance. The fixed performance limit remains in force for the final pipeline.
-
-### Actual screenshots and publication slots
-
-These files already exist in their stated artifacts. Final versioned screenshot placement and live Wiki publication remain pending; no planned filename is presented as a published image.
-
-| Capture | Actual artifact file / qualification |
+| Asset | Direct download |
 | --- | --- |
-| Before/after library | C7 Visual: `before/library-1440-dark.png` and `after/library-1440-dark.png`, same catalog; preserve the C7 font-coverage caveat |
-| Authentic source artwork | C7 Visual: `after/public-projects-gallery-1440-dark.png` and light equivalent |
-| Light and narrow library | C7 Visual: `after/library-900-light.png`, `after/library-390-light.png` |
-| Actual native desktop and Details | C7 Windows: `live-mo2-smoke/desktop-window-1440-dark.png`, `desktop-window-900-light.png`, `desktop-window-gallery-light.png`, `desktop-window-inspector-light.png` |
-| Actual installed application | C7 Windows: `installer-smoke/native-launch/fixture-desktop.png` |
-| Verified glyph rendering | D17: `watchtower-preferences-zh.png`, `ci-font-library.png`, `ci-font-expedition.png` |
-| Transparent and failed artwork | D24: `thumbnail-alpha-library-1440-night.png`, `thumbnail-alpha-inspector-1440-night.png`, their `390-snow` counterparts, `thumbnail-failed-library-390-snow.png` and `thumbnail-failed-inspector-390-snow.png` |
+| Windows installer | [Modhunter_0.12.0_x64-setup.exe](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter_0.12.0_x64-setup.exe) |
+| Portable Windows package | [Modhunter-Rust-Windows.zip](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter-Rust-Windows.zip) |
+| Independent MO2 components | [Modhunter-0.12.0-MO2-Plugin.zip](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter-0.12.0-MO2-Plugin.zip) |
+| Standalone dashboard and games | [Modhunter-0.12.0-Standalone.zip](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter-0.12.0-Standalone.zip) |
+| Runtime proof and build identity | [Modhunter-0.12.0-Verification.zip](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter-0.12.0-Verification.zip) |
+| Public checksums | [SHA256SUMS.txt](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/SHA256SUMS.txt) |
 
-### Release slots
-
-**C7 release preparation stopped at the performance gate and created no release asset set.** Its tested CI installer and portable bundle remain verification inputs. Final filenames below follow the repository convention; they are not staged or published downloads. Links will be added only after the final candidate passes, publication completes and downloaded bytes are verified.
-
-| Final release field | Status |
-| --- | --- |
-| Release tag, final commit and successful run | Pending final integrated candidate; C7 is the completed functional checkpoint above |
-| GitHub Release URL | Pending publication |
-| Windows installer | Expected `Modhunter_0.12.0_x64-setup.exe`; final packaging and public download pending |
-| Portable build | Expected `Modhunter-Rust-Windows.zip`; final packaging and public download pending |
-| MO2 components | Expected `Modhunter-0.12.0-MO2-Plugin.zip`; final packaging and public download pending |
-| Standalone HTML | Expected `Modhunter-0.12.0-Standalone.zip`; final packaging and public download pending |
-| Verification and checksums | Expected `Modhunter-0.12.0-Verification.zip` and `SHA256SUMS.txt`; final packaging and public download pending |
-| Live Wiki readback | Pending publication of the final page and selected actual screenshots |
+The portable and component archives retain `BUILD_INFO.json`; the standalone package opens as `Modhunter.html`. The public download readback binds their build identity, archive checksums and installed executable to the release commit. The [documentation workflow](https://github.com/Herbertofury/Modhunter/actions/workflows/sync-wiki.yml) mirrors the repository Wiki pages to the live GitHub Wiki.

@@ -16,13 +16,29 @@
 
 ## Atelier 0.12 · The Mod Vault
 
-**[Windows releases](https://github.com/Herbertofury/Modhunter/releases)** · **[Install and use the Rust app](wiki/Rust-Desktop.md)** · **[Build and test results](https://github.com/Herbertofury/Modhunter/actions/workflows/native-rust.yml)**
+**[Download the Windows installer](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter_0.12.0_x64-setup.exe)** · **[Portable Windows app](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter-Rust-Windows.zip)** · **[Release and checksums](https://github.com/Herbertofury/Modhunter/releases/tag/v0.12.0)**
 
-The new **[Mod Vault](wiki/Atelier-0.12.md)** brings an image-forward gallery and a compact list to the same complete library. A collapsible navigation rail, provider filters, persistent density controls, keyboard context actions and refined details make source evidence and update review easier to reach. Warm charcoal, oxidized green and restrained brass have an equivalent parchment light theme across the dashboard, native shell, Watchtower, settings and dialogs.
+![Modhunter Gallery in the dark theme, with authentic project artwork](screenshots/v0.12.0/gallery-dark.png)
 
-Real project artwork comes from exact Nexus, Modrinth and Thunderstore observations. Missing artwork stays visibly absent; creator portraits are not substituted for a mod. The native shell uses 116 pixels instead of 144, and compact list rows retain their 48-pixel rhythm. The full inventory remains available without viewport virtualization or arbitrary result limits.
+*The actual shared dashboard. Project names and icons come from official Modrinth records; installed versions and update states in this capture are clearly labeled test fixtures.*
 
-Exact-file selection, profile-bound approvals, MO2 installation, backups, verification and recovery remain authoritative. Questbound, AetherFX/FX Studio, Shiverfell, Mythforge, Siege and Atlas remain independently available. The release pipeline compares the actual v0.11.0 and candidate UI, exercises complete 11,207-record fixtures, and separately runs Windows WebView2 and real MO2 acceptance. See the [versioned visual guide and evidence](wiki/Atelier-0.12.md) for observed results and scope.
+The **[Mod Vault](wiki/Atelier-0.12.md)** gives your complete collection two useful views: image-forward Gallery cards and compact List rows. Search, provider and status filters stay close to the collection; version evidence, exact source links and update review stay close to each mod. Expand the navigation rail for labels, choose comfortable spacing when you need it, or keep the compact workspace for a dense library.
+
+Warm charcoal, oxidized green and restrained brass carry through the Rust shell, Library, Update Workshop, Watchtower, settings and dialogs. The parchment light theme has the same controls and hierarchy. Real artwork appears only when an exact Nexus, Modrinth or Thunderstore record supplies it; missing or failed previews keep a readable fallback. Compact desktop rows retain their 48-pixel rhythm, and the shell uses 116 pixels instead of 144.
+
+**Updates remain deliberate.** Review the observed release and exact file, keep the current profile and compatibility context, then use MO2's supported download and interactive installation path. Backups, verified installation and guarded recovery remain in place. Search restoration reuses unchanged inactive rows safely; no matching results are capped, virtualized or skipped.
+
+Questbound, AetherFX/FX Studio, Shiverfell, Mythforge, Siege and Atlas remain available with their progression, saves and customization. The standalone HTML and MO2 plugin are still independent entry points. [View the actual before/after comparison and verification scope](wiki/Atelier-0.12.md).
+
+| Download | Use it for |
+| --- | --- |
+| [Windows installer](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter_0.12.0_x64-setup.exe) | Install the Rust desktop app |
+| [Portable Windows package](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter-Rust-Windows.zip) | Run without installation; includes the MO2 setup tools |
+| [MO2 components](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter-0.12.0-MO2-Plugin.zip) | Install or update the independent plugin |
+| [Standalone HTML](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter-0.12.0-Standalone.zip) | Open the complete dashboard and games in a modern browser |
+| [Verification archive](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter-0.12.0-Verification.zip) · [SHA-256 checksums](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/SHA256SUMS.txt) | Check build identity, scoped runtime receipts and downloaded bytes |
+
+Release **v0.12.0** is bound to commit [`0f2d399244dbe0cc69e82521c497f006832678c3`](https://github.com/Herbertofury/Modhunter/tree/0f2d399244dbe0cc69e82521c497f006832678c3) and the [successful main-branch workflow](https://github.com/Herbertofury/Modhunter/actions/runs/43947174658). [Install and connect](wiki/Getting-Started.md) · [Rust desktop guide](wiki/Rust-Desktop.md).
 
 ### Rust desktop, shared dashboard
 
@@ -118,7 +134,7 @@ The **[Unified Command Center guide](wiki/Unified-Modhunter.md)** documents the 
 | Component | What it does | Needs another component? |
 |---|---|---|
 | **Rust Desktop App** | Native WebView2 tabs, **Import MO2** reads `modlist.txt` and metadata without the plugin, **Find MO2** connects live sessions | **No.** Compiled Windows app runs independently; the installer supplies WebView2 if missing |
-| **Standalone HTML** | Full mod update dashboard + both games in a single portable file | **No.** Open locally in a modern browser. Progress and rewards are **practice only** without live MO2 |
+| **Standalone HTML** | Full mod update dashboard and included game modes in a single portable file | **No.** Open locally in a modern browser. Progress and rewards are **practice only** without live MO2 |
 | **MO2 Plugin** | Reads current profile, verifies updates, queues Nexus downloads, opens standard MO2 installer, exact row navigation, official Forge Sigil and boss-bounty economy | **No.** Runs in MO2 and serves its own browser dashboard |
 
 **Together:** the app connects to MO2's `127.0.0.1` session so the same Game/Mod Vault tabs become live, with correct profile identities and MO2-authorized rewards. No cloud account or OpenAI API key needed.
@@ -129,9 +145,9 @@ All **36 authentic files across v0.1–v0.8** are preserved unchanged in the **[
 
 ## Start here
 
-1. **Just play:** download [`web/Modhunter.html`](web/Modhunter.html), open it, and click **Modhunter Siege** or **Survival Realm**. This always works in offline practice.
-2. **Use the Rust desktop:** download **Modhunter-Rust-Windows.zip** from [Windows releases](https://github.com/Herbertofury/Modhunter/releases), extract it and run `Modhunter.exe`, or use the NSIS installer. Click **Import MO2** and select `profiles/<name>/modlist.txt` for a read-only local snapshot. **Instance INI** and **Mods path** support custom layouts.
-3. **Connect live MO2:** close MO2, run the portable package's `Install_MO2_Plugin.bat`, and select the directory containing `ModOrganizer.exe`. Restart MO2, wait for its profile to load, then click **Find MO2** in Modhunter. The bridge starts automatically; the legacy Quest Board tool remains optional. The prior plugin is backed up outside MO2's plugin search directory.
+1. **Open your collection:** install the [Windows app](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter_0.12.0_x64-setup.exe), or extract the [portable package](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter-Rust-Windows.zip) and run `Modhunter.exe`. Click **Import MO2** and choose `profiles/<name>/modlist.txt` for a read-only local snapshot. **Instance INI** and **Mods path** support custom layouts.
+2. **Connect live updates:** close MO2, run `Install_MO2_Plugin.bat` from the portable or component package, and choose the directory containing `ModOrganizer.exe`. Restart MO2, let its profile load, then click **Find MO2**. The bridge starts automatically; the legacy Quest Board tool remains optional. The previous plugin is backed up outside MO2's plugin search directory.
+3. **Use the independent browser edition:** extract the [Standalone package](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter-0.12.0-Standalone.zip) and open `Modhunter.html`. The complete dashboard and games remain available; offline progression is practice only.
 
 > **Evidence:** see [Rust Desktop](wiki/Rust-Desktop.md) for the exact native, browser, lifecycle and performance gates. The content catalogue describes 480 campaign clear conditions, not 80 hours of independently playtested authored content. An automated fixture does not prove account-specific Nexus downloads or compatibility of a particular mod list.
 

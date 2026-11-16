@@ -4,7 +4,7 @@
 
 ## What changed
 
-The [Atelier 0.12 workspace](Atelier-0.12) brings a compact native shell, image-forward Gallery and List choices, adjustable density, source filters, custom vector navigation and coordinated charcoal/parchment themes. The guide records actual before/after screenshots and the exact candidate verification status. The complete library remains available without viewport virtualization or result caps.
+The [Atelier 0.12 workspace](Atelier-0.12) brings a compact native shell, image-forward Gallery and List choices, adjustable density, source filters, custom vector navigation and coordinated charcoal/parchment themes. The guide records actual before/after screenshots and the published build's verification results. The complete library remains available without viewport virtualization or result caps.
 
 Modhunter now has a compiled Rust Windows desktop. Rust owns the window and tab lifecycle, file dialogs, background profile import, cached metadata parsing, local preferences, MO2 discovery, connection health, export destinations and plugin record/hash analysis. WebView2 renders the shared updater and all existing game modes. The shipped app does not run Electron or require Node.
 
@@ -12,7 +12,7 @@ The presentation remains HTML/CSS/JavaScript. The Python/Qt plugin remains insid
 
 ## Install and connect
 
-1. Download **Modhunter-Rust-Windows.zip** from the linked release and extract it. Run **Modhunter.exe**. The NSIS installer is another option and bootstraps Microsoft Edge WebView2 when needed. Version 0.12 also provides dedicated **MO2-Plugin** and **Standalone** archives derived from the same validated portable package.
+1. Download the [Windows installer](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter_0.12.0_x64-setup.exe), or extract the [portable package](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter-Rust-Windows.zip) and run **Modhunter.exe**. The installer bootstraps Microsoft Edge WebView2 when needed. Version 0.12 also provides dedicated **MO2-Plugin** and **Standalone** archives derived from the same validated portable package.
 2. For local inspection, click **Import MO2** and select the profile's `modlist.txt`. Portable instances are inferred. For separate configuration/data directories, first select **Instance INI**; **Mods path** provides an explicit override. **Auto paths** clears those overrides.
 3. Click **Refresh** after changing files. The toolbar reports measured import duration, metadata cache hits and warnings. **CANCEL** interrupts a native import/refresh or plugin audit; **CANCELING…** remains visible until its workers settle. The last complete catalog stays available and another refresh/audit can then run. Importing never changes the MO2 profile or installed mod files.
 4. To enable live updating, close MO2 and run **Install_MO2_Plugin.bat** from the portable package. Select the directory containing `ModOrganizer.exe`. The previous plugin is preserved in `ModhunterBackups`, outside MO2's plugin directory, and a failed replacement is rolled back.

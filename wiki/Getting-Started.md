@@ -3,7 +3,7 @@
 
 ## Standalone HTML
 
-Download the [current compiled dashboard](https://github.com/Herbertofury/Modhunter/raw/refs/heads/main/mo2_update_arsenal/web/index.html), save it as `Modhunter.html`, then open the local file in Chromium, Firefox or another modern browser. For a published 0.12.0 release, the independent `Modhunter-0.12.0-Standalone.zip` provides that HTML with its tested build identity and checksums; check [Releases](https://github.com/Herbertofury/Modhunter/releases) for availability. This mode does not need MO2, Node or a server. Offline game progression is practice progression and never fabricates official verified-update currency. See [Standalone HTML](Standalone-HTML.md).
+Download the [current compiled dashboard](https://github.com/Herbertofury/Modhunter/raw/refs/heads/main/mo2_update_arsenal/web/index.html), save it as `Modhunter.html`, then open the local file in Chromium, Firefox or another modern browser. The independent [Modhunter-0.12.0-Standalone.zip](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter-0.12.0-Standalone.zip) provides the tested release HTML with its build identity and checksums. This mode does not need MO2, Node or a server. Offline game progression is practice progression and never fabricates official verified-update currency. See [Standalone HTML](Standalone-HTML.md).
 
 ## Desktop application
 
@@ -11,7 +11,7 @@ Download the compiled app from [Windows releases](https://github.com/Herbertofur
 
 ## MO2 plugin
 
-Use the matching plugin included in the Rust portable package, or the independent `Modhunter-0.12.0-MO2-Plugin.zip` when that release is published. Keep the extracted package together. Close MO2, run `Install_MO2_Plugin.bat`, select the directory containing `ModOrganizer.exe`, then restart Mod Organizer 2 and wait for the profile to load. The bridge starts automatically; opening **Tools → Update Arsenal - Quest Board** is optional. Use [MO2 Plugin](MO2-Plugin.md) for its live dashboard and update features. The installer preserves a previous plugin in `ModhunterBackups` outside MO2's plugin directory and validates a released package before replacing it.
+Use the matching plugin included in the Rust portable package, or the independent [Modhunter-0.12.0-MO2-Plugin.zip](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter-0.12.0-MO2-Plugin.zip). Keep the extracted package together. Close MO2, run `Install_MO2_Plugin.bat`, select the directory containing `ModOrganizer.exe`, then restart Mod Organizer 2 and wait for the profile to load. The bridge starts automatically; opening **Tools → Update Arsenal - Quest Board** is optional. Use [MO2 Plugin](MO2-Plugin.md) for its live dashboard and update features. The installer preserves a previous plugin in `ModhunterBackups` outside MO2's plugin directory and validates a released package before replacing it.
 
 ## Connect the surfaces
 

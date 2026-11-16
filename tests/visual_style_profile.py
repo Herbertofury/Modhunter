@@ -129,6 +129,35 @@ VARIANTS = {
       document.head.append(style);
       return {changedRules:2,description:'Keep image/card cropping without scroll containers; preserve title ellipsis and scrollable panels'};
     }""",
+    "constant-label-content": r"""() => {
+      window.__STYLE_DIAGNOSTIC_AFTER_IMPORT__=()=>{
+        delete window.__STYLE_DIAGNOSTIC_AFTER_IMPORT__;
+        const rows=[...document.querySelectorAll('#modList > .mod-row')];
+        if(rows.length!==11207)throw Error('Expected all 11,207 rows before label experiment');
+        const providers=new Set(rows.map(row=>row.querySelector('.mod-art')?.getAttribute('data-provider-label')));
+        const chapters=new Set(rows.map(row=>row.querySelector('.mod-primary')?.getAttribute('data-chapter-label')));
+        if(providers.size!==1||chapters.size!==1||providers.has(null)||providers.has(undefined)||chapters.has(null)||chapters.has(undefined))
+          throw Error('Constant-content experiment requires the actual single-provider/single-chapter fixture');
+        const provider=[...providers][0],chapter=[...chapters][0];let providerRules=0,chapterRules=0;
+        const walk=sheet=>{for(const rule of sheet.cssRules){
+          if(rule.selectorText?.includes('[data-library-view="gallery"]')){
+            const content=rule.style.getPropertyValue('content').trim(),priority=rule.style.getPropertyPriority('content');
+            if(/\.mod-art::?after\b/.test(rule.selectorText)&&/^attr\(\s*data-provider-label\s*\)$/.test(content)){
+              rule.style.setProperty('content',JSON.stringify(provider),priority);providerRules++;
+            }
+            if(/\.mod-primary::?before\b/.test(rule.selectorText)&&/^attr\(\s*data-chapter-label\s*\)$/.test(content)){
+              rule.style.setProperty('content',JSON.stringify(chapter),priority);chapterRules++;
+            }
+          }
+          if(rule.cssRules)walk(rule);
+        }};
+        for(const sheet of document.styleSheets)walk(sheet);
+        if(providerRules!==1||chapterRules!==1)throw Error('Expected exactly one provider and one chapter content rule');
+        return {changedRules:providerRules+chapterRules,verifiedRows:rows.length,provider,chapter,
+          description:'Replace only gallery attr() labels with the verified identical uniform fixture strings; preserve all DOM and metadata'};
+      };
+      return {changedRules:0,deferredUntilImport:true,description:'Verify complete uniform fixture before changing two content declarations'};
+    }""",
 }
 
 
@@ -178,6 +207,26 @@ def computed_samples(page):
         if(!element)return [selector,null];const style=getComputedStyle(element);
         return [selector,Object.fromEntries(properties.map(property=>[property,style.getPropertyValue(property)]))];}));
     }""")
+
+
+def pseudo_label_state(page):
+    state = page.evaluate("""() => {
+      const rows=[...document.querySelectorAll('#modList > .mod-row')],providers={},chapters={};
+      let mismatches=0;const examples=[];
+      for(const row of rows){
+        const art=row.querySelector('.mod-art'),primary=row.querySelector('.mod-primary');
+        const expectedProvider=JSON.stringify(art?.getAttribute('data-provider-label'));
+        const expectedChapter=JSON.stringify(primary?.getAttribute('data-chapter-label'));
+        const provider=art?getComputedStyle(art,'::after').content:null;
+        const chapter=primary?getComputedStyle(primary,'::before').content:null;
+        providers[provider]=(providers[provider]||0)+1;chapters[chapter]=(chapters[chapter]||0)+1;
+        if(provider!==expectedProvider||chapter!==expectedChapter){mismatches++;
+          if(examples.length<3)examples.push({id:row.dataset.id,provider,expectedProvider,chapter,expectedChapter});}
+      }
+      return {rows:rows.length,mismatches,providerDistribution:providers,chapterDistribution:chapters,examples};
+    }""")
+    assert state["rows"] == 11207 and not state["mismatches"], f"Gallery pseudo-labels differ from record metadata: {state}"
+    return state
 
 
 def start_root_observer(page):
@@ -333,6 +382,9 @@ def run_arm(browser, html, fixture, variant, actions, output, instrumented, chec
         arm["cssExperiment"] = page.evaluate(VARIANTS[variant])
         page.evaluate("fixture=>window.modhunterImportCatalog(fixture)", fixture)
         acceptance.settle(page)
+        if page.evaluate("typeof window.__STYLE_DIAGNOSTIC_AFTER_IMPORT__==='function'"):
+            arm["cssExperiment"] = page.evaluate("window.__STYLE_DIAGNOSTIC_AFTER_IMPORT__()")
+            acceptance.settle(page)
         arm["initial"] = complete_geometry(page, len(fixture["items"]))
         arm["initialComputedStyles"] = computed_samples(page)
         checkpoint(arm)
@@ -377,6 +429,8 @@ def run_arm(browser, html, fixture, variant, actions, output, instrumented, chec
                 raise action_error
             result["completeLibrary"] = complete_geometry(page, len(fixture["items"]))
             result["computedStyles"] = computed_samples(page)
+            if result["completeLibrary"]["view"] == "gallery":
+                result["pseudoLabels"] = pseudo_label_state(page)
             assert not errors, errors
             result["ok"] = True
             checkpoint(arm)

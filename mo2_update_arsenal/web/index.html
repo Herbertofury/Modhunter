@@ -2377,6 +2377,7 @@ let SEARCH_FRAME=null,WORKSHOP_SEARCH_FRAME=null,SAVE_TIMER=null,SAVE_REVISION=0
 let RENDER_COUNTS=null,LOCAL_PLAN_CACHE=null,CATALOG_RENDER_REVISION=0;
 let APPLIED_FX_KEY='';
 let APPLIED_LIBRARY_APPEARANCE=null,LIBRARY_LAYOUT_CHANGE=null,LIBRARY_LAYOUT_GENERATION=0;
+let GALLERY_LABEL_CACHE=null,GALLERY_LABEL_OWNER=null;
 let SOURCE_EDIT_REVISION=0,SOURCE_SYNCED_REVISION=0;
 const BRIDGE_READS=new Map(),SOURCE_CACHE=new WeakMap(),SEARCH_CACHE=new WeakMap(),HTML_CACHE=new WeakMap();
 const ROW_RENDER_CACHE=new WeakMap(),LIBRARY_DETACHED_ROWS=new Map();
@@ -2434,6 +2435,65 @@ const isRisk=(m)=>{const {verdict}=getAudit(m);return ['hold','check','avoid','a
 const isUpdate=(m)=>m.update&&m.update.verdict==='candidate'&&!(sourceTimePhase(m)&1)&&!(Number(m.update.retryAt)>Date.now()/1000);
 const hasReleaseAssets=m=>SOURCES?SOURCES.hasAssets(m):Boolean(m.update?.releaseAssets?.length||m.releaseAssets?.length);
 const providerLabel=p=>p==='lookup'?'Source needed':SOURCES?.label(p)||p||'Original provider';
+
+function invalidateGalleryLabelStyles(){GALLERY_LABEL_OWNER=null}
+function galleryLabelString(value){
+ const text=txt(value);
+ // CSS strings cannot represent NUL or lone surrogates faithfully. Those
+ // labels keep the ordinary attr() rule; valid Unicode is never truncated.
+ if(/[\u0000\uD800-\uDFFF]/u.test(text))return null;
+ return '"'+text.replace(/["\\\u0001-\u001f\u007f]/g,ch=>ch==='"'?'\\"':ch==='\\'?'\\\\':'\\'+ch.charCodeAt(0).toString(16)+' ')+'"';
+}
+function removeGalleryLabelStyles(cache){
+ if(!cache)return true;
+ try{const index=[...cache.sheet.cssRules].indexOf(cache.rule);if(index>=0)cache.sheet.deleteRule(index);return true}catch{return false}
+}
+function refreshGalleryLabelStyles(){
+ // Reuse the already-authorized compiled stylesheet. CSSOM adds no DOM node
+ // and preserves the packaged page's nonce policy and geometry stylesheet.
+ const sheet=document.querySelector('style')?.sheet;
+ if(!sheet||typeof sheet.insertRule!=='function')return;
+ const translate=window.ModhunterI18n?.translate;
+ const owner=[DATA,PROFILE_EPOCH,CATALOG_RENDER_REVISION,SOURCE_EDIT_REVISION,document.documentElement?.lang||'',translate,sheet];
+ if(GALLERY_LABEL_OWNER&&owner.every((value,index)=>Object.is(value,GALLERY_LABEL_OWNER[index])))return;
+ // Match the initial innerHTML attribute parsing exactly. Locale translation
+ // then uses setAttribute, so its output is retained without HTML normalization.
+ const attribute=value=>txt(value).replace(/\r\n?/g,'\n').replace(/\u0000/g,'\uFFFD');
+ const providers=new Set(),chapters=new Set();
+ for(const mod of DATA.items){
+  const provider=attribute(providerLabel(getSrc(mod).type));providers.add(provider);
+  chapters.add(attribute(mod.group||GROUP_MAP.get(mod.groupId)?.name||''));
+ }
+ if(typeof translate==='function')for(const provider of [...providers])providers.add(txt(translate(provider)));
+ const rules=[];
+ for(const label of [...providers].sort()){
+  const literal=galleryLabelString(label);if(literal===null)continue;
+  rules.push('body[data-layout="compact"][data-library-view="gallery"] #modList > .mod-row .mod-art[data-provider-label='+literal+']::after{content:'+literal+'}');
+ }
+ for(const label of [...chapters].sort()){
+  const literal=galleryLabelString(label);if(literal===null)continue;
+  rules.push('body[data-layout="compact"][data-library-view="gallery"][data-gallery-grouping="all"] #modList > .mod-row .mod-primary[data-chapter-label='+literal+']::before{content:'+literal+'}');
+ }
+ const text='@media all{'+rules.join('')+'}';
+ if(GALLERY_LABEL_CACHE?.sheet===sheet&&GALLERY_LABEL_CACHE.text===text){GALLERY_LABEL_OWNER=owner;return}
+ // Remove only our exact prior group, including when a host changes the first
+ // stylesheet. If that sheet refuses cleanup, retain ownership and add nothing.
+ // Its value-matching rules remain truthful, and new labels use attr().
+ if(!removeGalleryLabelStyles(GALLERY_LABEL_CACHE)){GALLERY_LABEL_OWNER=owner;return}
+ GALLERY_LABEL_CACHE=null;
+ let inserted=null;
+ try{
+  const index=sheet.insertRule(text,sheet.cssRules.length);
+  inserted=sheet.cssRules[index];
+  GALLERY_LABEL_CACHE={sheet,rule:inserted,text};GALLERY_LABEL_OWNER=owner;
+ }catch{
+  // This is only a style-sharing optimization. Unknown/new labels and a host
+  // that rejects CSSOM rules always retain the original attribute fallback.
+  const partial=inserted?{sheet,rule:inserted,text}:null;
+  GALLERY_LABEL_CACHE=removeGalleryLabelStyles(partial)?null:partial;GALLERY_LABEL_OWNER=owner;
+  console.warn('Gallery label cache unavailable; attribute labels retained.');
+ }
+}
 
 function detectedStatus(mod){
  const u=mod.update||{},source=getSrc(mod),phase=sourceTimePhase(mod);
@@ -2507,7 +2567,7 @@ const isDone=(m)=>getStatus(m)==='done';
 const isReview=(m)=>getStatus(m)==='review';
 const isFav=(m)=>Boolean(getRow(m.id).favorite);
 const $all=(s,base=document)=>[...base.querySelectorAll(s)];
-function load(){try{const x=JSON.parse(localStorage.getItem(STORAGE)||'null');if(x&&typeof x==='object'){
+function load(){invalidateGalleryLabelStyles();try{const x=JSON.parse(localStorage.getItem(STORAGE)||'null');if(x&&typeof x==='object'){
  for(const [id,raw] of Object.entries(x.rows||{})){if(ITEM_MAP.has(id)&&raw&&typeof raw==='object')STORE.rows[id]={...raw}}
  for(const k of Object.keys(BASE.prefs))if(x.prefs&&k in x.prefs)STORE.prefs[k]=x.prefs[k];
  STORE.lastSelected=x.lastSelected||null;STORE.verifiedRuntime=x.verifiedRuntime||null;
@@ -2660,7 +2720,7 @@ function setRows(node,entries,empty,preserveMoves=false){
  if(library){LIBRARY_ROW_CACHE_OWNER=owner;LIBRARY_ROW_CACHE_LIST=node;}
 }
 function sourceLinksPending(){return BRIDGE.active&&SOURCE_EDIT_REVISION!==SOURCE_SYNCED_REVISION}
-function markSourceEdit(previous,next){if(txt(previous)!==txt(next)){PROVIDER_FILTER_KEY='';if(BRIDGE.active)SOURCE_EDIT_REVISION++;}}
+function markSourceEdit(previous,next){if(txt(previous)!==txt(next)){PROVIDER_FILTER_KEY='';invalidateGalleryLabelStyles();if(BRIDGE.active)SOURCE_EDIT_REVISION++;}}
 function scheduleProgressSync(){clearTimeout(PROGRESS_TIMER);const context=profileContext();if(!context.profile)return;PROGRESS_TIMER=setTimeout(()=>{
  // Serialize writes and clone only when sending, rather than cloning every
  // row on each search keystroke. The final write always contains latest state.
@@ -2685,7 +2745,7 @@ function scheduleProgressSync(){clearTimeout(PROGRESS_TIMER);const context=profi
  });
 },260)}
 async function hydrateProgress(profile){const context=profileContext(),revision=SAVE_REVISION,query=STORE.prefs.query,rowsBefore=structuredClone(STORE.rows);let hydrated=false;try{const r=await bridgeRequest('GET','progress');if(!contextIsCurrent(context)||r.profileId!==profile)return;const stored=r.progress||{};
- if(stored.rows&&typeof stored.rows==='object'){for(const [id,row]of Object.entries(stored.rows)){if(ITEM_MAP.has(id)&&row&&typeof row==='object'){
+ if(stored.rows&&typeof stored.rows==='object'){invalidateGalleryLabelStyles();for(const [id,row]of Object.entries(stored.rows)){if(ITEM_MAP.has(id)&&row&&typeof row==='object'){
   const local=getRow(id),incoming=Date.parse(row.updatedAt||0)||0,existing=Date.parse(local.updatedAt||0)||0;
   const merged=incoming>=existing?{...local,...row}:{...local},before=rowsBefore[id]||{};
   // Preserve fields edited while this read was in flight, including favorites
@@ -2752,6 +2812,7 @@ function applyAppearance(){
  // Native app preferences are global; Chronicle imports must not overwrite the
  // canonical desktop appearance. Standalone keeps its independent local theme.
  if(typeof window.modhunterRequestTheme==='function'&&['light','dark'].includes(window.ModhunterAppearance?.resolvedTheme))STORE.prefs.theme=window.ModhunterAppearance.resolvedTheme==='light'?'snow':'night';
+ refreshGalleryLabelStyles();
  const appearance={view:STORE.prefs.libraryView==='gallery'?'gallery':'list',theme:STORE.prefs.theme==='snow'?'snow':'night'};
  // The native host can set body theme before its synchronous appearance event.
  // Compare our last applied pair and arm before any library layout read.
@@ -2805,6 +2866,7 @@ function renderChapters(){let needle=$('chapterSearch').value.trim().toLowerCase
 let VISIBLE_ROW_IDS=[];
 function sortMods(items){const sorted=[...items];if(STORE.prefs.sort==='name')sorted.sort((a,b)=>txt(a.name).localeCompare(txt(b.name)));else if(STORE.prefs.sort==='version')sorted.sort((a,b)=>txt(a.installedVersion).localeCompare(txt(b.installedVersion)));else sorted.sort((a,b)=>a.priority-b.priority);return sorted}
 function renderList(){
+ refreshGalleryLabelStyles();
  const visible=filtered(),byGroup=new Map();for(const m of visible){if(!byGroup.has(m.groupId))byGroup.set(m.groupId,[]);byGroup.get(m.groupId).push(m)}
  const entries=[],renderedIds=[],addMod=m=>{entries.push({key:'mod:'+m.id,html:modHTML(m)});renderedIds.push(m.id)};
  if(flatGallery()){

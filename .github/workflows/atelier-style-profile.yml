@@ -3,8 +3,8 @@ name: Complete-library style diagnostics
 on:
   workflow_dispatch:
   push:
-    branches: ['diagnostics/atelier-style']
-    paths: ['tests/visual_style_profile.py', 'tests/visual_trace_probe.py', 'tests/visual_startup_trace.py', '.github/workflows/atelier-style-profile.yml']
+    branches: ['diagnostics/atelier-style', 'diagnostics/oled-gallery-labels']
+    paths: ['tests/visual_style_profile.py', 'tests/visual_trace_probe.py', 'tests/visual_startup_trace.py', 'tests/visual_surface_comparison.py', 'tests/visual_gallery_labels_qa.py', '.github/workflows/atelier-style-profile.yml']
 
 permissions:
   contents: read
@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   motion-comparison:
+    if: github.ref != 'refs/heads/diagnostics/oled-gallery-labels'
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     strategy:
@@ -57,3 +58,61 @@ jobs:
           path: native/target/motion-profile/
           if-no-files-found: error
           retention-days: 30
+  oled-gallery-labels:
+    if: github.ref == 'refs/heads/diagnostics/oled-gallery-labels'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 64
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prepare the existing browser and required font fixture
+        run: |
+          python3 -m venv /tmp/modhunter-oled-labels
+          /tmp/modhunter-oled-labels/bin/pip install -q playwright==1.57.0 Pillow==13.0.0
+          /tmp/modhunter-oled-labels/bin/python tests/prepare_ci_fonts.py --output native/target/oled-gallery-labels/ci-fonts.json
+          MODHUNTER_LABEL_BROWSER=$(/tmp/modhunter-oled-labels/bin/python -c "import shutil; print(shutil.which('chromium') or shutil.which('chromium-browser') or '')")
+          test -n "$MODHUNTER_LABEL_BROWSER" || { echo 'Required Chromium engine is unavailable'; exit 1; }
+          echo "MODHUNTER_LABEL_BROWSER=$MODHUNTER_LABEL_BROWSER" >> "$GITHUB_ENV"
+      - name: Check the diagnostic guards without launching a browser
+        run: |
+          PYTHONPATH=. /tmp/modhunter-oled-labels/bin/python tests/visual_surface_comparison.py --self-test
+          PYTHONPATH=. /tmp/modhunter-oled-labels/bin/python tests/visual_gallery_labels_qa.py --self-test
+      - name: Verify exact labels, Gallery pixels, focus and actual effects
+        id: gallery_preflight
+        run: |
+          PYTHONPATH=. /tmp/modhunter-oled-labels/bin/python tests/visual_gallery_labels_qa.py --output native/target/oled-gallery-labels/preflight --executable-path "$MODHUNTER_LABEL_BROWSER" --font-receipt native/target/oled-gallery-labels/ci-fonts.json --control-ref 6ca747be97b98e17ea66c0fea9ef51be9b934e30
+      - name: Measure both actual sources with the complete library in ABBA order
+        if: ${{ !cancelled() && (success() || steps.gallery_preflight.outcome == 'failure') }}
+        run: |
+          /tmp/modhunter-oled-labels/bin/python - <<'PY'
+          import hashlib, json, pathlib, subprocess
+          proof = json.loads(pathlib.Path('native/target/oled-gallery-labels/preflight/gallery-label-cache-preflight.json').read_text())
+          assert proof['candidateCommit'] == subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          assert proof['controlCommit'] == '6ca747be97b98e17ea66c0fea9ef51be9b934e30'
+          assert proof['sourceDirty'] is False and not proof['sourceStatusAtStart'] and not proof['sourceStatusAtEnd']
+          assert len(proof['states']) == 52 and proof['semanticComparisonsPassed'] is True
+          assert proof['labelLifecyclePassed'] is True and len(proof['labelLifecycle']) == 2
+          assert all(arm['ok'] is True and len(arm['states']) == 10 for arm in proof['labelLifecycle'])
+          assert len(proof['labelLifecycleComparisons']) == 10
+          assert all(pair['exactResolvedLabelsAndState'] is True for pair in proof['labelLifecycleComparisons'])
+          assert all(hashlib.sha256(pathlib.Path(name).read_bytes()).hexdigest() == digest for name, digest in proof['sources'].items())
+          if not proof['ok']:
+              assert proof['phase'] == 'complete-with-strict-pixel-failures' and proof['strictPixelFailures']
+              assert len(proof['errors']) == 1 and 'Strict zero-tolerance pixels differed after all complete layout cases' in proof['errors'][0]
+              print('Preflight remains FAILED. Recording only the planned timing diagnostic; strict pixel failure is not waived.')
+          else:
+              assert proof['phase'] == 'complete' and not proof['strictPixelFailures'] and not proof['errors']
+          PY
+          PYTHONPATH=. /tmp/modhunter-oled-labels/bin/python tests/visual_surface_comparison.py --mode gallery-label-cache --output native/target/oled-gallery-labels/comparison --executable-path "$MODHUNTER_LABEL_BROWSER" --control-ref 6ca747be97b98e17ea66c0fea9ef51be9b934e30
+      - name: Preserve the complete isolated diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Modhunter-OLED-Gallery-Label-Diagnostic
+          path: native/target/oled-gallery-labels/
+          if-no-files-found: error
+          retention-days: 90

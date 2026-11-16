@@ -109,11 +109,13 @@ def retain_trace(output, arm, trace):
             "sha256": hashlib.sha256(destination.read_bytes()).hexdigest()}
 
 
-def worker(arm, output):
+def worker(arm, output, executable_path=None):
     from playwright.sync_api import sync_playwright
 
     report_path = output / f"{arm}.json"
     report = {"transport": arm, "ok": False, "phase": "launch", "errors": [],
+              "requestedExecutable": str(executable_path) if executable_path else None,
+              "browserSelection": "explicit" if executable_path else "playwright-default",
               "rows": ROWS, "passes": PASSES, "categories": list(CATEGORIES)}
     trace = {"traceEvents": []}
     write_json(report_path, report)
@@ -125,8 +127,23 @@ def worker(arm, output):
     state = {"finished": False, "overflow": False}
     try:
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=True, timeout=8_000)
+            launch_options = {"headless": True, "timeout": 8_000}
+            if executable_path is not None:
+                launch_options["executable_path"] = str(executable_path)
+            browser = playwright.chromium.launch(**launch_options)
             report["browserVersion"] = browser.version
+            # Observe the launched process, including a wrapper's actual binary or
+            # Playwright's default headless shell. chromium.executable_path can
+            # instead name the full bundled browser, so is not launch evidence.
+            identity_session = browser.new_browser_cdp_session()
+            try:
+                arguments = identity_session.send("Browser.getBrowserCommandLine")["arguments"]
+                if not arguments or not arguments[0]:
+                    raise RuntimeError("Chromium did not report its executable")
+                report["resolvedExecutable"] = str(Path(arguments[0]).resolve())
+                report["executableEvidence"] = "Browser.getBrowserCommandLine arguments[0]"
+            finally:
+                identity_session.detach()
             context = browser.new_context(viewport={"width": 900, "height": 700}, reduced_motion="reduce")
             page = context.new_page()
             page.set_default_timeout(3_000)
@@ -204,9 +221,16 @@ def worker(arm, output):
     return 0 if report["ok"] else 1
 
 
-def run_bounded_arm(arm, output):
-    report_path = output / f"{arm}.json"
+def worker_command(arm, output, executable_path=None):
     command = [sys.executable, str(Path(__file__).resolve()), "--output", str(output), "--worker", arm]
+    if executable_path is not None:
+        command.extend(["--executable-path", str(executable_path)])
+    return command
+
+
+def run_bounded_arm(arm, output, executable_path=None):
+    report_path = output / f"{arm}.json"
+    command = worker_command(arm, output, executable_path)
     with (output / f"{arm}.log").open("w", encoding="utf-8") as log:
         process = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT,
                                    start_new_session=os.name != "nt")
@@ -249,36 +273,47 @@ def self_test():
     assert len(trace_failures(trace_summary({"traceEvents": []}))) == 4
     del trace["traceEvents"][-1]
     assert any("markers" in error for error in trace_failures(trace_summary(trace)))
-    print("Trace preflight summary and incomplete-trace rejection checks passed.")
+    executable = Path(sys.executable).resolve()
+    assert worker_command(ARMS[0], ROOT, executable)[-2:] == ["--executable-path", str(executable)]
+    assert "--executable-path" not in worker_command(ARMS[0], ROOT)
+    print("Trace preflight summary, incomplete-trace rejection and executable propagation checks passed.")
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=ROOT / "native/target/trace-probe")
+    parser.add_argument("--executable-path", type=Path,
+                        help="Use this Chromium executable; omit to keep Playwright's bundled-browser default")
     parser.add_argument("--worker", choices=ARMS, help=argparse.SUPPRESS)
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
     if args.self_test:
         self_test()
         return 0
+    executable_path = args.executable_path.expanduser().resolve() if args.executable_path else None
+    if executable_path is not None and not executable_path.is_file():
+        parser.error(f"Chromium executable does not exist or is not a file: {executable_path}")
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     if args.worker:
-        return worker(args.worker, output)
+        return worker(args.worker, output, executable_path)
     report = {"schemaVersion": 1, "ok": False,
               "purpose": "Tiny tracing transport preflight, not a performance benchmark or release gate",
               "python": platform.python_version(), "playwright": importlib.metadata.version("playwright"),
+              "requestedExecutable": str(executable_path) if executable_path else None,
+              "browserSelection": "explicit" if executable_path else "playwright-default",
               "categories": list(CATEGORIES), "rows": ROWS, "passes": PASSES,
               "workerDeadlineSeconds": ARM_TIMEOUT_SECONDS, "arms": []}
     for arm in ARMS:
         print(f"TRACE_PROBE {arm} starting (hard deadline {ARM_TIMEOUT_SECONDS}s)", flush=True)
-        report["arms"].append(run_bounded_arm(arm, output))
+        report["arms"].append(run_bounded_arm(arm, output, executable_path))
         write_json(output / "trace-probe.json", report)
     report["ok"] = all(arm["ok"] for arm in report["arms"])
     report["workingTransports"] = [arm["transport"] for arm in report["arms"] if arm["ok"]]
     write_json(output / "trace-probe.json", report)
     print(json.dumps({"ok": report["ok"], "workingTransports": report["workingTransports"],
         "arms": [{"transport": arm["transport"], "ok": arm["ok"], "summary": arm.get("summary"),
+                  "browserVersion": arm.get("browserVersion"), "resolvedExecutable": arm.get("resolvedExecutable"),
                   "errors": arm.get("errors")} for arm in report["arms"]]}), flush=True)
     return 0 if report["ok"] else 1
 

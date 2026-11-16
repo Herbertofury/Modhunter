@@ -14,28 +14,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  trace-preflight:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 8
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - name: Check page-attached tracing on a tiny real document
-        run: |
-          python3 -m venv /tmp/modhunter-trace
-          /tmp/modhunter-trace/bin/pip install -q playwright==1.57.0
-          /tmp/modhunter-trace/bin/python -m playwright install --with-deps chromium
-          PYTHONPATH=. /tmp/modhunter-trace/bin/python tests/visual_trace_probe.py --output native/target/trace-probe
-      - name: Preserve transport preflight evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Modhunter-Trace-Transport-Preflight
-          path: native/target/trace-probe/
-          if-no-files-found: error
-          retention-days: 30
   profile:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -43,9 +21,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: persistent-container-layout
-            variants: 'control,persistent-flex,persistent-flex-cssom'
-            traces: ''
+          - name: page-attached-selectors
+            variants: 'control'
+            traces: 'control'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -61,7 +39,14 @@ jobs:
           python3 -m venv /tmp/modhunter-style
           /tmp/modhunter-style/bin/pip install -q playwright==1.57.0
           /tmp/modhunter-style/bin/python -m playwright install --with-deps chromium
-          PYTHONPATH=. /tmp/modhunter-style/bin/python tests/visual_style_profile.py --output native/target/style-profile --mods 11207 --variants "$PROFILE_VARIANTS" --trace-variants "$PROFILE_TRACES" --actions gallery,density,list
+          MODHUNTER_PROFILE_BROWSER=$(/tmp/modhunter-style/bin/python -c "import shutil; print(shutil.which('chromium') or shutil.which('chromium-browser') or '')")
+          if [[ -n "$MODHUNTER_PROFILE_BROWSER" ]]; then
+            PYTHONPATH=. /tmp/modhunter-style/bin/python tests/visual_trace_probe.py --executable-path "$MODHUNTER_PROFILE_BROWSER" --output native/target/style-profile/trace-preflight
+            PYTHONPATH=. /tmp/modhunter-style/bin/python tests/visual_style_profile.py --executable-path "$MODHUNTER_PROFILE_BROWSER" --output native/target/style-profile --mods 11207 --variants "$PROFILE_VARIANTS" --trace-variants "$PROFILE_TRACES" --actions gallery
+          else
+            PYTHONPATH=. /tmp/modhunter-style/bin/python tests/visual_trace_probe.py --output native/target/style-profile/trace-preflight
+            PYTHONPATH=. /tmp/modhunter-style/bin/python tests/visual_style_profile.py --output native/target/style-profile --mods 11207 --variants "$PROFILE_VARIANTS" --trace-variants "$PROFILE_TRACES" --actions gallery
+          fi
       - name: Preserve selector measurements and traces
         if: always()
         uses: actions/upload-artifact@v4

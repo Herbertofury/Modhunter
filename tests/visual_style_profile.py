@@ -31,8 +31,8 @@ METRICS = ("ScriptDuration", "LayoutDuration", "RecalcStyleDuration", "TaskDurat
            "LayoutCount", "RecalcStyleCount", "Nodes", "JSHeapUsedSize")
 CATEGORIES = ("devtools.timeline", "disabled-by-default-devtools.timeline",
               "disabled-by-default-blink.debug", "blink.user_timing")
-TRACE_CONFIG = {"recordMode": "recordUntilFull", "traceBufferSizeInKb": 512 * 1024,
-                "includedCategories": list(CATEGORIES), "excludedCategories": ["*"]}
+TRACE_PARAMETERS = {"categories": ",".join(CATEGORIES), "options": "record-until-full",
+                    "transferMode": "ReportEvents"}
 RETAINED_TRACE_LIMIT = 256 * 1024 * 1024
 ACTIONS = {"gallery": "#libraryGallery", "density": "#densityToggle", "list": "#libraryList"}
 
@@ -368,7 +368,7 @@ def begin_trace(session):
             # Retain every selector table, timed event and process/thread
             # identity. Count per-node instant/debug events without keeping
             # their large payloads. This filtering is explicit in the receipt.
-            if name != "SelectorStats" and event.get("ph") not in ("X", "B", "E", "M"):
+            if name != "SelectorStats" and not name.startswith("modhunter-style-profile-") and event.get("ph") not in ("X", "B", "E", "M"):
                 continue
             size = len(json.dumps(event, separators=(",", ":")).encode("utf-8"))
             if capture["retainedBytes"] + size > RETAINED_TRACE_LIMIT:
@@ -382,7 +382,7 @@ def begin_trace(session):
     session.on("Tracing.dataCollected", on_data)
     session.on("Tracing.tracingComplete", on_complete)
     capture["listeners"] = (on_data, on_complete)
-    session.send("Tracing.start", {"traceConfig": TRACE_CONFIG, "transferMode": "ReportEvents"})
+    session.send("Tracing.start", TRACE_PARAMETERS)
     return capture
 
 
@@ -426,7 +426,7 @@ def run_arm(browser, html, fixture, variant, actions, output, instrumented, chec
     page.on("pageerror", lambda error: errors.append(str(error)))
     metrics = context.new_cdp_session(page)
     metrics.send("Performance.enable")
-    tracing = browser.new_browser_cdp_session() if instrumented else None
+    tracing = context.new_cdp_session(page) if instrumented else None
     arm = {"variant": variant, "instrumented": instrumented, "ok": False, "actions": []}
     checkpoint(arm)
     try:
@@ -452,6 +452,7 @@ def run_arm(browser, html, fixture, variant, actions, output, instrumented, chec
                 # aggregate selector statistics and bounded trace storage;
                 # body/list mutations are captured by the small observer.
                 capture = begin_trace(tracing)
+                page.evaluate("name=>performance.mark(name)", f"modhunter-style-profile-{action}-start")
             before = metric_snapshot(metrics)
             started = time.perf_counter()
             action_error = None
@@ -464,6 +465,7 @@ def run_arm(browser, html, fixture, variant, actions, output, instrumented, chec
             after = metric_snapshot(metrics)
             result.update(wallMs=elapsed, metricDeltas={key: after[key] - before[key] for key in METRICS if key in before and key in after})
             if tracing:
+                page.evaluate("name=>performance.mark(name)", f"modhunter-style-profile-{action}-end")
                 # End capture before complete-row assertions or JSON processing.
                 trace, receipt = finish_trace(tracing, page, output / f"{variant}-{action}.trace.json.gz", capture)
                 result["trace"] = receipt
@@ -475,6 +477,7 @@ def run_arm(browser, html, fixture, variant, actions, output, instrumented, chec
                     "selectorStatsEvents": summary["selectorStatsEvents"],
                     "selectorCount": summary["selectorCount"], "topSelectors": summary["selectors"][:20],
                     "invalidationCounts": summary["invalidationCounts"][:20]}
+                assert summary["eventCounts"].get(f"modhunter-style-profile-{action}-start") and summary["eventCounts"].get(f"modhunter-style-profile-{action}-end"), "Trace lacks the owned workload boundaries; diagnostic incomplete"
                 assert summary["selectorStatsEvents"] and summary["selectorCount"], "Chromium emitted no selector statistics; diagnostic incomplete"
                 assert not receipt["dataLossOccurred"], "Chromium dropped trace data; diagnostic incomplete"
             checkpoint(arm)
@@ -508,6 +511,7 @@ def main():
     parser.add_argument("--variants", default="control")
     parser.add_argument("--trace-variants", default="control")
     parser.add_argument("--actions", default="gallery,density,list")
+    parser.add_argument("--executable-path", type=Path, help="Explicit Chromium binary; otherwise retain the acceptance harness's system-first selection")
     args = parser.parse_args()
     variants = args.variants.split(",")
     trace_variants = [name for name in args.trace_variants.split(",") if name]
@@ -527,18 +531,30 @@ def main():
         "sourceStatusAtStart": source_status(), "platform": platform.platform(), "assets": assets,
         "mods": args.mods, "fixtureSha256": hashlib.sha256(json.dumps(fixture, sort_keys=True).encode()).hexdigest(),
         "method": "One uninstrumented diagnostic trial per fresh-page CSS arm. Separate selector traces add overhead; never compare their absolute times to ordinary trials or release benchmarks. All records remain laid out; no virtualization, skipped layout, or caps.",
-        "tracingCategories": CATEGORIES, "traceConfig": TRACE_CONFIG, "ordinaryTrials": [], "selectorTraces": []}
+        "tracingCategories": CATEGORIES, "traceParameters": TRACE_PARAMETERS,
+        "traceSession": "context.new_cdp_session(page)", "retainedTraceLimitBytes": RETAINED_TRACE_LIMIT,
+        "ordinaryTrials": [], "selectorTraces": []}
     receipt = args.output / "style-profile.json"
     write_json(receipt, proof)
     assert not proof["sourceStatusAtStart"], "Focused CI profile requires clean committed source"
     from playwright.sync_api import sync_playwright
     with sync_playwright() as runtime:
         launch = {"headless": True, "args": ["--no-sandbox", "--disable-dev-shm-usage"]}
-        executable = shutil.which("chromium") or shutil.which("chromium-browser")
+        executable = str(args.executable_path) if args.executable_path else shutil.which("chromium") or shutil.which("chromium-browser")
         if executable:
             launch["executable_path"] = executable
+        proof["requestedExecutable"] = executable
+        proof["browserSelection"] = "explicit" if args.executable_path else "system-first, then Playwright default"
         browser = runtime.chromium.launch(**launch)
         proof["browserVersion"] = browser.version
+        identity = browser.new_browser_cdp_session()
+        try:
+            arguments = identity.send("Browser.getBrowserCommandLine")["arguments"]
+            assert arguments and arguments[0], "Chromium did not report its actual executable"
+            proof["resolvedExecutable"] = str(Path(arguments[0]).resolve())
+            proof["executableEvidence"] = "Browser.getBrowserCommandLine arguments[0]"
+        finally:
+            identity.detach()
         try:
             for instrumented, names in ((False, variants), (True, trace_variants)):
                 field = "selectorTraces" if instrumented else "ordinaryTrials"

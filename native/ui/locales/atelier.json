@@ -63,7 +63,15 @@
     "The MO2 plugin is disconnected. Reopen its dashboard to reconnect.": "The MO2 plugin is disconnected. Reopen its dashboard to reconnect.",
     "Imported read-only profile. Live scans and installation require the MO2 plugin.": "Imported read-only profile. Live scans and installation require the MO2 plugin.",
     "Standalone demonstration. Import your profile with Tools → Link MO2, or launch Modhunter through the MO2 plugin.": "Standalone demonstration. Import your profile with Tools → Link MO2, or launch Modhunter through the MO2 plugin.",
-    "Switch between List and Gallery without losing your filters or place. Open Details or right-click a mod for notes, source links, bookmarks and available file actions. Use the density control for compact or comfortable spacing. Adventures keeps every game and the adjustable FX Studio together; visual effects stay optional.": "Switch between List and Gallery without losing your filters or place. Open Details or right-click a mod for notes, source links, bookmarks and available file actions. Use the density control for compact or comfortable spacing. Adventures keeps every game and the adjustable FX Studio together; visual effects stay optional."
+    "Switch between List and Gallery without losing your filters or place. Open Details or right-click a mod for notes, source links, bookmarks and available file actions. Use the density control for compact or comfortable spacing. Adventures keeps every game and the adjustable FX Studio together; visual effects stay optional.": "Switch between List and Gallery without losing your filters or place. Open Details or right-click a mod for notes, source links, bookmarks and available file actions. Use the density control for compact or comfortable spacing. Adventures keeps every game and the adjustable FX Studio together; visual effects stay optional.",
+    "Starting source check": "Starting source check",
+    "Waiting for MO2 to begin the check": "Waiting for MO2 to begin the check",
+    "Check status unavailable": "Check status unavailable",
+    "Manually cleared": "Manually cleared",
+    "Manual review": "Manual review",
+    "Manually skipped": "Manually skipped",
+    "Remove bookmark for {name}": "Remove bookmark for {name}",
+    "Manual checklist: {done} of {total} cleared": "Manual checklist: {done} of {total} cleared"
   },
   "es": {
     "Workspace navigation": "Navegación del espacio de trabajo",
@@ -129,7 +137,15 @@
     "The MO2 plugin is disconnected. Reopen its dashboard to reconnect.": "El plugin de MO2 está desconectado. Abre de nuevo su panel para reconectar.",
     "Imported read-only profile. Live scans and installation require the MO2 plugin.": "Perfil importado de solo lectura. Los análisis en vivo y la instalación requieren el plugin de MO2.",
     "Standalone demonstration. Import your profile with Tools → Link MO2, or launch Modhunter through the MO2 plugin.": "Demostración independiente. Importa tu perfil desde Herramientas → Vincular MO2, o inicia Modhunter desde el plugin de MO2.",
-    "Switch between List and Gallery without losing your filters or place. Open Details or right-click a mod for notes, source links, bookmarks and available file actions. Use the density control for compact or comfortable spacing. Adventures keeps every game and the adjustable FX Studio together; visual effects stay optional.": "Cambia entre Lista y Galería sin perder los filtros ni tu posición. Abre Detalles o haz clic derecho en un mod para ver notas, enlaces de origen, marcadores y las acciones de archivo disponibles. El control de densidad permite elegir un espaciado compacto o amplio. Aventuras reúne todos los juegos y el FX Studio configurable; los efectos visuales son opcionales."
+    "Switch between List and Gallery without losing your filters or place. Open Details or right-click a mod for notes, source links, bookmarks and available file actions. Use the density control for compact or comfortable spacing. Adventures keeps every game and the adjustable FX Studio together; visual effects stay optional.": "Cambia entre Lista y Galería sin perder los filtros ni tu posición. Abre Detalles o haz clic derecho en un mod para ver notas, enlaces de origen, marcadores y las acciones de archivo disponibles. El control de densidad permite elegir un espaciado compacto o amplio. Aventuras reúne todos los juegos y el FX Studio configurable; los efectos visuales son opcionales.",
+    "Starting source check": "Iniciando comprobación de fuentes",
+    "Waiting for MO2 to begin the check": "Esperando a que MO2 inicie la comprobación",
+    "Check status unavailable": "Estado de comprobación no disponible",
+    "Manually cleared": "Completado manualmente",
+    "Manual review": "Revisión manual",
+    "Manually skipped": "Omitido manualmente",
+    "Remove bookmark for {name}": "Quitar marcador de {name}",
+    "Manual checklist: {done} of {total} cleared": "Lista manual: {done} de {total} completados"
   },
   "it": {
     "Workspace navigation": "Navigazione dello spazio di lavoro",
@@ -195,7 +211,15 @@
     "The MO2 plugin is disconnected. Reopen its dashboard to reconnect.": "Il plugin MO2 è disconnesso. Riapri il suo pannello per riconnetterti.",
     "Imported read-only profile. Live scans and installation require the MO2 plugin.": "Profilo importato in sola lettura. Le scansioni in tempo reale e l'installazione richiedono il plugin MO2.",
     "Standalone demonstration. Import your profile with Tools → Link MO2, or launch Modhunter through the MO2 plugin.": "Dimostrazione autonoma. Importa il tuo profilo da Strumenti → Collega MO2, oppure avvia Modhunter dal plugin MO2.",
-    "Switch between List and Gallery without losing your filters or place. Open Details or right-click a mod for notes, source links, bookmarks and available file actions. Use the density control for compact or comfortable spacing. Adventures keeps every game and the adjustable FX Studio together; visual effects stay optional.": "Passa da Elenco a Galleria senza perdere filtri o posizione. Apri Dettagli o fai clic destro su una mod per accedere a note, fonti, segnalibri e azioni disponibili sui file. Il controllo della densità offre una spaziatura compatta o ampia. Avventure riunisce tutti i giochi e FX Studio configurabile; gli effetti visivi restano facoltativi."
+    "Switch between List and Gallery without losing your filters or place. Open Details or right-click a mod for notes, source links, bookmarks and available file actions. Use the density control for compact or comfortable spacing. Adventures keeps every game and the adjustable FX Studio together; visual effects stay optional.": "Passa da Elenco a Galleria senza perdere filtri o posizione. Apri Dettagli o fai clic destro su una mod per accedere a note, fonti, segnalibri e azioni disponibili sui file. Il controllo della densità offre una spaziatura compatta o ampia. Avventure riunisce tutti i giochi e FX Studio configurabile; gli effetti visivi restano facoltativi.",
+    "Starting source check": "Avvio del controllo delle fonti",
+    "Waiting for MO2 to begin the check": "In attesa che MO2 avvii il controllo",
+    "Check status unavailable": "Stato del controllo non disponibile",
+    "Manually cleared": "Completato manualmente",
+    "Manual review": "Revisione manuale",
+    "Manually skipped": "Saltato manualmente",
+    "Remove bookmark for {name}": "Rimuovi segnalibro per {name}",
+    "Manual checklist: {done} of {total} cleared": "Lista manuale: {done} di {total} completati"
   },
   "zh-TW": {
     "Workspace navigation": "工作區導覽",
@@ -261,6 +285,14 @@
     "The MO2 plugin is disconnected. Reopen its dashboard to reconnect.": "MO2 外掛已中斷連線。請重新開啟其儀表板以再次連線。",
     "Imported read-only profile. Live scans and installation require the MO2 plugin.": "已匯入唯讀設定檔。即時掃描與安裝需要 MO2 外掛。",
     "Standalone demonstration. Import your profile with Tools → Link MO2, or launch Modhunter through the MO2 plugin.": "獨立示範模式。請透過「工具 → 連結 MO2」匯入設定檔，或從 MO2 外掛啟動 Modhunter。",
-    "Switch between List and Gallery without losing your filters or place. Open Details or right-click a mod for notes, source links, bookmarks and available file actions. Use the density control for compact or comfortable spacing. Adventures keeps every game and the adjustable FX Studio together; visual effects stay optional.": "在清單與圖庫之間切換時，篩選條件與瀏覽位置都會保留。開啟詳細資訊或以滑鼠右鍵按一下模組，即可查看筆記、來源連結、書籤與可用的檔案操作。使用密度控制切換精簡或寬鬆間距。「冒險」集中所有遊戲與可調整的 FX Studio；視覺特效始終可自由選擇。"
+    "Switch between List and Gallery without losing your filters or place. Open Details or right-click a mod for notes, source links, bookmarks and available file actions. Use the density control for compact or comfortable spacing. Adventures keeps every game and the adjustable FX Studio together; visual effects stay optional.": "在清單與圖庫之間切換時，篩選條件與瀏覽位置都會保留。開啟詳細資訊或以滑鼠右鍵按一下模組，即可查看筆記、來源連結、書籤與可用的檔案操作。使用密度控制切換精簡或寬鬆間距。「冒險」集中所有遊戲與可調整的 FX Studio；視覺特效始終可自由選擇。",
+    "Starting source check": "正在開始檢查來源",
+    "Waiting for MO2 to begin the check": "等待 MO2 開始檢查",
+    "Check status unavailable": "無法取得檢查狀態",
+    "Manually cleared": "已手動完成",
+    "Manual review": "手動複查",
+    "Manually skipped": "已手動略過",
+    "Remove bookmark for {name}": "移除 {name} 的書籤",
+    "Manual checklist: {done} of {total} cleared": "手動清單：已完成 {done}/{total}"
   }
 }

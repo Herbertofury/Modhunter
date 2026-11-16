@@ -23,7 +23,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB = "mo2_update_arsenal/web/"
-BASELINE = "1a99a66d346b1593273afc7c2b12e2d493c8d5e0"
+BASELINE = "0f2d399244dbe0cc69e82521c497f006832678c3"
 ASSETS = ("app.template.html", "style.css", "aether_fx.css", "realm.css", "siege.css", "atelier.css", "mod_insights.css", "source_insights.css", "source_insights.js", "mod_insights.js", "app.js", "catalog.json", "aether_fx.js", "realm.js", "siege.js", "realm_layout.html", "siege_layout.html", "MO2_Source_Exporter.ps1")
 sys.path.insert(0, str(ROOT / "tests"))
 import test_frontend_responsiveness as dashboard  # noqa: E402
@@ -782,7 +782,9 @@ def benchmark(browser, variants, count, rounds, checkpoint=None):
             sample["densityMs"] = timed_click("#densityToggle", "density")
             assert page.locator("#modList .mod-row").count() == count
             page.locator("#densityToggle").click();settle(page)
-            if name == "after":
+            # Both the published 0.12.0 baseline and this patch provide Gallery.
+            # Use the same controls and unchanged clocks for each complete library.
+            if page.locator("#libraryGallery").count():
                 sample["galleryMs"] = timed_click("#libraryGallery", "gallery")
                 assert page.locator("#modList .mod-row").count() == count
                 sample["galleryDensityMs"] = timed_click("#densityToggle", "galleryDensity")

@@ -24,18 +24,22 @@ This is an active product contract. Implementation, browser proof, native Window
 
 | Role | Dark | Light |
 | --- | --- | --- |
-| Canvas | Warm obsidian `#181d1d` | Parchment `#f3f1e9` |
-| Surface | Mineral green `#202827` | Warm white `#fffef8` |
-| Raised surface | `#27312e` | `#eaece3` |
-| Divider | `#35423b` | `#d4d8cc` |
-| Primary text | `#ebe9df` | `#26372f` |
-| Secondary text | `#a1aea6` | `#5b6b60` |
-| Connected / current | Oxidized green `#92bcaa` | `#326853` |
-| Primary action | Restrained brass `#d9bb83` | `#79602e` |
+| Canvas | OLED black `#000000` | `#f5f6f8` |
+| Surface | Neutral near-black `#0b0c10` | `#ffffff` |
+| Raised surface | `#111216` | `#eaedf2` |
+| Divider | `#272b35` | `#cbd1dc` |
+| Primary text | Cool white `#f4f6fa` | `#1b2230` |
+| Secondary text | `#b7becb` | `#4e5b70` |
+| Focus / selection | Ice blue `#b9dcff` | `#175b9c` |
+| Chapter separators | Original authored chapter colors | Same chapter identities with contrast-adjusted bands |
+| Operation feedback | Blue busy, mint complete, amber review/cancelled, coral error | Equivalent legible semantic colors |
 
 - Use a local system UI font for controls and data. Reserve Georgia/Palatino-style serif typography for editorial headings. No remote font is required.
 - Use compact navigation, aligned controls, hairline dividers and restrained 4–10 px corner radii. Spacious typography must not become oversized empty panels.
-- Pair every status color with a readable label. Use amber for review and coral for errors; green does not establish compatibility by itself.
+- Pair every status color with a readable label. Keep chapter bands, diamonds, collapse arrows, manual progress and cleared counts visible. Use amber for review and coral for errors; green does not establish compatibility by itself.
+- The utility palette is true black and neutral, with cool primary controls. Do not reintroduce green/gold chrome. Optional game palettes remain independent.
+- Give hover, keyboard focus, pressed/current tabs, selected rows and bookmarks distinct visible states. Keep manual completion labels separate from detected updates and verified installation.
+- Busy indicators and progress must follow real operation state. Starting is indeterminate; checked/total progress becomes determinate only when the service supplies a positive total. Failed, cancelled, partial and unavailable checks must not revert to a reassuring idle dot.
 - Prefer authentic source artwork. Never guess artwork from a mod's name, show a creator avatar as a mod preview, or fabricate an attractive image for missing data.
 - Keep utility icons consistent. The shared navigation uses original line vectors; fantasy spectacle remains inside the optional games and FX Studio.
 - Keep routine transitions below 180 ms and respect reduced motion. Cosmetic changes must not rebuild the complete mod catalog.
@@ -99,7 +103,11 @@ Rows removed by an explicit filter or collapsed chapter may be retained without 
 
 Compact rows omit only duplicate legacy cells that compact CSS already hid. Checklist state, J/K and Space, inspector completion, Undo and the explicit noncompact host fallback remain functional. Full galleries use flex wrapping with one container-width calculation; card contents keep their own grid. Resize observations are coalesced, and view/density changes do not reconfigure unrelated effects. These implementation choices require measured full-catalog proof rather than inferred performance claims.
 
-## 06 / 0.12 implementation and evidence
+## 06 / 0.12.1 OLED correction
+
+The 0.12.1 source restores colored chapter separators and the visible manual checklist cues that the compact 0.12.0 redesign suppressed. It replaces the utility green/gold palette with OLED black, neutral surfaces and cool white/blue controls. It also repairs missing starting/error/polling feedback, preserves chapter keyboard focus and gives bookmarks an explicit pressed state. The same full-library, actual-browser, Windows WebView2, installer and MO2 release gates apply. Publication and exact-run results are recorded after those gates finish.
+
+## 07 / 0.12 implementation and evidence
 
 Atelier 0.12 implements the compact navigation rail, list/gallery switch, density control, provider filter, authentic artwork forwarding, themed details and context menus, and profile-persisted library preferences. Rust shell, Watchtower and native preferences share the restrained palette; the legacy companion remains preserved. The update, recovery and game owners remain authoritative.
 

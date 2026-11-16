@@ -10,21 +10,21 @@ body { height: 116px; }
 .connect { width: min(33vw,400px); min-width: 280px; }
 .connect input { padding: 5px 6px; font-size: 11px; }
 .connect button { padding: 6px; font-size: 11px; }
-#discover { background: #344c3e; color: #c9e4d6; border-color: #587964; }
-#discover:hover:not(:disabled) { background: #42624f; }
-#connect { border-color: #587964; }
+#discover { background:var(--chrome-raised); color:var(--chrome-text); border-color:var(--edge-strong); }
+#discover:hover:not(:disabled) { background:var(--chrome-hover); border-color:var(--focus); }
+#connect { border-color:var(--edge-strong); }
 .source { min-width: 12px; }
 .source-text { font-size: 10px; }
-.status.error { background: #e7a08b; box-shadow: none; }
-.status.busy { background: var(--gold); animation: shell-pulse 1s ease-in-out infinite; }
+.status.error { background:var(--danger); box-shadow:none; }
+.status.busy { background: var(--focus); animation: shell-pulse 1s ease-in-out infinite; }
 .performance { height: 32px; display: flex; align-items: center; gap: 9px; padding: 0 10px; border-top: 1px solid var(--edge); background: var(--chrome-input); color: var(--quiet); font-size: 10px; white-space: nowrap; overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--edge) transparent; }
-.engine { font-size: 10px; font-weight: 600; letter-spacing: .1em; color: var(--mint); border-right: 1px solid var(--edge); padding-right: 10px; flex: none; }
+.engine { font-size: 10px; font-weight: 600; letter-spacing: .1em; color: var(--quiet); border-right: 1px solid var(--edge); padding-right: 10px; flex: none; }
 .paths { display: flex; gap: 2px; margin-left: auto; flex-shrink: 0; }
 .paths button { padding: 5px 6px; font-size: 10px; background: transparent; border-color: transparent; color: var(--quiet); }
 .paths button:hover:not(:disabled) { border-color: var(--edge); }
-.paths button.selected { border-color: #587964; color: var(--mint); }
+.paths button.selected { border-color:var(--focus); color:var(--focus); background:var(--chrome-active); box-shadow:inset 0 -2px var(--focus); }
 #metrics { min-width: 70px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
-#message { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--gold); max-width: 32vw; }
+#message { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--chrome-text); max-width: 32vw; }
 .tab-open[aria-selected="true"] { color: var(--chrome-text); }
 #pluginAudit, #cancelImport { flex: none; white-space: nowrap; font-size: 11px; }
 #cancelImport[hidden] { display: none; }
@@ -32,8 +32,15 @@ body { height: 116px; }
 .bar > * { flex-shrink: 0; }
 .bar .source { flex-shrink: 1; }
 .top .tabstrip { min-width: 80px; }
-.bar button:focus-visible, .performance button:focus-visible { outline: 2px solid var(--gold); outline-offset: -3px; }
+.bar button:focus-visible, .performance button:focus-visible { outline: 2px solid var(--focus); outline-offset: -3px; }
 @keyframes shell-pulse { 50% { opacity: .4; } }
 @media(max-width:1200px) { .brand { min-width: 124px; } .brand small { display: none; } .source-text { display: none; } .source { flex: 0; } .connect { width: 28vw; min-width: 280px; } .engine { display: none; } .performance { gap: 6px; } #metrics { max-width: 240px; } .actions button { font-size: 10px; padding: 6px; } }
 @media(max-width:950px) { .brand { min-width: 102px; } .brand b { font-size: 10px; } .top { gap: 6px; } .connect { min-width: 280px; } .performance #message { max-width: 180px; flex-shrink: 0; } .performance #metrics { flex-shrink: 0; } }
 @media(prefers-reduced-motion:reduce) { .status.busy { animation: none; } }
+
+/* Error and completion colors are set only by the command owner. */
+#message[data-feedback="error"] { color:var(--danger); }
+#message[data-feedback="success"] { color:var(--success); }
+#message[data-feedback="info"] { color:var(--focus); }
+#discover:active:not(:disabled),#connect:active:not(:disabled) { background:var(--chrome-active); border-color:var(--focus); }
+#discover[aria-busy="true"],#connect[aria-busy="true"] { background:var(--info-bg); border-color:var(--info-edge); color:var(--focus); }

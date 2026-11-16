@@ -41,6 +41,7 @@
  }
  function enabled(){return ready&&!state.readOnly}
  function showToast(message,action,label='Undo',failure=false){
+  $('toast').setAttribute('data-feedback',failure?'error':'info');
   $('toastText').toggleAttribute('data-i18n-feedback',failure);clearTimeout(toastTimer);text('toastText',message);$('toast').hidden=false;$('toastAction').hidden=!action;$('toastAction').textContent=label;$('toastAction').onclick=action?()=>{hideToast();void action()}:null;
   toastTimer=setTimeout(hideToast,action?12000:8000);
  }

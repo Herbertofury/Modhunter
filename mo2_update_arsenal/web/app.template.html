@@ -84,7 +84,7 @@
     <div class="workspace-brand"><span class="workspace-mark" aria-hidden="true"><svg class="mh-icon" aria-hidden="true"><use href="#mh-mark"/></svg></span><div><span class="workspace-overline">MODHUNTER / YOUR WORKSPACE</span><h1 id="workspaceTitle">The mod library</h1><p id="workspaceProfile">Connect your MO2 profile</p></div></div>
     <div class="workspace-actions"><button id="workspaceAppearance" class="quiet-button workspace-appearance" type="button" aria-label="Switch light or dark theme" title="Switch light or dark theme"><svg class="mh-icon" aria-hidden="true"><use href="#mh-theme"/></svg></button><button class="quiet-button" id="workspaceCancel" type="button" hidden>Cancel check</button><button class="quiet-button" id="workspaceDetails" type="button">Connection</button><button class="button-bright" id="unifiedScan" type="button">Check for updates</button></div>
    </header>
-   <div class="workspace-checkline" role="status"><span class="workspace-dot" id="workspaceDot"></span><span id="workspaceCheckStatus">Waiting for MO2</span><span id="workspaceCheckDetail"></span></div>
+   <div class="workspace-checkline" id="workspaceCheckLine" role="status"><span class="workspace-dot" id="workspaceDot" aria-hidden="true"></span><span id="workspaceCheckStatus">Waiting for MO2</span><progress id="workspaceScanProgress" aria-labelledby="workspaceCheckStatus" hidden></progress><span id="workspaceCheckDetail"></span></div>
 
    <div class="workspace-summary" aria-label="Detected mod status">
     <button type="button" data-filter="all">All <b id="detectedAll">0</b></button>

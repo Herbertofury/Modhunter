@@ -110,6 +110,15 @@ VARIANTS = {
       };
       return {changedRules:1,description:'Preserve actual gallery sizing through one CSSOM flex-basis rule, avoiding two inherited custom-property writes'};
     }""",
+    "persistent-flex": """() => {
+      const style=document.createElement('style');style.dataset.diagnosticVariant='persistent-flex';
+      style.textContent=`body[data-layout="compact"][data-library-view="list"] #modList{
+        display:flex;flex-wrap:wrap;gap:0;align-items:flex-start;align-content:flex-start}
+        body[data-layout="compact"][data-library-view="list"] #modList>:is(.mod-row,.chapterbar,.empty-state){
+        flex:0 0 100%;width:100%}`;
+      document.head.append(style);
+      return {changedRules:2,description:'Keep the library a flex container in List and Gallery; List children remain full width with zero gap. Gallery declarations are unchanged.'};
+    }""",
     "no-universal-scrollbar": r"""() => {
       let changedRules=0;const selectors=[];
       const walk=sheet=>{for(let index=sheet.cssRules.length-1;index>=0;index--){
@@ -160,6 +169,13 @@ VARIANTS = {
     }""",
 }
 
+VARIANTS["persistent-flex-cssom"] = """() => {
+  const flex=(%s)();
+  const geometry=(%s)();
+  return {changedRules:flex.changedRules+geometry.changedRules,experiments:[flex,geometry],
+    description:'Combine independently specified persistent-flex and CSSOM geometry experiments'};
+}""" % (VARIANTS["persistent-flex"], VARIANTS["cssom-geometry"])
+
 
 def write_json(path, value):
     temporary = path.with_suffix(path.suffix + ".tmp")
@@ -178,12 +194,20 @@ def metric_snapshot(session):
 def complete_geometry(page, count):
     state = page.evaluate("""() => {
       const rows=[...document.querySelectorAll('#modList .mod-row')];
+      const rectangle=element=>{const box=element.getBoundingClientRect();
+        return [box.left+scrollX,box.top+scrollY,box.width,box.height];};
       return {rows:rows.length,uniqueIds:new Set(rows.map(row=>row.dataset.id)).size,
         firstId:rows[0]?.dataset.id,lastId:rows.at(-1)?.dataset.id,
         allLaidOut:rows.every(row=>row.getClientRects().length>0),
         noContentVisibility:rows.every(row=>getComputedStyle(row).contentVisibility==='visible'),
         documentNodes:document.querySelectorAll('*').length,
         libraryNodes:document.querySelector('#modList').querySelectorAll('*').length,
+        listGeometry:rectangle(document.getElementById('modList')),
+        rowGeometry:rows.map(row=>[row.dataset.id,...rectangle(row)]),
+        chapterGeometry:[...document.querySelectorAll('#modList > .chapterbar')]
+          .map((header,index)=>[index,header.textContent.trim(),...rectangle(header)]),
+        emptyGeometry:[...document.querySelectorAll('#modList > .empty-state')]
+          .map((element,index)=>[index,...rectangle(element)]),
         view:document.body.dataset.libraryView,density:document.body.dataset.density,
         scrollX,scrollY,width:innerWidth,scrollWidth:document.documentElement.scrollWidth};
     }""")
@@ -199,7 +223,8 @@ def computed_samples(page):
       const properties=['display','position','width','height','min-height','color','background-color',
         'border-top-width','border-top-color','border-bottom-width','border-bottom-color',
         'font-family','font-size','line-height','padding-top','padding-right','padding-bottom','padding-left',
-        'grid-template-columns','grid-template-rows','flex-basis','gap','white-space','overflow'];
+        'grid-template-columns','grid-template-rows','flex-basis','flex-grow','flex-shrink','flex-wrap',
+        'align-items','align-content','gap','white-space','overflow'];
       const selectors=['#workbench','.library-grouping','#modList','#modList .mod-row',
         '#modList .mod-primary','#modList .mod-title','#modList .mod-art',
         '#modList .mod-version','#modList .inspect-col','#modList .file-download-btn'];
@@ -207,6 +232,34 @@ def computed_samples(page):
         if(!element)return [selector,null];const style=getComputedStyle(element);
         return [selector,Object.fromEntries(properties.map(property=>[property,style.getPropertyValue(property)]))];}));
     }""")
+
+
+def compare_geometry(reference, variant):
+    """Compare every row/header rectangle, outside the interaction clock.
+
+    Document coordinates keep actual layout comparisons independent of a
+    Playwright control's viewport scroll. A tenth of a CSS pixel permits only
+    layout-unit rounding, not a changed row height, offset or card column.
+    """
+    differences = []
+    for key in ("rows", "uniqueIds", "firstId", "lastId"):
+        if reference.get(key) != variant.get(key):
+            differences.append({"field":key,"control":reference.get(key),"variant":variant.get(key)})
+    for key in ("listGeometry", "rowGeometry", "chapterGeometry", "emptyGeometry"):
+        before, after = reference.get(key, []), variant.get(key, [])
+        if key == "listGeometry":
+            before, after = [before], [after]
+        if len(before) != len(after):
+            differences.append({"field":key,"controlCount":len(before),"variantCount":len(after)})
+        for index, (left, right) in enumerate(zip(before, after)):
+            if len(left) != len(right) or any(
+                abs(a-b) > .1 if isinstance(a, (int,float)) and isinstance(b, (int,float)) else a != b
+                for a,b in zip(left,right)
+            ):
+                differences.append({"field":key,"index":index,"control":left,"variant":right})
+    return {"comparedRows":len(reference.get("rowGeometry", [])),
+            "comparedChapters":len(reference.get("chapterGeometry", [])),
+            "toleranceCssPixels":.1,"differenceCount":len(differences),"differences":differences}
 
 
 def pseudo_label_state(page):
@@ -501,6 +554,8 @@ def main():
             control = next(arm for arm in proof["ordinaryTrials"] if arm["variant"] == "control")
             reference_states = {"initial": control.get("initialComputedStyles", {})}
             reference_states.update({row["action"]: row.get("computedStyles", {}) for row in control["actions"]})
+            reference_geometry = {"initial":control.get("initial", {})}
+            reference_geometry.update({row["action"]:row.get("completeLibrary", {}) for row in control["actions"]})
             for arm in proof["ordinaryTrials"]:
                 states = {"initial": arm.get("initialComputedStyles", {})}
                 states.update({row["action"]: row.get("computedStyles", {}) for row in arm["actions"]})
@@ -511,6 +566,16 @@ def main():
                     for property, value in (properties or {}).items()
                     if value != (reference_states.get(state, {}).get(selector) or {}).get(property)
                 ]
+                geometry = {"initial":arm.get("initial", {})}
+                geometry.update({row["action"]:row.get("completeLibrary", {}) for row in arm["actions"]})
+                arm["geometryComparisonsFromControl"] = {
+                    state:compare_geometry(reference_geometry.get(state, {}), sample)
+                    for state,sample in geometry.items()}
+                if arm["variant"] in ("persistent-flex", "persistent-flex-cssom") and any(
+                    comparison["differenceCount"] for comparison in arm["geometryComparisonsFromControl"].values()
+                ):
+                    arm["ok"] = False
+                    arm["geometryError"] = "Persistent-flex experiment changed actual layout; inspect every-row geometry comparisons"
             proof["sourceStatusAtEnd"] = source_status()
             proof["ok"] = not proof["sourceStatusAtEnd"] and all(arm["ok"] for field in ("ordinaryTrials", "selectorTraces") for arm in proof[field])
         finally:

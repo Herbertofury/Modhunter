@@ -4,16 +4,38 @@ on:
   workflow_dispatch:
   push:
     branches: ['diagnostics/atelier-style']
-    paths: ['tests/visual_style_profile.py', '.github/workflows/atelier-style-profile.yml']
+    paths: ['tests/visual_style_profile.py', 'tests/visual_trace_probe.py', '.github/workflows/atelier-style-profile.yml']
 
 permissions:
   contents: read
 
 concurrency:
-  group: modhunter-style-profile-${{ github.ref }}
+  group: modhunter-style-profile-${{ github.sha }}
   cancel-in-progress: true
 
 jobs:
+  trace-preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check page-attached tracing on a tiny real document
+        run: |
+          python3 -m venv /tmp/modhunter-trace
+          /tmp/modhunter-trace/bin/pip install -q playwright==1.57.0
+          /tmp/modhunter-trace/bin/python -m playwright install --with-deps chromium
+          PYTHONPATH=. /tmp/modhunter-trace/bin/python tests/visual_trace_probe.py --output native/target/trace-probe
+      - name: Preserve transport preflight evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Modhunter-Trace-Transport-Preflight
+          path: native/target/trace-probe/
+          if-no-files-found: error
+          retention-days: 30
   profile:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -21,8 +43,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: equivalent-label-content
-            variants: 'control,constant-label-content'
+          - name: persistent-container-layout
+            variants: 'control,persistent-flex,persistent-flex-cssom'
             traces: ''
     steps:
       - uses: actions/checkout@v4

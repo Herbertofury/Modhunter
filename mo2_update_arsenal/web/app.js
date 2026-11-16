@@ -125,13 +125,17 @@ function renderWorkspace(){
  for(const mod of DATA.items){const d=detectedStatus(mod);aggregate.updates+=Number(d.updateAvailable);aggregate.maintenance+=Number(d.maintenance);aggregate.attention+=Number(d.attention);aggregate.current+=Number(d.current)}
  for(const [key,value] of Object.entries(aggregate))SET('detected'+key[0].toUpperCase()+key.slice(1),value.toLocaleString());
  SET('workspaceProfile',LIVE_CATALOG?LIVE_CATALOG.profileName+' / '+(LIVE_CATALOG.game||'MO2')+' / '+DATA.items.length.toLocaleString()+(DATA.items.length===1?' mod':' mods'):DATA.offline?(DATA.profileName||'Imported profile')+' / read only':'Demo library / not your installed mods');
- const state=LIVE_SCAN?.state,active=state==='running';
- let status=!BRIDGE.active?'Read-only library':!LIVE_CONNECTED?'MO2 disconnected':active?'Checking sources':state==='error'?'Check failed':state==='cancelled'?'Check cancelled':state==='partial'?'Check finished with issues':state==='completed'?'Check complete':STARTUP_ERROR?'Automatic check unavailable':!PROGRESS_READY?'Loading saved preferences':sourceLinksPending()?'Syncing source edits':STORE.prefs.autoCheckOnLaunch?'Preparing automatic check':'Automatic checks off';
+ const state=LIVE_SCAN?.state,active=state==='running',starting=SCAN_START_BUSY,connected=BRIDGE.active&&LIVE_CONNECTED;
+ const scanErrors=(LIVE_SCAN?.errors||[]).length;
+ const feedback=!connected?'offline':starting||active?'busy':STARTUP_ERROR||state==='error'?'error':state==='cancelled'?'cancelled':state==='partial'||state==='unknown'||scanErrors?'warning':state==='completed'?'complete':'connected';
+ let status=!BRIDGE.active?'Read-only library':!LIVE_CONNECTED?'MO2 disconnected':starting?'Starting source check':active?'Checking sources':STARTUP_ERROR?'Automatic check unavailable':state==='error'?'Check failed':state==='cancelled'?'Check cancelled':state==='partial'||(state==='completed'&&scanErrors)?'Check finished with issues':state==='unknown'?'Check status unavailable':state==='completed'?'Check complete':!PROGRESS_READY?'Loading saved preferences':sourceLinksPending()?'Syncing source edits':STORE.prefs.autoCheckOnLaunch?'Preparing automatic check':'Automatic checks off';
  SET('workspaceCheckStatus',status);
- SET('workspaceCheckDetail',active?(LIVE_SCAN.checked||0)+' / '+(LIVE_SCAN.total||'?')+' checked'+(LIVE_SCAN.fromCache?' / '+LIVE_SCAN.fromCache+' cached':''):LIVE_SCAN?.error||STARTUP_ERROR||((LIVE_SCAN?.errors||[]).length?(LIVE_SCAN.errors.length+' source errors; see affected mods'):'Updates never install without approval'));
- const button=$('unifiedScan');if(button){button.disabled=BRIDGE.active&&(!LIVE_CONNECTED||SCAN_START_BUSY||active);button.textContent=active?'Checking...':BRIDGE.active?'Check for updates':'Connect MO2'}
- const dot=$('workspaceDot');if(dot)dot.dataset.state=active?'busy':BRIDGE.active&&LIVE_CONNECTED?'connected':'offline';
- const cancel=$('workspaceCancel');if(cancel)cancel.hidden=!active;
+ SET('workspaceCheckDetail',starting?'Waiting for MO2 to begin the check':active?(LIVE_SCAN.checked||0)+' / '+(LIVE_SCAN.total||'?')+' checked'+(LIVE_SCAN.fromCache?' / '+LIVE_SCAN.fromCache+' cached':''):STARTUP_ERROR||LIVE_SCAN?.error||(scanErrors?(scanErrors+' source errors; see affected mods'):'Updates never install without approval'));
+ const button=$('unifiedScan');if(button){button.disabled=BRIDGE.active&&(!LIVE_CONNECTED||starting||active);button.textContent=starting||active?'Checking...':BRIDGE.active?'Check for updates':'Connect MO2';button.setAttribute('aria-busy',String(connected&&(starting||active)));button.dataset.state=connected?(starting?'starting':active?'running':'idle'):'idle'}
+ const dot=$('workspaceDot');if(dot)dot.dataset.state=feedback;
+ const checkline=$('workspaceCheckLine');if(checkline)checkline.dataset.state=feedback;
+ const progress=$('workspaceScanProgress');if(progress){progress.hidden=!(connected&&(starting||active));const total=Number(LIVE_SCAN?.total),checked=Number(LIVE_SCAN?.checked)||0;if(active&&!starting&&Number.isFinite(total)&&total>0){progress.max=total;progress.value=Math.max(0,Math.min(checked,total))}else{progress.removeAttribute('value');progress.removeAttribute('max')}}
+ const cancel=$('workspaceCancel');if(cancel)cancel.hidden=!connected||!active;
  const toggle=$('autoCheckOnLaunch');if(toggle)toggle.checked=STORE.prefs.autoCheckOnLaunch!==false;
 }
 async function ensureStartupCheck(){
@@ -441,9 +445,9 @@ function buildModHTML(m){const compact=document.body.dataset.layout==='compact',
  <div class="mod-priority">${m.priority}</div>
  <div class="mod-primary" data-priority="${m.priority}" data-chapter-label="${escapeHTML(m.group||GROUP_MAP.get(m.groupId)?.name||'')}"><div class="mod-name-actions"><a class="mod-title source-title ${s.verified?'':'unknown'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHTML((s.verified?'Open source page for ':'Search for original source of ')+m.name)}" title="${escapeHTML(m.name+' — '+(s.verified?'Open original source':'Find original source'))}" data-act="source" data-id="${escapeHTML(m.id)}">${escapeHTML(m.name)}<span class="source-open-glyph" aria-hidden="true">↗</span></a>${BRIDGE.active?`<button class="mod-inline-locate" type="button" title="Reveal this mod in Mod Organizer 2" aria-label="Reveal ${escapeHTML(m.name)} in MO2" data-act="locate" data-id="${escapeHTML(m.id)}">⌖</button>`:''}</div>${modAuthor(m)?`<div class="mod-author" data-no-translate>${escapeHTML(modAuthor(m))}</div>`:''}${note?`<div class="mod-note ${/do not|ctd|crash|hard esp|incompati|needs update|bugs/i.test(note)?'warning-note':''}" title="${escapeHTML(note)}">${escapeHTML(note)}</div>`:''}${INSIGHTS?.chips(m)||''}${SOURCES?.chips(m)||''}</div>
  <div class="mod-version" title="Installed version recorded by source">${escapeHTML(m.installedVersion||'Unknown')}${m.update?.latestVersion&&m.update.latestVersion!==m.installedVersion?`<small class="newer-version" title="Latest metadata, not necessarily compatible">→ ${escapeHTML(m.update.latestVersion)}</small>`:''}</div>
- <div class="mod-assessment">${detectedMarkup(m)}${compact?'':'<span class="legacy-assessment">'+assessmentHTML(m)+'</span>'}</div>
+ <div class="mod-assessment">${detectedMarkup(m)}${['done','review','skipped'].includes(stat)?`<span class="manual-status" data-manual="${stat}">${stat==='done'?'Manually cleared':stat==='review'?'Manual review':'Manually skipped'}</span>`:''}${compact?'':'<span class="legacy-assessment">'+assessmentHTML(m)+'</span>'}</div>
  <div class="mod-source"><a class="source-btn ${s.verified?'':'lookup'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" data-act="source" data-id="${m.id}" title="${escapeHTML(sourceText+' — '+(s.type==='creations'?'Exact Bethesda Creation listing. Install from in-game Creations menu.':s.verified?'Exact mod files page':'Search for the correct mod project; source not yet verified'))}">${sourceText}</a></div>
- <div class="inspect-col">${BRIDGE.active&&m.nexusId?`<button class="file-download-btn" title="Choose an exact Nexus file in MO2" aria-label="Choose Nexus files for ${escapeHTML(m.name)}" data-act="files" data-id="${m.id}">${isUpdate(m)?'Review':'⇩'}</button>`:''}<button class="favorite-btn ${isFav(m)?'active':''}" title="${isFav(m)?'Remove bookmark':'Bookmark mod'}" aria-label="Bookmark ${escapeHTML(m.name)}" data-act="favorite" data-id="${m.id}">${isFav(m)?'★':'☆'}</button><button class="inspect-btn" title="Inspect mod, notes, compatibility and source" aria-label="Inspect ${escapeHTML(m.name)}" data-act="inspect" data-id="${m.id}">Details</button></div>
+ <div class="inspect-col">${BRIDGE.active&&m.nexusId?`<button class="file-download-btn" title="Choose an exact Nexus file in MO2" aria-label="Choose Nexus files for ${escapeHTML(m.name)}" data-act="files" data-id="${m.id}">${isUpdate(m)?'Review':'⇩'}</button>`:''}<button class="favorite-btn ${isFav(m)?'active':''}" title="${isFav(m)?'Remove bookmark':'Bookmark mod'}" aria-label="${isFav(m)?'Remove bookmark for':'Bookmark'} ${escapeHTML(m.name)}" aria-pressed="${isFav(m)}" data-act="favorite" data-id="${m.id}">${isFav(m)?'★':'☆'}</button><button class="inspect-btn" title="Inspect mod, notes, compatibility and source" aria-label="Inspect ${escapeHTML(m.name)}" data-act="inspect" data-id="${m.id}">Details</button></div>
  </article>`}
 let GROUP_PROGRESS=new Map();function groupProgress(){GROUP_PROGRESS=new Map(DATA.groups.map(g=>[g.id,{done:0,total:0}]));for(const m of DATA.items){if(!GROUP_PROGRESS.has(m.groupId))GROUP_PROGRESS.set(m.groupId,{done:0,total:0});const o=GROUP_PROGRESS.get(m.groupId);o.total++;if(isDone(m))o.done++}}
 function renderChapters(){let needle=$('chapterSearch').value.trim().toLowerCase();const html=DATA.groups.filter(g=>!needle||g.name.toLowerCase().includes(needle)).map(g=>{const num=GROUP_PROGRESS.get(g.id)?.done||0;return `<button class="chapter-link" style="--group-clr:${PALETTE[g.color]||PALETTE.slate}" data-chapter="${g.id}" title="Jump to ${escapeHTML(g.name)}"><i></i><span>${escapeHTML(g.name)}</span><em>${num}/${g.count}</em></button>`}).join('');setHTML($('chapters'),html||'<div class="drawer-micro" style="padding:12px">No chapter found.</div>')}
@@ -459,7 +463,7 @@ function renderList(){
  }else for(const g of DATA.groups){
   const ms=byGroup.get(g.id);if(!ms||!ms.length)continue;
   const gd=GROUP_PROGRESS.get(g.id)?.done||0,collapsed=STORE.prefs.collapsed.includes(g.id),pct=Math.round((gd/(g.count||1))*100);
-  entries.push({key:'group:'+g.id,html:`<button class="chapterbar ${collapsed?'closed':''}" id="section-${g.id}" data-chapter-toggle="${g.id}" style="--chapter-color:${PALETTE[g.color]||PALETTE.slate}" aria-expanded="${!collapsed}"><span class="diamond">◆</span><strong>${escapeHTML(g.name)}</strong><span class="chapter-count">${gd}/${g.count}</span><span class="chapter-mini-progress"><i style="width:${pct}%"></i></span><span class="chapter-priority">#${g.startPriority}</span></button>`});
+  entries.push({key:'group:'+g.id,html:`<button class="chapterbar ${collapsed?'closed':''}" id="section-${g.id}" data-chapter-toggle="${g.id}" style="--chapter-color:${PALETTE[g.color]||PALETTE.slate}" aria-expanded="${!collapsed}" data-completion="${g.count>0&&gd>=g.count?'complete':gd>0?'partial':'empty'}" title="Manual checklist: ${gd} of ${g.count} cleared"><span class="diamond" aria-hidden="true">◆</span><strong>${escapeHTML(g.name)}</strong><span class="chapter-count">${gd}/${g.count}</span><span class="chapter-mini-progress"><i style="width:${pct}%"></i></span><span class="chapter-priority">#${g.startPriority}</span></button>`});
   if(!collapsed)for(const m of sortMods(ms))addMod(m);
  }
  setRows($('modList'),entries,`<div class="empty-state"><div class="empty-icon">ᛟ</div><h3>No foes in this chamber.</h3><p>Nothing matches your current search and filters.</p><button id="emptyReset">Clear filters</button></div>`);
@@ -893,7 +897,7 @@ window.addEventListener('resize',()=>closeModContextMenu(false));
 
 // Centralized controls: the list is fully rendered, with event delegation and no viewport record caps.
 $('modList').addEventListener('pointerover',e=>{const r=e.target.closest('.mod-row');if(r)window.AetherFX?.hover(r)});
-$('modList').addEventListener('click',e=>{if(e.target.closest('[data-insight-act]'))return;const togg=e.target.closest('[data-chapter-toggle]');if(togg){const id=togg.dataset.chapterToggle;STORE.prefs.collapsed=STORE.prefs.collapsed.includes(id)?STORE.prefs.collapsed.filter(x=>x!==id):[...STORE.prefs.collapsed,id];save();render();return}
+$('modList').addEventListener('click',e=>{if(e.target.closest('[data-insight-act]'))return;const togg=e.target.closest('[data-chapter-toggle]');if(togg){const id=togg.dataset.chapterToggle,keepFocus=document.activeElement===togg;STORE.prefs.collapsed=STORE.prefs.collapsed.includes(id)?STORE.prefs.collapsed.filter(x=>x!==id):[...STORE.prefs.collapsed,id];save();render();if(keepFocus)$('section-'+id)?.focus({preventScroll:true});return}
  const row=e.target.closest('.mod-row');const act=e.target.closest('[data-act]');if(!act){if(e.target.id==='emptyReset')resetFilters();if(row){const hit=ITEM_MAP.get(row.dataset.id);if(hit){focusedRowId=hit.id;window.AetherFX?.select(row,{source:'app'});if(BRIDGE.active)locateInMO2(hit,row)}}return}const m=ITEM_MAP.get(act.dataset.id);if(!m)return;if(row&&act.dataset.act!=='complete'){focusedRowId=m.id;window.AetherFX?.select(row,{source:'app'})}
  if(act.dataset.act==='complete'){e.preventDefault();focusedRowId=m.id;toggleDone(m.id,act)}
  if(act.dataset.act==='locate'){e.preventDefault();locateInMO2(m,act);return}
@@ -969,6 +973,7 @@ function setBridgeConnection(connected,message){
  if(message)SET('liveState',message);
  for(const id of ['liveAll','liveQuick','liveDeep','liveLocal','liveRefresh','liveRuntime','liveConnect','liveBackup'])$(id).disabled=!connected||(['liveAll','liveQuick','liveDeep','liveLocal'].includes(id)&&(SCAN_START_BUSY||LIVE_SCAN?.state==='running'));
  if(!connected){if(changed){renderWorkshop();renderDownloadPulse(WORKSHOP_TICKETS)}SET('liveSync','Connection lost · retrying automatically');SET('unifiedEdition',LIVE_CATALOG?'⚠ MO2 DISCONNECTED · LAST SNAPSHOT':'⚠ MO2 DISCONNECTED · RETRYING');}
+ if(changed){renderWorkspace();renderList()}
 }
 async function requestLiveCatalog(method='GET',path='snapshot',body,fresh=false){
  // A completed source edit must not reuse a snapshot started before that edit.
@@ -1025,7 +1030,6 @@ function refreshUnifiedCommand(){
  const candidates=plan?.summary?.candidates||0;
  const checked=live&&WORKSHOP_PLAN?candidates+' candidate'+(candidates===1?'':'s')+' · '+count+' installed mods':imported?count+' imported mods · remote status unverified':'Sample archive · live updates unavailable';
  SET('unifiedUpdateState',checked);
- $('unifiedScan').textContent=live?'Check for updates':'Connect MO2';
 }
 function unifiedScroll(id){selectWorkspace(({updateWorkshop:'updates',workbench:'mods',gameBoard:'extras',liveHub:'tools',liveDownloadList:'downloads',activityPanel:'history'})[id]||'mods');const target=$(id);if(target){target.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth',block:'start'});}}
 document.addEventListener('click',event=>{if(event.target.closest?.('[data-filter]'))selectWorkspace('mods')});
@@ -1390,18 +1394,20 @@ function startScanPolling(mode,context=profileContext()){
     finish();const snap=await requestLiveCatalog();if(!snap||!active())return;
     await snap.ready;if(active())toast('ϟ '+mode+' sweep complete!');
    }else if(v.scan.state==='running'){SCAN_TIMER=setTimeout(poll,1200)}else{finish()}
-  }catch(ex){if(active()){finish();LIVE_SCAN={...LIVE_SCAN,state:'unknown'};SET('liveScanProgress','Scan status unavailable · retry to reconnect');toast('Scan interrupted: '+ex.message)}}
+  }catch(ex){if(active()){finish();updateScanUI({...LIVE_SCAN,state:'unknown',error:ex.message});SET('liveScanProgress','Scan status unavailable · retry to reconnect');toast('Scan interrupted: '+ex.message)}}
  };
  SCAN_TIMER=setTimeout(poll,1200);
 }
 async function scanLive(mode){
  if(!BRIDGE.active||!LIVE_CATALOG||!LIVE_CONNECTED||SCAN_START_BUSY||LIVE_SCAN?.state==='running')return;
- const context=profileContext();SCAN_START_BUSY=true;
+ const context=profileContext();SCAN_START_BUSY=true;STARTUP_ERROR='';
  for(const id of ['liveQuick','liveDeep','liveLocal','liveAll'])$(id).disabled=true;
+ renderWorkspace();
  try{const r=await bridgeRequest('POST','scan',{mode,profileId:context.profile});if(!contextIsCurrent(context))return;
+  STARTUP_ERROR='';
   if(r.state==='running'){SCAN_START_BUSY=false;updateScanUI({...r,mode,state:'running'});SET('liveScanProgress','Beginning '+mode+' scan…');startScanPolling(mode,context)}
   else{SCAN_START_BUSY=false;updateScanUI(r.scan||r);}
- }catch(ex){if(contextIsCurrent(context)){SCAN_START_BUSY=false;toast(ex.message);for(const id of ['liveQuick','liveDeep','liveLocal','liveAll'])$(id).disabled=!LIVE_CONNECTED}}
+ }catch(ex){if(contextIsCurrent(context)){SCAN_START_BUSY=false;updateScanUI({state:'error',mode,error:ex.message})}}
 }
 async function pollLiveBridge(){
  clearTimeout(LIVE_POLL_TIMER);LIVE_POLL_TIMER=null;

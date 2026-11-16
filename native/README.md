@@ -1,24 +1,24 @@
-# Modhunter 0.12.0 — Rust desktop
+# Modhunter 0.12.1 — Rust desktop
 
 The Windows desktop, profile import/cache engine, connection probing, tab lifecycle and native file dialogs run in Rust. Microsoft Edge WebView2 renders the existing Modhunter dashboard, Questbound, AetherFX, Shiverfell, Siege and Atlas. The shipped desktop does not require Node or Electron.
 
-**Atelier 0.12** adds a complete gallery/list library, genuine provider artwork, source filtering, saved density and navigation, and a cohesive dark/parchment visual system. The Rust toolbar is 116px high, and compact library rows stay at 48px. Update selection, approval, installation and recovery continue through the existing owners. All game modes and FX Studio remain available. Read the [visual guide](https://github.com/Herbertofury/Modhunter/wiki/Atelier-0.12) for screenshots and verification scope.
+**OLED 0.12.1** restores colored chapter bands, diamonds, progress/count cues and clear manual status feedback on true black, neutral surfaces. Cool white/blue controls, visible hover/focus/selection and truthful scan states carry through the desktop. The complete gallery/list library, genuine provider artwork, filtering and saved density/navigation remain available. The Rust toolbar is 116px high, and compact library rows stay at 48px. Update selection, approval, installation and recovery continue through the existing owners. All game modes and FX Studio remain available. Read the [visual guide](https://github.com/Herbertofury/Modhunter/wiki/Atelier-0.12) for screenshots and verification scope.
 
 MO2's Python/Qt plugin remains the supported in-process adapter for MO2's authenticated Nexus bridge, native downloads, FOMOD installer, focus and verified rewards. A small Qt Core C++ helper bridges the protected callback-sender binding needed by MO2 2.5.2's public file-list integration. The dashboard/game presentation remains HTML/CSS/JavaScript. Public site adapters, import/cache and plugin analysis run in Rust.
 
-## 0.12.0: library browsing and release packages
+## 0.12.1: color, feedback and release packages
 
 Use **List** for compact version, provider and update comparisons, or **Gallery** for available project artwork. Gallery defaults to **All mods**; **By chapter** restores chapter organization and saved chapter-collapse choices. Search, provider filters and sorting keep the complete matching library available. Density and navigation choices persist with the current profile. The details panel retains source identity, notes and update actions; artwork is displayed only when supplied by the supported source.
 
-The 0.12.0 packaging layout includes these assets. Consult [GitHub Releases](https://github.com/Herbertofury/Modhunter/releases) for published availability; this source document does not establish that final runtime acceptance or publication has completed.
+The 0.12.1 packaging layout includes these assets. Consult [GitHub Releases](https://github.com/Herbertofury/Modhunter/releases) for published availability; this source document does not establish that final runtime acceptance or publication has completed.
 
 | Asset | Purpose |
 | --- | --- |
-| `Modhunter_0.12.0_x64-setup.exe` | Windows installer, including WebView2 runtime setup when required. |
+| `Modhunter_0.12.1_x64-setup.exe` | Windows installer, including WebView2 runtime setup when required. |
 | `Modhunter-Rust-Windows.zip` | Portable desktop, matching MO2 components, setup instructions and build identity. |
-| `Modhunter-0.12.0-MO2-Plugin.zip` | Independent MO2 plugin package with the matching compiled helpers and installer scripts. |
-| `Modhunter-0.12.0-Standalone.zip` | Independent `Modhunter.html`, `BUILD_INFO.json` and internal `SHA256SUMS.txt`. |
-| `Modhunter-0.12.0-Verification.zip` and `SHA256SUMS.txt` | Validated public receipts/screenshots and checksums for the downloadable release assets. |
+| `Modhunter-0.12.1-MO2-Plugin.zip` | Independent MO2 plugin package with the matching compiled helpers and installer scripts. |
+| `Modhunter-0.12.1-Standalone.zip` | Independent `Modhunter.html`, `BUILD_INFO.json` and internal `SHA256SUMS.txt`. |
+| `Modhunter-0.12.1-Verification.zip` and `SHA256SUMS.txt` | Validated public receipts/screenshots and checksums for the downloadable release assets. |
 
 The release pipeline requires the exact compiled Windows app, complete-library measurements, installer, actual MO2 fixture and browser evidence before publication. The [Atelier guide](https://github.com/Herbertofury/Modhunter/wiki/Atelier-0.12) records the accepted checkpoint and any remaining runtime limits when those results are available.
 

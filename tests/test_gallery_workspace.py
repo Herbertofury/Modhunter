@@ -78,11 +78,13 @@ class GalleryWorkspaceTests(unittest.TestCase):
         self.page.wait_for_function(idle)
         self.page.evaluate('__LIBRARY_MOTION_QA__.clearTransitions()')
 
-    def open(self, count=9, group_count=1, style_nonce=None):
+    def open(self, count=9, group_count=1, style_nonce=None, feedback=False):
         catalog = harness.catalog(count=count)
         if group_count > 1:
             catalog['groups'] = [{'id':f'group-{group}', 'name':f'Fixture chapter {group}', 'startPriority':group,
-                                  'count':len(range(group,count,group_count)), 'color':'mint'} for group in range(group_count)]
+                                  'count':len(range(group,count,group_count)),
+                                  'color':(['sky','purple','red'][group % 3] if feedback else 'mint')}
+                                 for group in range(group_count)]
         for index, item in enumerate(catalog['items']):
             if group_count > 1:
                 group = catalog['groups'][index % group_count]
@@ -94,6 +96,24 @@ class GalleryWorkspaceTests(unittest.TestCase):
                 'github': f'https://github.com/fixture/project-{index}',
             }[provider]}
         boot = harness.BOOT.replace('__CATALOG__', json.dumps(catalog)).replace('__FAIL__', '0').replace('prefs:{}', 'prefs:{autoCheckOnLaunch:false}')
+        if feedback:
+            # Keep existing cases/fixture timing unchanged. These additional API
+            # responses expose real request, retry and cancellation UI paths.
+            boot = boot.replace('prefs:{autoCheckOnLaunch:false}',
+                                'prefs:{autoCheckOnLaunch:false,vfxIntensity:"off",vfxShake:false,vfxTrails:false,sound:false}')
+            start = boot.index("else if(path==='scan'){")
+            end = boot.index("else if(path==='quick-update')", start)
+            boot = boot[:start] + """else if(path==='scan'){
+              if(method==='POST'){
+                if(x.failScanStart)result={ok:false,error:'QA source service unavailable; retry this check'};
+                else{x.scan={state:'running',mode:body.mode,checked:0,total:c.items.length,jobId:41};
+                  result={ok:true,profileId:c.profileId,...structuredClone(x.scan)};}
+              }else if(x.failScanPoll)result={ok:false,error:'QA scan status could not be retrieved'};
+              else result={ok:true,profileId:c.profileId,scan:structuredClone(x.scan)};
+            }else if(path==='cancel-scan'){
+              x.cancelBody=body;x.scan={...x.scan,state:'cancelled'};
+              result={ok:true,profileId:c.profileId,scan:structuredClone(x.scan)};
+            }""" + boot[end:]
         html = self.html.replace('<!--__MO2_BOOT__-->', boot)
         headers = {}
         if style_nonce:
@@ -108,6 +128,40 @@ class GalleryWorkspaceTests(unittest.TestCase):
         self.connected()
         self.page.wait_for_function("__RESP__.counts['GET progress']>=1")
         self.page.wait_for_function('n=>document.querySelectorAll("#modList .mod-row").length===n', arg=count)
+
+    def feedback_capture(self, filename):
+        import os
+        from pathlib import Path
+        output = os.environ.get('MODHUNTER_QA_OUTPUT')
+        if output:
+            target = Path(output) / filename
+            target.parent.mkdir(parents=True, exist_ok=True)
+            self.page.screenshot(path=str(target))
+
+    def chapter_feedback(self):
+        return self.page.locator('#modList > .chapterbar').evaluate_all("""bars=>bars.map(bar=>{
+          const style=getComputedStyle(bar),diamond=bar.querySelector('.diamond'),track=bar.querySelector('.chapter-mini-progress');
+          const canvas=document.createElement('canvas');canvas.width=canvas.height=1;
+          const ctx=canvas.getContext('2d');ctx.fillStyle=style.borderLeftColor;ctx.fillRect(0,0,1,1);
+          const rect=bar.getBoundingClientRect(),trackRect=track.getBoundingClientRect();
+          return {id:bar.id,color:[...ctx.getImageData(0,0,1,1).data],border:parseFloat(style.borderLeftWidth),
+            background:style.backgroundImage,expanded:bar.getAttribute('aria-expanded'),
+            diamondVisible:getComputedStyle(diamond).display!=='none'&&diamond.getBoundingClientRect().width>0,
+            trackVisible:getComputedStyle(track).display!=='none'&&trackRect.width>0&&trackRect.height>0,
+            fill:track.firstElementChild.getBoundingClientRect().width,trackWidth:trackRect.width,
+            completion:bar.dataset.completion,chevron:getComputedStyle(bar,'::after').transform,
+            count:bar.querySelector('.chapter-count').textContent,rect:{left:rect.left,right:rect.right,width:rect.width,height:rect.height}};
+        })""")
+
+    def assert_scan_feedback(self, state, *, busy=False, button_state='idle', rows=6):
+        self.page.wait_for_function("state=>document.getElementById('workspaceCheckLine').dataset.state===state", arg=state)
+        self.assertEqual(self.page.locator('#workspaceDot').get_attribute('data-state'), state)
+        self.assertEqual(self.page.locator('#unifiedScan').get_attribute('data-state'), button_state)
+        self.assertEqual(self.page.locator('#unifiedScan').get_attribute('aria-busy'), str(busy).lower())
+        self.assertEqual(self.page.locator('#workspaceScanProgress').is_visible(), busy)
+        self.assertEqual(self.page.locator('#modList > .mod-row').count(), rows)
+        for action in ('POST install','POST download','POST update-queue','POST quick-update'):
+            self.assertEqual(self.page.evaluate('key=>__RESP__.counts[key]||0', action), 0)
 
     def test_presentation_controls_preserve_rows_and_saved_preferences(self):
         self.open()
@@ -676,6 +730,177 @@ class GalleryWorkspaceTests(unittest.TestCase):
         self.assertTrue(self.page.evaluate("document.getElementById('row-item-0')!==__SPANISH_CACHED_ROW__"))
         self.assertEqual(self.page.locator('#row-item-0 .inspect-btn').text_content(),'Details')
         self.assertTrue(self.page.locator('#row-item-0 .inspect-btn').get_attribute('aria-label').startswith('Inspect '))
+
+    def test_oled_chapters_keep_color_progress_and_keyboard_collapse_in_both_layouts(self):
+        self.open(count=12, group_count=3, feedback=True)
+        self.assertEqual(self.page.locator('body').evaluate('e=>getComputedStyle(e).backgroundColor'), 'rgb(0, 0, 0)')
+        chapters = self.chapter_feedback()
+        self.assertEqual(len(chapters), 3)
+        self.assertEqual(len({tuple(c['color']) for c in chapters}), 3, chapters)
+        for chapter in chapters:
+            self.assertGreaterEqual(chapter['border'], 2, chapter)
+            self.assertGreater(max(chapter['color'][:3])-min(chapter['color'][:3]), 35, chapter)
+            self.assertNotEqual(chapter['background'], 'none', chapter)
+            self.assertTrue(chapter['diamondVisible'] and chapter['trackVisible'], chapter)
+            self.assertEqual(chapter['completion'], 'empty')
+        first = self.page.locator('[data-chapter-toggle="group-0"]')
+        first.focus();self.page.keyboard.press('Enter')
+        self.assertEqual(first.get_attribute('aria-expanded'), 'false')
+        self.assertTrue(first.evaluate('e=>e===document.activeElement'), 'Collapse must retain keyboard focus')
+        self.assertEqual(self.page.locator('#modList > .mod-row').count(), 8)
+        self.assertNotEqual(self.chapter_feedback()[0]['chevron'], chapters[0]['chevron'])
+        self.page.keyboard.press('Enter')
+        self.assertEqual(first.get_attribute('aria-expanded'), 'true')
+        self.assertEqual(self.page.locator('#modList > .mod-row').count(), 12)
+        self.page.locator('#workspaceTitle').click();self.page.keyboard.press('j');self.page.keyboard.press('Space')
+        self.page.wait_for_function('__ARSENAL_QA__.verifyRow("item-0").state.status==="done"')
+        progress = self.chapter_feedback()[0]
+        self.assertEqual(progress['count'], '1/4')
+        self.assertEqual(progress['completion'], 'partial')
+        self.assertGreater(progress['fill'], 0)
+        self.assertLess(progress['fill'], progress['trackWidth'])
+        self.feedback_capture('oled-chapters-1440-dark.png')
+        for _ in range(3):
+            self.page.keyboard.press('j');self.page.keyboard.press('Space')
+        completed = self.chapter_feedback()[0]
+        self.assertEqual(completed['count'], '4/4')
+        self.assertEqual(completed['completion'], 'complete')
+        self.assertAlmostEqual(completed['fill'], completed['trackWidth'], delta=1)
+        self.page.locator('#libraryGallery').click()
+        self.page.locator('#galleryGrouping').select_option('chapters')
+        grouped = self.chapter_feedback()
+        self.assertEqual([c['color'] for c in grouped], [c['color'] for c in chapters])
+        self.assertTrue(all(c['diamondVisible'] and c['trackVisible'] for c in grouped), grouped)
+        self.assertEqual(self.page.locator('#modList > .mod-row').count(), 12)
+        self.page.locator('#libraryList').click();self.page.locator('#railTheme').click()
+        self.page.set_viewport_size({'width':390,'height':844})
+        self.assertEqual(self.page.locator('body').get_attribute('data-theme'), 'snow')
+        self.assertNotEqual(self.page.locator('body').evaluate('e=>getComputedStyle(e).backgroundColor'), 'rgb(0, 0, 0)')
+        self.assertLessEqual(self.page.evaluate('document.documentElement.scrollWidth'), 391)
+        narrow = self.chapter_feedback()
+        self.assertEqual(len(narrow), 3)
+        for chapter in narrow:
+            self.assertTrue(chapter['diamondVisible'] and chapter['trackVisible'], chapter)
+            self.assertGreaterEqual(chapter['rect']['left'], 0)
+            self.assertLessEqual(chapter['rect']['right'], 391)
+        self.assertFalse(self.page.evaluate("document.getAnimations().some(a=>a.constructor.name==='CSSTransition'&&a.effect?.target?.closest?.('#modList')&&a.playState==='running')"))
+        self.feedback_capture('oled-chapters-390-light.png')
+
+    def test_manual_bookmark_hover_focus_and_navigation_feedback_remain_distinct(self):
+        self.page.emulate_media(reduced_motion='no-preference')
+        self.open(count=6, group_count=3, feedback=True)
+        title = self.page.locator('#row-item-0 .mod-title')
+        assessment = self.page.locator('#row-item-0 .detected-status').inner_text()
+        self.assertEqual(self.page.locator('#row-item-0 .manual-status').count(), 0)
+        self.page.locator('#row-item-0 .inspect-btn').click()
+        self.page.locator('#drawerStatus').select_option('review');self.page.locator('#saveInspector').click()
+        review = self.page.locator('#row-item-0 .manual-status[data-manual="review"]')
+        self.assertTrue(review.is_visible())
+        self.assertTrue(review.inner_text().strip())
+        self.assertIn('needs-review', self.page.locator('#row-item-0').get_attribute('class'))
+        self.page.locator('#row-item-0 .inspect-btn').click();self.page.locator('#markInspectorDone').click()
+        done = self.page.locator('#row-item-0 .manual-status[data-manual="done"]')
+        self.assertTrue(done.is_visible())
+        self.assertIn('manual', done.inner_text().lower())
+        self.assertIn('line-through', title.evaluate('e=>getComputedStyle(e).textDecorationLine'))
+        self.assertEqual(self.page.locator('#row-item-0 .detected-status').inner_text(), assessment)
+        self.assertNotIn('Up to date', assessment)
+        favorite = self.page.locator('#row-item-0 .favorite-btn')
+        inactive = favorite.evaluate('e=>getComputedStyle(e).backgroundColor')
+        favorite.click()
+        self.assertEqual(favorite.get_attribute('aria-pressed'), 'true')
+        self.assertIn('Remove', favorite.get_attribute('aria-label'))
+        self.assertEqual(favorite.inner_text(), '★')
+        self.assertNotEqual(favorite.evaluate('e=>getComputedStyle(e).backgroundColor'), inactive)
+        self.assertIn('Bookmarked', self.page.locator('#toastWrap').inner_text())
+        row = self.page.locator('#row-item-1')
+        self.page.locator('#workspaceTitle').hover()
+        idle = "() => !document.getAnimations().some(a=>a.constructor.name==='CSSTransition'&&a.effect?.target?.closest?.('#modList')&&a.playState==='running')"
+        self.page.wait_for_function(idle)
+        resting = row.evaluate('e=>getComputedStyle(e).backgroundColor')
+        row.hover();self.page.wait_for_function(idle)
+        self.assertNotEqual(row.evaluate('e=>getComputedStyle(e).backgroundColor'), resting)
+        control = row.locator('.inspect-btn')
+        control.focus();self.page.keyboard.press('Tab');self.page.keyboard.press('Shift+Tab')
+        focus = control.evaluate('e=>({active:e===document.activeElement,visible:e.matches(":focus-visible"),style:getComputedStyle(e).outlineStyle,width:parseFloat(getComputedStyle(e).outlineWidth)})')
+        self.assertTrue(focus['active'] and focus['visible'], focus)
+        self.assertNotEqual(focus['style'], 'none', focus)
+        self.assertGreaterEqual(focus['width'], 1, focus)
+        self.feedback_capture('oled-manual-feedback-1440-dark.png')
+        updates = self.page.locator('.workspace-tabs [data-workspace="updates"]')
+        inactive_nav = updates.evaluate('e=>getComputedStyle(e).backgroundColor')
+        updates.click()
+        self.assertEqual(self.page.locator('body').get_attribute('data-workspace'), 'updates')
+        self.assertIn('active', updates.get_attribute('class'))
+        self.assertNotEqual(updates.evaluate('e=>getComputedStyle(e).backgroundColor'), inactive_nav)
+        self.assertEqual(self.page.evaluate('__ARSENAL_QA__.game()?.score||0'), 0)
+        for action in ('POST install','POST download','POST quick-update','POST update-queue'):
+            self.assertEqual(self.page.evaluate('key=>__RESP__.counts[key]||0', action), 0)
+
+    def test_scan_start_and_real_progress_have_visible_accessible_feedback(self):
+        self.open(count=12, group_count=3, feedback=True)
+        self.page.evaluate('__RESP__.defer.scan=true')
+        self.page.locator('#unifiedScan').click()
+        self.page.wait_for_function('__RESP__.pending.some(p=>p.path==="scan")')
+        self.assert_scan_feedback('busy', busy=True, button_state='starting', rows=12)
+        self.assertTrue(self.page.locator('#unifiedScan').is_disabled())
+        self.assertIn('Starting', self.page.locator('#workspaceCheckStatus').inner_text())
+        self.assertIsNone(self.page.locator('#workspaceScanProgress').get_attribute('value'))
+        self.feedback_capture('oled-scan-starting-1440-dark.png')
+        self.page.evaluate('__RESP__.release("scan");__RESP__.scan.checked=4')
+        self.page.wait_for_function('document.getElementById("workspaceScanProgress").value===4')
+        self.assert_scan_feedback('busy', busy=True, button_state='running', rows=12)
+        self.assertEqual(self.page.locator('#workspaceScanProgress').evaluate('e=>[e.value,e.max]'), [4,12])
+        self.assertIn('4 / 12', self.page.locator('#workspaceCheckDetail').inner_text())
+        self.assertTrue(self.page.locator('#workspaceCancel').is_visible())
+        self.page.locator('#railTheme').click();self.page.set_viewport_size({'width':390,'height':844})
+        self.assertLessEqual(self.page.evaluate('document.documentElement.scrollWidth'), 391)
+        self.feedback_capture('oled-scan-running-390-light.png')
+        self.page.evaluate('__RESP__.scan={...__RESP__.scan,state:"completed",checked:12,queried:12}')
+        self.assert_scan_feedback('complete', rows=12)
+        self.assertIn('Check complete', self.page.locator('#workspaceCheckStatus').inner_text())
+        self.assertFalse(self.page.locator('#unifiedScan').is_disabled())
+        self.assertFalse(self.page.locator('#workspaceCancel').is_visible())
+        self.assertEqual(self.page.locator('#detectedCurrent').inner_text(), '0')
+
+    def test_failed_partial_cancelled_and_read_only_feedback_never_claim_success(self):
+        self.open(count=6, group_count=3, feedback=True)
+        self.page.evaluate('__RESP__.failScanStart=true')
+        self.page.locator('#unifiedScan').focus();self.page.keyboard.press('Enter')
+        self.assert_scan_feedback('error')
+        self.assertIn('QA source service unavailable', self.page.locator('#workspaceCheckDetail').inner_text())
+        self.assertIn('Check failed', self.page.locator('#workspaceCheckStatus').inner_text())
+        self.assertFalse(self.page.locator('#unifiedScan').is_disabled())
+        self.feedback_capture('oled-scan-failed-1440-dark.png')
+        self.page.evaluate('__RESP__.failScanStart=false')
+        self.page.locator('#unifiedScan').click()
+        self.page.wait_for_function('document.getElementById("unifiedScan").dataset.state==="running"')
+        self.page.evaluate('__RESP__.scan={...__RESP__.scan,state:"partial",checked:4,errors:[{reason:"QA provider unavailable"}]}')
+        self.assert_scan_feedback('warning')
+        self.assertNotIn('Check complete', self.page.locator('#workspaceCheckStatus').inner_text())
+        self.page.locator('#unifiedScan').click()
+        self.page.wait_for_function('document.getElementById("unifiedScan").dataset.state==="running"')
+        self.page.evaluate('__RESP__.failScanPoll=true')
+        self.assert_scan_feedback('warning')
+        self.assertNotIn('Check complete', self.page.locator('#workspaceCheckStatus').inner_text())
+        self.page.evaluate('__RESP__.failScanPoll=false')
+        self.page.locator('#unifiedScan').click()
+        self.page.wait_for_function('document.getElementById("unifiedScan").dataset.state==="running"')
+        self.page.locator('#workspaceCancel').click()
+        self.assert_scan_feedback('cancelled')
+        self.assertIn('cancelled', self.page.locator('#workspaceCheckStatus').inner_text().lower())
+        self.assertEqual(self.page.evaluate('__RESP__.cancelBody.jobId'), 41)
+        self.assertEqual(self.page.evaluate('__RESP__.cancelBody.profileId'), 'profile-a')
+        self.assertEqual(self.page.locator('#detectedCurrent').inner_text(), '0')
+        self.context.route('http://oled-offline.fixture.test/', lambda route: route.fulfill(content_type='text/html', body=self.html))
+        self.page.goto('http://oled-offline.fixture.test/', wait_until='load')
+        self.page.wait_for_function('!!window.__ARSENAL_QA__')
+        self.assertEqual(self.page.locator('#workspaceDot').get_attribute('data-state'), 'offline')
+        self.assertEqual(self.page.locator('#workspaceCheckLine').get_attribute('data-state'), 'offline')
+        self.assertIn('Read-only', self.page.locator('#workspaceCheckStatus').inner_text())
+        self.assertEqual(self.page.locator('#unifiedScan').inner_text(), 'Connect MO2')
+        self.assertEqual(self.page.locator('#unifiedScan').get_attribute('aria-busy'), 'false')
+        self.assertFalse(self.page.locator('#workspaceScanProgress').is_visible())
 
     def test_offline_connection_details_are_actionable(self):
         # The public standalone file must describe its state without a native host.

@@ -1,10 +1,14 @@
-/* Modhunter / Fieldwork — shared operating chrome, kept deliberately quiet. */
+/* Modhunter / OLED — neutral operating chrome with explicit state feedback. */
 :root {
   color-scheme: dark;
   font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
-  --chrome-bg: #181d1d; --chrome-surface: #202827; --chrome-raised: #27312e;
-  --edge: #35423b; --gold: #d9bb83; --mint: #92bcaa; --quiet: #a1aea6;
-  --chrome-text: #ebe9df; --chrome-input: #141a18; --chrome-hover: #303d35;
+  --chrome-bg:#000; --chrome-surface:#0b0c10; --chrome-raised:#111216;
+  --edge:#272b35; --edge-strong:#3d4656; --quiet:#b7becb;
+  --chrome-text:#f4f6fa; --chrome-input:#000; --chrome-hover:#1b1e25; --chrome-active:#142133;
+  --focus:#b9dcff; --primary:#f4f6fa; --primary-hover:#dceaff; --primary-text:#101217;
+  --success:#8bd6b0; --warning:#efc879; --danger:#ffafa5;
+  --info-bg:#101d2b; --info-edge:#4c718f; --danger-bg:#2a1416; --danger-edge:#87474b;
+  --gold:var(--primary); --mint:var(--success);
   background: var(--chrome-bg); color: var(--chrome-text);
 }
 * { box-sizing: border-box; }
@@ -12,42 +16,56 @@ body { margin: 0; height: 88px; overflow: hidden; background: var(--chrome-bg); 
 button, input { font: inherit; }
 button { cursor: pointer; }
 button:disabled { opacity: .48; cursor: not-allowed; }
-button:focus-visible, input:focus-visible { outline: 2px solid var(--gold); outline-offset: -3px; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--focus); outline-offset: -3px; }
 .top { height: 48px; display: flex; align-items: stretch; gap: 12px; padding: 0 12px; border-bottom: 1px solid var(--edge); background: var(--chrome-surface); }
 .brand { display: flex; align-items: center; gap: 9px; flex: none; min-width: 153px; }
-.glyph { display: inline-flex; align-items: center; justify-content: center; color: var(--gold); font: 29px Georgia, serif; }
+.glyph { display: inline-flex; align-items: center; justify-content: center; color: var(--primary); font: 29px Georgia, serif; }
 .glyph svg { width: 26px; height: 30px; }
 .brand b { font-size: 12px; font-weight: 700; letter-spacing: .11em; color: var(--chrome-text); }
 .brand small { display: block; font-size: 8px; font-weight: 600; line-height: 1.4; letter-spacing: .1em; color: var(--quiet); margin-top: 3px; }
 .tabstrip { display: flex; align-items: flex-end; gap: 4px; flex: 1; min-width: 90px; overflow-x:auto; overflow-y: hidden; scrollbar-width: thin; scrollbar-color: var(--edge) transparent; }
-.tab { display: flex; flex: none; align-items: center; max-width:none; min-width: 110px; height: 36px; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; background: transparent; color: var(--quiet); transition: background .14s, border-color .14s; }
+.tab { display: flex; flex: none; align-items: center; max-width:none; min-width: 110px; height: 36px; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; background: transparent; color: var(--quiet); transition: none; }
 .tab:hover { background: var(--chrome-raised); }
-.tab.active { background: var(--chrome-bg); border-color: var(--edge); color: var(--chrome-text); box-shadow: inset 0 2px var(--gold); }
+.tab.active { background: var(--chrome-bg); border-color: var(--edge); color: var(--chrome-text); box-shadow: inset 0 2px var(--focus); }
 .tab-open { display: flex; align-items: center; flex: 1; min-width: 0; padding: 0 12px; height: 100%; border: 0; background: none; color: inherit; text-align: left; font-size: 11px; font-weight: 600; white-space: nowrap; }
 .tab-open:hover { background: transparent; color: inherit; }
 .tab-open span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tab .x { align-self: center; border: 0; background: none; color: var(--quiet); font-size: 16px; line-height: 1; margin: 0 4px 0 0; padding: 4px 6px; border-radius: 4px; }
-.tab .x:hover { background: #71483a; color: #fff0e5; }
+.tab .x:hover { background: var(--danger-bg); color: var(--danger); }
 .actions { display: flex; align-items: center; gap: 4px; flex: none; }
-button { border: 1px solid var(--edge); border-radius: 5px; background: var(--chrome-raised); color: var(--chrome-text); font-size: 10px; font-weight: 600; padding: 7px 9px; transition: border-color .15s, background .15s; }
-button:hover:not(:disabled) { background: var(--chrome-hover); border-color: #698573; }
+button { border: 1px solid var(--edge); border-radius: 5px; background: var(--chrome-raised); color: var(--chrome-text); font-size: 10px; font-weight: 600; padding: 7px 9px; transition: none; }
+button:hover:not(:disabled) { background: var(--chrome-hover); border-color: var(--edge-strong); }
 .actions button { background: transparent; border-color: transparent; color: var(--quiet); }
 .actions button:hover:not(:disabled) { border-color: var(--edge); color: var(--chrome-text); }
 .bar { height: 40px; display: flex; align-items: center; gap: 7px; padding: 4px 12px; background: var(--chrome-bg); overflow-x:auto; scrollbar-width: thin; scrollbar-color: var(--edge) transparent; }
 .left { display: flex; gap: 2px; flex: none; }
 .left button { min-width: 27px; height: 28px; padding: 0 3px; font-size: 18px; background: transparent; border-color: transparent; font-weight: 400; }
 .source { display: flex; align-items: center; gap: 7px; min-width: 75px; flex: 1; }
-.status { display: block; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--gold); }
-.status.live { background: var(--mint); box-shadow: 0 0 0 3px #92bcaa18; }
+.status { display: block; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--quiet); }
+.status.live { background: var(--success); box-shadow: none; }
 .source-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--quiet); font-size: 10px; }
 .connect { display: flex; align-items: center; gap: 4px; width: min(43vw,470px); flex: none; }
 input { min-width: 80px; flex: 1; background: var(--chrome-input); border: 1px solid var(--edge); border-radius: 5px; padding: 6px 8px; color: var(--chrome-text); font: 11px/1.3 "Cascadia Code", Consolas, monospace; }
 input::placeholder { color: var(--quiet); opacity: .75; }
 .connect button { font-size: 9px; padding: 6px 8px; }
-#importMo2 { flex: none; white-space: nowrap; background: #383526; border-color: #756344; color: #e8d1a7; }
-#importMo2:hover:not(:disabled) { background: #48412c; }
+#importMo2 { flex: none; white-space: nowrap; background: var(--primary); border-color: var(--primary); color: var(--primary-text); }
+#importMo2:hover:not(:disabled) { background: var(--primary-hover); border-color:var(--primary-hover); }
 #open, #copy { flex: none; }
-.toast { position: absolute; z-index: 3; right: 12px; bottom: 1px; max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--gold); font-size: 10px; pointer-events: none; }
+.toast { position: absolute; z-index: 3; right: 12px; bottom: 1px; max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--primary); font-size: 10px; pointer-events: none; }
 @media(max-width:1050px) { .brand { min-width: 118px; } .brand small { display: none; } .source-text { display: none; } .connect { width: min(46vw,375px); } }
 @media(max-width:780px) { .top { gap: 6px; padding: 0 7px; overflow-x:auto; } .brand { min-width: 45px; } .brand b { font-size: 10px; } .actions button { padding: 6px; } .connect { width: min(52vw,280px); } .bar { padding: 4px 7px; } }
 @media(prefers-reduced-motion:reduce) { .tab, button { transition: none; } }
+
+/* State changes are immediate: no mass color transitions on a theme switch. */
+button:active:not(:disabled) { background:var(--chrome-active); border-color:var(--focus); box-shadow:inset 0 0 0 1px var(--focus); }
+#importMo2:active:not(:disabled) { background:var(--focus); color:var(--primary-text); border-color:var(--focus); }
+button[aria-pressed="true"],button[aria-current="page"] { border-color:var(--focus); color:var(--focus); background:var(--chrome-active); }
+button[aria-busy="true"] { opacity:1; cursor:progress; color:var(--focus); background:var(--info-bg); border-color:var(--info-edge); box-shadow:inset 0 -2px var(--focus); }
+.toast[data-feedback="error"] { color:var(--danger); }
+.toast[data-feedback="success"] { color:var(--success); }
+@media(forced-colors:active) {
+ button:focus-visible,input:focus-visible { outline-color:Highlight; }
+ .tab.active { border-color:Highlight; }
+ .status { forced-color-adjust:none; background:GrayText; }
+ .status.live,.status.busy { background:Highlight; }
+}

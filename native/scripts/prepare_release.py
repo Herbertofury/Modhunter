@@ -249,7 +249,7 @@ MO2_PACKAGE_ROOT_FILES = frozenset({
     "PROJECT_NOTICE.txt", "THIRD_PARTY_NOTICES.json",
     "START-HERE-MO2-253.md", "GameSync-Update-Techniques.md",
 })
-VISUAL_BASELINE = "1a99a66d346b1593273afc7c2b12e2d493c8d5e0"
+VISUAL_BASELINE = "0f2d399244dbe0cc69e82521c497f006832678c3"
 INSTALLER_CHECKS = {
     "nsis_installs_executable", "installed_executable_matches_tested_binary",
     "installed_archive_resource_7z.exe", "installed_archive_resource_7z.dll",
@@ -324,7 +324,7 @@ def validate_installer_report(report: dict, commit: str, installer_hash: str, ex
 def validate_visual_report(report: dict, commit: str) -> None:
     require(report.get("ok") is True and report.get("candidateCommit") == commit
             and report.get("sourceDirty") is False and report.get("baselineCommit") == VISUAL_BASELINE,
-            "Visual acceptance is incomplete or does not identify the clean candidate and v0.11.0 baseline")
+            "Visual acceptance is incomplete or does not identify the clean candidate and v0.12.0 baseline")
     sources = (report.get("assets") or {}).get("after")
     require(isinstance(sources, dict) and bool(sources)
             and all(isinstance(name, str) and name.startswith("mo2_update_arsenal/web/")
@@ -1091,11 +1091,19 @@ def component_assets(portable: Path, staged: Path) -> None:
 
 
 def release_notes(commit: str, run_url: str, repository_url: str, installer_name: str) -> str:
-    return f"""# Modhunter {VERSION} — Atelier / The Mod Vault
+    return f"""# Modhunter {VERSION} — OLED / Color restored
 
-Atelier gives your mod collection a new image-forward gallery, a precise compact list, and a consistent dark/light workspace. Source identities, installed and detected versions, exact-file review and real installation results stay close to the mod you are managing.
+Modhunter now opens on true OLED black, with neutral surfaces and cool white/blue controls. Colored chapter separators, progress diamonds and manual completion cues return, with clearer feedback for actual checks, selection, bookmarks and errors. The complete gallery/list library and every existing update safeguard remain available.
 
 This release continues the Rust desktop introduced in earlier versions. WebView2 renders the shared dashboard and preserved game modes; MO2 retains authenticated Nexus downloads and its native installer, including FOMOD choices. The Windows app does not require Node or Electron.
+
+## 0.12.1: OLED black, colored chapters and visible feedback
+
+- **True black workspace:** neutral near-black surfaces replace the green/gold utility palette across the Rust shell, shared dashboard, Watchtower, settings, dialogs and preserved companion chrome. Light mode uses neutral whites and grays. Optional game worlds retain their own art direction.
+- **Colored chapters restored:** authored chapter bands, colored diamonds, collapse arrows, manual cleared/total counts and progress bars make collection structure immediately visible again. Keyboard focus stays on the chapter when it expands or collapses.
+- **Clear interaction states:** visible hover, keyboard focus, pressed/current tabs, selected mods, bookmarks, manual completion/review and error feedback. Manual checklist labels remain distinct from detected updates and verified installation.
+- **Truthful scan feedback:** a real starting state, busy control, actual checked/total progress and distinct complete, partial, failed, cancelled and unavailable states. Request or polling failures no longer leave a reassuring idle connection dot.
+- **Same complete collection:** no result limits, virtualization or hidden records. The release retains exact-file approval, backups, native MO2 installation, verification, recovery, all game modes and FX Studio.
 
 ## 0.12.0: image-forward mod browsing and a compact desktop
 
@@ -1185,7 +1193,7 @@ JSON, CSV and PowerShell exports are saved to Windows Downloads with unique file
 
 ## What this build actually passed
 
-- Before/after Chromium captures against v0.11.0 at desktop and narrow sizes, dark/light themes, authentic source artwork, gallery/list views and update dialogs. The complete 11,207-record comparison preserves every laid-out row and verifies the last item remains searchable; its raw samples and screenshots are included in the verification archive.
+- Before/after Chromium captures against v0.12.0 at desktop and narrow sizes, dark/light themes, authentic source artwork, gallery/list views and update dialogs. The complete 11,207-record comparison preserves every laid-out row and verifies the last item remains searchable; its raw samples and screenshots are included in the verification archive.
 - The compiled desktop connected to actual MO2, with native dark/light appearance acknowledgement, wide/narrow window captures, real pointer navigation through Gallery and Details, and keyboard focus restoration.
 - The same complete 11,207-record snapshot imported through the shipped dashboard in actual Windows WebView2. Search restoration and every List/Gallery/density transition retain all ordered, laid-out records. The verification archive's `windows/native-library-performance.json` records the actual engine, viewport, motion setting, raw timings and rendering costs; this renderer sample excludes Rust filesystem import, provider I/O and installation.
 - Actual current-user NSIS installation of this exact installer, byte-for-byte verification of its installed executable and archive helpers, a real installed WebView2 launch, removal of the installed payload and registration, and preservation of the complete external fixture profile during uninstall.

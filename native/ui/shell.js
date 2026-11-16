@@ -4,7 +4,7 @@
  const api=window.__TAURI__;
  let state={tabs:[],activeId:null,connected:false},messageTimer=0,disposed=false;
  const busy=new Set(),tabNodes=new Map();
- function message(text,persistent=false){clearTimeout(messageTimer);$('message').textContent=String(text||'');$('message').title=String(text||'');if(!persistent)messageTimer=setTimeout(()=>{$('message').textContent=''},12000)}
+ function message(text,persistent=false,failure=false){clearTimeout(messageTimer);$('message').setAttribute('data-feedback',failure?'error':'info');$('message').textContent=String(text||'');$('message').title=String(text||'');if(!persistent)messageTimer=setTimeout(()=>{$('message').textContent=''},12000)}
  function render(next){
   if(Number.isFinite(next.revision)&&Number.isFinite(state.revision)&&next.revision<state.revision)return false;
   if(Number.isFinite(next.epoch)&&Number.isFinite(state.epoch)&&next.epoch<state.epoch)return false;
@@ -30,6 +30,10 @@
   for(const id of ['configureIni','configureMods','clearPaths','configureEslifierData'])$(id).disabled=!!state.importing||busy.has(id);
   $('clearEslifierData').disabled=!state.eslifierDataPath||!!state.importing||busy.has('clearEslifierData');
   $('disconnect').disabled=!state.endpoint&&!busy.has('connect')&&!busy.has('discover');
+  for(const [id,kind] of [['connect','connect'],['openWatchtower','watchtower'],['discover','discover'],['importMo2','importMo2'],['refreshProfile','refreshProfile'],['diagnostics','diagnostics'],['pluginAudit','pluginAudit'],['cancelImport','cancelImport'],['configureIni','configureIni'],['configureMods','configureMods'],['clearPaths','clearPaths'],['configureEslifierData','configureEslifierData'],['clearEslifierData','clearEslifierData']]){
+   const working=busy.has(kind)||(kind==='pluginAudit'&&auditing)||(kind==='cancelImport'&&!!state.cancelling);
+   $(id).setAttribute('aria-busy',String(working));
+  }
   if(state.endpoint&&document.activeElement!==$('endpoint'))$('endpoint').value=state.endpoint;
   const stats=state.stats;
   const audit=state.pluginAnalysis,auditStats=audit?.stats;
@@ -50,7 +54,7 @@
     node.append(open,close);tabNodes.set(tab.id,node);$('tabs').append(node);
    }
    const active=state.activeId===tab.id;node.classList.toggle('active',active);
-   const open=node.firstElementChild;open.setAttribute('aria-selected',String(active));open.title=tab.url;open.firstElementChild.textContent=(tab.loading?'◌ ':'')+tab.title;
+   const open=node.firstElementChild;open.setAttribute('aria-selected',String(active));open.setAttribute('aria-busy',String(!!tab.loading));open.title=tab.url;open.firstElementChild.textContent=(tab.loading?'◌ ':'')+tab.title;
    node.lastElementChild.title='Close '+tab.title;node.lastElementChild.setAttribute('aria-label','Close '+tab.title);
   }
   return true;
@@ -65,7 +69,7 @@
    if(result?.sessions){$('mo2Sessions').replaceChildren();for(const session of result.sessions){const option=document.createElement('option');option.value=session.endpoint;option.label=session.profileName;$('mo2Sessions').append(option)}$('endpoint').focus()}
    if(result?.message)message(result.message);
    return result;
-  }catch(error){message(String(error),true);return null}
+  }catch(error){message(String(error),true,true);return null}
   finally{if(exclusive){busy.delete(kind);render(state)}}
  }
  for(const [id,kind,value] of [['openWatchtower','watchtower'],['openReadiness','readiness'],['newDash','new','dashboard'],['newSiege','new','siege'],['newRealm','new','realm'],['back','back'],['forward','forward'],['reload','reload'],['open','external'],['copy','copy'],['diagnostics','diagnostics'],['disconnect','disconnect'],['importMo2','importMo2'],['refreshProfile','refreshProfile'],['pluginAudit','pluginAudit'],['configureIni','configureIni'],['configureMods','configureMods'],['clearPaths','clearPaths'],['configureEslifierData','configureEslifierData'],['clearEslifierData','clearEslifierData']])$(id).onclick=()=>command(kind,value);
@@ -88,5 +92,5 @@
   unlisten.push(await api.event.listen('modhunter-command-result',event=>{const result=event.payload;if(result?.state)render(result.state);if(result?.sessions){$('mo2Sessions').replaceChildren();for(const session of result.sessions){const option=document.createElement('option');option.value=session.endpoint;option.label=session.profileName;$('mo2Sessions').append(option)}$('endpoint').focus()}if(result?.message)message(result.message,true)}));
   await command('state');await command('ready');poll();
  }
- start().catch(error=>message('Desktop startup: '+error));
+ start().catch(error=>message('Desktop startup: '+error,true,true));
 })();

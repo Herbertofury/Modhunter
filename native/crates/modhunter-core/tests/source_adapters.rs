@@ -937,3 +937,22 @@ fn modhold_cache_and_output_strip_provider_supplied_grants() {
         "modhold:file:759"
     );
 }
+
+#[test]
+fn modhold_malformed_top_level_responses_fail_closed_without_panicking() {
+    for data in [
+        json!([]),
+        json!("invalid"),
+        json!(42),
+        Value::Null,
+        json!(true),
+    ] {
+        let mock = Mock::new();
+        mock.reply("https://modholdmods.com/api/v1/mods/203", 200, data, &[]);
+        let mut req = request("https://modholdmods.com/g/skyrim-se/mods/203/fixture");
+        req.game = "Skyrim Special Edition".into();
+        let result = scan_sources_with(&req, &mock, NOW).unwrap();
+        assert_eq!(result.item_records["row"]["outcome"], "unavailable");
+        assert!(result.item_records["row"]["latestVersion"].is_null());
+    }
+}

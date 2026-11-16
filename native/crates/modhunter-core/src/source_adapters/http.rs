@@ -821,6 +821,9 @@ fn cache_document(url: &str, value: &Value) -> Value {
         }
         result
     } else if url.starts_with("https://modholdmods.com/api/v1/mods/") {
+        if !value.is_object() {
+            return Value::Null;
+        }
         let mut result = fields(
             value,
             &["id", "name", "version", "game", "page", "summary", "cover"],

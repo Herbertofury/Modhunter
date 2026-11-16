@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "kind": "creator-continuity-registry",
+  "revision": "2026-11-16.1",
+  "updatedAt": "2026-11-16T19:33:16Z",
+  "authors": [
+    {
+      "id": "nexus:sethsaidthat",
+      "name": "SethSaidThat",
+      "source": {
+        "provider": "nexus",
+        "accountId": "199502561",
+        "profileUrl": "https://www.nexusmods.com/profile/SethSaidThat",
+        "handle": "SethSaidThat"
+      },
+      "status": {
+        "state": "banned",
+        "observedAt": "2026-11-16T19:33:16Z",
+        "evidenceUrl": "https://www.nexusmods.com/profile/SethSaidThat",
+        "evidenceKind": "provider-profile",
+        "summary": "The Nexus profile displayed Banned beside this author’s name. The moderation reason was not established."
+      },
+      "destinations": [
+        {
+          "provider": "modhold",
+          "profileUrl": "https://modholdmods.com/u/SethSaidThat",
+          "handle": "SethSaidThat",
+          "identityEvidence": {
+            "kind": "author-profile-backlink",
+            "url": "https://modholdmods.com/u/SethSaidThat",
+            "targetUrl": "https://www.nexusmods.com/profile/SethSaidThat",
+            "observedAt": "2026-11-16T19:33:16Z"
+          }
+        }
+      ]
+    }
+  ],
+  "migrations": [
+    {
+      "id": "nexus-skyrimspecialedition-196696--modhold-skyrim-se-11",
+      "authorId": "nexus:sethsaidthat",
+      "title": "Estates of Skyrim",
+      "from": {
+        "provider": "nexus",
+        "game": "skyrimspecialedition",
+        "projectId": "196696",
+        "url": "https://www.nexusmods.com/skyrimspecialedition/mods/196696"
+      },
+      "to": {
+        "provider": "modhold",
+        "game": "skyrim-se",
+        "projectId": "11",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/11/estates-of-skyrim-immersive-settlement-and-survival-overhaul"
+      },
+      "reviewRequired": true,
+      "evidenceKind": "linked-author-and-title",
+      "observedAt": "2026-11-16T19:33:16Z",
+      "evidenceUrls": [
+        "https://www.nexusmods.com/skyrimspecialedition/mods/196696",
+        "https://modholdmods.com/g/skyrim-se/mods/11/estates-of-skyrim-immersive-settlement-and-survival-overhaul",
+        "https://modholdmods.com/u/SethSaidThat"
+      ],
+      "note": "The linked author publishes this title on ModHold. Review the mod, game, variant and requirements before tracking. No mod-level relocation declaration was independently verified."
+    },
+    {
+      "id": "nexus-skyrimspecialedition-194692--modhold-skyrim-se-4",
+      "authorId": "nexus:sethsaidthat",
+      "title": "Word Travels",
+      "from": {
+        "provider": "nexus",
+        "game": "skyrimspecialedition",
+        "projectId": "194692",
+        "url": "https://www.nexusmods.com/skyrimspecialedition/mods/194692"
+      },
+      "to": {
+        "provider": "modhold",
+        "game": "skyrim-se",
+        "projectId": "4",
+        "url": "https://modholdmods.com/g/skyrim-se/mods/4/word-travels-friends-talk-about-your-deeds-19560-voiced-line"
+      },
+      "reviewRequired": true,
+      "evidenceKind": "linked-author-and-title",
+      "observedAt": "2026-11-16T19:33:16Z",
+      "evidenceUrls": [
+        "https://www.nexusmods.com/skyrimspecialedition/mods/194692",
+        "https://modholdmods.com/g/skyrim-se/mods/4/word-travels-friends-talk-about-your-deeds-19560-voiced-line",
+        "https://modholdmods.com/u/SethSaidThat"
+      ],
+      "note": "The linked author publishes this title on ModHold. Review the mod, game, variant and requirements before tracking. No mod-level relocation declaration was independently verified."
+    }
+  ]
+}

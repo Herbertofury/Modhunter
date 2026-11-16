@@ -11,6 +11,7 @@ Modhunter checks exact projects, retains every installed mod in the profile, and
 | **GitLab** | Public releases for the exact project, including nested groups | Review release archive links bound to that project and tag; queue vetted links through MO2 | The original link target is checked as well as any provider download alias. Arbitrary external links do not become trusted assets. |
 | **Modrinth** | Project and release API with explicit game-version and loader context | Inspect release files, published hashes, declared dependencies and release notes; vetted archive formats can use MO2 | Wrong game, absent context and loader mismatch require review. JAR and MRPACK files remain metadata/source-page workflows; this tool does not become a Minecraft installer. |
 | **Thunderstore** | Exact namespace/package and community API context | Inspect package releases, dependencies and ZIP archives; vetted files can use MO2 | Community/game mismatch and deprecated packages require review. Moderation status is displayed separately; an active unreviewed listing can supply release facts without being represented as approved. Provider declarations do not prove game compatibility or an installed dependency graph. |
+| **ModHold** | Public metadata API for an exact `modholdmods.com` game/mod ID; reviewed creator destinations also pin the author | Inspect main-file IDs, versions, sizes and published hashes; open the provider page for its normal download workflow | Metadata only: files are not queueable or installable through this adapter. Optional files never establish a main-mod update. A changed author, ambiguous main files or alpha/beta release needs review. |
 | **CurseForge** | Capability shown as **Provider API key required** | Open the original project | This build does not configure a CurseForge API session. It does not claim automatic checks or bypass the provider's key requirements. |
 | **Patreon, LoversLab, Mod DB, Modding Guild, Dwemer Mods** | Exact source retained; **Source-page review** | Open the original release using the user's browser and ordinary provider workflow | A source link does not establish authentication or a newer downloadable release. |
 | **Ko-fi, Boosty, Afdian, SubscribeStar and other creator sites** | Source-page review | Open the original project or post | Post dates and creator names are not treated as installed-mod versions. |
@@ -18,7 +19,7 @@ Modhunter checks exact projects, retains every installed mod in the profile, and
 | **Discord, social links and arbitrary websites** | Creator/community link retained | Follow the original release link | No title-based project guesses or invented update verdicts. |
 | **Unlinked mods** | Unknown until an exact project is linked | Add the source in the inspector, then check again | Unlinked records stay visible. |
 
-The Rust helper performs the four public API integrations. MO2's small in-process Python adapter owns its native Qt/account/download/installer integration. Standalone HTML and an offline desktop import can inspect their existing information; live checking and queueing use the connected plugin.
+The Rust helper performs the five public API integrations. MO2's small in-process Python adapter owns its native Qt/account/download/installer integration. Standalone HTML and an offline desktop import can inspect their existing information; live checking and supported providers' queueing use the connected plugin. ModHold metadata support does not enable ModHold downloading.
 
 ## Information on each mod
 
@@ -41,6 +42,10 @@ Large release notes, file lists and media stay outside the normal catalog and ba
 Modhunter obtains source identity from MO2's URL, limited `meta.ini` metadata, notes or the explicit original URL saved in the inspector. A real native Nexus ID can supply its game-specific project link when no other verified source is present. A verified current non-Nexus source owns its file review even if old metadata still contains a Nexus ID.
 
 Project URLs use HTTPS and reject credential-bearing identities. A changed source invalidates the previous verdict. Dependency links, search results and similar titles do not establish the installed mod's identity.
+
+[Creator Continuity](Creator-Continuity) adds dated author-status notices and per-mod review of a creator's new home. An approved destination changes update tracking while retaining the original source and native install metadata. Pause, resume and undo preserve that review history. Fresh Nexus author checks bind the actual profile header and stable account ID; inaccessible pages and source failures do not establish a ban. Other provider notices can be imported for review, while fresh status detection remains provider-specific.
+
+The **Creators** workspace also follows verified creator identities after successful downloads, with a profile-specific preference, persistent unfollow choices, search, unseen updates and a discovery-review inbox. ModHold follows can discover new uninstalled projects from a complete shared public catalog. Nexus coverage is linked-project updates and pinned account status; whole-author Nexus catalog discovery is not implemented. Creator follows never change a mod source or install a discovered project automatically.
 
 | State | Meaning |
 | --- | --- |
@@ -76,6 +81,8 @@ No provider credentials or account cookies are read by the public adapters. API 
 
 Rust parser/cache/identity tests, Python request and queue tests, actual Python-to-Rust protocol checks and Chromium interaction tests cover this workflow. The browser fixture specifically checks lazy source details, retained notes, escaped release notes, exact archive identity, an obsolete Nexus ID on a GitLab mod, and mobile layout. The Windows workflow separately exercises the actual app and an official portable MO2 fixture.
 
+The 2026-11-16 Creator Continuity checkpoint adds live ModHold public metadata/cache observations and identity, main-file, author-pin, failure-retention and profile-switch regressions. Its existing 28-check Python-to-Rust protocol receipt covers GitHub, GitLab, Modrinth and Thunderstore fixtures; it is not a live ModHold installation proof. Local Chromium, Windows/native MO2 and packaged acceptance for the new feature remain pending until their candidate-specific receipts are available. See [Creator Continuity](Creator-Continuity) for the dated scope and `native/evidence/creator-continuity-20261116.json` for the checkpoint.
+
 See [Build and test results](https://github.com/Herbertofury/Modhunter/actions/workflows/native-rust.yml) for the tested commit and its receipts. Public live API observations record exactly which providers responded; a synthetic fixture or a metadata read does not prove account-specific downloads, FOMOD choices or stability of a particular game setup.
 
-**Continue:** [Update Workshop](Update-Workshop.md) · [Mod Intelligence](Mod-Intelligence.md) · [Rust Desktop](Rust-Desktop.md) · [MO2 Plugin](MO2-Plugin.md).
+**Continue:** [Creator Continuity](Creator-Continuity) · [Update Workshop](Update-Workshop.md) · [Mod Intelligence](Mod-Intelligence.md) · [Rust Desktop](Rust-Desktop.md) · [MO2 Plugin](MO2-Plugin.md).

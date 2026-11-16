@@ -16,7 +16,7 @@ from urllib.parse import unquote, urlsplit
 
 from .plugin_intelligence import RustAuditRunner
 
-PUBLIC_API_PROVIDERS = frozenset({"github", "gitlab", "modrinth", "thunderstore"})
+PUBLIC_API_PROVIDERS = frozenset({"github", "gitlab", "modrinth", "thunderstore", "modhold"})
 REVIEW_COMPATIBILITY_STATES = frozenset({"mismatch", "incompatible", "unsupported", "game-mismatch", "context-required", "community-required", "deprecated"})
 ARCHIVE_SUFFIXES = (".zip", ".7z", ".rar")
 CACHE_LIMIT = 4_194_304
@@ -51,6 +51,7 @@ def preview_image_url(raw, provider: str) -> str:
 PROVIDER_LABELS = {
     "nexus": "Nexus Mods", "github": "GitHub", "gitlab": "GitLab",
     "modrinth": "Modrinth", "thunderstore": "Thunderstore", "curseforge": "CurseForge",
+    "modhold": "ModHold",
     "patreon": "Patreon", "loverslab": "LoversLab", "moddb": "Mod DB",
     "bethesda": "Bethesda Creations", "dwemer": "Dwemer Mods", "modding-guild": "Modding Guild",
     "ko-fi": "Ko-fi", "boosty": "Boosty", "afdian": "Afdian", "tumblr": "Tumblr",
@@ -72,7 +73,10 @@ def adapter_capabilities(provider: str, *, helper_available=True) -> dict:
     elif provider in PUBLIC_API_PROVIDERS:
         mode, auth, check, download = "public-api", "none", True, True
         reason = "Checks the provider's public release API; exact identity, compatible context and an installable archive remain required."
-        if not helper_available and provider in {"modrinth", "thunderstore"}:
+        if provider == "modhold":
+            download = False
+            reason = "Checks the exact ModHold mod, author and main-file version through its public API. Downloads require the site's own sign-in and manual review."
+        if not helper_available and provider in {"modrinth", "thunderstore", "modhold"}:
             check = download = False
             reason = "Install the matching Modhunter Rust helper to enable this provider's public API checks."
     elif provider == "curseforge":
@@ -137,6 +141,8 @@ def _person(raw) -> dict | None:
         result[field] = _safe_url(raw.get(field) or "")
     if raw.get("role"):
         result["role"] = str(raw["role"])[:80]
+    if isinstance(raw.get("handle"), str) and re.fullmatch(r"[A-Za-z0-9_.-]{1,120}", raw["handle"]):
+        result["handle"] = raw["handle"]
     return result if result["name"] or result["url"] else None
 
 
@@ -158,6 +164,12 @@ def normalize_adapter_record(item: dict, raw: dict, *, now=None) -> dict:
                and math.isfinite(expires) and expires <= now)
     same_source = (raw.get("provider") == provider and raw.get("sourceUrl") == source_url
                    and source.get("verified") is True and source.get("kind") != "advisory")
+    if provider == "modhold" and source.get("expectedAuthor") is not None:
+        expected_author = source["expectedAuthor"]
+        same_source = (same_source and isinstance(expected_author, str)
+                       and re.fullmatch(r"[A-Za-z0-9_.-]{1,120}", expected_author) is not None
+                       and isinstance(raw.get("publisherId"), str)
+                       and raw["publisherId"].casefold() == expected_author.casefold())
     result = {"provider": provider, "source": f"{provider}-release-api" if provider in PUBLIC_API_PROVIDERS else provider,
               "sourceUrl": source_url, "outcome": outcome, "availability": str(raw.get("availability") or "unknown")[:80],
               "freshness": freshness, "checkedAt": checked if valid_time else None,
@@ -174,7 +186,8 @@ def normalize_adapter_record(item: dict, raw: dict, *, now=None) -> dict:
     if not same_source:
         result.update(outcome="unavailable", verdict="unknown", reason="Source identity changed or the adapter result does not match the selected project.")
         return result
-    for field in ("projectId", "releaseId", "latestVersion", "publishedAt", "releaseName", "channel", "publisherId", "projectTeamId", "teamId", "title", "projectStatus", "moderationStatus"):
+    for field in ("projectId", "releaseId", "latestVersion", "publishedAt", "releaseName", "channel", "publisherId", "projectTeamId", "teamId", "title", "projectStatus", "moderationStatus",
+                  "updatedAt", "projectPublishedAt", "providerTimestampZone", "access", "releaseIdentityKind"):
         if isinstance(raw.get(field), (str, int, float)) and not isinstance(raw.get(field), bool):
             result[field] = str(raw[field])[:240]
     if type(raw.get("manualAssetCount")) is int and raw["manualAssetCount"] >= 0:
@@ -209,7 +222,7 @@ def normalize_adapter_record(item: dict, raw: dict, *, now=None) -> dict:
         if not isinstance(asset, dict):
             continue
         safe = {k: str(asset[k])[:1800 if k == "url" else 300] for k in
-                ("assetKey", "provider", "projectId", "releaseId", "releaseVersion", "name", "url", "originUrl")
+                ("assetKey", "provider", "projectId", "releaseId", "releaseVersion", "name", "url", "originUrl", "fileKind", "downloadMode")
                 if isinstance(asset.get(k), (str, int)) and not isinstance(asset.get(k), bool)}
         if type(asset.get("assetId")) is int and asset["assetId"] > 0:
             safe["assetId"] = asset["assetId"]
@@ -328,7 +341,8 @@ def compact_source_update(update: dict) -> dict:
         return deepcopy(update)
     fields = {"provider", "source", "sourceUrl", "projectId", "releaseId", "releaseUrl", "releaseName",
               "verdict", "latestVersion", "checkedAt", "expiresAt", "retryAt", "availability", "freshness",
-              "outcome", "reason", "capabilities", "sourceEngine", "publishedAt", "manualAssetCount", "channel", "moderationStatus"}
+              "outcome", "reason", "capabilities", "sourceEngine", "publishedAt", "manualAssetCount", "channel", "moderationStatus",
+              "updatedAt", "projectPublishedAt", "providerTimestampZone", "access", "releaseIdentityKind"}
     result = {key: deepcopy(value) for key, value in update.items() if key in fields}
     compatibility = update.get("compatibility")
     if isinstance(compatibility, dict):

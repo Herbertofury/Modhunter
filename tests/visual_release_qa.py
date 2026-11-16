@@ -47,6 +47,29 @@ def compile_dashboard(ref: str | None = None) -> tuple[str, dict]:
         "/*__SIEGE_SCRIPT__*/": files["siege.js"],
         "<!--__REALM_LAYOUT__-->": files["realm_layout.html"].replace("<!--__SIEGE_LAYOUT__-->", files["siege_layout.html"]),
     }
+    # Include the new production module only for trees that contain it. The
+    # historical v0.11 baseline keeps its original complete asset set.
+    try:
+        continuity = read(WEB + "creator_continuity.js", ref)
+        registry = read("shared/creator-continuity.v1.json", ref)
+        continuity_css = read(WEB + "creator_continuity.css", ref)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        if ref is None:
+            raise
+    else:
+        replacements["/*__SCRIPT__*/"] = "window.__MODHUNTER_CREATOR_REGISTRY__=" + registry + ";\n" + continuity + "\n" + replacements["/*__SCRIPT__*/"]
+        replacements["/*__STYLE__*/"] += "\n" + continuity_css
+        files.update(creator_continuity_js=continuity, creator_continuity_registry=registry, creator_continuity_css=continuity_css)
+    try:
+        creator_hub = read(WEB + "creator_hub.js", ref)
+        creator_hub_css = read(WEB + "creator_hub.css", ref)
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        if ref is None:
+            raise
+    else:
+        replacements["/*__SCRIPT__*/"] = creator_hub + "\n" + replacements["/*__SCRIPT__*/"]
+        replacements["/*__STYLE__*/"] += "\n" + creator_hub_css
+        files.update(creator_hub_js=creator_hub, creator_hub_css=creator_hub_css)
     html = files["app.template.html"]
     for marker, value in replacements.items():
         if marker not in html:

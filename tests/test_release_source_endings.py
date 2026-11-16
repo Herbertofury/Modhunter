@@ -60,6 +60,9 @@ class ReleaseCheckoutTests(unittest.TestCase):
                 if path.is_file() and path.name != 'index.html':
                     shutil.copyfile(path, source / path.name)
             shutil.copyfile(ROOT / 'build.py', fixture / 'build.py')
+            (fixture / 'shared').mkdir()
+            shutil.copyfile(ROOT / 'shared/creator-continuity.v1.json',
+                            fixture / 'shared/creator-continuity.v1.json')
             outputs = (source / 'index.html', fixture / 'web/Modhunter.html',
                        fixture / 'artifacts/MO2_Update_Arsenal.html')
             original = Path.write_text

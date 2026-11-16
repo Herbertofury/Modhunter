@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from .scanner import version_verdict
+from .creator_continuity import sanitize_choice, sanitize_observation, sanitize_registry
 
 
 def utcnow() -> str:
@@ -25,7 +26,7 @@ def utcnow() -> str:
 # Presentation filters are a closed UI vocabulary, never provider/API grants.
 # Includes source adapters plus the dashboard's unresolved/custom-link states.
 LIBRARY_PROVIDER_FILTERS = frozenset({
-    "all", "nexus", "github", "gitlab", "modrinth", "thunderstore", "curseforge",
+    "all", "nexus", "github", "gitlab", "modrinth", "thunderstore", "curseforge", "modhold",
     "patreon", "loverslab", "moddb", "bethesda", "creations", "dwemer", "modding-guild",
     "ko-fi", "boosty", "afdian", "tumblr", "subscribestar", "modcollective", "simsfinds",
     "itch", "itch.io", "steam-workshop", "steamworkshop", "steam", "discord", "youtube",
@@ -101,6 +102,45 @@ class Chronicle:
         with self.lock:
             return self._source_revisions.get(profile_id, 0)
 
+    def creator_follow_document(self, profile_id: str, creator_id: str | None = None):
+        """Local follows have their own revision, separate from browser notes."""
+        with self.lock:
+            value = self._profile(profile_id).get("creatorFollows")
+            if creator_id is not None:
+                if not isinstance(value, dict) or not isinstance(value.get("creators"), dict):
+                    return None
+                value = value["creators"].get(creator_id)
+            return deepcopy(value)
+
+    def save_creator_follow_document(self, profile_id: str, document: dict, expected_revision: int) -> None:
+        with self.lock:
+            profile = self._profile(profile_id)
+            previous = profile.get("creatorFollows")
+            if previous is not None and not isinstance(previous, dict):
+                raise ValueError("Creator follows could not be read. Existing data was retained for recovery.")
+            if (previous or {}).get("revision", 0) != expected_revision:
+                raise ValueError("Creator follows changed before this result was saved.")
+            profile["creatorFollows"] = deepcopy(document)
+            try:
+                self._write()
+            except OSError:
+                if previous is None:
+                    profile.pop("creatorFollows", None)
+                else:
+                    profile["creatorFollows"] = previous
+                raise
+
+    def creator_choices(self, profile_id: str, item_ids: list[str] | None = None) -> dict:
+        with self.lock:
+            rows = (self._profile(profile_id).get("progress") or {}).get("rows") or {}
+            output = {}
+            for key in rows if item_ids is None else item_ids:
+                row = rows.get(key)
+                choice = sanitize_choice(row.get("creatorContinuity")) if isinstance(row, dict) else None
+                if choice and choice["state"] == "tracking" and row.get("url") == choice["destinationUrl"]:
+                    output[key] = choice
+            return output
+
     def persist(self) -> None:
         """Persist accepted in-memory changes outside the service execution lock."""
         with self.lock:
@@ -111,6 +151,13 @@ class Chronicle:
         """User-editable progress cannot mutate scores, badges, or native event evidence."""
         if not isinstance(rows, dict) or not isinstance(prefs, dict):
             return {"ok": False, "error": "Invalid progress document"}
+        with self.lock:
+            previous_progress = deepcopy(self._profile(profile_id).get("progress") or {})
+        previous_rows = previous_progress.get("rows") or {}
+        supplied_registry = prefs.get("creatorRegistry")
+        if ("creatorRegistry" in prefs and supplied_registry != ""
+                and not sanitize_registry(supplied_registry)):
+            return {"ok": False, "error": "Invalid creator registry; previous progress was retained."}
         sanitized = {}
         for mid, row in rows.items():
             if mid not in valid_ids or not isinstance(row, dict):
@@ -119,13 +166,32 @@ class Chronicle:
             for k in ("status", "compat", "note", "url", "installed", "testedVersion", "updatedAt", "observedInstalledVersion", "lastOpened"):
                 if isinstance(row.get(k), str):
                     item[k] = row[k][:8192 if k == "note" else 1024]
-            for k in ("favorite", "mo2Source"):
+            for k in ("favorite", "mo2Source", "creatorWatch"):
                 if isinstance(row.get(k), bool):
                     item[k] = row[k]
+            choice = sanitize_choice(row.get("creatorContinuity"))
+            if "creatorContinuity" in row and not choice:
+                return {"ok": False, "error": "Invalid creator tracking choice; previous progress was retained."}
+            prior = previous_rows.get(mid) or {}
+            if "creatorContinuity" not in row and row.get("url", "") == prior.get("url", ""):
+                choice = sanitize_choice(prior.get("creatorContinuity"))
+            if choice:
+                item["creatorContinuity"] = choice
+            observation = sanitize_observation(row.get("creatorObservation"))
+            if not observation:
+                observation = sanitize_observation(prior.get("creatorObservation"))
+            if observation:
+                item["creatorObservation"] = observation
             if item.get("status") not in (None, "done", "review", "pending", "skipped"):
                 item["status"] = "pending"
             sanitized[mid] = item
         safe_prefs = {}
+        # An unrelated/older client save must preserve damaged imported bytes
+        # for export/recovery; explicit invalid replacements were rejected above.
+        registry = (sanitize_registry(prefs.get("creatorRegistry")) if "creatorRegistry" in prefs
+                    else (previous_progress.get("prefs") or {}).get("creatorRegistry"))
+        if registry:
+            safe_prefs["creatorRegistry"] = registry
         for k in ("filter", "query", "sort", "theme", "density", "effect", "sound", "focus", "collapsed", "autoCheckOnLaunch", "libraryView", "galleryGrouping", "provider", "navExpanded"):
             v = prefs.get(k)
             if k in ("autoCheckOnLaunch", "navExpanded") and not isinstance(v, bool):
@@ -142,8 +208,9 @@ class Chronicle:
                 safe_prefs[k] = [str(x)[:100] for x in v if isinstance(x, str)]
         with self.lock:
             previous_links = self.source_links(profile_id)
+            previous_creators = self.creator_choices(profile_id)
             self._profile(profile_id)["progress"] = {"rows": sanitized, "prefs": safe_prefs, "verifiedRuntime": str(runtime)[:100]}
-            if previous_links != self.source_links(profile_id):
+            if previous_links != self.source_links(profile_id) or previous_creators != self.creator_choices(profile_id):
                 self._source_revisions[profile_id] = self._source_revisions.get(profile_id, 0) + 1
             if persist:
                 self._write()

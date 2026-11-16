@@ -25,8 +25,8 @@ def build_page():
     """Compile source in memory; do not rewrite another worker's artifacts."""
     replacements = {
         "/*__STYLE__*/": "\n".join((WEB / name).read_text("utf8") for name in
-            ("style.css", "aether_fx.css", "realm.css", "siege.css", "atelier.css", "mod_insights.css", "source_insights.css")),
-        "/*__SCRIPT__*/": (WEB / "source_insights.js").read_text("utf8") + "\n" + (WEB / "mod_insights.js").read_text("utf8") + "\n" + (WEB / "app.js").read_text("utf8").replace(
+            ("style.css", "aether_fx.css", "realm.css", "siege.css", "atelier.css", "mod_insights.css", "source_insights.css", "creator_continuity.css", "creator_hub.css")),
+        "/*__SCRIPT__*/": "window.__MODHUNTER_CREATOR_REGISTRY__=" + (ROOT / "shared/creator-continuity.v1.json").read_text("utf8") + ";\n" + (WEB / "creator_continuity.js").read_text("utf8") + "\n" + (WEB / "creator_hub.js").read_text("utf8") + "\n" + (WEB / "source_insights.js").read_text("utf8") + "\n" + (WEB / "mod_insights.js").read_text("utf8") + "\n" + (WEB / "app.js").read_text("utf8").replace(
             "/*__POWERSHELL__*/", json.dumps("")),
         "/*__CATALOG__*/": (WEB / "catalog.json").read_text("utf8").replace("</", "<\\/"),
         "/*__AETHER_SCRIPT__*/": (WEB / "aether_fx.js").read_text("utf8"),
@@ -82,6 +82,7 @@ window.fetch=async(url,options={})=>{
    summary:{candidates:c.items.length,total:c.items.length,review:0,manual:0,current:0,risky:0},
    items:c.items.map(m=>({...m,lane:'candidate',latestVersion:'2.0',risks:[]}))};
   else if(path==='progress')result={ok:true,profileId:c.profileId,progress:{rows:{},prefs:{}}};
+  else if(path==='creator-follows')result={ok:true,profileId:c.profileId,revision:0,autoFollow:true,creators:[],review:[],job:{state:'idle'}};
   else if(path==='game?compact=1')result={ok:true,profileId:c.profileId,score:x.gameScore,feed:[],updates:0};
   else if(path==='downloads')result={ok:true,profileId:c.profileId,downloads:structuredClone(x.downloads||{})};
   else if(path==='activity')result={ok:true,profileId:c.profileId,records:[]};

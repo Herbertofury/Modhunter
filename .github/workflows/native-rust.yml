@@ -2,9 +2,9 @@ name: Rust desktop and MO2 readiness
 on:
   push:
     branches: [main, 'upgrade/**']
-    paths: ['native/**', 'mo2_update_arsenal/**', 'desktop/**', 'tests/**', 'scripts/**', 'build.py', '.gitattributes', '.github/workflows/native-rust.yml']
+    paths: ['native/**', 'mo2_update_arsenal/**', 'desktop/**', 'tests/**', 'scripts/**', 'shared/**', 'build.py', '.gitattributes', '.github/workflows/native-rust.yml']
   pull_request:
-    paths: ['native/**', 'mo2_update_arsenal/**', 'desktop/**', 'tests/**', 'scripts/**', 'build.py', '.gitattributes', '.github/workflows/native-rust.yml']
+    paths: ['native/**', 'mo2_update_arsenal/**', 'desktop/**', 'tests/**', 'scripts/**', 'shared/**', 'build.py', '.gitattributes', '.github/workflows/native-rust.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -60,6 +60,8 @@ jobs:
           node --test native/crates/modhunter-desktop/tests/shell_runtime.test.cjs
           node --test tests/mod_insights.test.cjs
           node --test tests/source_insights.test.cjs
+          node --test tests/creator_continuity.test.cjs
+          node --test tests/creator_hub.test.cjs
           node --test tests/frontend_runtime.test.cjs
           node --test desktop/offline_mo2.test.cjs
           python3 native/scripts/prepare_release.py --self-test
@@ -76,6 +78,8 @@ jobs:
           if ! command -v chromium >/dev/null && ! command -v chromium-browser >/dev/null; then
             /tmp/modhunter-qa/bin/python -m playwright install --with-deps chromium
           fi
+          PYTHONPATH=.:tests MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_creator_continuity_browser.py' -v
+          PYTHONPATH=.:tests MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_creator_hub_browser.py' -v
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/updater_sss_browser_qa.py
           PYTHONPATH=. /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_frontend_responsiveness.py' -v
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_compact_workspace.py' -v

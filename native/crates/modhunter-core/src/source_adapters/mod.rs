@@ -70,6 +70,10 @@ pub struct SourceLink {
     pub verified: bool,
     #[serde(default)]
     pub kind: String,
+    /// An approved author migration pins the destination's author identity.
+    /// Evaluated for each row after project deduplication.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expected_author: Option<String>,
 }
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -177,6 +181,19 @@ pub fn scan_sources_with(
         for item in items {
             let mut row = result.clone();
             row["sourceUrl"] = canonical_source_url(&item.source.url).into();
+            if row["provider"] == "modhold"
+                && matches!(row["outcome"].as_str(), Some("release" | "review"))
+                && let Some(expected) = &item.source.expected_author
+                && (!identity::segment(expected)
+                    || row["publisherId"]
+                        .as_str()
+                        .is_none_or(|actual| !actual.eq_ignore_ascii_case(expected)))
+            {
+                row["outcome"] = "unavailable".into();
+                row["availability"] = "author-identity-unverified".into();
+                row["reason"] = "The destination author does not match the approved author identity; review the source before tracking updates.".into();
+                row["releaseAssets"] = json!([]);
+            }
             let mut size = serde_json::to_vec(&row)?.len();
             if output_bytes.saturating_add(size) > 20 * 1024 * 1024 {
                 for field in [

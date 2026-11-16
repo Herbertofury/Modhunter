@@ -9,6 +9,12 @@ let STORAGE='dragonborn-mod-update-arsenal-v1';
 const BRIDGE=window.__MO2_BRIDGE_BOOT__||{active:false};
 const INSIGHTS=window.ModhunterInsights;
 const SOURCES=window.ModhunterSources;
+const CONTINUITY=window.ModhunterContinuity;
+const CREATOR_HUB=window.ModhunterCreatorHub;
+let CREATOR_HUB_DATA=null,CREATOR_HUB_ENRICHED=null,CREATOR_HUB_PENDING=null,CREATOR_HUB_TIMER=null;
+let CREATOR_HUB_REQUEST=0,CREATOR_HUB_BUSY=false,CREATOR_HUB_NOTE='',CREATOR_HUB_ERROR=false,CREATOR_HUB_LAST_READ=0;
+const CREATOR_HUB_VIEW={query:'',filter:'following',source:'all',sort:'recent',page:0,selected:'',projectLimit:20};
+let CONTINUITY_PENDING_SCAN=null;
 let LIVE_SCAN=null,LIVE_CATALOG=null,SCAN_TIMER=null,FILE_PICKER_MOD=null,LIVE_GENERATION=0,LIVE_REFRESH_BUSY=false;
 let WORKSHOP_PLAN=null,WORKSHOP_CHOICES=new Map(),WORKSHOP_BUSY=false,WORKSHOP_REVIEW_ID=null,FAST_PICKER_ID=null;
 let QUICK_RUNNING=false,QUICK_POLL=null,QUICK_SKIPPED=new Map();
@@ -36,7 +42,7 @@ const SOURCE_DETAIL_READS=new WeakMap(),SOURCE_DETAILS=new WeakMap();
 let GAME=null,GAME_SEEN=-1,PROGRESS_READY=false,PROGRESS_TIMER=null,NATIVE_SELECTED='',VICTORY_ACTIVE=null,VICTORY_TIMERS=[],PRACTICE_CROWNED=false;
 const BADGE_META=[['first-blood','First Blood','⚔',1],['apprentice','Apprentice Smith','🔨',5],['veteran','Veteran of the Forge','🛡',10],['archmage','Master Enchanter','✦',25],['dragonborn','Dragonborn','🐉',50],['legend','Legendary Smith','♛',100],['world-eater','World-Eater Defeated','👑',null]];
 
-const BASE={rows:{},prefs:{filter:'all',insight:'all',query:'',sort:'priority',theme:'night',density:'compact',libraryView:'list',galleryGrouping:'all',provider:'all',navExpanded:false,effect:'random',sound:false,focus:false,collapsed:[],autoCheckOnLaunch:true,vfxIntensity:'off',vfxShake:false,vfxTrails:false},lastSelected:null,verifiedRuntime:null};
+const BASE={rows:{},prefs:{filter:'all',insight:'all',query:'',sort:'priority',theme:'night',density:'compact',libraryView:'list',galleryGrouping:'all',provider:'all',navExpanded:false,creatorRegistry:'',effect:'random',sound:false,focus:false,collapsed:[],autoCheckOnLaunch:true,vfxIntensity:'off',vfxShake:false,vfxTrails:false},lastSelected:null,verifiedRuntime:null};
 let STORE=structuredClone(BASE),persistOK=true,focusedRowId='',lastUndo=null,openedId=null,toastTimer=null,activeFx=[],MO2_PENDING=[];
 const $=(id)=>document.getElementById(id);
 const txt=(v)=>String(v??'');
@@ -47,7 +53,7 @@ const getStatus=(m)=>getRow(m.id).status||'pending';
 const getAudit=(m)=>{const a=m.audit||{};return{verdict:getRow(m.id).compat||a.verdict||'unknown',note:a.note||'',evidence:a.evidence||''}};
 const resolveSrc=(m)=>{
  const custom=validUrl(getRow(m.id).url),src=m.source||{};
- if(custom)return{url:custom,verified:true,custom:true,type:'custom',label:'Your saved link'};
+ if(custom)return{url:custom,verified:true,custom:true,type:CONTINUITY?.identity(custom)?.provider==='modhold'?'modhold':'custom',label:getRow(m.id).creatorContinuity?.state==='tracking'?'Reviewed creator destination':'Your saved link'};
  const official=validUrl(src.url);
  if(src.verified&&official)return{url:official,verified:true,custom:false,type:src.type||'official',label:src.label||'Linked mod source'};
  // MO2's native Nexus project ID identifies an exact project even when the
@@ -92,7 +98,7 @@ function detectedStatus(mod){
  const health=INSIGHTS?.summary(mod)||{},maintenance=Boolean(health.stale||health.masterIssues||health.invalid||['hold','avoid','ae-only'].includes(getAudit(mod).verdict));
  let kind='not-checked',label='Not checked',reason=u.reason||'No completed source check for this installed mod.';
  const unavailable=['unavailable','not-found','deleted','blocked','error'].includes(u.availability)||u.outcome==='unavailable';
- const manual=['manual','api-key'].includes(capabilities.checkMode)||(!['nexus','github','gitlab','modrinth','thunderstore'].includes(provider)&&source.verified);
+ const manual=['manual','api-key'].includes(capabilities.checkMode)||(!['nexus','github','gitlab','modrinth','thunderstore','modhold'].includes(provider)&&source.verified);
  const remote=Boolean(u.checkedAt)&&u.source!=='mo2-cached-metadata';
  if(!source.verified){kind='source-needed';label='Source needed';reason='Set the exact original source in Details to enable update checks.'}
  else if(u.availability==='authentication-required'){kind='sign-in';label='Sign-in required'}
@@ -113,12 +119,14 @@ function detectedStatus(mod){
 }
 function detectedMarkup(mod){const d=detectedStatus(mod);return '<span class="detected-status '+d.kind+'" title="'+escapeHTML(d.reason)+'">'+escapeHTML(d.label)+'</span>'+(d.maintenance?'<button class="maintenance-status" type="button" data-act="inspect" data-id="'+escapeHTML(mod.id)+'" title="Detected plugin, conversion, master or explicit compatibility issue. Open Details for evidence.">Maintenance</button>':'')}
 function selectWorkspace(panel){
- if(!['mods','updates','downloads','history','tools','extras'].includes(panel))return;
+ if(!['mods','updates','downloads','creators','history','tools','extras'].includes(panel))return;
  document.body.dataset.workspace=panel;
- SET('workspaceTitle',({mods:'The mod library',updates:'Update Workshop',downloads:'Downloads & installs',history:'Your update history',tools:'Tools & connection',extras:'Beyond the workshop'})[panel]);
+ SET('workspaceTitle',({mods:'The mod library',updates:'Update Workshop',downloads:'Downloads & installs',creators:'Your creators',history:'Your update history',tools:'Tools & connection',extras:'Beyond the workshop'})[panel]);
  closeModContextMenu(false);
  $all('.workspace-tabs [data-workspace]').forEach(button=>{const on=button.dataset.workspace===panel;button.classList.toggle('active',on);button.setAttribute('aria-pressed',String(on))});
  if(panel==='downloads')void refreshDownloads();if(panel==='history')void refreshActivity();
+ clearTimeout(CREATOR_HUB_TIMER);CREATOR_HUB_TIMER=null;
+ if(panel==='creators'){renderCreatorHub();void refreshCreatorHub();}
 }
 function renderWorkspace(){
  const aggregate={all:DATA.items.length,updates:0,maintenance:0,attention:0,current:0};
@@ -143,6 +151,7 @@ async function ensureStartupCheck(){
   const result=await bridgeRequest('POST','startup-check',{profileId:context.profile,executionEpoch:LIVE_CATALOG.executionEpoch});
   if(!contextIsCurrent(context))return;
   STARTUP_ACCEPTED=key;STARTUP_RETRY_AT=0;STARTUP_ERROR='';
+  void refreshWatchingCreators();
   if(result.scan){updateScanUI(result.scan);if(result.scan.state==='running')startScanPolling('startup',context);else if(result.started)await requestLiveCatalog()}
  }catch(error){if(contextIsCurrent(context)){STARTUP_RETRY_AT=Date.now()+60000;STARTUP_ERROR='Automatic check could not start: '+error.message;renderWorkspace();console.warn('Startup check:',error.message)}}
  finally{if(STARTUP_REQUEST===key)STARTUP_REQUEST=null}
@@ -178,7 +187,7 @@ function cachedMarkup(cache,key,dependencies,build){
 // Structural library changes reuse surviving rows and parse new markup once.
 function replaceRenderedRow(previous,entry,template){
  const old=previous.node,focused=document.activeElement;
- const action=old.contains(focused)?['data-act','data-workshop-act','data-insight-act','data-source-act','data-download-id','data-download-details','data-retry-download-id','data-retry-item-id'].find(name=>focused.hasAttribute(name)):null;
+ const action=old.contains(focused)?['data-act','data-workshop-act','data-insight-act','data-source-act','data-download-id','data-download-details','data-retry-download-id','data-retry-item-id','data-hub-select'].find(name=>focused.hasAttribute(name)):null;
  const actionValue=action?focused.getAttribute(action):null;
  template.innerHTML=entry.html;
  const next=template.content.firstElementChild;
@@ -325,6 +334,8 @@ function scheduleProgressSync(){clearTimeout(PROGRESS_TIMER);const context=profi
    if(contextIsCurrent(acceptedContext)&&sameExecution&&sourceRevision===SOURCE_EDIT_REVISION){
     const wasPending=sourceLinksPending();SOURCE_SYNCED_REVISION=sourceRevision;
     if(wasPending)renderWorkshop();
+    const continuityCheck=CONTINUITY_PENDING_SCAN;
+    if(continuityCheck&&continuityCheck.epoch===context.epoch&&continuityCheck.profile===context.profile){CONTINUITY_PENDING_SCAN=null;void scanLive('sources')}
    }
   }catch(ex){if(contextIsCurrent(context)){console.warn('MO2 Chronicle save:',ex.message);SET('liveState','Local save retained. MO2 Chronicle sync: '+ex.message)}}
  });
@@ -413,7 +424,7 @@ function renderStats(){const c=counts();SET('sidePercent',c.percent+'%');$('side
  $all('[data-filter]').forEach(el=>{const on=el.dataset.filter===STORE.prefs.filter;el.classList.toggle('active',on);if(el.tagName==='BUTTON')el.setAttribute('aria-pressed',String(on))});
 }
 function tokenizeQuery(raw){const out=[];const re=/"([^"]+)"|(\S+)/g;let m;while((m=re.exec(raw)))out.push((m[1]||m[2]).trim().toLowerCase());return out}
-function healthFilterMatches(mod,filter){return filter==='all'||(filter.startsWith('source-')?Boolean(SOURCES?.matches(mod,filter)):!INSIGHTS||INSIGHTS.matches(mod,filter))}
+function healthFilterMatches(mod,filter){if(filter==='creator-continuity')return Boolean(CONTINUITY?.notice(mod,getRow(mod.id),getSrc(mod),STORE.prefs.creatorRegistry));return filter==='all'||(filter.startsWith('source-')?Boolean(SOURCES?.matches(mod,filter)):!INSIGHTS||INSIGHTS.matches(mod,filter))}
 function textMatches(m,query,terms){if(!query)return true;const dependencies=[CATALOG_RENDER_REVISION,m.localAnalysis,m.modHealth,m.update,sourceTimePhase(m)],cached=SEARCH_CACHE.get(m);let base=cached&&dependencies.every((value,index)=>Object.is(value,cached.dependencies[index]))?cached.base:null;if(!base){base={text:[m.name,m.installedVersion,m.screenshotNote,m.author,m.group,m.priority,(m.flags||[]).join(' '),INSIGHTS?.searchText(m)||'',SOURCES?.searchText(m)||''].join(' ').toLowerCase(),author:txt(m.author).toLowerCase(),group:txt(m.group).toLowerCase(),flags:(m.flags||[]).join(' ').toLowerCase(),version:txt(m.installedVersion).toLowerCase()};SEARCH_CACHE.set(m,{dependencies,base})}const row=getRow(m.id),str=base.text+' '+txt(row.note).toLowerCase()+' '+txt(row.installed).toLowerCase();return(terms||tokenizeQuery(query)).every(part=>{const ix=part.indexOf(':');if(ix>0){const p=part.slice(0,ix),v=part.slice(ix+1);if(p==='health'||p==='esl')return (INSIGHTS?.searchText(m)||'').includes(v);if(p==='source'||p==='provider')return (SOURCES?.searchText(m)||'').includes(v);if(p==='author')return (base.author+' '+(SOURCES?.searchText(m)||'')).includes(v);if(p==='section'||p==='group')return base.group.includes(v);if(p==='flag')return base.flags.includes(v);if(p==='priority')return txt(m.priority).includes(v);if(p==='status')return getStatus(m).includes(v);if(p==='version')return base.version.includes(v);if(p==='note')return (m.screenshotNote+' '+txt(getRow(m.id).note)).toLowerCase().includes(v);}return str.includes(part)})}
 function filtered(){const f=STORE.prefs.filter,terms=tokenizeQuery(STORE.prefs.query);return DATA.items.filter(m=>healthFilterMatches(m,STORE.prefs.insight||'all')&&((STORE.prefs.provider||'all')==='all'||getSrc(m).type===STORE.prefs.provider)&&textMatches(m,STORE.prefs.query,terms)&&(
  f==='all'||(f==='maintenance'&&detectedStatus(m).maintenance)||(f==='attention'&&detectedStatus(m).attention)||(f==='current'&&detectedStatus(m).current)||(f==='pending'&&getStatus(m)==='pending')||(f==='done'&&isDone(m))||(f==='review'&&isReview(m))||(f==='risky'&&isRisk(m))||(f==='unlinked'&&!getSrc(m).verified)||(f==='favorites'&&isFav(m))||(f==='updates'&&isUpdate(m))));}
@@ -430,7 +441,7 @@ function assessmentHTML(m){const audit=getAudit(m),out=[];
  if(m.update&&m.update.verdict==='current')out.unshift('<span class="tag compatible">✓ CURRENT</span>');
  if(m.update&&m.update.verdict==='newer-installed')out.unshift('<span class="tag compatible">✓ AHEAD OF SOURCE</span>');
  if(!out.length)out.push('<span class="tag unknown" title="No file-specific compatibility proof yet">NOT VERIFIED</span>');return out.join('');}
-function modHTML(m){const row=getRow(m.id);return cachedMarkup(MOD_MARKUP_CACHE,m,[CATALOG_RENDER_REVISION,document.body.dataset.layout,BRIDGE.active,DATA.offline,row.status,row.favorite,row.installed,row.note,row.compat,row.url,m.thumbnailUrl,m.imageUrl,m.previewUrl,m.iconUrl,m.author,m.sourceUpdate,m.localAnalysis,m.modHealth,m.update,sourceTimePhase(m),LIVE_SCAN?.state==='running',LIVE_CONNECTED],()=>buildModHTML(m))}
+function modHTML(m){const row=getRow(m.id);return cachedMarkup(MOD_MARKUP_CACHE,m,[CATALOG_RENDER_REVISION,document.body.dataset.layout,BRIDGE.active,DATA.offline,row.status,row.favorite,row.installed,row.note,row.compat,row.url,row.creatorContinuity,row.creatorObservation,row.creatorWatch,STORE.prefs.creatorRegistry,m.thumbnailUrl,m.imageUrl,m.previewUrl,m.iconUrl,m.author,m.sourceUpdate,m.localAnalysis,m.modHealth,m.update,sourceTimePhase(m),LIVE_SCAN?.state==='running',LIVE_CONNECTED],()=>buildModHTML(m))}
 // Compact layout already hides these legacy cells. Omit only their duplicate
 // markup; state, keyboard completion and the on-demand inspector stay shared.
 // Keep the original cells for hosts that explicitly select a noncompact layout.
@@ -439,7 +450,7 @@ function buildModHTML(m){const compact=document.body.dataset.layout==='compact',
  ${compact?'':`<div class="mod-status"><button class="complete-btn" data-act="complete" data-id="${m.id}" aria-label="${escapeHTML(statusLabel+' for '+m.name)}" title="${escapeHTML(statusLabel)}">${stat==='done'?'✓':stat==='review'?'!':''}</button></div>`}
  ${thumbnailMarkup(m,false,s)}
  <div class="mod-priority">${m.priority}</div>
- <div class="mod-primary" data-priority="${m.priority}" data-chapter-label="${escapeHTML(m.group||GROUP_MAP.get(m.groupId)?.name||'')}"><div class="mod-name-actions"><a class="mod-title source-title ${s.verified?'':'unknown'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHTML((s.verified?'Open source page for ':'Search for original source of ')+m.name)}" title="${escapeHTML(m.name+' — '+(s.verified?'Open original source':'Find original source'))}" data-act="source" data-id="${escapeHTML(m.id)}">${escapeHTML(m.name)}<span class="source-open-glyph" aria-hidden="true">↗</span></a>${BRIDGE.active?`<button class="mod-inline-locate" type="button" title="Reveal this mod in Mod Organizer 2" aria-label="Reveal ${escapeHTML(m.name)} in MO2" data-act="locate" data-id="${escapeHTML(m.id)}">⌖</button>`:''}</div>${modAuthor(m)?`<div class="mod-author" data-no-translate>${escapeHTML(modAuthor(m))}</div>`:''}${note?`<div class="mod-note ${/do not|ctd|crash|hard esp|incompati|needs update|bugs/i.test(note)?'warning-note':''}" title="${escapeHTML(note)}">${escapeHTML(note)}</div>`:''}${INSIGHTS?.chips(m)||''}${SOURCES?.chips(m)||''}</div>
+ <div class="mod-primary" data-priority="${m.priority}" data-chapter-label="${escapeHTML(m.group||GROUP_MAP.get(m.groupId)?.name||'')}"><div class="mod-name-actions"><a class="mod-title source-title ${s.verified?'':'unknown'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHTML((s.verified?'Open source page for ':'Search for original source of ')+m.name)}" title="${escapeHTML(m.name+' — '+(s.verified?'Open original source':'Find original source'))}" data-act="source" data-id="${escapeHTML(m.id)}">${escapeHTML(m.name)}<span class="source-open-glyph" aria-hidden="true">↗</span></a>${BRIDGE.active?`<button class="mod-inline-locate" type="button" title="Reveal this mod in Mod Organizer 2" aria-label="Reveal ${escapeHTML(m.name)} in MO2" data-act="locate" data-id="${escapeHTML(m.id)}">⌖</button>`:''}</div>${modAuthor(m)?`<div class="mod-author" data-no-translate>${escapeHTML(modAuthor(m))}</div>`:''}${note?`<div class="mod-note ${/do not|ctd|crash|hard esp|incompati|needs update|bugs/i.test(note)?'warning-note':''}" title="${escapeHTML(note)}">${escapeHTML(note)}</div>`:''}${INSIGHTS?.chips(m)||''}${SOURCES?.chips(m)||''}${CONTINUITY?.chip(m,getRow(m.id),s,STORE.prefs.creatorRegistry)||''}</div>
  <div class="mod-version" title="Installed version recorded by source">${escapeHTML(m.installedVersion||'Unknown')}${m.update?.latestVersion&&m.update.latestVersion!==m.installedVersion?`<small class="newer-version" title="Latest metadata, not necessarily compatible">→ ${escapeHTML(m.update.latestVersion)}</small>`:''}</div>
  <div class="mod-assessment">${detectedMarkup(m)}${compact?'':'<span class="legacy-assessment">'+assessmentHTML(m)+'</span>'}</div>
  <div class="mod-source"><a class="source-btn ${s.verified?'':'lookup'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" data-act="source" data-id="${m.id}" title="${escapeHTML(sourceText+' — '+(s.type==='creations'?'Exact Bethesda Creation listing. Install from in-game Creations menu.':s.verified?'Exact mod files page':'Search for the correct mod project; source not yet verified'))}">${sourceText}</a></div>
@@ -466,7 +477,7 @@ function renderList(){
  VISIBLE_ROW_IDS=renderedIds;
  const listCounts=counts(),sourceCount=listCounts.total-listCounts.unlinked,parts=[visible.length+' of '+DATA.items.length+(DATA.items.length===1?' mod':' mods'),byGroup.size+(byGroup.size===1?' chapter':' chapters')];if(STORE.prefs.query)parts.push('query: '+STORE.prefs.query);SET('resultsMeta',parts.join(' · '));SET('listFooter',`YOU'VE REACHED THE END · ${visible.length} MATCHING MOD${visible.length===1?'':'S'} · ${sourceCount} EXACT ORIGINAL SOURCE${sourceCount===1?'':'S'}`);$('sortSelect').value=STORE.prefs.sort;const provider=$('providerFilter');if(provider)provider.value=STORE.prefs.provider||'all';
 }
-function render(){renderProviderFilter();if(SEARCH_FRAME!==null){cancelAnimationFrame(SEARCH_FRAME);SEARCH_FRAME=null}RENDER_COUNTS=counts();try{groupProgress();renderStats();renderList();renderChapters();renderQuest();paintNativeSelection();renderWorkshop();renderInsightToolbar();renderSourceCoverage();renderWorkspace()}finally{RENDER_COUNTS=null}}
+function render(){renderProviderFilter();if(SEARCH_FRAME!==null){cancelAnimationFrame(SEARCH_FRAME);SEARCH_FRAME=null}RENDER_COUNTS=counts();try{groupProgress();renderStats();renderList();renderChapters();renderQuest();paintNativeSelection();renderWorkshop();renderInsightToolbar();renderSourceCoverage();renderWorkspace();renderContinuity();renderCreatorHub()}finally{RENDER_COUNTS=null}}
 function renderSearch(){SEARCH_FRAME=null;renderList();paintNativeSelection()}
 function scheduleSearchRender(){if(DATA.items.length<1000){renderSearch();return}if(SEARCH_FRAME===null)SEARCH_FRAME=requestAnimationFrame(renderSearch)}
 function setStatus(m,status,withEffect=false,center){if(!['pending','done','review','skipped'].includes(status))return;const old=getStatus(m);if(old===status)return;const previousRow=$('row-'+m.id);const effectMode=STORE.prefs.effect==='random'?['shatter','fireworks','shot','slash','burn','arrow','frost','thunder'][Math.floor(Math.random()*8)]:STORE.prefs.effect;if(withEffect&&status==='done')window.AetherFX?.complete(previousRow,{mode:effectMode});else if(withEffect&&status==='pending')window.AetherFX?.undo(previousRow);getRow(m.id).status=old;STORE.rows[m.id]={...getRow(m.id),status,observedInstalledVersion:status==='done'?m.installedVersion:null,updatedAt:new Date().toISOString()};lastUndo={id:m.id,previous:old,next:status};save(false);render();if(withEffect&&status==='done')spawnFinisher(center||centerOfRow(m.id),effectMode);toast(status==='done'?'✦ '+m.name+' — quest cleared!'+(BRIDGE.active?' (manual, no ranked XP)':''):'Updated '+m.name,()=>undoLast(),'UNDO');if(!BRIDGE.active&&counts().total>0&&counts().done===counts().total&&!PRACTICE_CROWNED){PRACTICE_CROWNED=true;setTimeout(()=>launchVictory({verifiedMods:DATA.items.length,bonus:0,updates:DATA.items.length},true),420)}}
@@ -488,6 +499,7 @@ function drawInspector(m){
  const verifiedLabel=runtime&&runtime.toLowerCase()!=='unknown'?'Verified working on '+runtime:'Verified working in this setup';
  $('drawerContent').innerHTML=`${thumbnailUrl(m)?'<div class="drawer-preview">'+thumbnailMarkup(m,true)+'</div>':''}<div class="drawer-mod-meta"><span${author?' data-no-translate':''}>${escapeHTML(author||providerLabel(source.type))}</span><strong>Installed ${escapeHTML(m.installedVersion||'Unknown')}</strong></div><div class="drawer-priority"><span>MO2 PRIORITY #${m.priority}</span><span>${escapeHTML(m.group)}</span><span>${BRIDGE.active?'LIVE PROFILE':DATA.offline?'IMPORTED PROFILE':'SCREENSHOT '+m.screenshot}</span></div>
  <div class="drawer-section drawer-alert" data-alert="${escapeHTML(audit.verdict)}"><span class="drawer-label" style="margin:0">${(BRIDGE.active||DATA.offline)?'RUNTIME / FILE COMPATIBILITY CHECK':'1.5.97 COMPATIBILITY ADVISORY'}</span><strong>${escapeHTML(audit.verdict==='avoid'?'AVOID LATEST RELEASE':audit.verdict==='hold'?'HOLD / PICK LEGACY FILE':audit.verdict==='safe-file'?(profileMode?'BUILD LISTED':'SE BUILD LISTED'):audit.verdict==='check'?'VERIFY SPECIFIC BUILD':'NOT YET VERIFIED')}</strong><p>${escapeHTML(audit.note||((BRIDGE.active||DATA.offline)?'This source has not established complete compatibility. Check the required game runtime, script extender, dependencies and installation choices.':'The provided screenshots do not establish compatibility for a new release. Check the required game executable, SKSE, Address Library, BEES and masters before updating.'))}</p>${audit.evidence?`<a class="drawer-link" href="${escapeHTML(audit.evidence)}" target="_blank" rel="noopener noreferrer">↗ View supporting source</a>`:''}</div>
+ ${BRIDGE.active?'<div class="drawer-section"><button class="quiet-button" type="button" data-hub-follow-mod="'+escapeHTML(m.id)+'">Follow this creator</button><p class="drawer-micro">Find the verified creator from this project and manage their updates in Creators.</p></div>':''}<div id="creatorContinuityDetails">${CONTINUITY?.details(m,row,source,{imported:STORE.prefs.creatorRegistry,live:BRIDGE.active})||''}</div>
  <div id="modSourceDetails">${SOURCES?.details(sourceDetailMod(m),{live:BRIDGE.active})||''}</div>
  <div id="modInsightDetails">${INSIGHTS?.details(m,{live:BRIDGE.active,game:DATA.game,auditState:DATA.pluginAuditState||{}})||''}</div>
  <label class="drawer-label" for="drawerStatus">CHECKLIST STATUS</label><select class="drawer-field" id="drawerStatus"><option value="pending" ${status==='pending'?'selected':''}>◷ Not checked</option><option value="done" ${status==='done'?'selected':''}>✓ Updated / cleared</option><option value="review" ${status==='review'?'selected':''}>⚠ Needs investigation</option><option value="skipped" ${status==='skipped'?'selected':''}>⤼ Deliberately skipped</option></select>
@@ -531,7 +543,7 @@ function attachNativeTracking(){
 }
 window.addEventListener('modhunter-watchtower-ready',attachNativeTracking);
 function refreshInspectorInsights(){
- refreshSourceDetails();
+ refreshSourceDetails();refreshContinuityDetails();
  const panel=$('modInsightDetails'),mod=ITEM_MAP.get(openedId);
  if(panel&&mod&&INSIGHTS){
   const expanded=new Map([...panel.querySelectorAll('details[data-plugin-name]')].map(el=>[el.dataset.pluginName,el.open]));
@@ -564,6 +576,219 @@ async function loadSourceDetails(mod){
 }
 function renderSourceCoverage(){const section=$('sourceCoverage'),rows=$('sourceCoverageRows');if(section?.open&&rows&&SOURCES)setHTML(rows,SOURCES.coverage(DATA.items));}
 if($('sourceCoverage'))$('sourceCoverage').addEventListener('toggle',renderSourceCoverage);
+function renderContinuity(){
+ CREATOR_HUB_ENRICHED=null;
+ if(!CONTINUITY)return;
+ const counts=CONTINUITY.summary(DATA.items,getRow,getSrc,STORE.prefs.creatorRegistry);
+ SET('creatorContinuityCount',counts.affected?counts.affected+' affected · '+counts.tracking+' tracking':'');
+ SET('creatorContinuitySummary',counts.affected?counts.review+' exact destinations need review. '+counts.tracking+' mods follow a reviewed destination.':'No affected creators match the notices in this profile. You can import new dated creator notices.');
+ const error=CONTINUITY.registryError(STORE.prefs.creatorRegistry);if(error)SET('creatorRegistryStatus',error);
+}
+function resetCreatorHub(){
+ CREATOR_HUB_REQUEST++;CREATOR_HUB_DATA=null;CREATOR_HUB_ENRICHED=null;CREATOR_HUB_PENDING=null;CREATOR_HUB_BUSY=false;CREATOR_HUB_NOTE='';CREATOR_HUB_ERROR=false;CREATOR_HUB_LAST_READ=0;
+ clearTimeout(CREATOR_HUB_TIMER);CREATOR_HUB_TIMER=null;
+ Object.assign(CREATOR_HUB_VIEW,{query:'',filter:'following',source:'all',sort:'recent',page:0,selected:'',projectLimit:20});
+ if($('creatorHubSearch'))$('creatorHubSearch').value='';
+ if($('creatorHubProvider'))$('creatorHubProvider').value='all';
+ if($('creatorHubSort'))$('creatorHubSort').value='recent';
+ renderCreatorHubBadge();
+}
+function creatorHubSnapshot(){
+ if(CREATOR_HUB_ENRICHED)return CREATOR_HUB_ENRICHED;
+ const data=CREATOR_HUB_DATA||{creators:[],review:[],autoFollow:true,revision:0};
+ const creators=(data.creators||[]).map(creator=>{
+  let affected=0;
+  for(const project of creator.projects||[]){
+   const mod=ITEM_MAP.get(project.itemId);
+   if(mod&&CONTINUITY?.notice(mod,getRow(mod.id),getSrc(mod),STORE.prefs.creatorRegistry))affected++;
+  }
+  return affected?{...creator,continuity:{affected}}:creator;
+ });
+ return CREATOR_HUB_ENRICHED={...data,creators};
+}
+function renderCreatorHubBadge(){
+ const badge=$('creatorHubBadge'),nav=$('workspaceCreators');if(!badge||!nav)return;
+ const count=(CREATOR_HUB_DATA?.creators||[]).reduce((sum,creator)=>sum+(creator.state!=='unfollowed'&&Number.isSafeInteger(creator.unreadCount)&&creator.unreadCount>0?creator.unreadCount:0),0);
+ badge.textContent=count>99?'99+':String(count);badge.hidden=count===0;
+ const label=count?'Creators · '+count.toLocaleString()+' unseen updates or notices':'Creators';nav.title=label;nav.setAttribute('aria-label',label);
+}
+function renderCreatorHub(){
+ renderCreatorHubBadge();
+ if(!CREATOR_HUB||!$('creatorHub')||document.body.dataset.workspace!=='creators')return;
+ const focused=document.activeElement,detailFocus=focused?.closest?.('#creatorHubDetail')?{action:focused.dataset.hubAction,creator:focused.dataset.hubCreator,mod:focused.dataset.hubMod}:null;
+ const snapshot=creatorHubSnapshot(),view=CREATOR_HUB.view(snapshot,CREATOR_HUB_VIEW),live=Boolean(BRIDGE.active&&LIVE_CONNECTED&&LIVE_CATALOG),busy=CREATOR_HUB_BUSY;
+ if(CREATOR_HUB_VIEW.filter!=='review')CREATOR_HUB_VIEW.page=view.page;
+ SET('creatorFollowingCount',view.counts.following.toLocaleString());SET('creatorUpdatesCount',view.counts.unread.toLocaleString());SET('creatorReviewCount',view.counts.review.toLocaleString());
+ for(const key of ['following','updates','attention','review','paused','unfollowed'])SET('creatorTab'+key[0].toUpperCase()+key.slice(1),view.counts[key].toLocaleString());
+ const providerSelect=$('creatorHubProvider'),providerOptions='<option value="all">Every site</option>'+[...view.sourceCounts].sort((a,b)=>CREATOR_HUB.provider(a[0]).localeCompare(CREATOR_HUB.provider(b[0]))).map(([name,count])=>'<option value="'+escapeHTML(name)+'">'+escapeHTML(CREATOR_HUB.provider(name))+' · '+count+'</option>').join('');
+ setHTML(providerSelect,providerOptions);providerSelect.value=CREATOR_HUB_VIEW.source;
+ if(!providerSelect.value){CREATOR_HUB_VIEW.source='all';providerSelect.value='all';}
+ const auto=$('creatorAutoFollow');auto.checked=snapshot.autoFollow!==false;auto.disabled=!live||busy||!CREATOR_HUB_DATA;
+ $all('#creatorHub [data-hub-filter]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.hubFilter===CREATOR_HUB_VIEW.filter)));
+ const reviewing=CREATOR_HUB_VIEW.filter==='review';
+ const reviews=reviewing?CREATOR_HUB.reviewCards(view.review,CREATOR_HUB_VIEW):[];
+ const reviewPages=Math.max(1,Math.ceil(reviews.length/view.pageSize));
+ if(reviewing)CREATOR_HUB_VIEW.page=Math.min(Math.max(0,CREATOR_HUB_VIEW.page),reviewPages-1);
+ const candidates=reviewing?[]:view.filtered;
+ if(!candidates.some(creator=>creator.id===CREATOR_HUB_VIEW.selected)){CREATOR_HUB_VIEW.selected=candidates[0]?.id||'';CREATOR_HUB_VIEW.projectLimit=20;}
+ const selected=candidates.find(creator=>creator.id===CREATOR_HUB_VIEW.selected);
+ const entries=reviewing?reviews.slice(CREATOR_HUB_VIEW.page*view.pageSize,(CREATOR_HUB_VIEW.page+1)*view.pageSize).map((html,index)=>({key:'discovery:'+CREATOR_HUB_VIEW.page+':'+index,html})):view.items.map(creator=>({key:'creator:'+creator.id,html:CREATOR_HUB.card(creator,{selected:creator.id===CREATOR_HUB_VIEW.selected,busy})}));
+ setRows($('creatorHubGrid'),entries,CREATOR_HUB.empty({hasCreators:snapshot.creators.length>0,filter:CREATOR_HUB_VIEW.filter,query:CREATOR_HUB_VIEW.query,live}),true);
+ setHTML($('creatorHubDetail'),CREATOR_HUB.detail(selected,{busy,live,projectLimit:CREATOR_HUB_VIEW.projectLimit}));
+ if(detailFocus&&focused.isConnected===false&&!busy){const next=[...$('creatorHubDetail').querySelectorAll('button')].find(button=>!button.disabled&&button.dataset.hubAction===detailFocus.action&&button.dataset.hubCreator===detailFocus.creator&&button.dataset.hubMod===detailFocus.mod);next?.focus({preventScroll:true});}
+ const total=reviewing?reviews.length:view.total,pages=reviewing?reviewPages:view.pages;
+ SET('creatorHubResultCount',total.toLocaleString()+' '+(reviewing?'discoveries':total===1?'creator':'creators')+(CREATOR_HUB_VIEW.query?' matching your search':' in this view')+' · '+view.counts.projects.toLocaleString()+' linked projects');
+ $('creatorHubPagination').hidden=pages<=1;SET('creatorHubPage','Page '+(CREATOR_HUB_VIEW.page+1)+' of '+pages);
+ $all('#creatorHub [data-hub-page]').forEach(button=>button.disabled=Number(button.dataset.hubPage)<0?CREATOR_HUB_VIEW.page===0:CREATOR_HUB_VIEW.page>=pages-1);
+ $('creatorMarkVisibleSeen').disabled=busy||!live||!candidates.some(creator=>creator.unreadCount>0);
+ const running=['running','queued','waiting'].includes(snapshot.job?.state);
+ $('creatorRefresh').disabled=busy||!live||running||!view.counts.following;
+ $('creatorDiscover').disabled=busy||!live||running;
+ $('creatorCancel').hidden=!running;$('creatorCancel').disabled=busy||!live;
+ $('creatorHubReload').disabled=busy||!live;
+ const note=running?(snapshot.job.state==='waiting'?'Waiting for the current source check':snapshot.job.kind==='discover'?'Finding verified creators':'Checking creator follows')+' · '+(snapshot.job.checked||0)+' / '+(snapshot.job.total||0):snapshot.job?.error||CREATOR_HUB_NOTE;
+ SET('creatorHubStatus',note||(!live?'Connect MO2 to manage follows for your active profile.':'Automatic follows use completed downloads and verified project metadata.'));
+ $('creatorHubStatus').classList.toggle('is-error',Boolean(CREATOR_HUB_ERROR||(snapshot.job?.error&&snapshot.job.state!=='cancelled')));
+}
+function acceptCreatorHubSnapshot(result,context){
+ if(!contextIsCurrent(context)||result?.profileId!==context.profile)return false;
+ if(!Array.isArray(result.creators)||!Array.isArray(result.review)||!Number.isSafeInteger(result.revision))throw Error('Creator follows could not be read. The previous view is retained.');
+ CREATOR_HUB_DATA=result;CREATOR_HUB_ENRICHED=null;
+ if(CREATOR_HUB_ERROR){CREATOR_HUB_ERROR=false;CREATOR_HUB_NOTE='';}
+ renderCreatorHub();scheduleCreatorHubPoll(context);return true;
+}
+function scheduleCreatorHubPoll(context=profileContext()){
+ clearTimeout(CREATOR_HUB_TIMER);CREATOR_HUB_TIMER=null;
+ if(!contextIsCurrent(context)||document.body.dataset.workspace!=='creators'||document.hidden||!['running','queued','waiting'].includes(CREATOR_HUB_DATA?.job?.state))return;
+ CREATOR_HUB_TIMER=setTimeout(()=>{CREATOR_HUB_TIMER=null;if(contextIsCurrent(context))void refreshCreatorHub();},1500);
+}
+async function refreshCreatorHub(){
+ if(!CREATOR_HUB||!BRIDGE.active||!LIVE_CONNECTED||!LIVE_CATALOG){renderCreatorHub();return false;}
+ if(CREATOR_HUB_BUSY)return false;
+ if(CREATOR_HUB_PENDING)return CREATOR_HUB_PENDING;
+ const context=profileContext(),request=++CREATOR_HUB_REQUEST;CREATOR_HUB_LAST_READ=Date.now();
+ const pending=Promise.resolve().then(async()=>{
+  try{
+   const result=await bridgeRequest('GET','creator-follows');
+   if(request!==CREATOR_HUB_REQUEST||!contextIsCurrent(context))return false;
+   return acceptCreatorHubSnapshot(result,context);
+  }catch(error){if(request===CREATOR_HUB_REQUEST&&contextIsCurrent(context)){CREATOR_HUB_ERROR=true;CREATOR_HUB_NOTE=error.message;renderCreatorHub();}return false;}
+ });
+ CREATOR_HUB_PENDING=pending;
+ try{return await pending;}finally{if(CREATOR_HUB_PENDING===pending)CREATOR_HUB_PENDING=null;}
+}
+async function changeCreatorFollows(action,creatorIds=[],extra={}){
+ if(!CREATOR_HUB||CREATOR_HUB_BUSY||!BRIDGE.active||!LIVE_CONNECTED||!LIVE_CATALOG)return false;
+ const context=profileContext(),request=++CREATOR_HUB_REQUEST,previousFocus=document.activeElement;
+ const focusInHub=previousFocus?.closest?.('#creatorHub'),focusId=focusInHub?previousFocus.id:'',focusAction=focusInHub?previousFocus.dataset?.hubAction:'';
+ CREATOR_HUB_PENDING=null;CREATOR_HUB_BUSY=true;CREATOR_HUB_NOTE='Saving your follow choices…';CREATOR_HUB_ERROR=false;renderCreatorHub();
+ try{
+  BRIDGE_READ_REVISION++;
+  const body={profileId:context.profile,action,...extra};
+  if(creatorIds.length)body.creatorIds=creatorIds;
+  if(Number.isSafeInteger(CREATOR_HUB_DATA?.revision))body.revision=CREATOR_HUB_DATA.revision;
+  const result=await bridgeRequest('POST','creator-follows',body);
+  if(request!==CREATOR_HUB_REQUEST||!contextIsCurrent(context))return false;
+  acceptCreatorHubSnapshot(result,context);
+  CREATOR_HUB_NOTE=action==='settings'?(result.autoFollow?'Automatic creator follows enabled.':'Automatic creator follows disabled. Existing follows are retained.'):action==='discover'?'Creator discovery started.':action==='check'?'Creator check requested.':action==='cancel'?'Creator check cancelled. Saved follows and evidence are retained.':'Your follow choices are saved.';
+  if(action==='unfollow')toast('Creator unfollowed. Future downloads will respect this choice.',()=>{if(contextIsCurrent(context))void changeCreatorFollows('restore',creatorIds);},'Undo');
+  return true;
+ }catch(error){if(request===CREATOR_HUB_REQUEST&&contextIsCurrent(context)){CREATOR_HUB_ERROR=true;CREATOR_HUB_NOTE=error.message;}return false;}
+ finally{if(request===CREATOR_HUB_REQUEST&&contextIsCurrent(context)){
+  CREATOR_HUB_BUSY=false;renderCreatorHub();
+  if(focusInHub&&document.body.dataset.workspace==='creators'&&(!document.activeElement||document.activeElement===document.body||document.activeElement===previousFocus)){
+   const same=focusId?$(focusId):[...$('creatorHubDetail').querySelectorAll('button')].find(button=>button.dataset.hubAction===focusAction&&button.dataset.hubCreator===creatorIds[0]);
+   const filter={pause:'paused',resume:'following',unfollow:'unfollowed',restore:'following'}[action];
+   const next=same&&!same.disabled&&!same.hidden?same:filter?$all('#creatorHub .hub-tabs [data-hub-filter]').find(button=>button.dataset.hubFilter===filter):$('creatorHubSearch');
+   next?.focus({preventScroll:true});
+  }
+ }}
+}
+document.addEventListener('click',event=>{
+ const button=event.target.closest?.('[data-hub-filter],[data-hub-select],[data-hub-action],[data-hub-page],[data-hub-mod],[data-hub-more],[data-hub-follow-mod]');
+ if(!button||button.disabled)return;
+ if(button.dataset.hubFilter){Object.assign(CREATOR_HUB_VIEW,{filter:button.dataset.hubFilter,page:0,selected:'',projectLimit:20});renderCreatorHub();return;}
+ if(button.dataset.hubSelect){CREATOR_HUB_VIEW.selected=button.dataset.hubSelect;CREATOR_HUB_VIEW.projectLimit=20;renderCreatorHub();return;}
+ if(button.dataset.hubPage){CREATOR_HUB_VIEW.page+=Number(button.dataset.hubPage);renderCreatorHub();return;}
+ if(button.hasAttribute?.('data-hub-more')){CREATOR_HUB_VIEW.projectLimit+=20;renderCreatorHub();return;}
+ if(button.dataset.hubMod){const mod=ITEM_MAP.get(button.dataset.hubMod);if(mod)drawInspector(mod);else toast('That mod is no longer in this profile. Refresh the creator view.');return;}
+ if(button.dataset.hubFollowMod){selectWorkspace('creators');void changeCreatorFollows('discover',[],{itemIds:[button.dataset.hubFollowMod]});return;}
+ const action=button.dataset.hubAction;
+ if(action==='reload'){void refreshCreatorHub();return;}
+ if(action==='mark-visible-seen'){const ids=CREATOR_HUB.view(creatorHubSnapshot(),CREATOR_HUB_VIEW).filtered.filter(creator=>creator.unreadCount>0).map(creator=>creator.id);if(ids.length)void changeCreatorFollows('mark-seen',ids);return;}
+ if(['discover','check','cancel','pause','resume','unfollow','restore','mark-seen'].includes(action))void changeCreatorFollows(action,button.dataset.hubCreator?[button.dataset.hubCreator]:[]);
+});
+if($('creatorHubSearch'))$('creatorHubSearch').addEventListener('input',event=>{CREATOR_HUB_VIEW.query=event.target.value;CREATOR_HUB_VIEW.page=0;renderCreatorHub();});
+for(const [id,key] of [['creatorHubProvider','source'],['creatorHubSort','sort']])if($(id))$(id).addEventListener('change',event=>{CREATOR_HUB_VIEW[key]=event.target.value;CREATOR_HUB_VIEW.page=0;renderCreatorHub();});
+if($('creatorAutoFollow'))$('creatorAutoFollow').addEventListener('change',event=>void changeCreatorFollows('settings',[],{autoFollow:event.target.checked}));
+document.addEventListener('error',event=>{if(event.target?.tagName==='IMG'&&event.target.closest?.('.hub-avatar'))event.target.classList.add('hub-image-failed');},true);
+function refreshContinuityDetails(){
+ const panel=$('creatorContinuityDetails'),mod=ITEM_MAP.get(openedId);if(!panel||!mod||!CONTINUITY)return;
+ const checked=panel.querySelector('[data-creator-confirm]:checked')?.dataset.creatorConfirm;
+ setHTML(panel,CONTINUITY.details(mod,getRow(mod.id),getSrc(mod),{imported:STORE.prefs.creatorRegistry,live:BRIDGE.active}));
+ if(checked){const input=[...panel.querySelectorAll('[data-creator-confirm]')].find(el=>el.dataset.creatorConfirm===checked);if(input){input.checked=true;const action=panel.querySelector('[data-creator-action="approve"]');if(action)action.disabled=false}}
+}
+document.addEventListener('change',e=>{
+ const watch=e.target.closest('[data-creator-watch]');if(watch){const mod=ITEM_MAP.get(watch.dataset.creatorWatch);if(mod){STORE.rows[mod.id]={...getRow(mod.id),creatorWatch:watch.checked,updatedAt:new Date().toISOString()};save(false)}return}
+ const input=e.target.closest('[data-creator-confirm]');if(!input)return;
+ const button=input.closest('.creator-panel')?.querySelector('[data-creator-action="approve"]');if(button)button.disabled=!input.checked;
+});
+async function checkCreatorStatus(mod,button,related=[mod]){
+ if(!BRIDGE.active){toast('Connect MO2 to check the creator’s public profile.');return}
+ const context=profileContext(),target=CONTINUITY?.target(mod,getRow(mod.id),getSrc(mod),STORE.prefs.creatorRegistry),handle=target?.handle;
+ if(!handle)return;
+ if(button)button.disabled=true;
+ try{
+  const result=await bridgeRequest('POST','creator-status',{profileId:context.profile,itemId:mod.id,handle,expectedAccountId:target.accountId||null});
+  if(!contextIsCurrent(context)||result.profileId!==context.profile||ITEM_MAP.get(mod.id)!==mod)return;
+  const observation=result.observation;
+  if(result.handle!==handle||observation?.handle?.toLowerCase()!==handle.toLowerCase())return;
+  if(observation.verified===true&&['banned','not-marked-banned'].includes(observation.state)){
+   for(const item of related){
+    const current=CONTINUITY.target(item,getRow(item.id),getSrc(item),STORE.prefs.creatorRegistry);
+    if(ITEM_MAP.get(item.id)===item&&current?.handle.toLowerCase()===handle.toLowerCase()&&(!current.accountId||current.accountId===observation.accountId))STORE.rows[item.id]={...getRow(item.id),creatorObservation:observation,updatedAt:new Date().toISOString()};
+   }
+   save(false);render();refreshContinuityDetails();
+  }
+  if(button)toast(observation.reason||'The latest author check could not establish a status. Earlier evidence is retained.');
+ }catch(error){if(button&&contextIsCurrent(context))toast(error.message)}
+ finally{if(button?.isConnected)button.disabled=false}
+}
+let CREATOR_CHECK_RUNNING=null;
+async function refreshWatchingCreators(){
+ if(!BRIDGE.active||!LIVE_CONNECTED||!CONTINUITY)return;
+ const context=profileContext(),key=context.profile+':'+context.epoch;if(CREATOR_CHECK_RUNNING===key)return;
+ const groups=new Map();
+ for(const mod of DATA.items){const row=getRow(mod.id);if(!row.creatorWatch&&!CONTINUITY.notice(mod,row,getSrc(mod),STORE.prefs.creatorRegistry))continue;const author=CONTINUITY.target(mod,row,getSrc(mod),STORE.prefs.creatorRegistry);if(!author)continue;const authorKey=author.handle.toLowerCase()+':'+(author.accountId||'');const group=groups.get(authorKey)||[];group.push(mod);groups.set(authorKey,group)}
+ const queue=[...groups.values()];if(!queue.length)return;CREATOR_CHECK_RUNNING=key;let at=0;
+ try{await Promise.all(Array.from({length:Math.min(4,queue.length)},async()=>{while(at<queue.length&&contextIsCurrent(context)){const mods=queue[at++];await checkCreatorStatus(mods[0],null,mods)}}))}
+ finally{if(CREATOR_CHECK_RUNNING===key)CREATOR_CHECK_RUNNING=null}
+}
+document.addEventListener('click',async e=>{
+ const button=e.target.closest('[data-creator-action]');if(!button||!CONTINUITY)return;
+ e.preventDefault();const mod=ITEM_MAP.get(button.dataset.id);if(!mod)return;
+ if(button.dataset.creatorAction==='status'){await checkCreatorStatus(mod,button);return}
+ try{
+  const before=getRow(mod.id),action=button.dataset.creatorAction;
+  const next=action==='approve'?CONTINUITY.approve(mod,before,getSrc(mod),button.dataset.candidate,{imported:STORE.prefs.creatorRegistry,confirmed:button.closest('.creator-panel')?.querySelector('[data-creator-confirm]')?.checked===true}):CONTINUITY.changeTracking(before,action);
+  markSourceEdit(before.url,next.url);STORE.rows[mod.id]=next;
+  if(BRIDGE.active&&(action==='approve'||action==='resume'))CONTINUITY_PENDING_SCAN=profileContext();
+  save();render();drawInspector(mod);
+  toast(action==='approve'||action==='resume'?'Reviewed destination saved. '+(BRIDGE.active?'The source check starts after MO2 confirms this change.':'Connect MO2 to check its versions.'):action==='pause'?'Destination tracking paused; the original source is retained.':'Original source restored; the reviewed choice remains in your history.');
+ }catch(error){toast(error.message)}
+});
+if($('showCreatorNotices'))$('showCreatorNotices').addEventListener('click',()=>{STORE.prefs.insight='creator-continuity';STORE.prefs.filter='all';STORE.prefs.provider='all';STORE.prefs.query='';$('search').value='';save(false);selectWorkspace('mods');render()});
+if($('importCreatorRegistry'))$('importCreatorRegistry').addEventListener('click',()=>$('creatorRegistryFile').click());
+if($('creatorRegistryFile'))$('creatorRegistryFile').addEventListener('change',async e=>{
+ const file=e.target.files?.[0],context=profileContext();e.target.value='';if(!file||!CONTINUITY)return;
+ try{
+  if(file.size>1048576)throw Error('Creator notice registries must fit within 1 MiB.');
+  const value=JSON.parse(await file.text());if(!contextIsCurrent(context))return;
+  STORE.prefs.creatorRegistry=CONTINUITY.importRegistry(value,STORE.prefs.creatorRegistry);save(false);render();refreshContinuityDetails();
+  SET('creatorRegistryStatus','Imported '+value.authors.length+' creator records. Imported claims are labeled and every destination still requires review.');
+ }catch(error){if(contextIsCurrent(context))SET('creatorRegistryStatus',error.message)}
+});
+if($('exportCreatorRegistry'))$('exportCreatorRegistry').addEventListener('click',()=>{if(CONTINUITY)saveFile('creator-continuity.v1.json','application/json',STORE.prefs.creatorRegistry||JSON.stringify(CONTINUITY.base,null,2))});
 document.addEventListener('click',async e=>{
  const button=e.target.closest('[data-source-act]');if(!button)return;e.preventDefault();
  const mod=ITEM_MAP.get(button.dataset.id||openedId);if(!mod)return;
@@ -968,6 +1193,7 @@ function setBridgeConnection(connected,message){
  const pill=$('livePill');pill.textContent=connected?'● MO2 CONNECTED':'⚠ DISCONNECTED';pill.classList.toggle('connected',connected);
  if(message)SET('liveState',message);
  for(const id of ['liveAll','liveQuick','liveDeep','liveLocal','liveRefresh','liveRuntime','liveConnect','liveBackup'])$(id).disabled=!connected||(['liveAll','liveQuick','liveDeep','liveLocal'].includes(id)&&(SCAN_START_BUSY||LIVE_SCAN?.state==='running'));
+ if(changed)renderCreatorHub();
  if(!connected){if(changed){renderWorkshop();renderDownloadPulse(WORKSHOP_TICKETS)}SET('liveSync','Connection lost · retrying automatically');SET('unifiedEdition',LIVE_CATALOG?'⚠ MO2 DISCONNECTED · LAST SNAPSHOT':'⚠ MO2 DISCONNECTED · RETRYING');}
 }
 async function requestLiveCatalog(method='GET',path='snapshot',body,fresh=false){
@@ -988,7 +1214,7 @@ function activateLiveCatalog(c){
  CATALOG_REQUEST++;WORKSHOP_REQUEST++;GAME_REQUEST++;CATALOG_RENDER_REVISION++;LOCAL_PLAN_CACHE=null;
  if(newProfile&&(SAVE_TIMER!==null||(STORAGE.startsWith('mo2-update-arsenal:')&&PROGRESS_READY)))save();
  LIVE_CATALOG=c;DATA=c;ITEM_MAP=new Map(c.items.map(m=>[m.id,m]));GROUP_MAP=new Map(c.groups.map(g=>[g.id,g]));STORAGE='mo2-update-arsenal:v2:'+c.profileId;
- if(newExecutionContext){cancelLibraryLayoutChange();STARTUP_RETRY_AT=0;STARTUP_ERROR='';PROFILE_EPOCH++;SCAN_OPERATION++;QUICK_OPERATION++;WORKSHOP_OPERATION++;clearTimeout(SCAN_TIMER);SCAN_TIMER=null;SCAN_START_BUSY=false;LIVE_SCAN=null;WORKSHOP_BUSY=false;}
+ if(newExecutionContext){resetCreatorHub();cancelLibraryLayoutChange();STARTUP_RETRY_AT=0;STARTUP_ERROR='';PROFILE_EPOCH++;SCAN_OPERATION++;QUICK_OPERATION++;WORKSHOP_OPERATION++;clearTimeout(SCAN_TIMER);SCAN_TIMER=null;SCAN_START_BUSY=false;LIVE_SCAN=null;WORKSHOP_BUSY=false;}
  if(newProfile){SOURCE_EDIT_REVISION=0;SOURCE_SYNCED_REVISION=0;clearTimeout(SAVE_TIMER);SAVE_TIMER=null;clearTimeout(PROGRESS_TIMER);PROGRESS_READY=false;GAME=null;GAME_SIGNATURE='';GAME_SEEN=-1;NATIVE_SELECTED='';focusedRowId='';STORE=structuredClone(BASE);load();for(const row of Object.values(STORE.rows))if(row.url)markSourceEdit('',row.url);}
  STORE.prefs.collapsed=(Array.isArray(STORE.prefs.collapsed)?STORE.prefs.collapsed:[]).filter(id=>GROUP_MAP.has(id));$('search').value=STORE.prefs.query;
  const currentRuntime=c.gameRuntime||'unknown';let changedRuntime=false,changedMods=0;
@@ -1011,7 +1237,7 @@ function activateLiveCatalog(c){
  if(newProfile){WORKSHOP_TICKETS={};WORKSHOP_TICKET_SIGNATURE='';$('liveDownloadList').innerHTML='';renderDownloadPulse({});ACTIVITY_RECORDS=[];ACTIVITY_WARNING='';ACTIVITY_GENERATION++;renderActivity();refreshActivity();}
  applyAppearance();updateStorageIndicator();render();renderLiveStats();if(changedRuntime||changedMods)toast('⚠ Previous cleared checks need review: runtime or installed version changed.');
  if(newExecutionContext&&!newProfile&&PROGRESS_READY)scheduleProgressSync();
- const context=profileContext();return Promise.allSettled([...((newProfile||(newExecutionContext&&!PROGRESS_READY))?[hydrateProgress(c.profileId)]:[]),refreshGame(),refreshWorkshop().catch(ex=>{if(contextIsCurrent(context))workshopSetStatus('Plan unavailable: '+ex.message)})]);
+ const context=profileContext();return Promise.allSettled([...((newProfile||(newExecutionContext&&!PROGRESS_READY))?[hydrateProgress(c.profileId)]:[]),refreshCreatorHub(),refreshGame(),refreshWorkshop().catch(ex=>{if(contextIsCurrent(context))workshopSetStatus('Plan unavailable: '+ex.message)})]);
 }
 
 function refreshUnifiedCommand(){
@@ -1399,6 +1625,7 @@ async function scanLive(mode){
  const context=profileContext();SCAN_START_BUSY=true;
  for(const id of ['liveQuick','liveDeep','liveLocal','liveAll'])$(id).disabled=true;
  try{const r=await bridgeRequest('POST','scan',{mode,profileId:context.profile});if(!contextIsCurrent(context))return;
+  if(mode==='all'||mode==='sources')void refreshWatchingCreators();
   if(r.state==='running'){SCAN_START_BUSY=false;updateScanUI({...r,mode,state:'running'});SET('liveScanProgress','Beginning '+mode+' scan…');startScanPolling(mode,context)}
   else{SCAN_START_BUSY=false;updateScanUI(r.scan||r);}
  }catch(ex){if(contextIsCurrent(context)){SCAN_START_BUSY=false;toast(ex.message);for(const id of ['liveQuick','liveDeep','liveLocal','liveAll'])$(id).disabled=!LIVE_CONNECTED}}
@@ -1418,7 +1645,7 @@ async function pollLiveBridge(){
   // Each endpoint coalesces concurrent readers. The next poll is scheduled only
   // after this turn completes, so a slow MO2 callback cannot pile up requests.
   if(!PROGRESS_READY)await hydrateProgress(LIVE_CATALOG.profileId);
-  await ensureStartupCheck();await refreshGame();await refreshDownloads();
+  await ensureStartupCheck();await refreshGame();await refreshDownloads();if(document.body.dataset.workspace==='creators'||(!document.hidden&&Date.now()-CREATOR_HUB_LAST_READ>=60000))await refreshCreatorHub();
  }catch(ex){setBridgeConnection(false,'MO2 connection interrupted: '+ex.message)}
  finally{LIVE_REFRESH_BUSY=false;LIVE_POLL_TIMER=setTimeout(pollLiveBridge,4200)}
 }
@@ -1751,7 +1978,7 @@ function importOfflineCatalog(c){
  clearLibraryRowCache();
  closeModContextMenu(false);
  const previousProfile=DATA.profileId;
- if(SAVE_TIMER!==null)save();cancelLibraryLayoutChange();PROFILE_EPOCH++;CATALOG_REQUEST++;WORKSHOP_REQUEST++;GAME_REQUEST++;CATALOG_RENDER_REVISION++;LOCAL_PLAN_CACHE=null;
+ if(SAVE_TIMER!==null)save();resetCreatorHub();cancelLibraryLayoutChange();PROFILE_EPOCH++;CATALOG_REQUEST++;WORKSHOP_REQUEST++;GAME_REQUEST++;CATALOG_RENDER_REVISION++;LOCAL_PLAN_CACHE=null;
  DATA=c;
  hideNativeWelcome();
  ITEM_MAP=new Map(c.items.map(m=>[m.id,m]));

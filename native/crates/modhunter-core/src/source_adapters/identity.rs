@@ -46,7 +46,8 @@ pub fn canonical_source_url(raw: &str) -> Option<String> {
                     && !key.starts_with("__cf_chl_")
                     && !matches!(
                         key.as_str(),
-                        "token"
+                        "modhold_key"
+                            | "token"
                             | "access_token"
                             | "refresh_token"
                             | "id_token"
@@ -101,6 +102,7 @@ pub fn provider_of(raw: &str) -> &'static str {
         ("github.com", "github"),
         ("gitlab.com", "gitlab"),
         ("modrinth.com", "modrinth"),
+        ("modholdmods.com", "modhold"),
         ("thunderstore.io", "thunderstore"),
         ("curseforge.com", "curseforge"),
         ("patreon.com", "patreon"),
@@ -156,6 +158,16 @@ pub fn project_identity(raw: &str) -> Option<ProjectIdentity> {
         project_type: None,
     };
     match provider {
+        "modhold" if (4..=5).contains(&parts.len()) && parts[0] == "g" && parts[2] == "mods" => {
+            if !segment(parts[1])
+                || !positive_numeric_id(parts[3])
+                || (parts.len() == 5 && !segment(parts[4]))
+            {
+                return None;
+            }
+            id.project_id = parts[3].parse::<u64>().ok()?.to_string();
+            id.community = Some(parts[1].into());
+        }
         "github" if parts.len() >= 2 && parts[..2].iter().all(|p| segment(p)) => {
             // Redirects for renamed projects require explicit source relinking.
             id.project_id =
@@ -233,6 +245,7 @@ impl ProjectIdentity {
                 format!("https://gitlab.com/api/v4/projects/{encoded}/releases/permalink/latest")
             }
             "modrinth" => format!("https://api.modrinth.com/v2/project/{}", self.project_id),
+            "modhold" => format!("https://modholdmods.com/api/v1/mods/{}", self.project_id),
             "thunderstore" => format!(
                 "https://thunderstore.io/api/experimental/package/{}/",
                 self.project_id
@@ -257,7 +270,13 @@ pub fn api_url_allowed(raw: &str) -> bool {
     }
     matches!(
         url.host_str(),
-        Some("api.github.com" | "gitlab.com" | "api.modrinth.com" | "thunderstore.io")
+        Some(
+            "api.github.com"
+                | "gitlab.com"
+                | "api.modrinth.com"
+                | "thunderstore.io"
+                | "modholdmods.com"
+        )
     ) && match url.host_str().unwrap_or_default() {
         "api.github.com" => {
             url.path().starts_with("/repos/") && url.path().ends_with("/releases/latest")
@@ -265,6 +284,13 @@ pub fn api_url_allowed(raw: &str) -> bool {
         "gitlab.com" => gitlab_release_endpoint(&url).is_some(),
         "api.modrinth.com" => {
             url.path().starts_with("/v2/project/") || url.path().starts_with("/v2/version/")
+        }
+        "modholdmods.com" => {
+            url.query().is_none()
+                && url
+                    .path()
+                    .strip_prefix("/api/v1/mods/")
+                    .is_some_and(positive_numeric_id)
         }
         "thunderstore.io" => url.path().starts_with("/api/experimental/package/"),
         _ => false,

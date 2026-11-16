@@ -844,3 +844,73 @@ fn service_retry_after_accepts_http_dates_and_bounds_excessive_delays() {
         assert_eq!(result.item_records["row"]["retryAt"], expected, "{header}");
     }
 }
+
+fn modhold_fixture() -> Value {
+    json!({"id":203,"name":"Fixture","version":"1.0.1","game":"skyrim-se",
+        "page":"https://modholdmods.com/g/skyrim-se/mods/203/fixture","author":{"handle":"Creator"},
+        "files":[{"id":759,"kind":"main","name":"Fixture.zip","version":"1.0.1","size":120,"sha256":"a".repeat(64)}]})
+}
+#[test]
+fn modhold_metadata_is_bound_cached_and_never_authorizes_downloads() {
+    let mock = Mock::new();
+    let url = "https://modholdmods.com/api/v1/mods/203";
+    mock.reply(url, 200, modhold_fixture(), &[]);
+    let mut req = request("https://modholdmods.com/g/skyrim-se/mods/203/fixture");
+    req.game = "Skyrim Special Edition".into();
+    let first = scan_sources_with(&req, &mock, NOW).unwrap();
+    let row = &first.item_records["row"];
+    assert_eq!(row["outcome"], "release");
+    assert_eq!(row["latestVersion"], "1.0.1");
+    assert_eq!(row["releaseAssets"][0]["installable"], false);
+    assert!(row["releaseAssets"][0]["url"].is_null());
+    assert!(row.get("publishedAt").is_none());
+    req.cache = first.cache;
+    let second = scan_sources_with(&req, &mock, NOW + 1).unwrap();
+    assert_eq!(second.item_records["row"]["outcome"], "release");
+    assert_eq!(mock.count(), 1);
+}
+#[test]
+fn modhold_unknown_and_mismatched_evidence_cannot_establish_update() {
+    for case in ["id", "game", "page", "file-version", "duplicate", "hash"] {
+        let mut data = modhold_fixture();
+        match case {
+            "id" => data["id"] = 204.into(),
+            "game" => data["game"] = "fallout-4".into(),
+            "page" => data["page"] = "https://evil.test/g/skyrim-se/mods/203/fixture".into(),
+            "file-version" => data["files"][0]["version"] = "0.9".into(),
+            "duplicate" => {
+                let duplicate = data["files"][0].clone();
+                data["files"].as_array_mut().unwrap().push(duplicate);
+            }
+            _ => data["files"][0]["sha256"] = "bad".into(),
+        }
+        let mock = Mock::new();
+        mock.reply("https://modholdmods.com/api/v1/mods/203", 200, data, &[]);
+        let mut req = request("https://modholdmods.com/g/skyrim-se/mods/203/fixture");
+        req.game = "Skyrim Special Edition".into();
+        assert_ne!(
+            scan_sources_with(&req, &mock, NOW).unwrap().item_records["row"]["outcome"],
+            "release",
+            "{case}"
+        );
+    }
+}
+#[test]
+fn modhold_route_is_exact_and_grants_are_not_retained() {
+    use modhunter_core::source_adapters::identity::api_url_allowed;
+    assert!(api_url_allowed("https://modholdmods.com/api/v1/mods/203"));
+    for bad in [
+        "https://modholdmods.com/api/v1/files/759/download",
+        "https://modholdmods.com/api/v1/me",
+        "https://modholdmods.com/api/v1/mods/203?key=x",
+    ] {
+        assert!(!api_url_allowed(bad));
+    }
+    assert_eq!(
+        canonical_source_url(
+            "https://modholdmods.com/g/skyrim-se/mods/203/fixture?modhold_key=secret"
+        )
+        .unwrap(),
+        "https://modholdmods.com/g/skyrim-se/mods/203/fixture"
+    );
+}

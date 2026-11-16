@@ -756,6 +756,7 @@ pub(crate) fn fetch_project(
     };
     let parsed = match id.provider.as_str() {
         "github" => github(id, &observation, now),
+        "modhold" => modhold(id, &observation, request),
         "gitlab" => gitlab(id, &observation, now),
         "thunderstore" => thunderstore(id, &observation, request, now),
         "modrinth" => {
@@ -799,4 +800,89 @@ pub(crate) fn fetch_project(
     parsed.unwrap_or_else(|reason|json!({"outcome":"unavailable","provider":id.provider,"projectId":id.project_id,"source":format!("{}-release-api",id.provider),
         "sourceUrl":id.source_url,"availability":"invalid-or-incompatible-metadata","freshness":observation.freshness,
         "checkedAt":observation.checked_at,"expiresAt":observation.expires_at,"reason":reason,"releaseAssets":[]}))
+}
+
+/// Official public metadata only. Downloads require the player's own grant.
+pub fn modhold(
+    id: &ProjectIdentity,
+    observation: &Observation,
+    request: &SourceScanRequest,
+) -> Result<Value, String> {
+    let data = &observation.value;
+    if data["id"].as_u64().map(|n| n.to_string()).as_deref() != Some(id.project_id.as_str()) {
+        return Err("Modhold mod identity mismatch".into());
+    }
+    let game = required(data, "game", 120)?;
+    let page = required(data, "page", 1800)?;
+    let page_id = super::identity::project_identity(&page).ok_or("Invalid Modhold page")?;
+    if page_id.provider != "modhold"
+        || page_id.project_id != id.project_id
+        || page_id.community.as_deref() != Some(game.as_str())
+        || id.community.as_deref() != Some(game.as_str())
+    {
+        return Err("Modhold page/game identity mismatch".into());
+    }
+    let version = required(data, "version", 120)?;
+    let files = data["files"]
+        .as_array()
+        .ok_or("Missing Modhold file list")?;
+    if files.len() > 300 {
+        return Err("Excessive Modhold file list".into());
+    }
+    let mut seen = HashSet::new();
+    let mut assets = Vec::new();
+    let mut main = false;
+    for file in files {
+        let fid = file["id"]
+            .as_u64()
+            .filter(|n| *n > 0)
+            .ok_or("Invalid Modhold file ID")?;
+        if !seen.insert(fid) {
+            return Err("Duplicate Modhold file ID".into());
+        }
+        let name = required(file, "name", 240)?;
+        if !filename(&name) {
+            return Err("Invalid Modhold filename".into());
+        }
+        let fv = required(file, "version", 120)?;
+        let size = file["size"].as_u64().ok_or("Invalid Modhold file size")?;
+        let hash =
+            hash_value(&required(file, "sha256", 64)?, 64).ok_or("Invalid Modhold SHA256")?;
+        main |= file["kind"] == "main" && fv == version && size > 0;
+        assets.push(json!({"assetKey":format!("modhold:{fid}"),"assetId":fid,"provider":"modhold","projectId":id.project_id,
+            "releaseId":format!("{}:{}",id.project_id,version),"releaseVersion":fv,"name":name,"size":size,"hashes":{"sha256":hash},
+            "installable":false,"url":Value::Null}));
+    }
+    let mut result = base(id, observation);
+    result["latestVersion"] = version.clone().into();
+    // Composite observation identity, not an upstream release object ID.
+    result["releaseId"] = format!("{}:{}", id.project_id, version).into();
+    result["releaseUrl"] = page.into();
+    result["title"] = required(data, "name", 300)?.into();
+    result["summary"] = text(data, "summary", 4000).into();
+    result["publisher"] =
+        json!({"name":text(&data["author"],"handle",180),"role":"provider-declared mod author"});
+    result["iconUrl"] = photo(&text(data, "cover", 1800), &["modholdmods.com"]).into();
+    result["releaseAssets"] = assets.into();
+    result["availability"] = "public-metadata-download-key-required".into();
+    result["reason"] = "Public mod and matching main-file version verified. Download requires a separate player grant; no download is enabled.".into();
+    let selected = game_key(&request.game);
+    let matches_game =
+        selected == game_key(&game) || (game == "skyrim-se" && selected == "skyrimspecialedition");
+    if !matches_game {
+        set_review(
+            &mut result,
+            "Modhold game does not match the selected profile",
+            "game-mismatch",
+        );
+    }
+    if !main {
+        set_review(
+            &mut result,
+            "No main file corroborates the advertised version",
+            "context-required",
+        );
+    }
+    // API timestamps currently have no timezone; never invent UTC/publish dates.
+    Ok(result)
 }

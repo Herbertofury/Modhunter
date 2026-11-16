@@ -1,0 +1,246 @@
+{
+  "schemaVersion": 1,
+  "scope": "Public project names and icons retrieved from the official Modrinth project API for deterministic screenshot QA. No mod binaries or account/session content. Installed versions and update states in the test runtime are explicitly synthetic fixtures. Artwork belongs to the respective project authors and is used only to show their projects in Modhunter.",
+  "sources": [
+    {
+      "slug": "sodium",
+      "id": "AANobbMI",
+      "name": "Sodium",
+      "description": "A high-performance rendering engine replacement for Minecraft, which greatly improves frame rates and reduces micro-stutter.",
+      "projectUrl": "https://modrinth.com/mod/sodium",
+      "apiUrl": "https://api.modrinth.com/v2/project/sodium",
+      "thumbnailUrl": "https://cdn.modrinth.com/data/AANobbMI/295862f4724dc3f78df3447ad6072b2dcd3ef0c9_96.webp",
+      "thumbnailKind": "icon",
+      "thumbnailFile": "visual_thumbnails/sodium.webp",
+      "mimeType": "image/webp",
+      "sha256": "6577355a9d1f994edea64342f01f2b2f4f37f2dcd068f2aa35dc5b42cd241adf",
+      "bytes": 4800,
+      "license": {
+        "id": "LicenseRef-Polyform-Shield-1.0.0",
+        "name": "",
+        "url": "https://github.com/CaffeineMC/sodium/blob/dev/LICENSE.md"
+      },
+      "retrievedAt": "2026-11-16T12:32:43.984698+00:00"
+    },
+    {
+      "slug": "iris",
+      "id": "YL57xq9U",
+      "name": "Iris Shaders",
+      "description": "A modern shader pack loader for Minecraft intended to be compatible with existing OptiFine shader packs",
+      "projectUrl": "https://modrinth.com/mod/iris",
+      "apiUrl": "https://api.modrinth.com/v2/project/iris",
+      "thumbnailUrl": "https://cdn.modrinth.com/data/YL57xq9U/18d0e7f076d3d6ed5bedd472b853909aac5da202_96.webp",
+      "thumbnailKind": "icon",
+      "thumbnailFile": "visual_thumbnails/iris.webp",
+      "mimeType": "image/webp",
+      "sha256": "0c75be3385e43039b0d1d48a10634bf8bad29726cef3b40a953d01344b99af24",
+      "bytes": 13472,
+      "license": {
+        "id": "LGPL-3.0-only",
+        "name": "GNU Lesser General Public License v3.0 only",
+        "url": null
+      },
+      "retrievedAt": "2026-11-16T12:32:43.891738+00:00"
+    },
+    {
+      "slug": "lithium",
+      "id": "gvQqBUqZ",
+      "name": "Lithium",
+      "description": "No-compromises game logic optimization mod, useful for both single-player games and multi-player servers.",
+      "projectUrl": "https://modrinth.com/mod/lithium",
+      "apiUrl": "https://api.modrinth.com/v2/project/lithium",
+      "thumbnailUrl": "https://cdn.modrinth.com/data/gvQqBUqZ/bcc8686c13af0143adf4285d741256af824f70b7_96.webp",
+      "thumbnailKind": "icon",
+      "thumbnailFile": "visual_thumbnails/lithium.webp",
+      "mimeType": "image/webp",
+      "sha256": "99b358c11c3e94b69b4ab9bdfe437519c334cb6d3948701c6613dd121abed150",
+      "bytes": 4172,
+      "license": {
+        "id": "LGPL-3.0-only",
+        "name": "GNU Lesser General Public License v3.0 only",
+        "url": null
+      },
+      "retrievedAt": "2026-11-16T12:32:43.850685+00:00"
+    },
+    {
+      "slug": "ferrite-core",
+      "id": "uXXizFIs",
+      "name": "FerriteCore",
+      "description": "Memory usage optimizations",
+      "projectUrl": "https://modrinth.com/mod/ferrite-core",
+      "apiUrl": "https://api.modrinth.com/v2/project/ferrite-core",
+      "thumbnailUrl": "https://cdn.modrinth.com/data/uXXizFIs/222a126f26f8f9ae1eb339f3b767677f18bff31f_96.webp",
+      "thumbnailKind": "icon",
+      "thumbnailFile": "visual_thumbnails/ferrite-core.webp",
+      "mimeType": "image/webp",
+      "sha256": "fb5b76f9b1c153abf85040188bd155b5d499821ea2dd4df46770e7d41d6f2960",
+      "bytes": 22692,
+      "license": {
+        "id": "MIT",
+        "name": "MIT License",
+        "url": null
+      },
+      "retrievedAt": "2026-11-16T12:32:43.983668+00:00"
+    },
+    {
+      "slug": "modernfix",
+      "id": "nmDcB62a",
+      "name": "ModernFix",
+      "description": "All-in-one mod that improves performance, reduces memory usage, and fixes many bugs. Compatible with all your favorite performance mods!",
+      "projectUrl": "https://modrinth.com/mod/modernfix",
+      "apiUrl": "https://api.modrinth.com/v2/project/modernfix",
+      "thumbnailUrl": "https://cdn.modrinth.com/data/nmDcB62a/2af94de5e08ae54567ee86b968fc7ce076d9fee5_96.webp",
+      "thumbnailKind": "icon",
+      "thumbnailFile": "visual_thumbnails/modernfix.webp",
+      "mimeType": "image/webp",
+      "sha256": "7ccc52bf9e4dfd7212ff6656645bb799434cfa73da8a619586c1f8c656a7a3d9",
+      "bytes": 2282,
+      "license": {
+        "id": "LGPL-3.0-only",
+        "name": "GNU Lesser General Public License v3.0 only",
+        "url": null
+      },
+      "retrievedAt": "2026-11-16T12:32:51.075563+00:00"
+    },
+    {
+      "slug": "entityculling",
+      "id": "NNAgCjsB",
+      "name": "Entity Culling",
+      "description": "Using async path-tracing to hide Block-/Entities that are not visible",
+      "projectUrl": "https://modrinth.com/mod/entityculling",
+      "apiUrl": "https://api.modrinth.com/v2/project/entityculling",
+      "thumbnailUrl": "https://cdn.modrinth.com/data/NNAgCjsB/7873452d6cede4daed12da3d7d8c193ab88b4fd6_96.webp",
+      "thumbnailKind": "icon",
+      "thumbnailFile": "visual_thumbnails/entityculling.webp",
+      "mimeType": "image/webp",
+      "sha256": "2ff42395aa41a7e01e33a2b0427e89ab1f3d82764a33de8d3be52a503dd57a61",
+      "bytes": 6754,
+      "license": {
+        "id": "LicenseRef-tr7zw-Protective-License",
+        "name": "",
+        "url": "https://github.com/tr7zw/EntityCulling/blob/1.18/LICENSE-EntityCulling"
+      },
+      "retrievedAt": "2026-11-16T12:32:51.073490+00:00"
+    },
+    {
+      "slug": "modmenu",
+      "id": "mOgUt4GM",
+      "name": "Mod Menu",
+      "description": "Adds a mod menu to view the list of mods you have installed.",
+      "projectUrl": "https://modrinth.com/mod/modmenu",
+      "apiUrl": "https://api.modrinth.com/v2/project/modmenu",
+      "thumbnailUrl": "https://cdn.modrinth.com/data/mOgUt4GM/5a20ed1450a0e1e79a1fe04e61bb4e5878bf1d20.png",
+      "thumbnailKind": "icon",
+      "thumbnailFile": "visual_thumbnails/modmenu.png",
+      "mimeType": "image/png",
+      "sha256": "f88dbf74eb798ddcc8b5b88aeae7a951e1f5ba234b4fc8c5198ea69420a6ca90",
+      "bytes": 3884,
+      "license": {
+        "id": "MIT",
+        "name": "MIT License",
+        "url": null
+      },
+      "retrievedAt": "2026-11-16T12:32:51.072630+00:00"
+    },
+    {
+      "slug": "appleskin",
+      "id": "EsAfCjCV",
+      "name": "AppleSkin",
+      "description": "Food/hunger-related HUD improvements",
+      "projectUrl": "https://modrinth.com/mod/appleskin",
+      "apiUrl": "https://api.modrinth.com/v2/project/appleskin",
+      "thumbnailUrl": "https://cdn.modrinth.com/data/EsAfCjCV/icon.png",
+      "thumbnailKind": "icon",
+      "thumbnailFile": "visual_thumbnails/appleskin.png",
+      "mimeType": "image/png",
+      "sha256": "7ba4bac7592f2476f92de8320627e3b9ba14575bd7eada8106c8494882a5924c",
+      "bytes": 504,
+      "license": {
+        "id": "Unlicense",
+        "name": "The Unlicense",
+        "url": null
+      },
+      "retrievedAt": "2026-11-16T12:32:51.075097+00:00"
+    },
+    {
+      "slug": "jade",
+      "id": "nvQzSEkH",
+      "name": "Jade \ud83d\udd0d",
+      "description": "Shows information about what you are looking at. (Hwyla/Waila fork for Minecraft 1.16+)",
+      "projectUrl": "https://modrinth.com/mod/jade",
+      "apiUrl": "https://api.modrinth.com/v2/project/jade",
+      "thumbnailUrl": "https://cdn.modrinth.com/data/nvQzSEkH/b04217bc2b7dc524c4d12f81ff42cc1cefb9b0fc_96.webp",
+      "thumbnailKind": "icon",
+      "thumbnailFile": "visual_thumbnails/jade.webp",
+      "mimeType": "image/webp",
+      "sha256": "892e43a16a756f2adfb6b3728d9f164975a40ecaf9acedf524efcec1c43e16d6",
+      "bytes": 7974,
+      "license": {
+        "id": "CC-BY-NC-SA-4.0",
+        "name": "Creative Commons Attribution Non Commercial Share Alike 4.0 International",
+        "url": null
+      },
+      "retrievedAt": "2026-11-16T12:32:58.519662+00:00"
+    },
+    {
+      "slug": "distanthorizons",
+      "id": "uCdwusMi",
+      "name": "Distant Horizons",
+      "description": "Massively increase render distance without harming performance.",
+      "projectUrl": "https://modrinth.com/mod/distanthorizons",
+      "apiUrl": "https://api.modrinth.com/v2/project/distanthorizons",
+      "thumbnailUrl": "https://cdn.modrinth.com/data/uCdwusMi/e716cda9bb568b5373ff76e363fb4c6d7278fba6_96.webp",
+      "thumbnailKind": "icon",
+      "thumbnailFile": "visual_thumbnails/distanthorizons.png",
+      "mimeType": "image/png",
+      "sha256": "2e2f089b3e60f22555085e32b3e13283a4ed201f35dee381d82a80aa8ca76e68",
+      "bytes": 10882,
+      "license": {
+        "id": "LGPL-3.0-only",
+        "name": "GNU Lesser General Public License v3.0 only",
+        "url": null
+      },
+      "retrievedAt": "2026-11-16T12:32:58.523519+00:00"
+    },
+    {
+      "slug": "create",
+      "id": "LNytGWDc",
+      "name": "Create",
+      "description": "Aesthetic Technology that empowers the Player",
+      "projectUrl": "https://modrinth.com/mod/create",
+      "apiUrl": "https://api.modrinth.com/v2/project/create",
+      "thumbnailUrl": "https://cdn.modrinth.com/data/LNytGWDc/61d716699bcf1ec42ed4926a9e1c7311be6087e2_96.webp",
+      "thumbnailKind": "icon",
+      "thumbnailFile": "visual_thumbnails/create.webp",
+      "mimeType": "image/webp",
+      "sha256": "7f896d09714143de40d14725358ce3bf6861459dfb5a7820b6db398733ec7306",
+      "bytes": 16626,
+      "license": {
+        "id": "LicenseRef-Create-Mod-License",
+        "name": "",
+        "url": "https://github.com/Creators-of-Create/Create/blob/HEAD/LICENSE.md"
+      },
+      "retrievedAt": "2026-11-16T12:32:58.520028+00:00"
+    },
+    {
+      "slug": "immediatelyfast",
+      "id": "5ZwdcRci",
+      "name": "ImmediatelyFast",
+      "description": "Speed up immediate mode rendering in Minecraft",
+      "projectUrl": "https://modrinth.com/mod/immediatelyfast",
+      "apiUrl": "https://api.modrinth.com/v2/project/immediatelyfast",
+      "thumbnailUrl": "https://cdn.modrinth.com/data/5ZwdcRci/e57b6b451425692ac17ad322d5e14bea686a383a_96.webp",
+      "thumbnailKind": "icon",
+      "thumbnailFile": "visual_thumbnails/immediatelyfast.webp",
+      "mimeType": "image/webp",
+      "sha256": "46efee0f765f0c38ba3781346bf8287b23ae3eb8fa9f7dc27581b61cc43176c2",
+      "bytes": 5828,
+      "license": {
+        "id": "LGPL-3.0-or-later",
+        "name": "GNU Lesser General Public License v3.0 or later",
+        "url": null
+      },
+      "retrievedAt": "2026-11-16T12:32:58.484916+00:00"
+    }
+  ]
+}

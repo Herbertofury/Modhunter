@@ -74,6 +74,7 @@ jobs:
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/updater_sss_browser_qa.py
           PYTHONPATH=. /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_frontend_responsiveness.py' -v
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_compact_workspace.py' -v
+          PYTHONPATH=. /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_gallery_workspace.py' -v
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/test_watchtower_browser.py
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p test_watchtower_sources_ui.py -v
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/test_watchtower_native_ui.py
@@ -85,6 +86,32 @@ jobs:
           name: Modhunter-Rust-Browser-Proof
           path: /tmp/modhunter-proof/
           if-no-files-found: warn
+  visual:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 64
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Compare the actual release UI against v0.11.0
+        env:
+          MODHUNTER_REQUIRE_BROWSER: '1'
+        run: |
+          python3 -m venv /tmp/modhunter-visual
+          /tmp/modhunter-visual/bin/pip install -q playwright==1.57.0
+          /tmp/modhunter-visual/bin/python -m playwright install --with-deps chromium
+          PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-visual-proof /tmp/modhunter-visual/bin/python tests/visual_release_qa.py
+      - name: Preserve before/after screenshots and complete-library measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Modhunter-Visual-Release-Proof
+          path: /tmp/modhunter-visual-proof/
+          if-no-files-found: error
+          retention-days: 90
   windows:
     runs-on: windows-2025
     timeout-minutes: 50
@@ -263,7 +290,7 @@ jobs:
             native/target/archive-review-proof.json
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [contracts, windows, mo2]
+    needs: [contracts, windows, mo2, visual]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

@@ -7,7 +7,7 @@
  const ATTENTION = new Set(['signInRequired','challenge','unavailable','selectorMissing','tooLarge','error','interrupted']);
  const DEFAULTS = {checkOnLaunch:false,backgroundChecking:false,defaultIntervalMinutes:60,historyLimit:20,mutedOrigins:[],mutedFolders:[],hideTitles:false,privacyScreen:false,notifications:false,filterHiddenResources:false};
  let state={revision:-1,watches:[],sessions:[],history:[],settings:{...DEFAULTS},work:{active:[],queued:[]}},view='pages',filter='all',query='',disposed=false,ready=false;
- let searchFrame=null,toastTimer=null,editWatch=null,editSession=null,detailId=null,detailRequest=0,lastDetailKey='',settingsDirty=false,lastSettingsRevision=-1;
+ let searchFrame=null,toastTimer=null,editWatch=null,editSession=null,detailId=null,detailReturn=null,detailRequest=0,lastDetailKey='',settingsDirty=false,lastSettingsRevision=-1;
  let prefillRevision=0,pendingPrefill=null,importDocument=null,importRevision=null,confirmation=null,dialogReturn=null,lastStateKey='',importGeneration=0,settingsGeneration=0,pageFormGeneration=0,sessionFormGeneration=0,exportGeneration=0;
  let sourceDraft=null,creatorDraft=null,sourceAssociations=[];
  const downloadRows=new Map();
@@ -331,8 +331,15 @@
   const request=++detailRequest;const result=await command('detail',{id},true);if(request!==detailRequest||detailId!==id||$('detailDrawer').hidden)return;if(!result?.ok){$('detailBody').textContent=result?.error||'Could not load page details.';return}
   const w=result.watch||result.detail?.watch;if(!w){$('detailBody').textContent='This page is no longer available.';return}renderDetail(w);
  }
- function openDetail(id){detailId=id;lastDetailKey=detailKey(watchById.get(id));$('detailDrawer').dataset.watchId=id;$('detailDrawer').hidden=false;$('detailBody').textContent='Loading page history…';const w=watchById.get(id);text('detailTitle',w?displayTitle(w):'Page details');$('closeDetail').focus({preventScroll:true});void loadDetail(id)}
- function closeDetail(){detailId=null;detailRequest++;$('detailDrawer').hidden=true}
+ function openDetail(id){
+  if($('detailDrawer').hidden||!$('detailDrawer').contains(document.activeElement))detailReturn=document.activeElement;
+  detailId=id;lastDetailKey=detailKey(watchById.get(id));$('detailDrawer').dataset.watchId=id;$('detailDrawer').hidden=false;$('detailBody').textContent='Loading page history…';const w=watchById.get(id);text('detailTitle',w?displayTitle(w):'Page details');$('closeDetail').focus({preventScroll:true});void loadDetail(id)
+ }
+ function closeDetail(){
+  const wasOpen=!$('detailDrawer').hidden,previousId=detailId,restore=detailReturn;
+  detailId=null;detailReturn=null;detailRequest++;$('detailDrawer').hidden=true;
+  if(wasOpen){const target=[restore,rows.get(previousId)?.node.querySelector('.page-name'),$('navigation').querySelector('.nav-item.active')].find(node=>node?.isConnected&&node.getClientRects().length&&!node.disabled);target?.focus({preventScroll:true})}
+ }
  function renderDetail(w){
   text('detailTitle',displayTitle(w));const isBusy=working(w.id),label=status(w),latest=w.latest,session=sessionById.get(w.sessionId);const privacy=state.settings.hideTitles;
   const actions=(w.removedAt?button('restore',w.id,'Restore','primary',!canMutate()):button('edit',w.id,'Edit page','',!canMutate())+(isBusy||stopped(w)?button('cancel',w.id,stopped(w)?'Clear stopped check':'Cancel check','quiet',!canMutate()):button('check',w.id,'Check now','primary',!canMutate()||!w.enabled||w.muted||needsSession(w)))+button('pause',w.id,w.enabled?'Pause':'Resume','quiet',!canMutate())+button('remove',w.id,'Remove','quiet danger-text',!canMutate()))+button('open',w.id,'Open in app','quiet',!ready)+button('files',w.id,'Find files','',!canMutate()||needsSession(w)||!!w.removedAt)+button('external',w.id,'External browser','quiet',!ready)+button('private',w.id,'Open privately','quiet',!ready)+button('copy-link',w.id,'Copy link','quiet',!ready)+(w.hasChanges&&latest?button('seen',w.id,'Mark this change seen','primary',!canMutate(),latest.id):'')+(w.sessionId&&['signInRequired','challenge'].includes(w.state)?button('session-open',w.sessionId,'Open sign-in / verify','primary',!canMutate()):'');
@@ -399,6 +406,17 @@
  }
  $('reviewPageDownloads').onclick=()=>navigate('downloads');
  $('pageDownloadList').addEventListener('click',event=>{const target=event.target.closest('[data-action]');if(target&&!target.disabled)void downloadAction(target.dataset.action,target.dataset.id)});
+ // Navigation density is a local presentation preference, independent of profile data.
+ const navigationStorage='modhunter.watchtower.navigationCollapsed';
+ function setNavigationCollapsed(collapsed,persist=false){
+  document.body.classList.toggle('navigation-collapsed',collapsed);
+  const control=$('toggleNavigation'),label=collapsed?'Expand navigation':'Collapse navigation';
+  control.setAttribute('aria-expanded',String(!collapsed));control.setAttribute('aria-label',label);control.title=label;control.querySelector('span').textContent=label;
+  if(persist)try{localStorage.setItem(navigationStorage,String(collapsed))}catch{}
+ }
+ let savedNavigation=false;try{savedNavigation=localStorage.getItem(navigationStorage)==='true'}catch{}
+ setNavigationCollapsed(savedNavigation);
+ $('toggleNavigation').addEventListener('click',()=>setNavigationCollapsed(!document.body.classList.contains('navigation-collapsed'),true));
  $('navigation').addEventListener('click',event=>{const target=event.target.closest('[data-view]');if(target)navigate(target.dataset.view,target.dataset.filter||'all')});
  $('watchList').addEventListener('change',event=>{const id=event.target.dataset.select;if(!id)return;selectWatch(id,event.target.checked);renderPages()});
  for(const id of ['watchList','sessionList','historyList','detailBody'])$(id).addEventListener('click',event=>{const target=event.target.closest('[data-action]');if(target&&!target.disabled)void action(target.dataset.action,target.dataset.id,target.dataset.observationId)});

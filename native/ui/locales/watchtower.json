@@ -543,7 +543,10 @@
     "Dismissed here, still available": "Descartada aquí, pero sigue disponible",
     "Release check failed: {detail}": "La comprobación de versiones falló: {detail}",
     "Last verified release: {version}": "Última versión verificada: {version}",
-    "Checked {date}": "Comprobado {date}"
+    "Checked {date}": "Comprobado {date}",
+    "Collapse navigation": "Contraer navegación",
+    "Expand navigation": "Expandir navegación",
+    "Skip to content": "Saltar al contenido"
   },
   "it": {
     "Preferences": "Preferenze",
@@ -1089,7 +1092,10 @@
     "Dismissed here, still available": "Ignorata qui, ma ancora disponibile",
     "Release check failed: {detail}": "Controllo delle versioni non riuscito: {detail}",
     "Last verified release: {version}": "Ultima versione verificata: {version}",
-    "Checked {date}": "Controllato {date}"
+    "Checked {date}": "Controllato {date}",
+    "Collapse navigation": "Comprimi navigazione",
+    "Expand navigation": "Espandi navigazione",
+    "Skip to content": "Vai al contenuto"
   },
   "zh-TW": {
     "Preferences": "偏好設定",
@@ -1635,7 +1641,10 @@
     "Dismissed here, still available": "已在此略過，仍可取得",
     "Release check failed: {detail}": "版本檢查失敗：{detail}",
     "Last verified release: {version}": "上次驗證的版本：{version}",
-    "Checked {date}": "檢查時間：{date}"
+    "Checked {date}": "檢查時間：{date}",
+    "Collapse navigation": "收合導覽",
+    "Expand navigation": "展開導覽",
+    "Skip to content": "跳至內容"
   },
   "en": {
     "Preferences": "Preferences",
@@ -2181,6 +2190,9 @@
     "Dismissed here, still available": "Dismissed here, still available",
     "Release check failed: {detail}": "Release check failed: {detail}",
     "Last verified release: {version}": "Last verified release: {version}",
-    "Checked {date}": "Checked {date}"
+    "Checked {date}": "Checked {date}",
+    "Collapse navigation": "Collapse navigation",
+    "Expand navigation": "Expand navigation",
+    "Skip to content": "Skip to content"
   }
 }

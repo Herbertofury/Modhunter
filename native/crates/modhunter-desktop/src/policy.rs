@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use url::Url;
 
-pub const BAR_HEIGHT: f64 = 144.0;
+pub const BAR_HEIGHT: f64 = 116.0;
 pub const MAX_TABS: usize = 12;
 
 pub fn eslifier_data_directory(path: &Path) -> Result<PathBuf, String> {

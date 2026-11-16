@@ -284,6 +284,8 @@ def main():
     parser.add_argument("--output", type=Path, default=ROOT / "native/target/trace-probe")
     parser.add_argument("--executable-path", type=Path,
                         help="Use this Chromium executable; omit to keep Playwright's bundled-browser default")
+    parser.add_argument("--transport", choices=ARMS,
+                        help="Probe only this required transport; omit to compare both")
     parser.add_argument("--worker", choices=ARMS, help=argparse.SUPPRESS)
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
@@ -302,9 +304,10 @@ def main():
               "python": platform.python_version(), "playwright": importlib.metadata.version("playwright"),
               "requestedExecutable": str(executable_path) if executable_path else None,
               "browserSelection": "explicit" if executable_path else "playwright-default",
+              "selectedTransports": [args.transport] if args.transport else list(ARMS),
               "categories": list(CATEGORIES), "rows": ROWS, "passes": PASSES,
               "workerDeadlineSeconds": ARM_TIMEOUT_SECONDS, "arms": []}
-    for arm in ARMS:
+    for arm in report["selectedTransports"]:
         print(f"TRACE_PROBE {arm} starting (hard deadline {ARM_TIMEOUT_SECONDS}s)", flush=True)
         report["arms"].append(run_bounded_arm(arm, output, executable_path))
         write_json(output / "trace-probe.json", report)

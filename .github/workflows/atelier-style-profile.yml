@@ -41,10 +41,10 @@ jobs:
           /tmp/modhunter-style/bin/python -m playwright install --with-deps chromium
           MODHUNTER_PROFILE_BROWSER=$(/tmp/modhunter-style/bin/python -c "import shutil; print(shutil.which('chromium') or shutil.which('chromium-browser') or '')")
           if [[ -n "$MODHUNTER_PROFILE_BROWSER" ]]; then
-            PYTHONPATH=. /tmp/modhunter-style/bin/python tests/visual_trace_probe.py --executable-path "$MODHUNTER_PROFILE_BROWSER" --output native/target/style-profile/trace-preflight
+            PYTHONPATH=. /tmp/modhunter-style/bin/python tests/visual_trace_probe.py --transport page-cdp --executable-path "$MODHUNTER_PROFILE_BROWSER" --output native/target/style-profile/trace-preflight
             PYTHONPATH=. /tmp/modhunter-style/bin/python tests/visual_style_profile.py --executable-path "$MODHUNTER_PROFILE_BROWSER" --output native/target/style-profile --mods 11207 --variants "$PROFILE_VARIANTS" --trace-variants "$PROFILE_TRACES" --actions gallery
           else
-            PYTHONPATH=. /tmp/modhunter-style/bin/python tests/visual_trace_probe.py --output native/target/style-profile/trace-preflight
+            PYTHONPATH=. /tmp/modhunter-style/bin/python tests/visual_trace_probe.py --transport page-cdp --output native/target/style-profile/trace-preflight
             PYTHONPATH=. /tmp/modhunter-style/bin/python tests/visual_style_profile.py --output native/target/style-profile --mods 11207 --variants "$PROFILE_VARIANTS" --trace-variants "$PROFILE_TRACES" --actions gallery
           fi
       - name: Preserve selector measurements and traces

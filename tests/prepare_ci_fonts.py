@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install one pinned CJK fallback for Linux CI screenshots, never product assets.
+"""Install pinned fallbacks for observed Linux CI glyph gaps, never product assets.
 
 Upstream font SHA-256 is published in the pinned official SPDX manifest:
 https://github.com/notofonts/noto-cjk/blob/f8d157532fbfaeda587e826d4cd5b21a49186f7c/_manifest/spdx_2.2/manifest.spdx.json
@@ -34,6 +34,21 @@ FILES = (
 )
 # This is the actual Traditional Chinese Preferences heading used by UI QA.
 COVERAGE_TEXT = "外觀、隱私與維護"
+SUPPLEMENT_COMMIT = "925ebb8364f5ec2cb0614305900782f44d32a3ab"
+SUPPLEMENT_BASE = f"https://raw.githubusercontent.com/notofonts/noto-fonts/{SUPPLEMENT_COMMIT}/"
+SUPPLEMENT_FONTS = (
+    {"path": "hinted/ttf/NotoSansRunic/NotoSansRunic-Regular.ttf", "name": "NotoSansRunic-Regular.ttf",
+     "bytes": 9044, "sha256": "49e540798dedccf24301437fb5ea5c8a3f42143b1b6c108c1d48c78a41c4ce0f",
+     "gitBlob": "114595f54023e304a3e66c9f904da56e5d1b13f4", "family": "Noto Sans Runic",
+     "postscript": "NotoSansRunic-Regular", "coverage": "ᛟᚠ"},
+    {"path": "hinted/ttf/NotoSansSymbols2/NotoSansSymbols2-Regular.ttf", "name": "NotoSansSymbols2-Regular.ttf",
+     "bytes": 656852, "sha256": "876598db5f1e3bef2bc77c4d94c5b0d5d2c1620be4878a06f18fb5434e331688",
+     "gitBlob": "45df8301c7bdfaccff52e30a0973132e94b2e95d", "family": "Noto Sans Symbols2",
+     "postscript": "NotoSansSymbols2-Regular", "coverage": "⌖"},
+)
+SUPPLEMENT_LICENSE = {"path": "LICENSE", "name": "LICENSE", "bytes": 4377,
+    "sha256": "0dab92d0544f7b233403f14b84a663bdbfa746982eda629e7f4f9ffe1b036feb",
+    "gitBlob": "c82d72e422e2d08c5ab439b6bac7c2177ea0c565"}
 
 
 def run(*arguments: str) -> str:
@@ -48,7 +63,7 @@ def verify_bytes(data: bytes, expected: dict) -> dict:
     if len(data) != expected["bytes"] or digest != expected["sha256"] or blob != expected["gitBlob"]:
         raise RuntimeError(f"Pinned file integrity mismatch: {expected['path']}")
     return {"path": expected["path"], "bytes": len(data), "sha256": digest,
-            "gitBlob": blob, "crc32": f"{zlib.crc32(data):08x}", "url": BASE_URL + expected["path"]}
+            "gitBlob": blob, "crc32": f"{zlib.crc32(data):08x}", "url": expected.get("baseUrl", BASE_URL) + expected["path"]}
 
 
 def charset_contains(charset: str, codepoint: int) -> bool:
@@ -61,6 +76,30 @@ def charset_contains(charset: str, codepoint: int) -> bool:
         if low <= codepoint <= high:
             return True
     return False
+
+
+def glyph_coverage(font_path: Path, text: str) -> dict:
+    charset = run("fc-query", "--format", "%{charset}", str(font_path))
+    glyphs = [{"character": char, "codepoint": f"U+{ord(char):04X}",
+               "covered": charset_contains(charset, ord(char))}
+              for char in dict.fromkeys(text)]
+    if not glyphs or not all(glyph["covered"] for glyph in glyphs):
+        raise RuntimeError(f"Installed font lacks required glyphs: {font_path.name}: {glyphs}")
+    return {"text": text, "method": "fc-query FreeType/fontconfig charset", "glyphs": glyphs}
+
+
+def registered_font(font_path: Path, family: str, postscript: str, coverage: str) -> dict:
+    selected = Path(run("fc-match", "-f", "%{file}", family))
+    if selected.resolve() != font_path.resolve():
+        raise RuntimeError(f"Pinned font did not resolve through fontconfig: {selected}")
+    actual_family = run("fc-query", "--format", "%{family}", str(font_path))
+    if family not in actual_family.split(","):
+        raise RuntimeError(f"Unexpected installed font family: {actual_family}")
+    actual_postscript = run("fc-query", "--format", "%{postscriptname}", str(font_path))
+    if actual_postscript != postscript:
+        raise RuntimeError(f"Unexpected installed PostScript font name: {actual_postscript}")
+    return {"registeredFile": str(selected), "registeredFamily": actual_family,
+            "registeredPostScriptName": actual_postscript, "glyphCoverage": glyph_coverage(font_path, coverage)}
 
 
 def atomic_write(path: Path, data: bytes) -> None:
@@ -82,6 +121,7 @@ def atomic_write(path: Path, data: bytes) -> None:
 
 def prepare(output: Path) -> dict:
     report = {"schema": 1, "ok": False, "scope": "Linux CI font prerequisite; not bundled in Modhunter",
+              "scriptSha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
               "upstreamRepository": "notofonts/noto-cjk", "upstreamCommit": UPSTREAM_COMMIT,
               "license": "OFL-1.1", "fontFamily": FONT_FAMILY, "files": []}
 
@@ -99,17 +139,21 @@ def prepare(output: Path) -> dict:
         if not data_root.is_absolute():
             raise RuntimeError("XDG_DATA_HOME must be an absolute path")
         font_dir = data_root / "fonts/modhunter-ci" / UPSTREAM_COMMIT
+        supplement_dir = data_root / "fonts/modhunter-ci" / SUPPLEMENT_COMMIT
         report["fontDirectory"] = str(font_dir)
         report["genericMatchBefore"] = run("fc-match", "-f", "%{file}\n%{family}\n", ":lang=zh-tw")
         pending = []
-        for expected in FILES:
-            destination = font_dir / expected["name"]
+        downloads = [(expected, font_dir) for expected in FILES]
+        downloads += [({**expected, "baseUrl": SUPPLEMENT_BASE}, supplement_dir)
+                      for expected in (*SUPPLEMENT_FONTS, SUPPLEMENT_LICENSE)]
+        for expected, directory in downloads:
+            destination = directory / expected["name"]
             if destination.is_file():
                 data = destination.read_bytes()
                 record = verify_bytes(data, expected)
                 record["cached"] = True
             else:
-                request = urllib.request.Request(BASE_URL + expected["path"],
+                request = urllib.request.Request(expected.get("baseUrl", BASE_URL) + expected["path"],
                                                  headers={"User-Agent": "Modhunter-CI-Font-QA/0.12"})
                 with urllib.request.urlopen(request, timeout=60) as response:
                     data = response.read(expected["bytes"] + 1)
@@ -117,29 +161,24 @@ def prepare(output: Path) -> dict:
                 record["cached"] = False
             report["files"].append(record)
             pending.append((destination, data))
-        # Verify both artifacts before writing either of the font/license pair.
+        # Verify all font/license artifacts before writing any of them.
         for destination, data in pending:
             atomic_write(destination, data)
-        run("fc-cache", "-f", str(font_dir))
+        run("fc-cache", "-f", str(font_dir), str(supplement_dir))
         font_path = font_dir / FONT_NAME
-        selected = Path(run("fc-match", "-f", "%{file}", FONT_FAMILY))
-        if selected.resolve() != font_path.resolve():
-            raise RuntimeError(f"Pinned font did not resolve through fontconfig: {selected}")
-        family = run("fc-query", "--format", "%{family}", str(font_path))
-        if FONT_FAMILY not in family.split(","):
-            raise RuntimeError(f"Unexpected installed font family: {family}")
-        postscript = run("fc-query", "--format", "%{postscriptname}", str(font_path))
-        if postscript != FONT_POSTSCRIPT:
-            raise RuntimeError(f"Unexpected installed PostScript font name: {postscript}")
-        charset = run("fc-query", "--format", "%{charset}", str(font_path))
-        glyphs = [{"character": char, "codepoint": f"U+{ord(char):04X}",
-                   "covered": charset_contains(charset, ord(char))}
-                  for char in dict.fromkeys(COVERAGE_TEXT)]
-        if not glyphs or not all(glyph["covered"] for glyph in glyphs):
-            raise RuntimeError(f"Installed font lacks required Chinese glyphs: {glyphs}")
-        report.update(registeredFile=str(selected), registeredFamily=family, registeredPostScriptName=postscript,
-                      glyphCoverage={"text": COVERAGE_TEXT, "method": "fc-query FreeType/fontconfig charset",
-                                     "glyphs": glyphs},
+        report.update(registered_font(font_path, FONT_FAMILY, FONT_POSTSCRIPT, COVERAGE_TEXT))
+        report["supplementalGlyphCoverage"] = {"fullwidthZoom": {
+            "fontFamily": FONT_FAMILY, "postScriptName": FONT_POSTSCRIPT,
+            **glyph_coverage(font_path, "＋－")}}
+        report["supplementalFonts"] = []
+        for expected in SUPPLEMENT_FONTS:
+            record = registered_font(supplement_dir / expected["name"], expected["family"],
+                                     expected["postscript"], expected["coverage"])
+            report["supplementalFonts"].append({
+                "upstreamRepository": "notofonts/noto-fonts", "upstreamCommit": SUPPLEMENT_COMMIT,
+                "license": "OFL-1.1", "fontFamily": expected["family"],
+                "path": expected["path"], "bytes": expected["bytes"], "sha256": expected["sha256"], **record})
+        report.update(
                       genericMatchAfter=run("fc-match", "-f", "%{file}\n%{family}\n", ":lang=zh-tw"),
                       fontconfigVersion=run("fc-query", "--version"), ok=True)
         checkpoint()

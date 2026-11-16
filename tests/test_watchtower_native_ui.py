@@ -129,7 +129,7 @@ class NativeUiTests(base.WatchtowerBrowserTests):
         }
         proof = {'schema': 1, 'ok': False, 'locale': 'zh-TW',
                  'scope': 'Actual Linux Chromium glyph rendering; Windows WebView2 has separate native evidence.',
-                 'selector': '#settingsView .native-workspace > h2',
+                 'selector': '#settingsView .native-workspace:has(> #globalPreferencesForm) > h2',
                  'expectedFont': expected_font, 'expectedGlyphCount': len(expected_text),
                  'browserVersion': self.browser.version}
         type(self).cjk_font_proof = proof

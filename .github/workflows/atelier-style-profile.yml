@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches: ['diagnostics/atelier-style']
-    paths: ['tests/prepare_ci_fonts.py', 'tests/test_watchtower_native_ui.py', '.github/workflows/atelier-style-profile.yml']
+    paths: ['tests/prepare_ci_fonts.py', 'tests/ci_font_rendering_qa.py', 'tests/test_watchtower_native_ui.py', '.github/workflows/atelier-style-profile.yml']
 permissions:
   contents: read
 concurrency:
@@ -20,7 +20,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Verify pinned CJK font and actual translated interface
+      - name: Verify pinned fonts and actual translated interface
         env:
           MODHUNTER_REQUIRE_BROWSER: '1'
         run: |
@@ -32,7 +32,8 @@ jobs:
           fi
           /tmp/modhunter-cjk/bin/python tests/prepare_ci_fonts.py --output native/target/cjk-proof/ci-fonts.json
           PYTHONPATH=. MODHUNTER_QA_OUTPUT="$PWD/native/target/cjk-proof" /tmp/modhunter-cjk/bin/python tests/test_watchtower_native_ui.py
-      - name: Preserve font provenance and actual rendered locale proof
+          PYTHONPATH=. /tmp/modhunter-cjk/bin/python tests/ci_font_rendering_qa.py --output native/target/cjk-proof
+      - name: Preserve font provenance and actual rendered glyph proof
         if: always()
         uses: actions/upload-artifact@v4
         with:

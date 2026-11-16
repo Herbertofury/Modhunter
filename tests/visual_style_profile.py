@@ -191,6 +191,17 @@ def metric_snapshot(session):
     return {entry["name"]: entry["value"] for entry in session.send("Performance.getMetrics")["metrics"] if entry["name"] in METRICS}
 
 
+def browser_identity(browser):
+    session = browser.new_browser_cdp_session()
+    try:
+        arguments = session.send("Browser.getBrowserCommandLine")["arguments"]
+        assert arguments and arguments[0], "Chromium did not report its actual executable"
+        return {"browserVersion":browser.version,"resolvedExecutable":str(Path(arguments[0]).resolve()),
+                "executableEvidence":"Browser.getBrowserCommandLine arguments[0]"}
+    finally:
+        session.detach()
+
+
 def complete_geometry(page, count):
     state = page.evaluate("""() => {
       const rows=[...document.querySelectorAll('#modList .mod-row')];
@@ -386,14 +397,14 @@ def begin_trace(session):
     return capture
 
 
-def finish_trace(session, page, destination, capture):
+def finish_trace(session, page, destination, capture, completion_seconds=60):
     # ReportEvents provides the relevant records directly; it does not rely on
     # a potentially delayed trace-to-JSON stream handle. A distinct completion
     # flag also handles the valid empty terminal event in this transport mode.
     try:
         if not capture["finished"]:
             session.send("Tracing.end")
-        deadline = time.monotonic() + 60
+        deadline = time.monotonic() + completion_seconds
         while not capture["finished"] and time.monotonic() < deadline:
             page.wait_for_timeout(50)
     finally:
@@ -416,6 +427,45 @@ def finish_trace(session, page, destination, capture):
         "retainedJsonBytes":capture["retainedBytes"]}
 
 
+def full_page_transport_preflight(session, page, destination, result):
+    """Prove event delivery on the complete imported page before a costly trace.
+
+    Only a toolbar control's non-inherited outline offset changes, synchronously
+    restored to its exact prior style attribute. No library record or layout is
+    modified. This transport check is outside every interaction timer.
+    """
+    started = time.perf_counter()
+    capture = begin_trace(session)
+    result["controlStyle"] = page.evaluate("""() => {
+      const control=document.getElementById('libraryGallery');
+      if(!control)throw Error('Expected the real Gallery toolbar control');
+      const attribute=control.getAttribute('style'),before=getComputedStyle(control).outlineOffset;
+      performance.mark('modhunter-style-profile-transport-start');
+      let changed;
+      try{
+        control.style.setProperty('outline-offset',(Number.parseFloat(before)+1)+'px');
+        changed=getComputedStyle(control).outlineOffset;
+      }finally{
+        if(attribute===null)control.removeAttribute('style');else control.setAttribute('style',attribute);
+      }
+      const after=getComputedStyle(control).outlineOffset;
+      performance.mark('modhunter-style-profile-transport-end');
+      return {before,changed,after,attributeRestored:control.getAttribute('style')===attribute};
+    }""")
+    trace, receipt = finish_trace(session,page,destination,capture,completion_seconds=3)
+    result["wallMs"] = (time.perf_counter()-started)*1000
+    result["trace"] = receipt
+    summary = summarize_trace(trace)
+    result["eventCounts"] = summary["eventCounts"]
+    result["selectorStatsEvents"] = summary["selectorStatsEvents"]
+    result["selectorCount"] = summary["selectorCount"]
+    style = result["controlStyle"]
+    assert style["before"] != style["changed"] and style["before"] == style["after"] and style["attributeRestored"], "Transport probe did not restore the real control style"
+    assert summary["traceEvents"] and summary["eventCounts"].get("modhunter-style-profile-transport-start") and summary["eventCounts"].get("modhunter-style-profile-transport-end"), "Full-page transport probe did not deliver both owned markers"
+    assert not receipt["dataLossOccurred"], "Full-page transport probe dropped trace data"
+    result["ok"] = True
+
+
 def run_arm(browser, html, fixture, variant, actions, output, instrumented, checkpoint):
     context = browser.new_context(viewport={"width": 1440, "height": 900}, reduced_motion="reduce")
     page = context.new_page()
@@ -426,8 +476,9 @@ def run_arm(browser, html, fixture, variant, actions, output, instrumented, chec
     page.on("pageerror", lambda error: errors.append(str(error)))
     metrics = context.new_cdp_session(page)
     metrics.send("Performance.enable")
-    tracing = context.new_cdp_session(page) if instrumented else None
-    arm = {"variant": variant, "instrumented": instrumented, "ok": False, "actions": []}
+    tracing = metrics if instrumented else None
+    arm = {"variant": variant, "instrumented": instrumented, "ok": False, "actions": [],
+           "browserVersion":browser.version,"freshBrowserForTrace":instrumented}
     checkpoint(arm)
     try:
         page.set_content(html, wait_until="load")
@@ -441,6 +492,16 @@ def run_arm(browser, html, fixture, variant, actions, output, instrumented, chec
         arm["initial"] = complete_geometry(page, len(fixture["items"]))
         arm["initialComputedStyles"] = computed_samples(page)
         checkpoint(arm)
+        if tracing:
+            arm["transportPreflight"] = {"ok":False,"completionDeadlineSeconds":3,
+                "scope":"Marker-only delivery on the complete imported page; one restored non-inherited toolbar style"}
+            checkpoint(arm)
+            full_page_transport_preflight(tracing,page,output/f"{variant}-transport-preflight.trace.json.gz",arm["transportPreflight"])
+            arm["transportPreflight"]["completeLibrary"] = complete_geometry(page,len(fixture["items"]))
+            arm["transportPreflight"]["geometryComparison"] = compare_geometry(arm["initial"],arm["transportPreflight"]["completeLibrary"])
+            assert not arm["transportPreflight"]["geometryComparison"]["differenceCount"], "Transport probe changed library geometry"
+            assert not errors, errors
+            checkpoint(arm)
         for action in actions:
             print(f"STYLE_PROFILE {variant} {'selector-trace' if instrumented else 'ordinary'} {action} starting", flush=True)
             result = {"action": action, "ok": False}
@@ -498,8 +559,7 @@ def run_arm(browser, html, fixture, variant, actions, output, instrumented, chec
     finally:
         arm["pageErrors"] = errors
         checkpoint(arm)
-        if tracing:
-            tracing.detach()
+        metrics.detach()
         context.close()
     return arm
 
@@ -532,7 +592,9 @@ def main():
         "mods": args.mods, "fixtureSha256": hashlib.sha256(json.dumps(fixture, sort_keys=True).encode()).hexdigest(),
         "method": "One uninstrumented diagnostic trial per fresh-page CSS arm. Separate selector traces add overhead; never compare their absolute times to ordinary trials or release benchmarks. All records remain laid out; no virtualization, skipped layout, or caps.",
         "tracingCategories": CATEGORIES, "traceParameters": TRACE_PARAMETERS,
-        "traceSession": "context.new_cdp_session(page)", "retainedTraceLimitBytes": RETAINED_TRACE_LIMIT,
+        "traceSession": "One context.new_cdp_session(page) shared by Performance and Tracing",
+        "instrumentedBrowserPolicy":"Fresh browser per instrumented arm; ordinary browser closed first",
+        "retainedTraceLimitBytes": RETAINED_TRACE_LIMIT,
         "ordinaryTrials": [], "selectorTraces": []}
     receipt = args.output / "style-profile.json"
     write_json(receipt, proof)
@@ -546,19 +608,18 @@ def main():
         proof["requestedExecutable"] = executable
         proof["browserSelection"] = "explicit" if args.executable_path else "system-first, then Playwright default"
         browser = runtime.chromium.launch(**launch)
-        proof["browserVersion"] = browser.version
-        identity = browser.new_browser_cdp_session()
-        try:
-            arguments = identity.send("Browser.getBrowserCommandLine")["arguments"]
-            assert arguments and arguments[0], "Chromium did not report its actual executable"
-            proof["resolvedExecutable"] = str(Path(arguments[0]).resolve())
-            proof["executableEvidence"] = "Browser.getBrowserCommandLine arguments[0]"
-        finally:
-            identity.detach()
+        proof.update(browser_identity(browser))
+        proof["instrumentedBrowserIdentities"] = []
         try:
             for instrumented, names in ((False, variants), (True, trace_variants)):
                 field = "selectorTraces" if instrumented else "ordinaryTrials"
                 for variant in names:
+                    if instrumented:
+                        browser.close()
+                        browser = runtime.chromium.launch(**launch)
+                        identity = browser_identity(browser)
+                        assert identity["resolvedExecutable"] == proof["resolvedExecutable"] and identity["browserVersion"] == proof["browserVersion"], "Instrumented browser identity differs from ordinary control"
+                        proof["instrumentedBrowserIdentities"].append({"variant":variant,**identity})
                     def checkpoint(arm):
                         existing = next((index for index, value in enumerate(proof[field]) if value["variant"] == arm["variant"]), None)
                         if existing is None:

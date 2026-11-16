@@ -208,6 +208,16 @@ NATIVE_LIBRARY_ACTIONS = {
     "list": ("list", "comfy"),
     "finalDensityReset": ("list", "compact"),
 }
+# Engineering ceilings for the complete 11,207-record native CI fixture, fixed
+# before the next candidate run. These are publication gates, not promises for
+# other PCs. In particular they reject candidate 6's 13.76 s Gallery / 8.61 s
+# List stalls instead of treating any positive timing as acceptable.
+NATIVE_LIBRARY_BUDGET_MS = {
+    "render": 7000, "lastItemSearch": 1500, "searchRestore": 7000,
+    "listDensity": 4000, "listDensityReset": 4000,
+    "gallery": 5000, "galleryDensity": 4000,
+    "list": 5000, "finalDensityReset": 4000,
+}
 NATIVE_LIBRARY_CHECKS = {
     "packaged_offline_dashboard", "owned_webview_profile", "owned_native_foreground",
     "visible_native_document", "fresh_list_compact", "import_complete",
@@ -406,7 +416,7 @@ def validate_native_binding(report:dict,commit:str,executable_hash:str)->None:
 
 
 def validate_native_library(report: dict, commit: str, executable_hash: str) -> None:
-    """Require actual complete-library native proof; retain timings without inventing a speed budget."""
+    """Require complete native proof, restored interactions and bounded CI timings."""
     validate_native_binding(report, commit, executable_hash)
     require(report.get("schemaVersion") == 1 and report.get("ok") is True
             and report.get("nativeWebView2") is True and report.get("phase") == "complete"
@@ -440,7 +450,7 @@ def validate_native_library(report: dict, commit: str, executable_hash: str) -> 
     require(isinstance(initial, dict) and initial.get("url") == "http://tauri.localhost/Modhunter.html"
             and initial.get("visibilityState") == "visible"
             and initial.get("view") == "list" and initial.get("density") == "compact"
-            and type(initial.get("prefersReducedMotion")) is bool
+            and initial.get("prefersReducedMotion") is False
             and type(initial.get("documentHasFocus")) is bool
             and all(finite(initial.get(name), positive=True) for name in ("width", "height", "devicePixelRatio")),
             "Native library performance omitted the visible packaged native viewport and initial state")
@@ -466,12 +476,20 @@ def validate_native_library(report: dict, commit: str, executable_hash: str) -> 
     require(isinstance(timings, dict) and set(timings) == {"render", "lastItemSearch", "searchRestore"} | set(NATIVE_LIBRARY_ACTIONS)
             and all(finite(value, positive=True) for value in timings.values()),
             "Native library performance timings must be complete, positive and finite")
+    for name, ceiling in NATIVE_LIBRARY_BUDGET_MS.items():
+        require(timings[name] <= ceiling,
+                f"Native library performance exceeds the {name} release ceiling: {timings[name]:.1f} ms > {ceiling} ms")
     require(isinstance(interactions, dict) and set(interactions) == set(NATIVE_LIBRARY_ACTIONS),
             "Native library performance omitted a List/Gallery/density interaction")
     for name, (view, density) in NATIVE_LIBRARY_ACTIONS.items():
         action = interactions[name]
         require(isinstance(action, dict) and finite(action.get("wallMs"), positive=True)
                 and action["wallMs"] == timings[name], f"Native library interaction timing differs: {name}")
+        endpoint = action.get("frameEndpoint")
+        require(isinstance(endpoint, dict) and endpoint.get("structuralBatchActive") is False
+                and endpoint.get("transitionProperty") == "background"
+                and endpoint.get("transitionDuration") == "0.12s",
+                f"Native library interaction did not restore ordinary hover transitions at its measured endpoint: {name}")
         geometry(action.get("completeLibrary"), view, density, name)
         require(all(isinstance(action.get(key), dict) and set(action[key]) == NATIVE_LIBRARY_METRICS
                     and all(finite(value) for value in action[key].values())
@@ -866,6 +884,7 @@ This release continues the Rust desktop introduced in earlier versions. WebView2
 - **A richer library:** gallery and readable list views, adjustable density, authentic provider thumbnails when available, search and filters, and clear installed/candidate version and provider identities. Complete results remain available without viewport virtualization or record caps.
 - **A coherent workspace:** warm obsidian and parchment themes, restrained brass accents, custom vector navigation, compact toolbars, and consistent update review, source, settings and file-detail surfaces.
 - **More working space:** the native shell is 116px tall, with full tab titles and every command retained. Collapsible navigation, keyboard focus restoration and wrapping for long names keep narrower windows usable.
+- **Bounded presentation work:** view and theme changes suppress the bulk row fades that previously stalled large libraries, then restore normal hover feedback within the measured interaction. Reduced motion no longer starts accidental transitions on every descendant. Complete results and every record remain available.
 - **Preserved update safeguards:** exact-file choices, profile-bound approval, native MO2 installation, content backups, verification and rollback remain authoritative. Game modes, progression and FX Studio remain available. The plugin installer now copies and verifies all four archive-helper components beside its Rust CLI, preserving the previous copies in upgrade backups.
 - **Independent downloads:** the MO2 plugin and standalone HTML now have dedicated versioned archives, derived from the already-validated portable package with fresh internal checksum manifests.
 
@@ -948,6 +967,8 @@ JSON, CSV and PowerShell exports are saved to Windows Downloads with unique file
 ## What this build actually passed
 
 - Before/after Chromium captures against v0.11.0 at desktop and narrow sizes, dark/light themes, authentic source artwork, gallery/list views and update dialogs. The complete 11,207-record comparison preserves every laid-out row and verifies the last item remains searchable; its raw samples and screenshots are included in the verification archive.
+- The compiled desktop connected to actual MO2, with native dark/light appearance acknowledgement, wide/narrow window captures, real pointer navigation through Gallery and Details, and keyboard focus restoration.
+- The same complete 11,207-record snapshot imported through the shipped dashboard in actual Windows WebView2. Search restoration and every List/Gallery/density transition retain all ordered, laid-out records. The verification archive's `windows/native-library-performance.json` records the actual engine, viewport, motion setting, raw timings and rendering costs; this renderer sample excludes Rust filesystem import, provider I/O and installation.
 - Actual current-user NSIS installation of this exact installer, byte-for-byte verification of its installed executable and archive helpers, a real installed WebView2 launch, removal of the installed payload and registration, and preservation of the complete external fixture profile during uninstall.
 - The packaged Windows release CLI with the pinned 7-Zip executable and DLL across 26 archive format, path-safety, integrity and exact-selection cases. The portable package carries these exact helpers beside both the desktop and MO2 CLI.
 - Real Chromium review-manager interactions covering complete 1,207-entry selection, explicit new targets, FOMOD advisory behavior, lost acknowledgement, retained restart evidence, exact retention/reset confirmations, support export, preferences and duplicate ownership.
@@ -1222,6 +1243,7 @@ def self_test() -> None:
                 "timingsMs": {"render": 100, "lastItemSearch": 50, "searchRestore": 100,
                               **{name: 100 for name in NATIVE_LIBRARY_ACTIONS}},
                 "interactions": {name: {"wallMs": 100, "completeLibrary": library_geometry(*state),
+                    "frameEndpoint": {"structuralBatchActive": False, "transitionProperty": "background", "transitionDuration": "0.12s"},
                     "metricsBefore": {key: 1 for key in NATIVE_LIBRARY_METRICS},
                     "metricsAfter": {key: 2 for key in NATIVE_LIBRARY_METRICS},
                     "metricDeltas": {key: 1 for key in NATIVE_LIBRARY_METRICS}} for name, state in NATIVE_LIBRARY_ACTIONS.items()},
@@ -1533,7 +1555,7 @@ def self_test() -> None:
                         with self.assertRaises(ReleaseError):
                             validate_native_library(report, self.commit, self.cli_hash)
 
-        def test_native_library_requires_finite_timings_without_invented_speed_budget(self):
+        def test_native_library_requires_finite_timings(self):
             from copy import deepcopy
             for name in self.native_library["timingsMs"]:
                 for invalid in (0, -1, True, float("nan"), float("inf"), float("-inf")):
@@ -1544,9 +1566,29 @@ def self_test() -> None:
             report["interactions"]["gallery"]["metricDeltas"]["LayoutDuration"] = float("nan")
             with self.assertRaises(ReleaseError):
                 validate_native_library(report, self.commit, self.cli_hash)
-            report = deepcopy(self.native_library)
-            report["timingsMs"]["gallery"] = report["interactions"]["gallery"]["wallMs"] = 1_000_000
-            validate_native_library(report, self.commit, self.cli_hash)
+
+        def test_native_library_rejects_slow_complete_results_at_each_release_ceiling(self):
+            from copy import deepcopy
+            for name, ceiling in NATIVE_LIBRARY_BUDGET_MS.items():
+                report = deepcopy(self.native_library)
+                report["timingsMs"][name] = ceiling
+                if name in report["interactions"]:
+                    report["interactions"][name]["wallMs"] = ceiling
+                validate_native_library(report, self.commit, self.cli_hash)
+                report["timingsMs"][name] = ceiling + 1
+                if name in report["interactions"]:
+                    report["interactions"][name]["wallMs"] = ceiling + 1
+                with self.subTest(action=name), self.assertRaisesRegex(ReleaseError, "release ceiling"):
+                    validate_native_library(report, self.commit, self.cli_hash)
+
+        def test_native_library_rejects_deferred_or_missing_hover_restoration(self):
+            from copy import deepcopy
+            for name in NATIVE_LIBRARY_ACTIONS:
+                for key, value in (("structuralBatchActive", True), ("transitionProperty", "none"), ("transitionDuration", "0s")):
+                    report = deepcopy(self.native_library)
+                    report["interactions"][name]["frameEndpoint"][key] = value
+                    with self.subTest(action=name, field=key), self.assertRaisesRegex(ReleaseError, "measured endpoint"):
+                        validate_native_library(report, self.commit, self.cli_hash)
 
         def test_native_library_rejects_synthetic_runtime_or_failed_state_restoration(self):
             from copy import deepcopy

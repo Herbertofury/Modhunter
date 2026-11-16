@@ -255,12 +255,36 @@ class NativeUiTests(base.WatchtowerBrowserTests):
         self.open_native();self.navigate('settings');self.page.get_by_text('Recovery snapshot retention',exact=True).click()
         self.assertTrue(self.page.locator('#globalBackupDays').is_visible());self.page.locator('#globalBackupDays').click()
         self.assertEqual(self.page.evaluate('document.activeElement.id'),'globalBackupDays')
-        for locale,label in [('es','Guardar preferencias de la app'),('it','Salva preferenze dell’app'),('zh-TW','儲存應用程式設定'),('en','Save app preferences')]:
+        self.page.evaluate('''() => {
+          const probe=document.createElement('div');probe.id='localeDisplayProbe';probe.hidden=true;
+          probe.innerHTML='<button id="localeProviderBadge" data-provider="lookup" data-source-id="opaque-source-fixture" data-provider-label="Source needed"></button><span id="localeAuthorName" data-no-translate>Source needed</span><span id="localeAuthorFallback">Source needed</span>';
+          document.body.append(probe);
+        }''')
+        for locale,label,provider in [('es','Guardar preferencias de la app','Se necesita una fuente'),('it','Salva preferenze dell’app','Fonte necessaria'),('zh-TW','儲存應用程式設定','需要來源'),('en','Save app preferences','Source needed')]:
             self.page.evaluate('(locale)=>ModhunterI18n.apply({locale,theme:"light"})',locale)
             self.page.wait_for_function('(label)=>document.getElementById("globalPreferencesSave").textContent===label',arg=label)
+            self.page.wait_for_function('(label)=>document.getElementById("localeProviderBadge").getAttribute("data-provider-label")===label && document.getElementById("localeAuthorFallback").textContent===label',arg=provider)
+            self.assertEqual(self.page.locator('#localeProviderBadge').get_attribute('data-provider'),'lookup')
+            self.assertEqual(self.page.locator('#localeProviderBadge').get_attribute('data-source-id'),'opaque-source-fixture')
+            self.assertEqual(self.page.locator('#localeAuthorName').text_content(),'Source needed')
             self.assertEqual(self.page.evaluate('document.activeElement.id'),'globalBackupDays')
             self.assertEqual(self.page.locator('html').get_attribute('data-theme'),'light')
             self.assertEqual(self.page.evaluate('ModhunterI18n.translate("{count} files",{count:1205}).includes("1205")'),True)
+        self.page.evaluate('ModhunterI18n.apply({locale:"es"})')
+        self.page.wait_for_function('document.getElementById("localeProviderBadge").getAttribute("data-provider-label")==="Se necesita una fuente"')
+        mutation=self.page.evaluate('''async() => {
+          const badge=document.getElementById('localeProviderBadge');let mutations=0;
+          const observer=new MutationObserver(records=>{mutations+=records.length});observer.observe(badge,{attributes:true,attributeFilter:['data-provider-label']});
+          badge.setAttribute('data-provider-label','Original provider');
+          const settle=async()=>{for(let i=0;i<3;i++)await new Promise(requestAnimationFrame)};
+          await settle();const settled=mutations;await settle();observer.disconnect();
+          return {settled,mutations,label:badge.getAttribute('data-provider-label')};
+        }''')
+        self.assertEqual(mutation,{'settled':2,'mutations':2,'label':'Proveedor original'})
+        for locale,label in [('it','Servizio originale'),('en','Original provider')]:
+            self.page.evaluate('(locale)=>ModhunterI18n.apply({locale})',locale)
+            self.page.wait_for_function('(label)=>document.getElementById("localeProviderBadge").getAttribute("data-provider-label")===label',arg=label)
+        self.page.evaluate('document.getElementById("localeDisplayProbe").remove()')
         self.page.evaluate('async()=>{await ModhunterWatchtower.command("globalSettings",{...ModhunterWatchtower.state().maintenance.settings,locale:"zh-TW",theme:"system"})}');self.page.emulate_media(color_scheme='dark',forced_colors='active')
         self.page.wait_for_function('document.documentElement.dataset.theme==="dark" && document.getElementById("globalPreferencesSave").textContent==="儲存應用程式設定"');self.assertEqual(self.page.locator('#globalBackupDays').input_value(),'30')
         self.page.emulate_media(forced_colors='none');self.page.locator('#globalTheme').scroll_into_view_if_needed();self.screenshot('watchtower-preferences-zh.png')

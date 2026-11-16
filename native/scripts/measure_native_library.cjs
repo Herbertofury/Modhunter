@@ -44,7 +44,10 @@ try {
  const result=spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(script,'utf16le').toString('base64')],{windowsHide:true,encoding:'utf8',timeout:10000});
  if(result.error||result.status!==0)throw Error('Owned native foreground verification failed: '+(result.error?.message||result.stderr||result.stdout));
 }
-async function settle(page){await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));}
+async function settle(page){return page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>{
+ const list=document.getElementById('modList'),row=list?.querySelector(':scope > .mod-row'),style=row&&getComputedStyle(row);
+ resolve({structuralBatchActive:!!list?.hasAttribute('data-layout-change'),transitionProperty:style?.transitionProperty,transitionDuration:style?.transitionDuration});
+}))));}
 async function completeGeometry(page){
  const value=await page.evaluate(count=>{
   const rows=[...document.querySelectorAll('#modList .mod-row')],ids=rows.map(row=>row.dataset.id);
@@ -110,7 +113,7 @@ async function main(){
    prefersReducedMotion:matchMedia('(prefers-reduced-motion: reduce)').matches,
    visibilityState:document.visibilityState,documentHasFocus:document.hasFocus()}));
   check('visible_native_document',report.initial.visibilityState==='visible');
-  check('fresh_list_compact',report.initial.view==='list'&&report.initial.density==='compact');
+  check('fresh_list_compact',report.initial.view==='list'&&report.initial.density==='compact'&&report.initial.prefersReducedMotion===false);
   session=await page.context().newCDPSession(page);await session.send('Performance.enable');
   const metricNames=['ScriptDuration','LayoutDuration','RecalcStyleDuration','TaskDuration','LayoutCount','RecalcStyleCount','Nodes','JSHeapUsedSize'];
   const metrics=async()=>Object.fromEntries((await session.send('Performance.getMetrics')).metrics.filter(value=>metricNames.includes(value.name)).map(value=>[value.name,value.value]));
@@ -118,12 +121,13 @@ async function main(){
   async function click(selector,label,expectedView,expectedDensity){
    checkpoint(label+'-starting');
    const before=await metrics(),geometryBefore=await geometry(selector),start=performance.now();
-   await page.locator(selector).click();await settle(page);
+   await page.locator(selector).click();const frameEndpoint=await settle(page);
    const elapsed=performance.now()-start,after=await metrics();
    report.timingsMs[label]=elapsed;
    report.interactions[label]={wallMs:elapsed,metricsBefore:before,metricsAfter:after,
     metricDeltas:Object.fromEntries(metricNames.filter(key=>key in before&&key in after).map(key=>[key,after[key]-before[key]])),
-    geometryBefore,geometryAfter:await geometry(selector)};
+    frameEndpoint,geometryBefore,geometryAfter:await geometry(selector)};
+   if(frameEndpoint.structuralBatchActive||frameEndpoint.transitionProperty!=='background'||frameEndpoint.transitionDuration!=='0.12s')throw Error('Normal hover transitions were not restored inside the measured two-frame interval: '+label+' '+JSON.stringify(frameEndpoint));
    const complete=await completeGeometry(page);
    check(label+'_complete',complete.view===expectedView&&complete.density===expectedDensity);
    report.interactions[label].completeLibrary=complete;checkpoint(label+'-complete');

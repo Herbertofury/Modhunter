@@ -540,6 +540,9 @@ body[data-layout="compact"] .list-header .preview-heading,body[data-layout="comp
 body[data-layout="compact"] .list-header .preview-heading .mh-icon{width:14px;height:14px}
 .mh-visually-hidden{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip-path:inset(50%)!important;white-space:nowrap!important;border:0!important}
 body[data-layout="compact"] .mod-row{min-height:48px;transition:background .12s ease}
+/* View/theme batches must not start a background fade for every installed mod.
+   app.js removes this owned marker within the measured two-frame interaction. */
+body[data-layout="compact"] #modList[data-layout-change] > .mod-row{transition:none!important}
 body[data-layout="compact"] .mod-row:hover{background:var(--vault-hover);transform:none;box-shadow:none}
 body[data-layout="compact"] .mod-row.selected,body[data-layout="compact"] .mod-row.native-selected{background:var(--vault-selection);box-shadow:inset 2px 0 var(--vault-green);border-left:0;padding-left:10px;outline:0}
 body[data-layout="compact"] .mod-row:focus-within{background:var(--vault-hover)}

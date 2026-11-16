@@ -31,8 +31,8 @@ METRICS = ("ScriptDuration", "LayoutDuration", "RecalcStyleDuration", "TaskDurat
            "LayoutCount", "RecalcStyleCount", "Nodes", "JSHeapUsedSize")
 CATEGORIES = ("devtools.timeline", "disabled-by-default-devtools.timeline",
               "disabled-by-default-blink.debug", "blink.user_timing")
-TRACE_PARAMETERS = {"categories": ",".join(CATEGORIES), "options": "record-until-full",
-                    "transferMode": "ReportEvents"}
+TRACE_MODES = {"selectors": CATEGORIES, "timeline": ("devtools.timeline", "blink.user_timing")}
+MPC_HISTOGRAM = "Blink.Style.MatchedPropertiesCache.BucketSize"
 RETAINED_TRACE_LIMIT = 256 * 1024 * 1024
 ACTIONS = {"gallery": "#libraryGallery", "density": "#densityToggle", "list": "#libraryList"}
 
@@ -191,6 +191,41 @@ def metric_snapshot(session):
     return {entry["name"]: entry["value"] for entry in session.send("Performance.getMetrics")["metrics"] if entry["name"] in METRICS}
 
 
+def trace_parameters(mode):
+    return {"categories":",".join(TRACE_MODES[mode]),"options":"record-until-full","transferMode":"ReportEvents"}
+
+
+def cache_histogram_snapshot(session):
+    """Optional real browser telemetry; absence must never become a zero sample.
+
+    Browser.getHistogram's absolute count/sum/buckets are documented in the
+    Chromium Browser protocol. Explicit snapshots avoid resetting another
+    client's delta state. Calls stay outside every interaction clock.
+    """
+    try:
+        histogram = session.send("Browser.getHistogram", {"name":MPC_HISTOGRAM,"delta":False})["histogram"]
+        assert histogram["name"] == MPC_HISTOGRAM and all(key in histogram for key in ("count","sum","buckets"))
+        return {"available":True,"histogram":histogram,"method":"Browser.getHistogram absolute snapshot"}
+    except Exception as error:
+        return {"available":False,"name":MPC_HISTOGRAM,"reason":f"{type(error).__name__}: {error}"}
+
+
+def cache_histogram_delta(before, after):
+    if not before.get("available") or not after.get("available"):
+        return {"available":False,"reason":"Both absolute histogram snapshots were not available"}
+    left,right = before["histogram"],after["histogram"]
+    prior = {(bucket["low"],bucket["high"]):bucket["count"] for bucket in left["buckets"]}
+    current = {(bucket["low"],bucket["high"]):bucket["count"] for bucket in right["buckets"]}
+    buckets = [{"low":low,"high":high,"count":current.get((low,high),0)-prior.get((low,high),0)}
+               for low,high in sorted(set(prior)|set(current))]
+    count,total = right["count"]-left["count"],right["sum"]-left["sum"]
+    if count<0 or total<0 or any(bucket["count"]<0 for bucket in buckets):
+        return {"available":False,"reason":"Histogram reset or changed bucket accounting between snapshots"}
+    return {"available":True,"name":MPC_HISTOGRAM,"count":count,"sum":total,
+            "mean":total/count if count else None,"buckets":[bucket for bucket in buckets if bucket["count"]],
+            "bucketBounds":"low inclusive; high exclusive","method":"Arithmetic difference of actual absolute snapshots"}
+
+
 def browser_identity(browser):
     session = browser.new_browser_cdp_session()
     try:
@@ -329,10 +364,26 @@ def summarize_trace(trace):
     invalidation_samples = defaultdict(list)
     style_events = []
     selector_events = []
+    timed_events = []
+    timed_totals = {}
+    owned_markers = []
     for event in trace.get("traceEvents", []):
         name = event.get("name", "")
         names[name] += 1
         args = event.get("args", {})
+        if name.startswith("modhunter-style-profile-"):
+            owned_markers.append({key:event.get(key) for key in ("name","ts","pid","tid","ph")})
+        if event.get("ph") in ("X","B","E"):
+            timed_events.append({"name":name,"pid":event.get("pid"),"tid":event.get("tid"),
+                "ts":event.get("ts"),"phase":event.get("ph"),"durationUs":event.get("dur"),
+                "threadDurationUs":event.get("tdur"),"category":event.get("cat")})
+            if event.get("dur") is not None:
+                key = (event.get("pid"),event.get("tid"),name)
+                value = timed_totals.setdefault(key,{"pid":key[0],"tid":key[1],"name":name,
+                    "count":0,"inclusiveDurationUs":0,"maximumDurationUs":0})
+                value["count"] += 1
+                value["inclusiveDurationUs"] += event["dur"]
+                value["maximumDurationUs"] = max(value["maximumDurationUs"],event["dur"])
         if name == "SelectorStats":
             timings = args.get("selector_stats", {}).get("selector_timings", [])
             selector_events.append({"ts":event.get("ts"),"pid":event.get("pid"),"tid":event.get("tid"),
@@ -365,10 +416,13 @@ def summarize_trace(trace):
         "invalidationCounts": [{"event": key[0], "reason": key[1], "count": count} for key, count in reasons.most_common()],
         "invalidationSamples": dict(invalidation_samples),
         "styleLayoutEvents": style_events,
+        "ownedMarkers":owned_markers,"timedEvents":timed_events,
+        "timedEventTotals":sorted(timed_totals.values(),key=lambda row:row["inclusiveDurationUs"],reverse=True),
+        "timingScope":"Actual trace durations by process/thread/name; inclusive nested events and parallel threads must not be summed as total wall time. B/E records without a protocol duration remain explicit, not invented.",
         "eventCounts": dict(names.most_common())}
 
 
-def begin_trace(session):
+def begin_trace(session, mode="selectors"):
     """Attach listeners before capture so early completion cannot be missed."""
     capture = {"finished":False,"completion":{},"events":[],"eventCounts":Counter(),
                "retainedBytes":0,"retentionOverflow":False}
@@ -393,7 +447,7 @@ def begin_trace(session):
     session.on("Tracing.dataCollected", on_data)
     session.on("Tracing.tracingComplete", on_complete)
     capture["listeners"] = (on_data, on_complete)
-    session.send("Tracing.start", TRACE_PARAMETERS)
+    session.send("Tracing.start", trace_parameters(mode))
     return capture
 
 
@@ -427,7 +481,7 @@ def finish_trace(session, page, destination, capture, completion_seconds=60):
         "retainedJsonBytes":capture["retainedBytes"]}
 
 
-def full_page_transport_preflight(session, page, destination, result):
+def full_page_transport_preflight(session, page, destination, result, trace_mode="selectors"):
     """Prove event delivery on the complete imported page before a costly trace.
 
     Only a toolbar control's non-inherited outline offset changes, synchronously
@@ -435,7 +489,7 @@ def full_page_transport_preflight(session, page, destination, result):
     modified. This transport check is outside every interaction timer.
     """
     started = time.perf_counter()
-    capture = begin_trace(session)
+    capture = begin_trace(session,trace_mode)
     result["controlStyle"] = page.evaluate("""() => {
       const control=document.getElementById('libraryGallery');
       if(!control)throw Error('Expected the real Gallery toolbar control');
@@ -470,7 +524,7 @@ def full_page_transport_preflight(session, page, destination, result):
     result["ok"] = True
 
 
-def run_arm(browser, html, fixture, variant, actions, output, instrumented, checkpoint):
+def run_arm(browser, html, fixture, variant, actions, output, instrumented, checkpoint, trace_mode="selectors"):
     context = browser.new_context(viewport={"width": 1440, "height": 900}, reduced_motion="reduce")
     page = context.new_page()
     # Profiling deliberately slows rule matching; this is a diagnostic deadline,
@@ -482,17 +536,21 @@ def run_arm(browser, html, fixture, variant, actions, output, instrumented, chec
     metrics.send("Performance.enable")
     tracing = metrics if instrumented else None
     arm = {"variant": variant, "instrumented": instrumented, "ok": False, "actions": [],
-           "browserVersion":browser.version,"freshBrowserForTrace":instrumented}
+           "browserVersion":browser.version,"freshBrowserForTrace":instrumented,
+           "traceMode":trace_mode if instrumented else "none"}
     checkpoint(arm)
     try:
         page.set_content(html, wait_until="load")
         page.wait_for_function("!!window.__ARSENAL_QA__")
         arm["cssExperiment"] = page.evaluate(VARIANTS[variant])
+        arm["cacheHistogram"] = {"beforeImport":cache_histogram_snapshot(metrics)}
         page.evaluate("fixture=>window.modhunterImportCatalog(fixture)", fixture)
         acceptance.settle(page)
         if page.evaluate("typeof window.__STYLE_DIAGNOSTIC_AFTER_IMPORT__==='function'"):
             arm["cssExperiment"] = page.evaluate("window.__STYLE_DIAGNOSTIC_AFTER_IMPORT__()")
             acceptance.settle(page)
+        arm["cacheHistogram"]["afterImport"] = cache_histogram_snapshot(metrics)
+        arm["cacheHistogram"]["importDelta"] = cache_histogram_delta(arm["cacheHistogram"]["beforeImport"],arm["cacheHistogram"]["afterImport"])
         arm["initial"] = complete_geometry(page, len(fixture["items"]))
         arm["initialComputedStyles"] = computed_samples(page)
         checkpoint(arm)
@@ -500,23 +558,24 @@ def run_arm(browser, html, fixture, variant, actions, output, instrumented, chec
             arm["transportPreflight"] = {"ok":False,"completionDeadlineSeconds":3,
                 "scope":"Marker-only delivery on the complete imported page; one restored non-inherited toolbar style"}
             checkpoint(arm)
-            full_page_transport_preflight(tracing,page,output/f"{variant}-transport-preflight.trace.json.gz",arm["transportPreflight"])
+            full_page_transport_preflight(tracing,page,output/f"{variant}-transport-preflight.trace.json.gz",arm["transportPreflight"],trace_mode)
             arm["transportPreflight"]["completeLibrary"] = complete_geometry(page,len(fixture["items"]))
             arm["transportPreflight"]["geometryComparison"] = compare_geometry(arm["initial"],arm["transportPreflight"]["completeLibrary"])
             assert not arm["transportPreflight"]["geometryComparison"]["differenceCount"], "Transport probe changed library geometry"
             assert not errors, errors
             checkpoint(arm)
         for action in actions:
-            print(f"STYLE_PROFILE {variant} {'selector-trace' if instrumented else 'ordinary'} {action} starting", flush=True)
+            print(f"STYLE_PROFILE {variant} {trace_mode+'-trace' if instrumented else 'ordinary'} {action} starting", flush=True)
             result = {"action": action, "ok": False}
             arm["actions"].append(result)
             checkpoint(arm)
+            result["cacheHistogramBefore"] = cache_histogram_snapshot(metrics)
             if tracing:
                 start_root_observer(page)
                 # Per-node invalidation tracking flooded the first trace. Keep
                 # aggregate selector statistics and bounded trace storage;
                 # body/list mutations are captured by the small observer.
-                capture = begin_trace(tracing)
+                capture = begin_trace(tracing,trace_mode)
                 page.evaluate("name=>performance.mark(name)", f"modhunter-style-profile-{action}-start")
             before = metric_snapshot(metrics)
             started = time.perf_counter()
@@ -531,19 +590,26 @@ def run_arm(browser, html, fixture, variant, actions, output, instrumented, chec
             result.update(wallMs=elapsed, metricDeltas={key: after[key] - before[key] for key in METRICS if key in before and key in after})
             if tracing:
                 page.evaluate("name=>performance.mark(name)", f"modhunter-style-profile-{action}-end")
+            result["cacheHistogramAfter"] = cache_histogram_snapshot(metrics)
+            result["cacheHistogramDelta"] = cache_histogram_delta(result["cacheHistogramBefore"],result["cacheHistogramAfter"])
+            if tracing:
                 # End capture before complete-row assertions or JSON processing.
                 trace, receipt = finish_trace(tracing, page, output / f"{variant}-{action}.trace.json.gz", capture)
                 result["trace"] = receipt
                 result["rootMutations"] = stop_root_observer(page)
                 summary = summarize_trace(trace)
-                summary_path = output / f"{variant}-{action}.selectors.json"
+                summary_path = output / f"{variant}-{action}.{trace_mode}.json"
                 write_json(summary_path, summary)
-                result["selectorSummary"] = {"file": summary_path.name,
+                result["traceSummary"] = {"file": summary_path.name,"mode":trace_mode,
                     "selectorStatsEvents": summary["selectorStatsEvents"],
                     "selectorCount": summary["selectorCount"], "topSelectors": summary["selectors"][:20],
-                    "invalidationCounts": summary["invalidationCounts"][:20]}
+                    "invalidationCounts": summary["invalidationCounts"][:20],"eventCounts":summary["eventCounts"]}
                 assert summary["eventCounts"].get(f"modhunter-style-profile-{action}-start") and summary["eventCounts"].get(f"modhunter-style-profile-{action}-end"), "Trace lacks the owned workload boundaries; diagnostic incomplete"
-                assert summary["selectorStatsEvents"] and summary["selectorCount"], "Chromium emitted no selector statistics; diagnostic incomplete"
+                if trace_mode == "selectors":
+                    assert summary["selectorStatsEvents"] and summary["selectorCount"], "Chromium emitted no selector statistics; diagnostic incomplete"
+                else:
+                    assert not summary["selectorStatsEvents"], "Timeline-only trace unexpectedly enabled selector instrumentation"
+                    assert summary["eventCounts"].get("UpdateLayoutTree") and summary["eventCounts"].get("Layout"), "Timeline lacks actual style/layout work for the action"
                 assert not receipt["dataLossOccurred"], "Chromium dropped trace data; diagnostic incomplete"
             checkpoint(arm)
             if action_error:
@@ -575,6 +641,8 @@ def main():
     parser.add_argument("--variants", default="control")
     parser.add_argument("--trace-variants", default="control")
     parser.add_argument("--actions", default="gallery,density,list")
+    parser.add_argument("--trace-mode", choices=tuple(TRACE_MODES), default="selectors",
+                        help="Timeline intentionally omits selector/per-node debug instrumentation; selectors retains the original strict statistics gate")
     parser.add_argument("--executable-path", type=Path, help="Explicit Chromium binary; otherwise retain the acceptance harness's system-first selection")
     args = parser.parse_args()
     variants = args.variants.split(",")
@@ -594,8 +662,10 @@ def main():
         "candidateCommit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
         "sourceStatusAtStart": source_status(), "platform": platform.platform(), "assets": assets,
         "mods": args.mods, "fixtureSha256": hashlib.sha256(json.dumps(fixture, sort_keys=True).encode()).hexdigest(),
-        "method": "One uninstrumented diagnostic trial per fresh-page CSS arm. Separate selector traces add overhead; never compare their absolute times to ordinary trials or release benchmarks. All records remain laid out; no virtualization, skipped layout, or caps.",
-        "tracingCategories": CATEGORIES, "traceParameters": TRACE_PARAMETERS,
+        "method": "One uninstrumented diagnostic trial per fresh-page CSS arm. Separate explicitly named trace modes may add overhead; never compare their absolute times to ordinary trials or release benchmarks. All records remain laid out; no virtualization, skipped layout, or caps.",
+        "traceMode":args.trace_mode,"selectorStatisticsRequired":args.trace_mode=="selectors",
+        "tracingCategories": TRACE_MODES[args.trace_mode], "traceParameters": trace_parameters(args.trace_mode),
+        "cacheHistogramScope":"Optional actual MPC bucket telemetry; before/after import and action snapshots outside interaction timers; unavailable is explicit",
         "traceSession": "One context.new_cdp_session(page) shared by Performance and Tracing",
         "instrumentedBrowserPolicy":"Fresh browser per instrumented arm; ordinary browser closed first",
         "retainedTraceLimitBytes": RETAINED_TRACE_LIMIT,
@@ -631,7 +701,7 @@ def main():
                         else:
                             proof[field][existing] = arm
                         write_json(receipt, proof)
-                    run_arm(browser, html, fixture, variant, actions, args.output, instrumented, checkpoint)
+                    run_arm(browser, html, fixture, variant, actions, args.output, instrumented, checkpoint,args.trace_mode)
             control = next(arm for arm in proof["ordinaryTrials"] if arm["variant"] == "control")
             reference_states = {"initial": control.get("initialComputedStyles", {})}
             reference_states.update({row["action"]: row.get("computedStyles", {}) for row in control["actions"]})

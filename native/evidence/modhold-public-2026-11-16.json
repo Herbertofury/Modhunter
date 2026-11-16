@@ -1,0 +1,46 @@
+{
+  "scope": "Compiled Linux public metadata scan, not native Windows/MO2; installed version1.0.0 is synthetic",
+  "source": "https://modholdmods.com/api/v1/mods/203",
+  "mod_id": 203,
+  "file_id": 759,
+  "observed_version": "1.0.1",
+  "raw_response_body_sha256": "4b6146517132783f6cbfba51a24a4eb25b7d37732dcbdb43b1666efb927c871c",
+  "first_stats": {
+    "budgetMs": 45000,
+    "cacheHits": 0,
+    "elapsedMs": 2151.799891,
+    "items": 1,
+    "manualSources": 0,
+    "queried": 1,
+    "rateLimited": 0,
+    "revalidated": 0,
+    "sourceProjects": 1,
+    "workers": 4
+  },
+  "cached_stats": {
+    "budgetMs": 45000,
+    "cacheHits": 1,
+    "elapsedMs": 1.074884,
+    "items": 1,
+    "manualSources": 0,
+    "queried": 0,
+    "rateLimited": 0,
+    "revalidated": 0,
+    "sourceProjects": 1,
+    "workers": 4
+  },
+  "cached_process_elapsed_ms": 5.186762999073835,
+  "archive_downloaded": false,
+  "python_comparison": "candidate",
+  "tests": {
+    "rust_source_adapters": 31,
+    "python_modhold": 3
+  },
+  "windows_acceptance": "not run",
+  "limitations": [
+    "Full gallery/playback not available in reviewed API",
+    "Account downloads not enabled",
+    "Shared database ingestion not implemented",
+    "MO2R application source absent"
+  ]
+}

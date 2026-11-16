@@ -1,0 +1,293 @@
+{
+  "schemaVersion": 1,
+  "title": "Atelier 0.12.0 motion diagnostics",
+  "scope": "Diagnostic evidence only; not candidate 7, Windows native, functional-update, installer or release acceptance.",
+  "acceptance": false,
+  "repository": "https://github.com/Herbertofury/Modhunter",
+  "evidenceDateUtc": "2026-11-16",
+  "engine": {
+    "family": "Chromium",
+    "version": "157.0.8103.0",
+    "selection": "Verified system executable; same version in all recorded runs"
+  },
+  "authoredAssetsSha256": {
+    "mo2_update_arsenal/web/app.template.html": "4385bd770a4c624381147d5b76ace86c567125849c901c82cbad8e071400b450",
+    "mo2_update_arsenal/web/style.css": "55fbed1e74f72cdf7b0d647171f5b97ec40dcc0adb31cc3c2b57dd9968a0737e",
+    "mo2_update_arsenal/web/aether_fx.css": "bbf8afd935cd97420bef66ba70c0b42722e06c9e5d84886fe147b38568f86bfd",
+    "mo2_update_arsenal/web/realm.css": "3b55f9e69af9315d34b0aa10b6b88aa82575ece81c77242be33dd6d01e4b50e4",
+    "mo2_update_arsenal/web/siege.css": "ffd8cb942207607d814fb677e6b1520a70633151b6f5e506fc2f537d81bd834e",
+    "mo2_update_arsenal/web/atelier.css": "9193234af6e95562beff86ec4c7442fdbeb05c49bec5c3d401f67dd36f5f1e9d",
+    "mo2_update_arsenal/web/mod_insights.css": "e3254e0496ac4c6864dfa332db7f188cb7af83504e34a243288e6a61e0de2f0f",
+    "mo2_update_arsenal/web/source_insights.css": "0802191e06dbc3e1bc3bc93afda937cea08869a5212aece7ae038be55dd4b63c",
+    "mo2_update_arsenal/web/source_insights.js": "6363b3daa2073435d520aec397ae4c472fd928b8bba22624251bf817509f3ff8",
+    "mo2_update_arsenal/web/mod_insights.js": "7384dc1efb26c12b6214ac31b1b793c6c9dba94c746721aa7610ffd0de0570e4",
+    "mo2_update_arsenal/web/app.js": "f0cd0fd2a66a9b52ebb251573ab405129fdf3f828ebc0dc656de02fe9600b5b6",
+    "mo2_update_arsenal/web/catalog.json": "7b63ff731bf4f66ff7c3ee6c2fa58732ca804ae2754d9a5d2b7ceade4375337e",
+    "mo2_update_arsenal/web/aether_fx.js": "37ed80d542dca7cce5d109b6fba9e38fec54ebb7d79ed99f2d81907e75940b42",
+    "mo2_update_arsenal/web/realm.js": "ddbb7e98f667baa9be6bcf16478602f3d1d2cda890599662fa925a53fd6eb5dc",
+    "mo2_update_arsenal/web/siege.js": "aeb05c2faa41c08944699d76ff65a2d86574bf05bdd24b4d25bd8b34f088f271",
+    "mo2_update_arsenal/web/realm_layout.html": "5912401cfc190e1d7be3f59f662e9b20668e595fdc1f1ec7ed951c7ac9671053",
+    "mo2_update_arsenal/web/siege_layout.html": "c6fbf968c672c100869799ff6ba96fd99f30d9029d7f50a6e71841bee2fb1867",
+    "mo2_update_arsenal/web/MO2_Source_Exporter.ps1": "f1c29d121a7c140a098b66b93544813cf56cfc5557d18a9565524eae97bc4a8c"
+  },
+  "assetIdentity": "D13 and both D15 jobs compiled identical authored application assets. Only explicit page-CSS experiments differ.",
+  "fixtureSource": "tests/test_frontend_responsiveness.py::catalog",
+  "fixtureScope": "Complete deterministic offline fixtures; no user profile or real installation.",
+  "d13": {
+    "runId": 43897114017,
+    "publicRunUrl": "https://github.com/Herbertofury/Modhunter/actions/runs/43897114017",
+    "sourceCommit": "7c627bf20adc796d02778ce0c54cdd31fa5f344b",
+    "harness": "tests/visual_startup_trace.py",
+    "artifact": {
+      "id": 14238533860,
+      "name": "Modhunter-Startup-File-Trace",
+      "bytes": 1733200,
+      "apiSha256": "a8342953d2d391b475a537bebee81d9b525c4dd28a89fe439f0c1b4c26be25a4",
+      "apiDigestAndZipCrcVerified": true,
+      "publicUrl": "https://github.com/Herbertofury/Modhunter/actions/runs/43897114017/artifacts/14238533860",
+      "jobId": 133403555799,
+      "publicJobUrl": "https://github.com/Herbertofury/Modhunter/actions/runs/43897114017/job/133403555799"
+    },
+    "transport": "30-second Chromium startup JSON file capture, graceful close, final-file hash verification; no CDP Tracing start/end. The 1,000-record trial was gated on successful 32-record delivery.",
+    "motion": "reduce",
+    "trials": [
+      {
+        "mods": 32,
+        "fixtureSha256": "88800146aed831e65d2d858318d89a2025dfd02e332f26b47968b965f5b4b1c9",
+        "rawTraceMember": "records-32/startup-ef57ead35b95439e98af82612f7ed4c9.trace.json",
+        "rawTraceBytes": 1637262,
+        "rawTraceSha256": "cb2794027be90df54f3138021f7dea5a92dc29b8da62a813b8ed4e828b9a5e4e",
+        "instrumentedGalleryWallMs": 119.2149389999031,
+        "ownedMarkerWindowMs": 124.117,
+        "ownedMarks": {
+          "start": "modhunter-startup-file-ef57ead35b95439e98af82612f7ed4c9-gallery-start",
+          "end": "modhunter-startup-file-ef57ead35b95439e98af82612f7ed4c9-gallery-end"
+        },
+        "exactlyOneStartAndEndMarker": true,
+        "beforeAfterOrderedIdsSha256": "ba63f1eab45e52a4e27065bf9f2e42a6992bbed711219397d7f5d9cda069d1d6",
+        "allRecordsOrderedAndLaidOut": true,
+        "styleEventsInWindow": 5,
+        "layoutEventsInWindow": 2,
+        "animationEventsInWindow": 5940,
+        "animationPhases": {
+          "b": 1485,
+          "n": 2970,
+          "e": 1485
+        }
+      },
+      {
+        "mods": 1000,
+        "fixtureSha256": "a70e63faada6d0c64d5b38e5ebe42212637ad6dbd4586bc94221551f51309a1b",
+        "rawTraceMember": "records-1000/startup-1911b22aa5cf448384ea52f4a91ed148.trace.json",
+        "rawTraceBytes": 40257497,
+        "rawTraceSha256": "6b1c4b49d5c972f267e35e4754ffad6f420881ee3487998db7fd3d2c90001e95",
+        "instrumentedGalleryWallMs": 1689.4235690000414,
+        "ownedMarkerWindowMs": 1691.633,
+        "ownedMarks": {
+          "start": "modhunter-startup-file-1911b22aa5cf448384ea52f4a91ed148-gallery-start",
+          "end": "modhunter-startup-file-1911b22aa5cf448384ea52f4a91ed148-gallery-end"
+        },
+        "exactlyOneStartAndEndMarker": true,
+        "beforeAfterOrderedIdsSha256": "23d146f4a3c1113fb4aaab5d600e899699ce0a5f171a65d29988043958ccf190",
+        "allRecordsOrderedAndLaidOut": true,
+        "styleEventsInWindow": 6,
+        "layoutEventsInWindow": 2,
+        "animationEventsInWindow": 184052,
+        "animationPhases": {
+          "b": 46013,
+          "n": 92026,
+          "e": 46013
+        },
+        "animationStartsByTarget": {
+          "A class='source-btn'": 14000,
+          "SMALL class='newer-version'": 1000,
+          "DIV class='mod-priority'": 18000,
+          "DIV class='mod-version'": 1000,
+          "::before": 6000,
+          "DIV class='mod-source'": 3000,
+          "DIV class='inspect-col'": 3000,
+          "svg class='mh-icon'": 2,
+          "path": 1,
+          "symbol id='mh-list'": 1,
+          "SPAN": 2,
+          "use": 2,
+          "symbol id='mh-library'": 1,
+          "rect": 4
+        },
+        "mainRendererInclusiveDurationUs": {
+          "UpdateLayoutTree": 504415,
+          "Layout": 144965,
+          "PrePaint": 88807,
+          "MajorGC": 11286,
+          "Paint": 11074
+        }
+      }
+    ],
+    "limits": "Instrumented smaller fixtures establish trace delivery and observations, not acceptance. Async Animation lifetimes are not CPU durations. Inclusive lifecycle durations may nest and are not summed into wall time. Startup JSON lacks a CDP completion acknowledgement; full losslessness is not asserted."
+  },
+  "d15": {
+    "runId": 43898970260,
+    "publicRunUrl": "https://github.com/Herbertofury/Modhunter/actions/runs/43898970260",
+    "sourceCommit": "bfa72ab1f0f8d32cc0339822c7842d5b836b2695",
+    "harness": "tests/visual_style_profile.py",
+    "mods": 11207,
+    "fixtureSha256": "afd855e4ac76f284630ffb4ed6d9dc37280113c9559aef4402516795b7fef0a0",
+    "method": "One uninstrumented ordinary trial per fresh-page arm, ordered Gallery/density/List actions. Geometry and markup checks occur outside clocks. Compare within each motion job only; no medians, cross-job hardware comparison or population estimates.",
+    "geometryScope": "Every row plus chapter/library container bounds, tolerance 0.1 CSS pixels. This run did not repeat the expensive descendant/pseudo DOMSnapshot audit.",
+    "semanticsScope": "Full ordered outerHTML of all 11,207 records: text, source identities, controls and attributes. Actual provider/chapter pseudo labels checked after both Gallery actions. This is not an accessibility-tree audit.",
+    "noVirtualizationOrCaps": true,
+    "representativeScreenshotsCaptured": false,
+    "comparisons": [
+      {
+        "motion": "reduce",
+        "artifact": {
+          "id": 14240052658,
+          "name": "Modhunter-Library-Motion-reduced",
+          "bytes": 546407,
+          "apiSha256": "584ebb0ccb1e19cb92801237198a9abd0eec65d7ded7f8ff6541e645378ff358",
+          "apiDigestAndZipCrcVerified": true,
+          "publicUrl": "https://github.com/Herbertofury/Modhunter/actions/runs/43898970260/artifacts/14240052658",
+          "jobId": 133410085229,
+          "publicJobUrl": "https://github.com/Herbertofury/Modhunter/actions/runs/43898970260/job/133410085229"
+        },
+        "receiptMember": "reduced/style-profile.json",
+        "receiptSha256": "c367730a5ec350f0d7784750b1975f56f9f483ba39499a3f361fbd049c7cc048",
+        "trialsPerArm": 1,
+        "arms": [
+          {
+            "variant": "control",
+            "actualReducedMotionMedia": true,
+            "rawWallMs": {
+              "gallery": 16583.13152699999,
+              "density": 5422.517478000003,
+              "list": 21227.513103999998
+            }
+          },
+          {
+            "variant": "zero-reduced-transitions",
+            "actualReducedMotionMedia": true,
+            "rawWallMs": {
+              "gallery": 5490.556725999994,
+              "density": 3693.283633999982,
+              "list": 4983.988481000011
+            }
+          }
+        ],
+        "allFourStates": {
+          "states": [
+            "initial",
+            "gallery",
+            "density",
+            "list"
+          ],
+          "rowsAndUniqueOrderedIds": 11207,
+          "firstId": "item-0",
+          "lastId": "item-11206",
+          "allLaidOut": true,
+          "noContentVisibility": true,
+          "completeOrderedRowMarkupIdenticalToControl": true,
+          "rowChapterContainerGeometryDifferences": 0,
+          "unapprovedSampledStyleDifferences": 0
+        },
+        "providerChapterPseudoLabelMismatchesAfterGalleryAndDensity": 0,
+        "pageErrors": 0,
+        "experiment": {
+          "changedRules": 1,
+          "selector": "*, *:before, *:after",
+          "condition": "prefers-reduced-motion:reduce",
+          "before": "transition-duration:.001ms!important; unspecified property defaults to all",
+          "after": "transition:none!important",
+          "animationDurationUnchanged": true,
+          "promotion": "Exact reduced-motion repair prepared; candidate acceptance pending"
+        }
+      },
+      {
+        "motion": "no-preference",
+        "artifact": {
+          "id": 14241266323,
+          "name": "Modhunter-Library-Motion-normal",
+          "bytes": 546134,
+          "apiSha256": "bbdeac4d5fb10d6d08cfa7418ec41d123a50c5aa098b55e389ca863c327b58f0",
+          "apiDigestAndZipCrcVerified": true,
+          "publicUrl": "https://github.com/Herbertofury/Modhunter/actions/runs/43898970260/artifacts/14241266323",
+          "jobId": 133410085637,
+          "publicJobUrl": "https://github.com/Herbertofury/Modhunter/actions/runs/43898970260/job/133410085637"
+        },
+        "receiptMember": "normal/style-profile.json",
+        "receiptSha256": "6dd13a416ab1db3b987a1a1bda023625addd94781bb1df60353283360fc1e00a",
+        "trialsPerArm": 1,
+        "arms": [
+          {
+            "variant": "control",
+            "actualReducedMotionMedia": false,
+            "rawWallMs": {
+              "gallery": 24631.047128999995,
+              "density": 6932.849070000003,
+              "list": 22009.572262000005
+            }
+          },
+          {
+            "variant": "no-row-transitions",
+            "actualReducedMotionMedia": false,
+            "rawWallMs": {
+              "gallery": 10429.967757000015,
+              "density": 6441.269037000012,
+              "list": 8055.589308000009
+            }
+          }
+        ],
+        "allFourStates": {
+          "states": [
+            "initial",
+            "gallery",
+            "density",
+            "list"
+          ],
+          "rowsAndUniqueOrderedIds": 11207,
+          "firstId": "item-0",
+          "lastId": "item-11206",
+          "allLaidOut": true,
+          "noContentVisibility": true,
+          "completeOrderedRowMarkupIdenticalToControl": true,
+          "rowChapterContainerGeometryDifferences": 0,
+          "unapprovedSampledStyleDifferences": 0
+        },
+        "providerChapterPseudoLabelMismatchesAfterGalleryAndDensity": 0,
+        "pageErrors": 0,
+        "experiment": {
+          "changedRules": 1,
+          "selector": "body[data-layout=\"compact\"] #modList > .mod-row",
+          "condition": "normal motion",
+          "before": "transition:background .12s ease",
+          "after": "transition:none!important",
+          "animationDurationUnchanged": true,
+          "promotion": "Nonpromotable diagnostic: ordinary hover fades are permanently removed. A temporary structural guard needs separate validation."
+        }
+      }
+    ]
+  },
+  "causalFinding": {
+    "observed": "The universal reduced-motion rule assigns nonzero transition duration where transition-property defaults to all. The marked 1,000-record Gallery trace records source-link padding/border/font transitions and priority-label dimension/position transitions. The full-count reduced-motion intervention removes only that behavior while preserving record markup and geometry. The separate normal-motion arm isolates existing row background transitions.",
+    "limit": "The evidence identifies avoidable transition work, not every renderer cost. No unmeasured CPU remainder or accessibility subsystem attribution is made."
+  },
+  "candidate7": {
+    "status": "Pending candidate, native and release acceptance",
+    "preparedFixes": [
+      "Universal reduced-motion transition:none!important, preserving keyframe animation duration.",
+      "Temporary direct-row transition guard for changed view/theme, with owned two-frame restoration, ordinary hover fades retained, and profile-generation cleanup."
+    ],
+    "publicationGateSource": "native/scripts/prepare_release.py::NATIVE_LIBRARY_BUDGET_MS",
+    "nativePublicationCeilingsMs": {
+      "render": 7000,
+      "lastItemSearch": 1500,
+      "searchRestore": 7000,
+      "listDensity": 4000,
+      "listDensityReset": 4000,
+      "gallery": 5000,
+      "galleryDensity": 4000,
+      "list": 5000,
+      "finalDensityReset": 4000
+    },
+    "ceilingsStatus": "Fixed before candidate 7 execution; outcomes pending. Engineering gates for the complete 11,207-record native CI fixture, not promises for other PCs."
+  }
+}

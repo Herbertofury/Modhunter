@@ -70,7 +70,11 @@ jobs:
         run: |
           python3 -m venv /tmp/modhunter-qa
           /tmp/modhunter-qa/bin/pip install -q playwright==1.57.0
-          /tmp/modhunter-qa/bin/python -m playwright install --with-deps chromium
+          # Tests already prefer this runner's Chromium. Avoid an unrelated apt
+          # font installation when the actual required engine is available.
+          if ! command -v chromium >/dev/null && ! command -v chromium-browser >/dev/null; then
+            /tmp/modhunter-qa/bin/python -m playwright install --with-deps chromium
+          fi
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/updater_sss_browser_qa.py
           PYTHONPATH=. /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_frontend_responsiveness.py' -v
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_compact_workspace.py' -v
@@ -103,7 +107,9 @@ jobs:
         run: |
           python3 -m venv /tmp/modhunter-visual
           /tmp/modhunter-visual/bin/pip install -q playwright==1.57.0
-          /tmp/modhunter-visual/bin/python -m playwright install --with-deps chromium
+          if ! command -v chromium >/dev/null && ! command -v chromium-browser >/dev/null; then
+            /tmp/modhunter-visual/bin/python -m playwright install --with-deps chromium
+          fi
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-visual-proof /tmp/modhunter-visual/bin/python tests/visual_release_qa.py
       - name: Preserve before/after screenshots and complete-library measurements
         if: always()

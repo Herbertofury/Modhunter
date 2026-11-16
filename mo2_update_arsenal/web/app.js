@@ -25,6 +25,7 @@ const DETECTED_CACHE=new WeakMap();
 let SEARCH_FRAME=null,WORKSHOP_SEARCH_FRAME=null,SAVE_TIMER=null,SAVE_REVISION=0,PROGRESS_SYNC_CHAIN=Promise.resolve();
 let RENDER_COUNTS=null,LOCAL_PLAN_CACHE=null,CATALOG_RENDER_REVISION=0;
 let APPLIED_FX_KEY='';
+let APPLIED_LIBRARY_APPEARANCE=null,LIBRARY_LAYOUT_CHANGE=null,LIBRARY_LAYOUT_GENERATION=0;
 let SOURCE_EDIT_REVISION=0,SOURCE_SYNCED_REVISION=0;
 const BRIDGE_READS=new Map(),SOURCE_CACHE=new WeakMap(),SEARCH_CACHE=new WeakMap(),HTML_CACHE=new WeakMap();
 const ROW_RENDER_CACHE=new WeakMap();
@@ -80,7 +81,7 @@ function trackModPage(mod,typedSource=''){
 const isRisk=(m)=>{const {verdict}=getAudit(m);return ['hold','check','avoid','ae-only'].includes(verdict)||(m.flags||[]).some(f=>['HARD_ESP','HARD_ESM','DLL','NEMESIS'].includes(f))};
 const isUpdate=(m)=>m.update&&m.update.verdict==='candidate'&&!(sourceTimePhase(m)&1)&&!(Number(m.update.retryAt)>Date.now()/1000);
 const hasReleaseAssets=m=>SOURCES?SOURCES.hasAssets(m):Boolean(m.update?.releaseAssets?.length||m.releaseAssets?.length);
-const providerLabel=p=>SOURCES?.label(p)||p||'Original provider';
+const providerLabel=p=>p==='lookup'?'Source needed':SOURCES?.label(p)||p||'Original provider';
 
 function detectedStatus(mod){
  const u=mod.update||{},source=getSrc(mod),phase=sourceTimePhase(mod);
@@ -312,13 +313,52 @@ function updateStorageIndicator(){const b=$('storageStatus');if(!b)return;b.text
 function flatGallery(){return STORE.prefs.libraryView==='gallery'&&STORE.prefs.galleryGrouping!=='chapters'}
 function updatePrefs(p){const wasFlat=flatGallery();STORE.prefs={...STORE.prefs,...p};save(false);applyAppearance();if(Object.keys(p).some(k=>['filter','insight','query','sort','collapsed','provider'].includes(k)))render();else if(wasFlat!==flatGallery()){renderList();paintNativeSelection()}}
 function setBodyPreference(key,value){if(document.body.dataset[key]!==value)document.body.dataset[key]=value}
+function cancelLibraryLayoutChange(){
+ const pending=LIBRARY_LAYOUT_CHANGE;if(!pending)return;
+ LIBRARY_LAYOUT_CHANGE=null;
+ if(pending.frame!==null)cancelAnimationFrame(pending.frame);
+ if(pending.list.dataset.layoutChange===pending.token)delete pending.list.dataset.layoutChange;
+}
+function ownsLibraryLayoutChange(pending){
+ return LIBRARY_LAYOUT_CHANGE===pending&&contextIsCurrent(pending.context)&&pending.list===$('modList')&&pending.list.isConnected&&pending.list.dataset.layoutChange===pending.token;
+}
+function prepareLibraryLayoutChange(next){
+ const previous=APPLIED_LIBRARY_APPEARANCE;
+ if(!previous||(previous.view===next.view&&previous.theme===next.theme))return;
+ const list=$('modList');
+ // Only bulk view/theme changes need this guard. Startup, empty libraries,
+ // reduced motion and density-only changes retain their existing paths.
+ if(document.body.dataset.layout!=='compact'||matchMedia('(prefers-reduced-motion: reduce)').matches||!list?.isConnected||!list.querySelector(':scope > .mod-row')){cancelLibraryLayoutChange();return}
+ cancelLibraryLayoutChange();
+ const pending={list,token:String(++LIBRARY_LAYOUT_GENERATION),context:profileContext(),frame:null};
+ LIBRARY_LAYOUT_CHANGE=pending;list.dataset.layoutChange=pending.token;
+ pending.frame=requestAnimationFrame(()=>{
+  if(LIBRARY_LAYOUT_CHANGE!==pending)return;
+  pending.frame=null;
+  if(!ownsLibraryLayoutChange(pending)){cancelLibraryLayoutChange();return}
+  pending.frame=requestAnimationFrame(()=>{
+   if(LIBRARY_LAYOUT_CHANGE!==pending)return;
+   pending.frame=null;
+   const current=ownsLibraryLayoutChange(pending);
+   cancelLibraryLayoutChange();
+   // Commit restored hover styling before a caller's existing two-frame
+   // completion boundary; no later timer hides restoration work.
+   if(current)void list.offsetHeight;
+  });
+ });
+}
 function applyAppearance(){
  // Native app preferences are global; Chronicle imports must not overwrite the
  // canonical desktop appearance. Standalone keeps its independent local theme.
  if(typeof window.modhunterRequestTheme==='function'&&['light','dark'].includes(window.ModhunterAppearance?.resolvedTheme))STORE.prefs.theme=window.ModhunterAppearance.resolvedTheme==='light'?'snow':'night';
+ const appearance={view:STORE.prefs.libraryView==='gallery'?'gallery':'list',theme:STORE.prefs.theme==='snow'?'snow':'night'};
+ // The native host can set body theme before its synchronous appearance event.
+ // Compare our last applied pair and arm before any library layout read.
+ prepareLibraryLayoutChange(appearance);
  applyLibraryAppearance();setBodyPreference('theme',STORE.prefs.theme==='snow'?'snow':'night');setBodyPreference('density',STORE.prefs.density==='comfy'?'comfy':'compact');$('effectSelect').value=STORE.prefs.effect;$('soundToggle').textContent=STORE.prefs.sound?'♫':'♪̸';$('soundToggle').title=STORE.prefs.sound?'Mute sounds':'Enable sounds';$('soundToggle').setAttribute('aria-label',STORE.prefs.sound?'Effect sounds on':'Effect sounds off');$('themeToggle').textContent=STORE.prefs.theme==='snow'?'☾':'◐';setBodyPreference('focus',STORE.prefs.focus?'yes':'no');$('focusToggle').textContent=STORE.prefs.focus?'◉ Exit Focus':'◎ Focus';$('focusToggle').setAttribute('aria-pressed',String(Boolean(STORE.prefs.focus)));$('focusTop').textContent=STORE.prefs.focus?'◉':'▦';$('focusTop').setAttribute('aria-pressed',String(Boolean(STORE.prefs.focus)));$('fxIntensity').value=STORE.prefs.vfxIntensity||'legendary';$('fxShake').checked=STORE.prefs.vfxShake!==false;$('fxTrails').checked=STORE.prefs.vfxTrails!==false;
  const fx={intensity:STORE.prefs.vfxIntensity||'legendary',shake:STORE.prefs.vfxShake!==false,trails:STORE.prefs.vfxTrails!==false,sound:STORE.prefs.sound},fxKey=JSON.stringify(fx);
  if(window.AetherFX&&APPLIED_FX_KEY!==fxKey){window.AetherFX.config(fx);APPLIED_FX_KEY=fxKey}
+ APPLIED_LIBRARY_APPEARANCE=appearance;
 }
 function counts(){if(RENDER_COUNTS)return RENDER_COUNTS;const c={total:DATA.items.length,done:0,review:0,risky:0,unlinked:0,favorites:0,pending:0,updates:0};for(const m of DATA.items){const status=getStatus(m);if(status==='done')c.done++;if(status==='review')c.review++;if(status==='pending')c.pending++;if(isRisk(m))c.risky++;if(!getSrc(m).verified)c.unlinked++;if(isFav(m))c.favorites++;if(isUpdate(m))c.updates++;}return{...c,left:c.total-c.done,percent:c.total?Math.round(c.done/c.total*100):0}}
 const SET=(id,val)=>{const el=$(id);if(el)el.textContent=val};
@@ -396,11 +436,11 @@ function toggleAllChapters(){if(flatGallery()){STORE.prefs.galleryGrouping='chap
 function drawInspector(m){
  const drawer=$('detailDrawer');
  if(!drawer.classList.contains('open'))INSPECTOR_RETURN_FOCUS=document.activeElement?.closest('.mod-row')?document.activeElement:$('row-'+m.id)?.querySelector('.inspect-btn')||document.activeElement;
- openedId=m.id;STORE.lastSelected=m.id;save(false);const row=getRow(m.id),audit=getAudit(m),source=getSrc(m);SET('drawerTitle',m.name);
+ openedId=m.id;STORE.lastSelected=m.id;save(false);const row=getRow(m.id),audit=getAudit(m),source=getSrc(m),author=modAuthor(m);SET('drawerTitle',m.name);
  const selected=(v)=>row.compat===v?'selected':'';const status=getStatus(m);
  const profileMode=Boolean(BRIDGE.active||DATA.offline),runtime=profileMode?txt(DATA.gameRuntime).trim():'1.5.97';
  const verifiedLabel=runtime&&runtime.toLowerCase()!=='unknown'?'Verified working on '+runtime:'Verified working in this setup';
- $('drawerContent').innerHTML=`${thumbnailUrl(m)?'<div class="drawer-preview">'+thumbnailMarkup(m,true)+'</div>':''}<div class="drawer-mod-meta"><span data-no-translate>${escapeHTML(modAuthor(m)||providerLabel(source.type))}</span><strong>Installed ${escapeHTML(m.installedVersion||'Unknown')}</strong></div><div class="drawer-priority"><span>MO2 PRIORITY #${m.priority}</span><span>${escapeHTML(m.group)}</span><span>${BRIDGE.active?'LIVE PROFILE':DATA.offline?'IMPORTED PROFILE':'SCREENSHOT '+m.screenshot}</span></div>
+ $('drawerContent').innerHTML=`${thumbnailUrl(m)?'<div class="drawer-preview">'+thumbnailMarkup(m,true)+'</div>':''}<div class="drawer-mod-meta"><span${author?' data-no-translate':''}>${escapeHTML(author||providerLabel(source.type))}</span><strong>Installed ${escapeHTML(m.installedVersion||'Unknown')}</strong></div><div class="drawer-priority"><span>MO2 PRIORITY #${m.priority}</span><span>${escapeHTML(m.group)}</span><span>${BRIDGE.active?'LIVE PROFILE':DATA.offline?'IMPORTED PROFILE':'SCREENSHOT '+m.screenshot}</span></div>
  <div class="drawer-section drawer-alert" data-alert="${escapeHTML(audit.verdict)}"><span class="drawer-label" style="margin:0">${(BRIDGE.active||DATA.offline)?'RUNTIME / FILE COMPATIBILITY CHECK':'1.5.97 COMPATIBILITY ADVISORY'}</span><strong>${escapeHTML(audit.verdict==='avoid'?'AVOID LATEST RELEASE':audit.verdict==='hold'?'HOLD / PICK LEGACY FILE':audit.verdict==='safe-file'?(profileMode?'BUILD LISTED':'SE BUILD LISTED'):audit.verdict==='check'?'VERIFY SPECIFIC BUILD':'NOT YET VERIFIED')}</strong><p>${escapeHTML(audit.note||((BRIDGE.active||DATA.offline)?'This source has not established complete compatibility. Check the required game runtime, script extender, dependencies and installation choices.':'The provided screenshots do not establish compatibility for a new release. Check the required game executable, SKSE, Address Library, BEES and masters before updating.'))}</p>${audit.evidence?`<a class="drawer-link" href="${escapeHTML(audit.evidence)}" target="_blank" rel="noopener noreferrer">↗ View supporting source</a>`:''}</div>
  <div id="modSourceDetails">${SOURCES?.details(sourceDetailMod(m),{live:BRIDGE.active})||''}</div>
  <div id="modInsightDetails">${INSIGHTS?.details(m,{live:BRIDGE.active,game:DATA.game,auditState:DATA.pluginAuditState||{}})||''}</div>
@@ -901,7 +941,7 @@ function activateLiveCatalog(c){
  CATALOG_REQUEST++;WORKSHOP_REQUEST++;GAME_REQUEST++;CATALOG_RENDER_REVISION++;LOCAL_PLAN_CACHE=null;
  if(newProfile&&(SAVE_TIMER!==null||(STORAGE.startsWith('mo2-update-arsenal:')&&PROGRESS_READY)))save();
  LIVE_CATALOG=c;DATA=c;ITEM_MAP=new Map(c.items.map(m=>[m.id,m]));GROUP_MAP=new Map(c.groups.map(g=>[g.id,g]));STORAGE='mo2-update-arsenal:v2:'+c.profileId;
- if(newExecutionContext){STARTUP_RETRY_AT=0;STARTUP_ERROR='';PROFILE_EPOCH++;SCAN_OPERATION++;QUICK_OPERATION++;WORKSHOP_OPERATION++;clearTimeout(SCAN_TIMER);SCAN_TIMER=null;SCAN_START_BUSY=false;LIVE_SCAN=null;WORKSHOP_BUSY=false;}
+ if(newExecutionContext){cancelLibraryLayoutChange();STARTUP_RETRY_AT=0;STARTUP_ERROR='';PROFILE_EPOCH++;SCAN_OPERATION++;QUICK_OPERATION++;WORKSHOP_OPERATION++;clearTimeout(SCAN_TIMER);SCAN_TIMER=null;SCAN_START_BUSY=false;LIVE_SCAN=null;WORKSHOP_BUSY=false;}
  if(newProfile){SOURCE_EDIT_REVISION=0;SOURCE_SYNCED_REVISION=0;clearTimeout(SAVE_TIMER);SAVE_TIMER=null;clearTimeout(PROGRESS_TIMER);PROGRESS_READY=false;GAME=null;GAME_SIGNATURE='';GAME_SEEN=-1;NATIVE_SELECTED='';focusedRowId='';STORE=structuredClone(BASE);load();for(const row of Object.values(STORE.rows))if(row.url)markSourceEdit('',row.url);}
  STORE.prefs.collapsed=(Array.isArray(STORE.prefs.collapsed)?STORE.prefs.collapsed:[]).filter(id=>GROUP_MAP.has(id));$('search').value=STORE.prefs.query;
  const currentRuntime=c.gameRuntime||'unknown';let changedRuntime=false,changedMods=0;
@@ -1663,7 +1703,7 @@ function importOfflineCatalog(c){
   throw Error('Not a valid local MO2 snapshot');
  closeModContextMenu(false);
  const previousProfile=DATA.profileId;
- if(SAVE_TIMER!==null)save();PROFILE_EPOCH++;CATALOG_REQUEST++;WORKSHOP_REQUEST++;GAME_REQUEST++;CATALOG_RENDER_REVISION++;LOCAL_PLAN_CACHE=null;
+ if(SAVE_TIMER!==null)save();cancelLibraryLayoutChange();PROFILE_EPOCH++;CATALOG_REQUEST++;WORKSHOP_REQUEST++;GAME_REQUEST++;CATALOG_RENDER_REVISION++;LOCAL_PLAN_CACHE=null;
  DATA=c;
  hideNativeWelcome();
  ITEM_MAP=new Map(c.items.map(m=>[m.id,m]));

@@ -2,7 +2,7 @@
 
 [Home](Home) · [Design standard](Design-System-and-Quality-Bar) · [Rust desktop](Rust-Desktop) · [Update Workshop](Update-Workshop) · [Watchtower](Watchtower)
 
-**Atelier 0.12 is the implemented visual update for Modhunter's Rust desktop and shared mod dashboard.** This page is being prepared with the release candidate. Packaging, final native acceptance, screenshots and publication remain pending until their exact candidate receipts are attached below.
+**Atelier 0.12 is the implemented visual update for Modhunter's Rust desktop and shared mod dashboard.** Candidate 6 completed native and browser acceptance and a full release-packaging dry run. Publication remains blocked by slow view changes in the complete 11,207-mod library; the measured checkpoint and remaining release steps are recorded below.
 
 ## Your library, with more control over the view
 
@@ -64,32 +64,69 @@ We studied the official [Sims 4 Mod Manager](https://gametimedev.de/S4MM/) and [
 
 ## Candidate verification and release evidence
 
-The authoritative pipeline is [native-rust.yml](https://github.com/Herbertofury/Modhunter/actions/workflows/native-rust.yml). **Pending** below means the candidate has not yet earned that claim; historical v0.11.0 results are not substituted for 0.12 evidence.
+The authoritative pipeline is [native-rust.yml](https://github.com/Herbertofury/Modhunter/actions/workflows/native-rust.yml). The completed checkpoint is **candidate 6**, commit [`2246748a6b02566d1521e2506d73b2cbbbfb81b8`](https://github.com/Herbertofury/Modhunter/tree/2246748a6b02566d1521e2506d73b2cbbbfb81b8), tested by [Actions run 43886408821](https://github.com/Herbertofury/Modhunter/actions/runs/43886408821). Its source was clean and the receipts bind the tested files and executable. A later performance repair must earn equivalent evidence for its own commit before publication.
 
 | Acceptance layer | Current evidence / status |
 | --- | --- |
-| Shared UI and source syntax | Implemented; local JavaScript syntax checked after the normal build placeholder expansion |
-| Focused source regressions | Local targeted checks: 76 frontend/source/mod-intelligence Node tests, 5 Atelier contracts and 7 Chronicle tests passed after the performance/grouping repairs; exact-head CI still required |
-| New gallery, filtering and keyboard interactions | Browser regression suite added; exact-head Chromium execution pending |
-| Equivalent 11,207-mod comparison | The first two candidates retained all records but showed blocking rendering regressions. A smaller compact DOM, keyed structural changes and full-card flex layout are implemented; the repaired candidate must pass the unchanged full-catalog comparison before release |
-| Actual native Windows WebView2 | Candidate launch, import, shell actions and screenshot acceptance pending |
-| Real Windows MO2 fixture | Candidate install/restore/profile acceptance pending; this does not substitute for the user's personal MO2 beta installation or accounts |
-| Installer / portable / MO2 checksums | Candidate pipeline packaging and downloadable-asset verification pending |
-| Final source identity | Release tag, commit and successful run URL to be filled from the released candidate |
-| Live GitHub Wiki | Mirror prepared; live publish/readback pending |
+| Source and lifecycle contracts | C6 contract job passed, including Rust, Python and JavaScript checks; 44 focused frontend runtime tests, 5 Atelier contracts and 33 release-validator self-tests passed |
+| Gallery, filtering, keyboard and packaged style policy | **11/11 actual Chromium Gallery tests passed**, including row reuse, saved grouping, context menus, thumbnail failure and Gallery sizing under the packaged style-nonce policy |
+| Before/after visual acceptance | **112 actual Chromium screenshots** retained: v0.11.0 versus C6, dark/light, desktop/narrow, public source artwork, dialogs, Workshop and preserved game surfaces |
+| Actual Windows desktop | Offline import/export passed; **16/16 MO2-connected desktop checks passed**, including native theme acknowledgement, 1440/900-wide layouts, Gallery, Details and focus restoration |
+| Native Watchtower | **26/26 checks passed** for owned page/session, download, privacy, browser-resource and notification fixtures, including the anonymous public HTTPS observation |
+| Official MO2 2.5.2 fixture | **30/30 checks passed**, including the production plugin, actual Qt binding, source/profile lifecycle, native archive installation and content recovery |
+| Exact Windows installer | **15/15 checks passed**: install, matching executable/archive-helper bytes, installed WebView2 launch, uninstall, registration removal and preservation of the external fixture profile |
+| Complete 11,207-mod native renderer | **16/16 completeness/runtime checks passed**; every ordered record remained laid out after import, search restoration and all six view/density transitions. Both configuration folders and temporary WebView2 policies were restored |
+| Release packaging | The clean C6 checkout and retained artifacts passed a full `prepare_release.py` dry run, producing all six release assets plus release notes |
+| Responsiveness | **Release blocker remains:** complete-library Gallery/List changes take several seconds in both Chromium and actual Windows WebView2; measurements below preserve that result |
+| Public release and live Wiki | Release/tag publication, public asset download verification, final image placement and live Wiki publish/readback remain pending |
 
-The local Linux executor could not launch Chromium because its IPC socket operation was denied. No local screenshot or browser pass is claimed from that attempt. Browser and Windows acceptance must come from an actual successful run.
+The run retains separate [Windows evidence](https://github.com/Herbertofury/Modhunter/actions/runs/43886408821/artifacts/14236615652), [MO2 evidence](https://github.com/Herbertofury/Modhunter/actions/runs/43886408821/artifacts/14235781341), [Chromium interaction evidence](https://github.com/Herbertofury/Modhunter/actions/runs/43886408821/artifacts/14235021901) and [visual comparison evidence](https://github.com/Herbertofury/Modhunter/actions/runs/43886408821/artifacts/14234813883). The original Windows artifact's downloaded bytes matched GitHub's SHA-256 and passed ZIP integrity checks. The portable, native-tested and installed executable hashes also matched. Final releases will carry the public receipt and screenshot allowlist in the Verification ZIP.
 
-### Actual screenshot record
+These results use owned fixtures. They do not establish the user's personal MO2 beta installation, authenticated Nexus account/download behavior, real FOMOD choices or in-game mod compatibility. The local Linux executor's Chromium launch was blocked by its IPC environment; the browser evidence above comes from actual Chromium in CI.
 
-Final images must be captured from the running application or the shipped shared dashboard, with fixture versus native data identified. The following are the intended versioned destinations; they are not finished screenshots yet.
+### Complete-library performance: unresolved
 
-| Capture | Intended destination / scope |
+Both runtimes use the same **11,207-record** snapshot from `test_frontend_responsiveness.catalog`, with `offline=True`, SHA-256 `afd855e4ac76f284630ffb4ed6d9dc37280113c9559aef4402516795b7fef0a0`. All records remain present and laid out, including the last searchable item; no cap, viewport virtualization or content-visibility skipping is used. Import is timed through the shipped import entrypoint and two animation frames; view/density changes use real controls and two frames. [Raw comparison and native receipts are retained in the run artifacts](https://github.com/Herbertofury/Modhunter/actions/runs/43886408821).
+
+| Operation | Chromium v0.11.0 median | Chromium C6 median | Windows WebView2 C6 raw sample |
+| --- | --- | --- | --- |
+| Complete renderer import | 4.016 s | 4.753 s | 3.705 s |
+| Exact last-item search | 0.530 s | 0.587 s | 0.637 s |
+| List density change | 0.814 s | 2.361 s | 1.817 s |
+| List → Gallery | New view | **17.399 s** | **13.759 s** |
+| Gallery density change | New view | **5.282 s** | **3.069 s** |
+| Gallery → List | New view | **22.428 s** | **8.612 s** |
+
+Chromium **157.0.8103.0** ran on Linux at 1440 × 900 with reduced motion, using one warmup and three measured rounds. The native result is **one raw sample** from WebView2 **156.0.4314.58**, at its actual 1028 × 633 viewport, DPR 1, light theme and normal motion; foreground ownership and document visibility were checked. Hardware, viewport and motion differ, so the two runtime columns are not a speedup comparison. The native sample measures Windows renderer import and interactions; Rust filesystem import, MO2/provider I/O and installation are outside that timing scope.
+
+The C6 measurements confirm a real responsiveness problem despite preserved functionality and complete results. Performance investigation remains open; a green functional job or a successful package build does not clear this blocker.
+
+### Actual screenshot record and publication slots
+
+The captures below already exist in the C6 artifacts and were inspected. Final versioned image placement remains pending; no planned path is presented as a published image.
+
+| Capture | Proven candidate artifact file | Final Wiki placement |
+| --- | --- | --- |
+| Before library | Visual: `before/library-1440-dark.png` — v0.11.0 baseline, same catalog | Pending selection/copy |
+| After library | Visual: `after/library-1440-dark.png` — C6, same catalog | Pending selection/copy |
+| Authentic source artwork | Visual: `after/public-projects-gallery-1440-dark.png` and light equivalent | Pending selection/copy |
+| Light and narrow layouts | Visual: `after/library-900-light.png`, `after/library-390-light.png` | Pending selection/copy |
+| Actual native wide/narrow | Windows: `live-mo2-smoke/desktop-window-1440-dark.png`, `desktop-window-900-light.png` | Pending selection/copy |
+| Actual native Gallery/Details | Windows: `live-mo2-smoke/desktop-window-gallery-light.png`, `desktop-window-inspector-light.png` | Pending selection/copy |
+| Actual installed application | Windows: `installer-smoke/native-launch/fixture-desktop.png` | Pending selection/copy |
+| Workshop, Watchtower, dialogs and games | Visual comparison and Chromium interaction artifacts retain the other captured states | Pending final selection |
+
+### Release slots
+
+The dry run staged the installer, portable ZIP, MO2 plugin ZIP, standalone HTML ZIP, Verification ZIP and `SHA256SUMS.txt`, plus release notes. Public links will be filled only after the final candidate passes, publication completes and downloaded assets are verified.
+
+| Final release field | Status |
 | --- | --- |
-| Before library | `screenshots/v0.12.0/before-library.png` — v0.11 baseline / same catalog |
-| After library | `screenshots/v0.12.0/after-library.png` — candidate / same catalog |
-| Gallery with source artwork | `screenshots/v0.12.0/after-gallery.png` — identified public source artwork fixture |
-| Light and narrow layouts | Versioned screenshots to be selected from the actual visual QA artifact |
-| Inspector, Workshop, native shell and dialogs | Versioned captures to be selected after actual interaction and native acceptance |
-
-Release publication may replace these planned names with the actual artifact names. The final record must identify the release commit and CI run, and state any account-, hardware- or personal-profile-specific behavior that remains unexecuted.
+| Release tag, final commit and successful run | Pending final candidate; C6 identity above remains the proven checkpoint |
+| GitHub Release URL | Pending publication |
+| Windows installer | `Modhunter_0.12.0_x64-setup.exe` staged; public download pending |
+| Portable build | `Modhunter-Rust-Windows.zip` staged; public download pending |
+| MO2 components | `Modhunter-0.12.0-MO2-Plugin.zip` staged; public download pending |
+| Standalone HTML | `Modhunter-0.12.0-Standalone.zip` staged; public download pending |
+| Verification and checksums | `Modhunter-0.12.0-Verification.zip` and `SHA256SUMS.txt` staged; public download pending |
+| Live Wiki readback | Pending publication of the final page and selected real screenshots |

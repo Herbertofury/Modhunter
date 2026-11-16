@@ -1,32 +1,18 @@
 name: Complete-library style diagnostics
-
 on:
   workflow_dispatch:
   push:
     branches: ['diagnostics/atelier-style']
-    paths: ['tests/visual_style_profile.py', 'tests/visual_trace_probe.py', 'tests/visual_startup_trace.py', '.github/workflows/atelier-style-profile.yml']
-
+    paths: ['tests/prepare_ci_fonts.py', 'tests/test_watchtower_native_ui.py', '.github/workflows/atelier-style-profile.yml']
 permissions:
   contents: read
-
 concurrency:
   group: modhunter-style-profile-${{ github.sha }}
   cancel-in-progress: true
-
 jobs:
-  motion-comparison:
+  cjk-rendering:
     runs-on: ubuntu-24.04
-    timeout-minutes: 12
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: reduced
-            motion: reduce
-            variants: 'control,zero-reduced-transitions'
-          - name: normal
-            motion: no-preference
-            variants: 'control,no-row-transitions'
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,25 +20,23 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Compare complete-library interactions under the actual motion preference
+      - name: Verify pinned CJK font and actual translated interface
         env:
-          PROFILE_VARIANTS: ${{ matrix.variants }}
-          PROFILE_MOTION: ${{ matrix.motion }}
-          PROFILE_NAME: ${{ matrix.name }}
+          MODHUNTER_REQUIRE_BROWSER: '1'
         run: |
-          python3 -m venv /tmp/modhunter-style
-          /tmp/modhunter-style/bin/pip install -q playwright==1.57.0
-          MODHUNTER_PROFILE_BROWSER=$(/tmp/modhunter-style/bin/python -c "import shutil; print(shutil.which('chromium') or shutil.which('chromium-browser') or '')")
-          if [[ -z "$MODHUNTER_PROFILE_BROWSER" ]]; then
-            echo "::error::The preinstalled Chromium engine used by the prior diagnostics is unavailable."
+          python3 -m venv /tmp/modhunter-cjk
+          /tmp/modhunter-cjk/bin/pip install -q playwright==1.57.0
+          if ! command -v chromium >/dev/null && ! command -v chromium-browser >/dev/null; then
+            echo '::error::The preinstalled Chromium engine is unavailable.'
             exit 1
           fi
-          PYTHONPATH=. /tmp/modhunter-style/bin/python tests/visual_style_profile.py --executable-path "$MODHUNTER_PROFILE_BROWSER" --output "native/target/motion-profile/$PROFILE_NAME" --mods 11207 --motion "$PROFILE_MOTION" --variants "$PROFILE_VARIANTS" --trace-variants '' --actions gallery,density,list
-      - name: Preserve both complete-library timing and geometry receipts
+          /tmp/modhunter-cjk/bin/python tests/prepare_ci_fonts.py --output native/target/cjk-proof/ci-fonts.json
+          PYTHONPATH=. MODHUNTER_QA_OUTPUT="$PWD/native/target/cjk-proof" /tmp/modhunter-cjk/bin/python tests/test_watchtower_native_ui.py
+      - name: Preserve font provenance and actual rendered locale proof
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Modhunter-Library-Motion-${{ matrix.name }}
-          path: native/target/motion-profile/
+          name: Modhunter-CJK-Font-Proof
+          path: native/target/cjk-proof/
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90

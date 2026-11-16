@@ -119,6 +119,21 @@ test('loading source evidence preserves unsaved inspector notes',async()=>{
  h.context.document.getElementById('drawerNote').value='Keep my unsaved setup notes';await h.api.loadSourceDetails(mod);await h.settle();
  assert.equal(h.nodes.get('drawerNote').value,'Keep my unsaved setup notes');
 });
+test('unknown sources have a readable label while raw identity and author names remain intact',()=>{
+ const h=harness({live:false,count:1}),data=catalog('source-labels',1);
+ data.offline=true;
+ Object.assign(data.items[0],{nexusId:0,author:'',source:{type:'lookup',verified:false,url:''},update:{}});
+ h.api.importOfflineCatalog(data);
+ const mod=h.qa.getCatalog().items[0];
+ assert.equal(h.api.getSrc(mod).type,'lookup');
+ assert.match(h.api.modHTML(mod),/data-provider-label="Source needed"/);
+ assert.match(h.nodes.get('providerFilter').innerHTML,/<option value="lookup">Source needed · 1<\/option>/);
+ h.api.drawInspector(mod);
+ assert.match(h.nodes.get('drawerContent').innerHTML,/<div class="drawer-mod-meta"><span>Source needed<\/span>/);
+ mod.author='Library';h.api.drawInspector(mod);
+ assert.match(h.nodes.get('drawerContent').innerHTML,/<div class="drawer-mod-meta"><span data-no-translate>Library<\/span>/);
+ assert.equal(mod.source.type,'lookup');
+});
 test('expired public source evidence replaces update actions with an actionable source review',async()=>{
  const h=harness({count:1});await h.settle();const data=catalog('a',1);
  data.items[0].source={type:'gitlab',verified:true,url:'https://gitlab.com/team/project'};
@@ -247,6 +262,97 @@ test('standalone appearance controls retain independent local persistence',async
  assert.equal(JSON.parse(h.context.localStorage.getItem('modhunter-offline-profile:v1:standalone-theme')).prefs.theme,'snow');
  h.nodes.get('themeToggle').onclick();
  assert.equal(h.context.document.body.dataset.theme,'night');
+});
+
+function normalLibraryLayout(h){
+ h.context.document.body.dataset.layout='compact';
+ h.context.matchMedia=()=>({matches:false});
+ const list=h.nodes.get('modList'),query=list.querySelector;
+ list.isConnected=true;
+ list.querySelector=selector=>selector===':scope > .mod-row'?{isConnected:true}:query(selector);
+ return {list,frames:()=>[...h.timers.values()].filter(timer=>timer.ms==='frame')};
+}
+
+test('bulk appearance restores row hover styling at the existing two-frame boundary',async()=>{
+ const h=harness({live:false});await h.settle();
+ const {list,frames}=normalLibraryLayout(h);let restorationReads=0;
+ Object.defineProperty(list,'offsetHeight',{get(){
+  assert.equal(list.dataset.layoutChange,undefined,'The restoration read must follow removal of suppression');
+  restorationReads++;return 200;
+ }});
+ assert.equal(list.dataset.layoutChange,undefined);
+ h.api.updatePrefs({density:'comfy'});
+ assert.equal(frames().length,0,'Density alone must not create a structural batch');
+ h.api.updatePrefs({libraryView:'gallery'});
+ const token=list.dataset.layoutChange;assert.ok(token);
+ const first=frames()[0];
+ h.api.updatePrefs({density:'compact'});
+ h.api.updatePrefs({libraryView:'gallery'});
+ assert.equal(list.dataset.layoutChange,token);
+ assert.equal(frames()[0],first,'Repeated appearance events must not postpone restoration');
+ await h.tick('frame');
+ assert.equal(list.dataset.layoutChange,token);
+ assert.equal(restorationReads,0);
+ await h.tick('frame');
+ assert.equal(list.dataset.layoutChange,undefined);
+ assert.equal(restorationReads,1,'Restoration work must finish inside the second frame');
+ assert.equal(frames().length,0);
+ h.context.matchMedia=()=>({matches:true});
+ h.api.updatePrefs({libraryView:'list'});
+ assert.equal(list.dataset.layoutChange,undefined,'Reduced motion uses its own transition policy');
+ assert.equal(frames().length,0);
+});
+
+test('an obsolete second frame cannot clear a newer native appearance batch',async()=>{
+ const h=harness({live:false});await h.settle();
+ const {list,frames}=normalLibraryLayout(h);
+ h.api.updatePrefs({libraryView:'gallery'});
+ await h.tick('frame');
+ const oldSecond=frames()[0].fn,oldToken=list.dataset.layoutChange;
+ const widthReadTokens=[];
+ Object.defineProperty(list,'clientWidth',{get(){widthReadTokens.push(list.dataset.layoutChange);return 0;}});
+ // The native preference engine writes the theme before its synchronous event.
+ h.context.modhunterRequestTheme=()=>true;
+ h.context.ModhunterAppearance={resolvedTheme:'light'};
+ h.context.document.body.dataset.theme='snow';
+ h.context.dispatchEvent({type:'modhunter-appearance-applied'});
+ const token=list.dataset.layoutChange;
+ assert.ok(token);assert.notEqual(token,oldToken);
+ assert.deepEqual(widthReadTokens,[token],'Native theme suppression must precede the library width read');
+ oldSecond();
+ assert.equal(list.dataset.layoutChange,token,'A canceled callback must not affect the current batch');
+ assert.equal(frames().length,1);
+ await h.tick('frame');await h.tick('frame');
+ assert.equal(list.dataset.layoutChange,undefined);
+});
+
+test('profile and execution changes cancel owned layout frames before advancing the epoch',async()=>{
+ for(const live of [false,true]){
+  const h=harness({live});await h.settle();
+  const {list,frames}=normalLibraryLayout(h),removed=[];
+  list.dataset=new Proxy(list.dataset,{deleteProperty(target,key){
+   if(key==='layoutChange')removed.push({token:target[key],epoch:h.api.state().profileEpoch});
+   return Reflect.deleteProperty(target,key);
+  }});
+  h.api.updatePrefs({libraryView:'gallery'});await h.tick('frame');
+  const oldSecond=frames()[0].fn,oldToken=list.dataset.layoutChange,oldEpoch=h.api.state().profileEpoch;
+  const replacement={...catalog('replacement'),offline:!live};
+  if(live){h.state.catalog=replacement;await h.qa.setCatalog(replacement)}
+  else h.api.importOfflineCatalog(replacement);
+  assert.deepEqual(removed[0],{token:oldToken,epoch:oldEpoch},'Cleanup must happen before the profile epoch advances');
+  const token=list.dataset.layoutChange;assert.ok(token);assert.notEqual(token,oldToken);
+  oldSecond();assert.equal(list.dataset.layoutChange,token);
+  await h.tick('frame');await h.tick('frame');
+  assert.equal(list.dataset.layoutChange,undefined);
+  if(live){
+   h.api.updatePrefs({libraryView:'gallery'});await h.tick('frame');
+   const stale=frames()[0].fn;
+   h.state.catalog={...replacement,executionEpoch:2};await h.qa.setCatalog(h.state.catalog);
+   assert.equal(list.dataset.layoutChange,undefined,'Same-view execution changes cancel without extending a batch');
+   stale();assert.equal(list.dataset.layoutChange,undefined);
+   assert.equal(frames().length,0);
+  }
+ }
 });
 
 test('a completed prior release does not hide the next update or manual file selection',async()=>{

@@ -30,6 +30,54 @@ class GalleryWorkspaceTests(unittest.TestCase):
     tearDown = harness.FrontendResponsivenessTests.tearDown
     connected = harness.FrontendResponsivenessTests.connected
 
+    def install_motion_probe(self, motion):
+        self.page.emulate_media(reduced_motion=motion)
+        self.context.add_init_script("""(() => {
+          const probe=window.__LIBRARY_MOTION_QA__={guardAdditions:0,guardChanges:[],backgroundTransitions:0,samples:[]};
+          new MutationObserver(records=>{for(const record of records){
+            if(record.target.id!=='modList')continue;
+            if(record.oldValue===null)probe.guardAdditions++;
+            if(probe.guardChanges.length<32)probe.guardChanges.push({old:record.oldValue,current:record.target.getAttribute('data-layout-change')});
+          }}).observe(document,{subtree:true,attributes:true,attributeOldValue:true,attributeFilter:['data-layout-change']});
+          document.addEventListener('transitionrun',event=>{
+            if(!event.target.matches?.('#modList > .mod-row')||event.pseudoElement||event.propertyName!=='background-color')return;
+            probe.backgroundTransitions++;
+            if(probe.samples.length<8)probe.samples.push({id:event.target.dataset.id,property:event.propertyName});
+          },true);
+          probe.clearTransitions=()=>{probe.backgroundTransitions=0;probe.samples=[]};
+          probe.snapshot=()=>{
+            const list=document.getElementById('modList'),rows=[...list.querySelectorAll(':scope > .mod-row')],style=getComputedStyle(rows[0]);
+            return {guard:list.getAttribute('data-layout-change'),view:document.body.dataset.libraryView,
+              theme:document.body.dataset.theme,density:document.body.dataset.density,
+              ids:rows.map(row=>row.dataset.id),allLaidOut:rows.every(row=>{const box=row.getBoundingClientRect();return box.width>0&&box.height>0&&getComputedStyle(row).contentVisibility==='visible'}),
+              transition:{property:style.transitionProperty,duration:style.transitionDuration,delay:style.transitionDelay},
+              guardAdditions:probe.guardAdditions,backgroundTransitions:probe.backgroundTransitions,samples:[...probe.samples]};
+          };
+        })()""")
+
+    def motion_endpoint(self):
+        # Read inside the same second-rAF callback used by the performance
+        # harness. A later poll could conceal a guard that restores too late.
+        return self.page.evaluate("""() => new Promise(resolve =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve(__LIBRARY_MOTION_QA__.snapshot()))))""")
+
+    def assert_motion_endpoint(self, state, expected_ids, original_transition):
+        self.assertIsNone(state['guard'], state)
+        self.assertEqual(state['ids'], expected_ids)
+        self.assertTrue(state['allLaidOut'], state)
+        self.assertEqual(state['transition'], original_transition, state)
+
+    def assert_live_row_hover(self, row='#row-item-0'):
+        self.page.locator('#workspaceTitle').hover()
+        idle="() => !document.getAnimations().some(animation=>animation.constructor.name==='CSSTransition'&&animation.effect?.target?.closest?.('#modList')&&animation.playState==='running')"
+        self.page.wait_for_function(idle)
+        self.page.evaluate('__LIBRARY_MOTION_QA__.clearTransitions()')
+        self.page.locator(row).hover()
+        self.page.wait_for_function('__LIBRARY_MOTION_QA__.backgroundTransitions>0')
+        self.page.locator('#workspaceTitle').hover()
+        self.page.wait_for_function(idle)
+        self.page.evaluate('__LIBRARY_MOTION_QA__.clearTransitions()')
+
     def open(self, count=9, group_count=1, style_nonce=None):
         catalog = harness.catalog(count=count)
         if group_count > 1:
@@ -129,6 +177,141 @@ class GalleryWorkspaceTests(unittest.TestCase):
         geometry(2)
         self.page.locator('#libraryList').click()
         self.assertEqual(self.page.locator('#modList .mod-row').count(), 12)
+
+    def test_reduced_motion_does_not_create_library_transitions(self):
+        self.install_motion_probe('reduce')
+        self.open(count=12)
+        self.assertTrue(self.page.evaluate("matchMedia('(prefers-reduced-motion: reduce)').matches"))
+        # Listen before the real controls run. A near-zero duration still creates
+        # CSS transitions (including on elements whose property defaults to all),
+        # so checking a settled screenshot or getAnimations() alone misses them.
+        self.page.evaluate("""async () => {
+          for (let frame=0; frame<3; frame++) await new Promise(requestAnimationFrame);
+          window.__LIBRARY_TRANSITIONS__={count:0,samples:[]};
+          document.getElementById('modList').addEventListener('transitionrun',event=>{
+            const record=window.__LIBRARY_TRANSITIONS__;
+            record.count++;
+            if(record.samples.length<8)record.samples.push({
+              target:event.target.getAttribute('class')||event.target.tagName,
+              property:event.propertyName,pseudo:event.pseudoElement
+            });
+          },true);
+        }""")
+
+        def state():
+            return self.page.evaluate("""async () => {
+              for (let frame=0; frame<3; frame++) await new Promise(requestAnimationFrame);
+              const rows=[...document.querySelectorAll('#modList > .mod-row')];
+              const source=rows[0].querySelector('.source-btn'),priority=rows[0].querySelector('.mod-priority');
+              const sourceStyle=getComputedStyle(source),priorityStyle=getComputedStyle(priority);
+              return {
+                view:document.body.dataset.libraryView,density:document.body.dataset.density,theme:document.body.dataset.theme,
+                ids:rows.map(row=>row.dataset.id),
+                allLaidOut:rows.every(row=>{const box=row.getBoundingClientRect();
+                  return box.width>0&&box.height>0&&getComputedStyle(row).visibility==='visible';}),
+                sourcePadding:sourceStyle.paddingTop,priorityFont:priorityStyle.fontSize,
+                firstHeight:rows[0].getBoundingClientRect().height,
+                transitions:structuredClone(window.__LIBRARY_TRANSITIONS__)
+              };
+            }""")
+
+        initial = state()
+        self.page.locator('#libraryGallery').click()
+        gallery = state()
+        self.page.locator('#densityToggle').click()
+        comfortable = state()
+        self.page.locator('#libraryList').click()
+        restored = state()
+        self.page.locator('#railTheme').click()
+        themed = state()
+
+        self.assertEqual(gallery['view'], 'gallery')
+        self.assertEqual(comfortable['density'], 'comfy')
+        self.assertEqual(restored['view'], 'list')
+        self.assertNotEqual(restored['theme'], themed['theme'])
+        # These are genuine changes to properties that the former universal
+        # duration rule implicitly animated, rather than a no-op control test.
+        self.assertNotEqual((initial['sourcePadding'], initial['priorityFont']),
+                            (gallery['sourcePadding'], gallery['priorityFont']))
+        self.assertNotEqual(initial['firstHeight'], restored['firstHeight'])
+        for snapshot in (initial, gallery, comfortable, restored, themed):
+            self.assertEqual(snapshot['ids'], [f'item-{index}' for index in range(12)])
+            self.assertTrue(snapshot['allLaidOut'], snapshot)
+            self.assertEqual(snapshot['transitions']['count'], 0, snapshot['transitions'])
+        self.assertEqual(self.page.evaluate('__LIBRARY_MOTION_QA__.guardAdditions'), 0)
+        self.assertIsNone(self.page.locator('#modList').get_attribute('data-layout-change'))
+
+    def test_normal_motion_bulk_changes_restore_hover_at_the_existing_frame_endpoint(self):
+        self.install_motion_probe('no-preference')
+        self.open(count=24)
+        self.assertFalse(self.page.evaluate("matchMedia('(prefers-reduced-motion: reduce)').matches"))
+        initial=self.motion_endpoint()
+        ids=[f'item-{index}' for index in range(24)]
+        original=initial['transition']
+        self.assertEqual(original,{'property':'background','duration':'0.12s','delay':'0s'})
+        self.assertEqual(initial['guardAdditions'],0,'Startup armed the bulk-change guard')
+        self.assert_motion_endpoint(initial,ids,original)
+        self.assert_live_row_hover()
+        previous=initial
+        for selector,expected_view in (('#libraryGallery','gallery'),('#railTheme','gallery'),('#libraryList','list')):
+            self.page.evaluate('__LIBRARY_MOTION_QA__.clearTransitions()')
+            self.page.locator(selector).click()
+            current=self.motion_endpoint()
+            self.assert_motion_endpoint(current,ids,original)
+            self.assertEqual(current['view'],expected_view)
+            self.assertGreater(current['guardAdditions'],previous['guardAdditions'],current)
+            self.assertEqual(current['backgroundTransitions'],0,current)
+            if selector=='#railTheme':self.assertNotEqual(current['theme'],previous['theme'])
+            if selector=='#libraryGallery':
+                additions=current['guardAdditions']
+                self.page.locator('#densityToggle').click()
+                density=self.motion_endpoint()
+                self.assert_motion_endpoint(density,ids,original)
+                self.assertEqual(density['guardAdditions'],additions,'Density-only change armed the guard')
+                self.assertNotEqual(density['density'],current['density'])
+                current=density
+            previous=current
+        self.assert_live_row_hover()
+        # Keyboard selection still reaches the real row and Aether selection
+        # after the structural guard has restored ordinary interaction styles.
+        options=self.page.evaluate('__ARSENAL_QA__.aether().options')
+        self.page.locator('#workspaceTitle').click()
+        self.page.keyboard.press('j')
+        self.assertTrue(self.page.locator('#row-item-0 .inspect-btn').evaluate('element=>element===document.activeElement'))
+        self.assertTrue(self.page.locator('#row-item-0').evaluate('element=>element.classList.contains("aether-target")'))
+        self.assertEqual(self.page.evaluate('__ARSENAL_QA__.aether().selected'),'item-0')
+        self.assertEqual(self.page.evaluate('__ARSENAL_QA__.aether().options'),options)
+        self.assertIsNone(self.page.locator('#modList').get_attribute('data-layout-change'))
+
+    def test_profile_replacement_restores_real_row_styles_after_a_pending_view_change(self):
+        self.install_motion_probe('no-preference')
+        self.open(count=12)
+        initial=self.motion_endpoint()
+        original=initial['transition']
+        changed=self.page.evaluate("""async()=>{
+          const list=document.getElementById('modList'),oldRow=list.querySelector('.mod-row');
+          document.getElementById('libraryGallery').click();
+          const oldToken=list.getAttribute('data-layout-change');
+          const next=structuredClone(__RESP__.catalog);
+          next.profileId='motion-profile-b';next.profileName='Motion replacement profile';next.executionEpoch=9;
+          next.items.forEach((item,index)=>{item.id='replacement-'+index;item.name='Replacement '+index});
+          __RESP__.catalog=next;__RESP__.generation++;
+          await __ARSENAL_QA__.setCatalog(next);
+          return {oldToken,currentToken:list.getAttribute('data-layout-change'),oldRowConnected:oldRow.isConnected};
+        }""")
+        self.assertIsNotNone(changed['oldToken'])
+        self.assertNotEqual(changed['oldToken'],changed['currentToken'],'Previous-profile guard token survived replacement')
+        self.assertFalse(changed['oldRowConnected'])
+        replacement_ids=[f'replacement-{index}' for index in range(12)]
+        self.assert_motion_endpoint(self.motion_endpoint(),replacement_ids,original)
+        self.assertEqual(self.page.evaluate('__ARSENAL_QA__.getCatalog().profileId'),'motion-profile-b')
+        # A new change must still work after cleanup, with no old callback
+        # disabling the replacement profile's guard or restoring it late.
+        self.page.evaluate('__LIBRARY_MOTION_QA__.clearTransitions()')
+        self.page.locator('#railTheme').click()
+        final=self.motion_endpoint()
+        self.assert_motion_endpoint(final,replacement_ids,original)
+        self.assertEqual(final['backgroundTransitions'],0,final)
 
     def test_provider_filter_composes_with_search_and_reset(self):
         self.open()

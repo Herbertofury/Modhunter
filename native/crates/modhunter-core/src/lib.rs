@@ -60,3 +60,6 @@ pub(crate) fn io_error(context: impl Into<String>, source: std::io::Error) -> Co
         source,
     }
 }
+
+/// Evidence-led, optional source migration without replacing installed mods.
+pub mod author_continuity;

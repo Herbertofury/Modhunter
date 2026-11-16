@@ -540,10 +540,9 @@ body[data-layout="compact"] .list-header .preview-heading,body[data-layout="comp
 body[data-layout="compact"] .list-header .preview-heading .mh-icon{width:14px;height:14px}
 .mh-visually-hidden{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip-path:inset(50%)!important;white-space:nowrap!important;border:0!important}
 body[data-layout="compact"] .mod-row{min-height:48px;transition:background .12s ease}
-/* Themes still guard every row. Flat Gallery paint leaves ordinary view
-   changes transition-free; only actual hot rows need their color held. */
-body[data-layout="compact"] #modList[data-layout-theme-change] > .mod-row,
-body[data-layout="compact"] #modList > .mod-row[data-layout-row-change]{transition:none!important}
+/* View/theme batches must not start a background fade for every installed mod.
+   app.js removes this owned marker within the measured two-frame interaction. */
+body[data-layout="compact"] #modList[data-layout-change] > .mod-row{transition:none!important}
 body[data-layout="compact"] .mod-row:hover{background:var(--vault-hover);transform:none;box-shadow:none}
 body[data-layout="compact"] .mod-row.selected,body[data-layout="compact"] .mod-row.native-selected{background:var(--vault-selection);box-shadow:inset 2px 0 var(--vault-green);border-left:0;padding-left:10px;outline:0}
 body[data-layout="compact"] .mod-row:focus-within{background:var(--vault-hover)}
@@ -588,8 +587,8 @@ body[data-layout="compact"][data-density="comfy"] .mod-title{font-size:13px}
 body[data-layout="compact"][data-library-view="gallery"] .list-header{display:none}
 body[data-layout="compact"][data-library-view="gallery"] .modlist{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start;align-content:flex-start}
 body[data-layout="compact"][data-library-view="gallery"] .chapterbar{flex:0 0 100%;width:100%;margin-top:8px;padding-left:0;height:28px;min-height:28px}
-body[data-layout="compact"][data-library-view="gallery"] .mod-row{display:grid;flex:0 0 calc((100% - 70px)/6);grid-template-columns:minmax(0,1fr) auto;gap:9px 8px;align-content:start;padding:0 13px 12px;border:1px solid var(--vault-line);border-radius:9px;background:var(--vault-surface);background-color:transparent;background-image:linear-gradient(var(--vault-surface),var(--vault-surface));overflow:hidden;min-height:273px;margin:0;box-shadow:0 2px 2px #0000000a;position:relative}
-body[data-layout="compact"][data-library-view="gallery"] .mod-row:hover{border-color:var(--vault-muted);background:var(--vault-surface);background-color:transparent;background-image:linear-gradient(var(--vault-surface),var(--vault-surface));box-shadow:0 4px 12px #00000017}
+body[data-layout="compact"][data-library-view="gallery"] .mod-row{display:grid;flex:0 0 calc((100% - 70px)/6);grid-template-columns:minmax(0,1fr) auto;gap:9px 8px;align-content:start;padding:0 13px 12px;border:1px solid var(--vault-line);border-radius:9px;background:var(--vault-surface);overflow:hidden;min-height:273px;margin:0;box-shadow:0 2px 2px #0000000a;position:relative}
+body[data-layout="compact"][data-library-view="gallery"] .mod-row:hover{border-color:var(--vault-muted);background:var(--vault-surface);box-shadow:0 4px 12px #00000017}
 body[data-layout="compact"][data-library-view="gallery"] .mod-row[data-detected="update"]{border-top:2px solid var(--vault-green)}
 body[data-layout="compact"][data-library-view="gallery"] .mod-art{grid-column:1/-1;grid-row:1;width:calc(100% + 26px);height:120px;margin:0 -13px 2px;border:0;border-bottom:1px solid var(--vault-line);border-radius:0;background:var(--vault-raised);display:flex;align-items:center;justify-content:center;font-size:9px;padding-top:26px}
 body[data-layout="compact"][data-library-view="gallery"] .mod-art:before{width:28px;height:28px;left:calc(50% - 14px);top:calc(50% - 25px)}

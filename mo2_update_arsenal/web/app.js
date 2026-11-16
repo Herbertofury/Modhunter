@@ -318,20 +318,9 @@ function cancelLibraryLayoutChange(){
  LIBRARY_LAYOUT_CHANGE=null;
  if(pending.frame!==null)cancelAnimationFrame(pending.frame);
  if(pending.list.dataset.layoutChange===pending.token)delete pending.list.dataset.layoutChange;
- if(pending.list.dataset.layoutThemeChange===pending.token)delete pending.list.dataset.layoutThemeChange;
- for(const row of pending.rows)if(row.dataset.layoutRowChange===pending.token)delete row.dataset.layoutRowChange;
 }
 function ownsLibraryLayoutChange(pending){
  return LIBRARY_LAYOUT_CHANGE===pending&&contextIsCurrent(pending.context)&&pending.list===$('modList')&&pending.list.isConnected&&pending.list.dataset.layoutChange===pending.token;
-}
-function guardLibraryLayoutRow(row,pending=LIBRARY_LAYOUT_CHANGE){
- if(!pending||pending.theme||!ownsLibraryLayoutChange(pending)||!row?.classList.contains('mod-row')||row.parentElement!==pending.list)return;
- if(row.dataset.layoutRowChange!==pending.token)row.dataset.layoutRowChange=pending.token;
- pending.rows.add(row);
-}
-function guardHotLibraryLayoutRows(pending){
- if(!pending||pending.theme||!ownsLibraryLayoutChange(pending))return;
- for(const row of pending.list.querySelectorAll(':scope > .mod-row:is(:hover,:focus-within,.selected,.native-selected,.aether-target)'))guardLibraryLayoutRow(row,pending);
 }
 function prepareLibraryLayoutChange(next){
  const previous=APPLIED_LIBRARY_APPEARANCE;
@@ -341,15 +330,12 @@ function prepareLibraryLayoutChange(next){
  // reduced motion and density-only changes retain their existing paths.
  if(document.body.dataset.layout!=='compact'||matchMedia('(prefers-reduced-motion: reduce)').matches||!list?.isConnected||!list.querySelector(':scope > .mod-row')){cancelLibraryLayoutChange();return}
  cancelLibraryLayoutChange();
- const pending={list,token:String(++LIBRARY_LAYOUT_GENERATION),context:profileContext(),frame:null,theme:previous.theme!==next.theme,rows:new Set()};
+ const pending={list,token:String(++LIBRARY_LAYOUT_GENERATION),context:profileContext(),frame:null};
  LIBRARY_LAYOUT_CHANGE=pending;list.dataset.layoutChange=pending.token;
- if(pending.theme)list.dataset.layoutThemeChange=pending.token;
- else guardHotLibraryLayoutRows(pending);
  pending.frame=requestAnimationFrame(()=>{
   if(LIBRARY_LAYOUT_CHANGE!==pending)return;
   pending.frame=null;
   if(!ownsLibraryLayoutChange(pending)){cancelLibraryLayoutChange();return}
-  guardHotLibraryLayoutRows(pending);
   pending.frame=requestAnimationFrame(()=>{
    if(LIBRARY_LAYOUT_CHANGE!==pending)return;
    pending.frame=null;
@@ -851,7 +837,6 @@ $('workspaceAppearance').onclick=()=>$('themeToggle').click();
 $('railHelp').onclick=()=>help(true);
 $('railCollections').onclick=()=>$('sidebar').classList.toggle('open');
 $('modList').addEventListener('error',event=>{if(event.target.matches('.mod-preview-image')){event.target.hidden=true;event.target.closest('.mod-art')?.classList.add('preview-unavailable')}},true);
-for(const type of ['pointerover','focusin'])$('modList').addEventListener(type,event=>guardLibraryLayoutRow(event.target.closest?.('.mod-row')),true);
 $('drawerContent').addEventListener('error',event=>{if(event.target.matches('.mod-preview-image'))event.target.hidden=true},true);
 $('modList').addEventListener('contextmenu',event=>{const row=event.target.closest('.mod-row');if(row){event.preventDefault();openModContextMenu(row,event.clientX,event.clientY)}});
 $('modList').addEventListener('keydown',event=>{if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10'){const row=event.target.closest('.mod-row');if(row){event.preventDefault();const bounds=event.target.getBoundingClientRect();openModContextMenu(row,bounds.left,bounds.bottom)}}});
@@ -1309,7 +1294,7 @@ $('workshopResults').addEventListener('click',e=>{
 
 function renderLiveStats(){if(!BRIDGE.active||!LIVE_CATALOG)return;const items=DATA.items;const found=items.filter(isUpdate).length;const reviewed=items.filter(m=>m.update?.verdict==='review').length;SET('liveUpdateCount',found+' update candidates');SET('liveCached',reviewed+' need version review · not installation approval');}
 let PAINTED_NATIVE='',PAINTED_TARGET='';
-function paintNativeSelection(){const target=focusedRowId||NATIVE_SELECTED;for(const id of new Set([PAINTED_NATIVE,PAINTED_TARGET,NATIVE_SELECTED,target])){const row=id&&$('row-'+id);if(row){guardLibraryLayoutRow(row);row.classList.toggle('native-selected',BRIDGE.active&&id===NATIVE_SELECTED);row.classList.toggle('aether-target',Boolean(target&&id===target))}}PAINTED_NATIVE=NATIVE_SELECTED;PAINTED_TARGET=target}
+function paintNativeSelection(){const target=focusedRowId||NATIVE_SELECTED;for(const id of new Set([PAINTED_NATIVE,PAINTED_TARGET,NATIVE_SELECTED,target])){const row=id&&$('row-'+id);if(row){row.classList.toggle('native-selected',BRIDGE.active&&id===NATIVE_SELECTED);row.classList.toggle('aether-target',Boolean(target&&id===target))}}PAINTED_NATIVE=NATIVE_SELECTED;PAINTED_TARGET=target}
 async function locateInMO2(m,el){if(!BRIDGE.active||!LIVE_CATALOG){toast('Open from MO2 to reveal a mod.');return}const profile=LIVE_CATALOG.profileId;el.disabled=true;
  try{const r=await bridgeRequest('POST','focus',{id:m.id,profileId:profile});if(LIVE_CATALOG?.profileId!==profile)return;NATIVE_SELECTED=m.id;paintNativeSelection();window.AetherFX?.reveal($('row-'+m.id));toast('⌖ '+(r.message||'MO2 jumped to '+m.name));}
  catch(ex){toast('MO2 navigation: '+ex.message)}finally{el.disabled=false}}

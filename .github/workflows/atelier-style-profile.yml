@@ -17,6 +17,16 @@ jobs:
   profile:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: controlled-arms
+            variants: 'control,cssom-geometry,no-universal-scrollbar,overflow-clip'
+            traces: ''
+          - name: selector-traces
+            variants: 'control'
+            traces: 'control'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -25,16 +35,19 @@ jobs:
         with:
           node-version: '22'
       - name: Profile all library records in actual Chromium
+        env:
+          PROFILE_VARIANTS: ${{ matrix.variants }}
+          PROFILE_TRACES: ${{ matrix.traces }}
         run: |
           python3 -m venv /tmp/modhunter-style
           /tmp/modhunter-style/bin/pip install -q playwright==1.57.0
           /tmp/modhunter-style/bin/python -m playwright install --with-deps chromium
-          PYTHONPATH=. /tmp/modhunter-style/bin/python tests/visual_style_profile.py --output native/target/style-profile --mods 11207
+          PYTHONPATH=. /tmp/modhunter-style/bin/python tests/visual_style_profile.py --output native/target/style-profile --mods 11207 --variants "$PROFILE_VARIANTS" --trace-variants "$PROFILE_TRACES"
       - name: Preserve selector measurements and traces
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Modhunter-Complete-Library-Style-Profile
+          name: Modhunter-Complete-Library-Style-Profile-${{ matrix.name }}
           path: native/target/style-profile/
           if-no-files-found: error
           retention-days: 30

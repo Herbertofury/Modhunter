@@ -30,9 +30,10 @@ import visual_release_qa as acceptance
 ROOT = acceptance.ROOT
 METRICS = ("ScriptDuration", "LayoutDuration", "RecalcStyleDuration", "TaskDuration",
            "LayoutCount", "RecalcStyleCount", "Nodes", "JSHeapUsedSize")
-CATEGORIES = ("-*,devtools.timeline,disabled-by-default-devtools.timeline,"
-              "disabled-by-default-blink.debug,"
-              "disabled-by-default-devtools.timeline.invalidationTracking,blink.user_timing")
+CATEGORIES = ("devtools.timeline", "disabled-by-default-devtools.timeline",
+              "disabled-by-default-blink.debug", "blink.user_timing")
+TRACE_CONFIG = {"recordMode": "recordUntilFull", "traceBufferSizeInKb": 512 * 1024,
+                "includedCategories": list(CATEGORIES), "excludedCategories": ["*"]}
 ACTIONS = {"gallery": "#libraryGallery", "density": "#densityToggle", "list": "#libraryList"}
 
 # These are approved, isolated experiments, not changes to the shipped cascade.
@@ -83,6 +84,50 @@ VARIANTS = {
       window.__STYLE_DIAGNOSTIC_STATE_MIRROR__=observer;
       if(!changedRules)throw Error('No state selectors transformed');
       return {changedRules,changedSelectors,description:'Localize view/density/group selectors to the actual workbench; preserve specificity'};
+    }""",
+    "cssom-geometry": """() => {
+      const list=document.getElementById('modList');
+      if(!list)throw Error('Expected #modList');
+      const original=CSSStyleDeclaration.prototype.setProperty;
+      let columns=Number.parseFloat(list.style.getPropertyValue('--library-columns'))||6;
+      let gap=Number.parseFloat(list.style.getPropertyValue('--library-gap-total'))||70;
+      const style=document.createElement('style');style.dataset.diagnosticVariant='cssom-geometry';
+      document.head.append(style);
+      style.sheet.insertRule('body[data-layout="compact"][data-library-view="gallery"] #modList > .mod-row {flex-basis:calc((100% - 70px) / 6)}');
+      const rule=style.sheet.cssRules[0];let previous='';
+      const update=()=>{const value=`calc((100% - ${gap}px) / ${columns})`;
+        if(value!==previous){original.call(rule.style,'flex-basis',value);previous=value;}};
+      update();
+      list.style.removeProperty('--library-columns');list.style.removeProperty('--library-gap-total');
+      CSSStyleDeclaration.prototype.setProperty=function(name,value,priority){
+        if(this===list.style&&(name==='--library-columns'||name==='--library-gap-total')){
+          const number=Number.parseFloat(value);
+          if(!Number.isFinite(number)||(name==='--library-columns'&&number<1))throw Error('Invalid gallery geometry');
+          if(name==='--library-columns')columns=number;else gap=number;
+          update();return;
+        }
+        return original.call(this,name,value,priority);
+      };
+      return {changedRules:1,description:'Preserve actual gallery sizing through one CSSOM flex-basis rule, avoiding two inherited custom-property writes'};
+    }""",
+    "no-universal-scrollbar": r"""() => {
+      let changedRules=0;const selectors=[];
+      const walk=sheet=>{for(let index=sheet.cssRules.length-1;index>=0;index--){
+        const rule=sheet.cssRules[index];
+        if(rule.selectorText&&/^\*?::-webkit-scrollbar(?:-thumb|-track)?$/.test(rule.selectorText)){
+          selectors.push(rule.selectorText);sheet.deleteRule(index);changedRules++;
+        }else if(rule.cssRules)walk(rule);
+      }};
+      for(const sheet of document.styleSheets)walk(sheet);
+      if(changedRules!==3)throw Error('Expected exactly three universal scrollbar rules, got '+changedRules);
+      return {changedRules,selectors,description:'Remove only universal scrollbar rules; retain specific panel scrollbars'};
+    }""",
+    "overflow-clip": """() => {
+      const style=document.createElement('style');style.dataset.diagnosticVariant='overflow-clip';
+      style.textContent=`body[data-layout="compact"] .mod-art{overflow:clip!important}
+        body[data-layout="compact"][data-library-view="gallery"] .mod-row{overflow:clip!important}`;
+      document.head.append(style);
+      return {changedRules:2,description:'Keep image/card cropping without scroll containers; preserve title ellipsis and scrollable panels'};
     }""",
 }
 
@@ -268,7 +313,10 @@ def run_arm(browser, html, fixture, variant, actions, output, instrumented, chec
             checkpoint(arm)
             if tracing:
                 start_root_observer(page)
-                tracing.send("Tracing.start", {"categories": CATEGORIES, "transferMode": "ReturnAsStream", "streamFormat": "json", "streamCompression": "none"})
+                # Per-node invalidation tracking flooded the first trace. Keep
+                # aggregate selector statistics and bounded trace storage;
+                # body/list mutations are captured by the small observer.
+                tracing.send("Tracing.start", {"traceConfig": TRACE_CONFIG, "transferMode": "ReturnAsStream", "streamFormat": "json", "streamCompression": "none"})
             before = metric_snapshot(metrics)
             started = time.perf_counter()
             action_error = None
@@ -320,7 +368,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=ROOT / "native/target/style-profile")
     parser.add_argument("--mods", type=int, default=11207)
-    parser.add_argument("--variants", default="control,no-zebra,svg-background,scoped-state")
+    parser.add_argument("--variants", default="control")
     parser.add_argument("--trace-variants", default="control")
     parser.add_argument("--actions", default="gallery,density,list")
     args = parser.parse_args()
@@ -342,7 +390,7 @@ def main():
         "sourceStatusAtStart": source_status(), "platform": platform.platform(), "assets": assets,
         "mods": args.mods, "fixtureSha256": hashlib.sha256(json.dumps(fixture, sort_keys=True).encode()).hexdigest(),
         "method": "One uninstrumented diagnostic trial per fresh-page CSS arm. Separate selector traces add overhead; never compare their absolute times to ordinary trials or release benchmarks. All records remain laid out; no virtualization, skipped layout, or caps.",
-        "tracingCategories": CATEGORIES, "ordinaryTrials": [], "selectorTraces": []}
+        "tracingCategories": CATEGORIES, "traceConfig": TRACE_CONFIG, "ordinaryTrials": [], "selectorTraces": []}
     receipt = args.output / "style-profile.json"
     write_json(receipt, proof)
     assert not proof["sourceStatusAtStart"], "Focused CI profile requires clean committed source"

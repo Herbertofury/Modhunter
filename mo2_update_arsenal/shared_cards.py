@@ -9,7 +9,6 @@ from contextlib import closing
 import json
 import os
 from pathlib import Path
-import sqlite3
 import sys
 
 PROFILE_BUDGET = 64 * 1024 * 1024
@@ -34,6 +33,12 @@ def shared_cards_path() -> Path:
 def inspect_shared_cards() -> dict:
     """Read one consistent main-slot snapshot, never create or migrate a store."""
     result = {'ok': True, 'mode': 'read-only', 'playable': False}
+    # MO2's embedded Python may lack the SQLite DLL. Optional discovery must
+    # never prevent the main plugin or independently bundled Rust transport loading.
+    try:
+        import sqlite3
+    except ImportError:
+        return {**result, 'state': 'unavailable', 'reason': 'Embedded Python SQLite support unavailable; native card transport remains independent'}
     try:
         path = shared_cards_path()
         if path.is_symlink():

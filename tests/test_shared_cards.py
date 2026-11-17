@@ -3,6 +3,8 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -29,6 +31,10 @@ class SharedCardsTests(unittest.TestCase):
     def test_empty_xdg_does_not_choose_different_store(self):
         with patch('mo2_update_arsenal.shared_cards.sys.platform','linux'), patch.dict(os.environ,{'XDG_DATA_HOME':''}):
             self.assertEqual(inspect_shared_cards()['state'],'unavailable')
+    def test_missing_embedded_sqlite_does_not_break_plugin_import(self):
+        script = "import sys; sys.modules['sqlite3']=None; from mo2_update_arsenal.bridge import ArsenalService; from mo2_update_arsenal.shared_cards import inspect_shared_cards; import json; print(json.dumps(inspect_shared_cards()))"
+        completed=subprocess.run([sys.executable,'-c',script],cwd=Path(__file__).resolve().parents[1],text=True,capture_output=True,check=True)
+        status=json.loads(completed.stdout);self.assertEqual(status['state'],'unavailable');self.assertIn('SQLite support unavailable',status['reason'])
     def test_absent_does_not_create_files(self):
         self.assertEqual(inspect_shared_cards()['state'],'absent');self.assertFalse(self.path.parent.exists())
     def test_reads_without_mutating_or_exposing_profile(self):

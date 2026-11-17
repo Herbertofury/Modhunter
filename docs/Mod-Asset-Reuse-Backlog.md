@@ -21,3 +21,7 @@ Rust read/seek FUZ metadata probe: validates container and RIFF/xWMA boundaries,
 4. Resolve SPEL -> MGEF and associated sounds/projectiles/art/meshes/textures/scripts. Design explicit supported effect adapters; do not execute Papyrus or native mod DLLs. Report unsupported effects.
 5. Evaluate Phantasm in-game still capture bridge separately from offline NIF rendering. No claim that its game-device texture is a portable web renderer.
 6. Native Windows/MO2 p95/p99 frame-time, I/O/CPU/memory comparisons for idle, scan, cancellation, playback and large real installs. Profile changes must invalidate old jobs and mappings.
+
+## Next implemented primitive: in-place audio stream
+
+`FuzAudio` now exposes only the embedded audio through Rust Read/Seek. It validates the envelope first, enforces a configurable byte budget with a 64 MiB hard maximum, caps each read at 64 KiB, refuses out-of-range seeks, keeps cancellation terminal and reports source truncation as an error. No writes, extraction, decoding or automatic scanning. Synthetic disk-file tests compare every streamed byte and verify source immutability. Integrating this with a resource-limited decoder and safe profile-bound handle provider is still required.

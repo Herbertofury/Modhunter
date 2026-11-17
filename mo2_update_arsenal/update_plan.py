@@ -6,8 +6,13 @@ The interactive MO2 install workflow remains a separate user-confirmed operation
 from __future__ import annotations
 
 from typing import Any
+import hashlib
+import json
+import math
 import time
 
+from .nexus_files import installed_file_context
+from .scanner import STARTUP_CACHE_SECONDS, fresh_timestamp
 from .source_adapters import PUBLIC_API_PROVIDERS, REVIEW_COMPATIBILITY_STATES, asset_matches_source, asset_proof
 
 RISK_FLAGS = frozenset({"DLL", "HARD_ESP", "HARD_ESM", "NEMESIS", "SKSE", "ROOT_BUILDER", "BEHAVIOR"})
@@ -16,6 +21,27 @@ RISK_VERDICTS = frozenset({"hold", "check", "avoid", "ae-only"})
 
 class PlanError(ValueError):
     """Update selection is missing explicit authorization or is no longer current."""
+
+
+def nexus_update_fresh(update: dict, now: float | None = None) -> bool:
+    now = time.time() if now is None else now
+    checked, expires = update.get("checkedAt"), update.get("expiresAt")
+    return (update.get("source") == "nexus-api" and update.get("freshness") in {"fresh", "cached"}
+            and fresh_timestamp(checked, now) and type(expires) in (int, float)
+            and math.isfinite(expires) and now < expires <= checked + STARTUP_CACHE_SECONDS)
+
+
+def nexus_file_proof(snapshot: dict, item: dict) -> str:
+    """Bind an open file review to the exact installed archive and current lineage."""
+    source = item.get("source") or {}
+    identity = {"profileId": snapshot.get("profileId"), "game": snapshot.get("game"),
+                "itemId": str(item.get("id") or ""), "nexusId": item.get("nexusId"),
+                "installedVersion": str(item.get("installedVersion") or ""),
+                "installedFileIdentity": installed_file_context(item),
+                "source": {"type": source.get("type"), "url": source.get("url")},
+                "fileEvidence": (item.get("update") or {}).get("fileEvidence")}
+    return hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":"),
+                                     ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
 def _positive_int(value: Any) -> int:
@@ -87,6 +113,8 @@ def plan_updates(snapshot: dict) -> dict:
             "id": str(item.get("id") or ""), "name": str(item.get("name") or "Unknown mod"),
             "nexusId": nid, "installedVersion": str(item.get("installedVersion") or ""),
             "latestVersion": str(update.get("latestVersion") or ""),
+            "fileEvidence": update.get("fileEvidence"),
+            "fileProof": nexus_file_proof(snapshot, item) if update.get("source") == "nexus-api" else None,
             "verdict": verdict, "lane": lane, "priority": item.get("priority"),
             "group": str(item.get("group") or ""), "risks": risks,
             "sourceUrl": source_url, "sourceVerified": bool(source_url),
@@ -141,8 +169,17 @@ def validate_batch_selection(snapshot: dict, payload: dict) -> list[dict]:
             raise PlanError(f"Nexus file association no longer matches {item.get('name', item_id)}")
         if str(item.get("installedVersion") or "") != str(raw.get("installedVersion") or ""):
             raise PlanError(f"Installed version changed for {item.get('name', item_id)}; rescan")
-        if (item.get("update") or {}).get("verdict") != "candidate":
+        update = item.get("update") or {}
+        if update.get("verdict") != "candidate":
             raise PlanError(f"{item.get('name', item_id)} is not a verified update candidate")
+        if not nexus_update_fresh(update):
+            raise PlanError("Nexus file evidence expired or is unavailable; review this project's files again")
+        evidence = update.get("fileEvidence") or {}
+        if (evidence.get("status") != "matched" or evidence.get("updated") is not True
+                or not evidence.get("installedFileIds") or not _positive_int(evidence.get("targetFileId"))):
+            raise PlanError("The installed archive has no verified replacement lineage; review its source first")
+        if raw.get("fileProof") != nexus_file_proof(snapshot, item):
+            raise PlanError("The reviewed installed archive or Nexus file lineage changed; reopen its file details")
         if raw.get("targetVersion") is not None and str(raw["targetVersion"]) != str((item.get("update") or {}).get("latestVersion") or ""):
             raise PlanError(f"Published target version changed for {item.get('name', item_id)}; review its files again")
         if raw.get("reviewed") is not True:

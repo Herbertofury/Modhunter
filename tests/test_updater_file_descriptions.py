@@ -18,7 +18,7 @@ class FileDescriptionsTest(unittest.TestCase):
             calls = []
             def native(cmd, payload, timeout=20):
                 calls.append((cmd, payload))
-                return {"ok": True, "files": [{"fileId": 778, "name": "Main Archive",
+                return {"ok": True, "file_updates": [], "files": [{"fileId": 778, "name": "Main Archive",
                         "version": "2.0", "category": 1,
                         "description": "<b>Skyrim SE</b> build. Requires <i>Address Library</i>."}]}
             service.call_ui = native

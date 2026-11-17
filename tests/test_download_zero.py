@@ -14,7 +14,8 @@ from unittest.mock import patch
 from mo2_update_arsenal.bridge import ArsenalService
 from mo2_update_arsenal.download_ids import download_id
 from mo2_update_arsenal.operation_journal import OperationJournal
-from test_update_install_queue import SNAPSHOT
+from test_update_install_queue import SNAPSHOT, files_evidence
+from mo2_update_arsenal.update_plan import nexus_file_proof
 
 class ZeroHandleTests(unittest.TestCase):
     def setUp(self):
@@ -34,12 +35,13 @@ class ZeroHandleTests(unittest.TestCase):
             else:
                 request.finish({"ok": False, "error": "unexpected fixture command"})
         self.service = ArsenalService("<html><!--__MO2_BOOT__--></html>", Path(self.temp.name)/"cache.json", native, copy.deepcopy(SNAPSHOT))
-        self.service.fetch_files = lambda *args, **kwargs: {"ok":True,"files":[{"fileId":55}]}
+        self.service.fetch_files = lambda *args, **kwargs: files_evidence()
         self.addCleanup(self.service.stop)
     def queue(self):
         return self.service.queue_reviewed_downloads({"profileId":SNAPSHOT["profileId"],
             "confirm":"QUEUE_REVIEWED_DOWNLOADS", "entries":[{"itemId":"live-test","modId":101,
-            "fileId":55,"installedVersion":"1.0","reviewed":True}]})
+            "fileId":55,"installedVersion":"1.0","reviewed":True,
+            "fileProof":nexus_file_proof(SNAPSHOT,SNAPSHOT["items"][0])}]})
     def api(self, path, payload=None, authorized=True):
         address = self.service.start()
         headers = {"Origin":address.rstrip("/"),"Content-Type":"application/json"}

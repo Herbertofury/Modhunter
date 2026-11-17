@@ -4,12 +4,12 @@
 
 ## Set up the complete Windows package
 
-Use **Modhunter-Rust-Windows.zip** from the current release when you want the desktop app and live MO2 updating together. Extract the complete archive into its own folder; keep its files together. The Windows installer installs the desktop app, while the portable package also contains the MO2 installer and readiness tools.
+Use the Windows installer or **Modhunter-Rust-Windows.zip** from the current release. Both desktop packages include the complete matching MO2 plugin for the in-app **MO2 Instances** manager. Extract the complete portable archive into its own folder and keep its files together.
 
 1. If upgrading, export a progress backup from the existing app before changing versions. Keep the old portable folder until the new version opens your collection correctly. MO2 plugin upgrades preserve existing Chronicle progress and retain the previous plugin outside MO2's plugin search folder.
-2. Close MO2. Run **Check_MO2_Readiness.bat** from the new package and select the folder containing **ModOrganizer.exe**. Before installation, the saved report's `readyToInstall` should be `true`; `plugin_installed` can show **REVIEW** when the plugin is absent or from an older release.
-3. Run **Install_MO2_Plugin.bat** and select that same MO2 folder. The installer verifies the package before replacing the plugin.
-4. Run the readiness checker again. Expect `plugin_installed` to pass, its installed and expected versions to match the verified package, and the report's `readyForConnectionTest` to be `true`. These static checks establish matching files and supported runtime observations; the next step establishes the live connection.
+2. Open **MO2 Instances** in the desktop toolbar. Let known-location discovery finish. Use **Add folder** or **Search drives** for portable installs and secondary modding locations.
+3. Select the applications you want, then **Review selected**. Read the exact destinations and shared-instance relationships. Close the selected MO2 application if the preview requests it, then confirm the installation. Existing plugin data and the previous plugin backup are retained.
+4. Check each result. The app verifies the installed plugin files before showing success. The portable package's read-only **Check_MO2_Readiness.bat** remains available for a detailed runtime report, and its manual installer remains supported. [MO2 Instances](MO2-Instances) explains selection, backup, cancellation and recovery.
 5. Start MO2, select the intended game and profile, and wait for it to finish loading. The bridge starts automatically; opening **Tools → Update Arsenal - Quest Board** is optional. Launch **Modhunter.exe**. If automatic discovery has not connected, select **Find MO2**; choose the intended session when more than one is running.
 6. Confirm the profile name and mod count. Keep Nexus signed in through MO2. Open **Updates** and run **Check for updates** to inspect the actual source results.
 
@@ -19,9 +19,17 @@ For OLED black regardless of the Windows theme, open **Watch Pages → Preferenc
 
 ## Everyday update workflow
 
-Browse the complete collection in **List** or **Gallery**, search by name, and narrow it with source and status filters. Colored chapter separators organize the collection; their counts and progress bars describe the manual checklist. Detected update status and verified installation remain separate.
+Browse the complete collection in **List** or **Gallery**. The library uses the window's available width and height, with a sticky column header and a compact bottom search/control bar. Search stays reachable while the list scrolls; **Ctrl+F** or **Ctrl+K** focuses it. Use source, status and health filters and choose which columns remain visible. Column choices are remembered on the current device.
 
-**Check for updates** refreshes source evidence. A successful current result, available update, failed check, sign-in requirement and manual page review each keep their own status. If a source fails, use its retry or original-page action; a failed check does not establish that the mod is current. Canceling a scan retains completed results and the last complete catalog.
+The **Bugs** column displays available checked evidence; unknown evidence is not shown as zero. Click its badge to open the inspector and refresh public Nexus evidence or open the original Bugs page. The displayed Nexus tab count is kept distinct from an established open/total issue count. Related plugin-health details and notes remain visible. Separator colors configured in MO2 carry through to the library and chapter navigation, including a color-only change while connected. Counts and progress bars describe the manual checklist; detected update status and verified installation remain separate.
+
+**Check for updates** evaluates source evidence for each installed component. Main files, optional files and addons on the same page can have different versions and update histories. An addon is not compared with the page's main-file version merely because both share a mod ID. The result identifies matched installed/replacement file evidence when available; missing or ambiguous identity requires review. Shared complete project-file evidence avoids repeating the same request for every installed component.
+
+Normal checks can reuse complete Nexus file evidence for up to four hours. Cached results retain their original check time and are labeled accordingly. Choose **Tools → Full audit** to request fresh evidence immediately. Expired or incomplete evidence cannot authorize a queued update; a file or installed identity change invalidates the old review, even when its version label is unchanged. An unsuccessful refresh preserves the last complete observation while reporting the new failure.
+
+The controlled 600-project/4,800-mod fixture measured repeated manual checks at **0.24 seconds**, compared with **1.32 seconds** previously, with repeated provider calls reduced from 600 to zero. The fixture retains all rows, artwork and authors and simulates 10 ms API latency; it does not measure a real account or PC. A cold exact-file check requires additional file/history data. Forced complete-evidence audits remained approximately level with the equivalent old workload. [Raw samples, request counts and method](https://github.com/Herbertofury/Modhunter/blob/main/native/evidence/nexus-file-checks-0.13.0.json).
+
+A successful current result, available update, failed check, sign-in requirement and manual page review each keep their own status. If a source fails, use its retry or original-page action; a failed check does not establish that the mod is current. Canceling a scan retains completed results and the last complete catalog.
 
 For an update with one validated eligible file, use **Update now**. If the project has multiple files, editions or unresolved compatibility, use **Choose file** and review the exact archive. Downloads stay with MO2; its normal installer and FOMOD choices remain available. The queue reports actual preparation, download, installation and verification results. A manual checklist tick does not install anything.
 
@@ -31,7 +39,7 @@ The recovery workflow retains actual mod-file backups. Use the exact recovery pr
 
 Use **Watchtower** to track an exact release page, creator page or changelog. Choose a named site session when access needs sign-in. The first successful read establishes a baseline; later page changes stay available for review. Optional due checks run while the app is open. A changed page remains a page observation until its exact archive and compatibility have been reviewed.
 
-The draft Creator Hub/source-continuity work is tracked separately in [PR #27](https://github.com/Herbertofury/Modhunter/pull/27). Automatic creator follows and cross-site migration management are not part of the 0.12.1 release contract.
+The draft Creator Hub/source-continuity work is tracked separately in [PR #27](https://github.com/Herbertofury/Modhunter/pull/27). Automatic creator follows and cross-site migration management are separate work.
 
 ## If the app is disconnected
 

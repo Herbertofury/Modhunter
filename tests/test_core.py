@@ -10,6 +10,7 @@ from unittest.mock import Mock
 
 from mo2_update_arsenal.model import take_snapshot, source_url, inspect_local_flags, identity
 from mo2_update_arsenal.scanner import Cache, NexusClient, UpdateScanner, version_verdict, local_mo2_candidates, safe_game_slug
+from nexus_fixture import files_payload, file_item
 
 class Mod:
     def __init__(self,name,nexus_id=0,ver='1.0',latest='1.2',separator=False,path=''):
@@ -67,7 +68,7 @@ class TestScanner(unittest.TestCase):
     def setUp(self):
         self.dir=tempfile.TemporaryDirectory();self.addCleanup(self.dir.cleanup)
         self.cache=Cache(Path(self.dir.name)/'cache.json')
-        self.snapshot={'game':'skyrimspecialedition','items':[{'nexusId':1,'installedVersion':'1.0'},{'nexusId':2,'installedVersion':'2.1'},{'nexusId':0,'installedVersion':'1.0'}]}
+        self.snapshot={'game':'skyrimspecialedition','items':[file_item(1),file_item(2, version='2.1'),{'nexusId':0,'installedVersion':'1.0'}]}
     def test_semver_conservative(self):
         self.assertEqual(version_verdict('v1.2','1.3'),'candidate')
         self.assertEqual(version_verdict('1.2.0','1.2'),'current')
@@ -78,21 +79,21 @@ class TestScanner(unittest.TestCase):
         def fetch(path):
             calls.append(path)
             if 'updated.json' in path:return [{'mod_id':1},{'mod_id':1234}]
-            if '/mods/1.json' in path:return {'version':'1.4','status':'published'}
+            if '/mods/1/files.json' in path:return files_payload('1.4')
             raise AssertionError('Should only request changed item')
         scanner=UpdateScanner(self.cache,NexusClient('test-key',request_json=fetch))
         result=scanner.scan(self.snapshot,'quick');self.assertEqual(result['records']['1']['verdict'],'candidate');self.assertEqual(result['records']['2']['verdict'],'unverified');self.assertEqual(result['queried'],1)
         self.assertEqual(len(calls),2)
     def test_full_makes_baseline(self):
         def fetch(path):
-            return {'version':'3.0','status':'published'}
+            return files_payload('3.0',mod_id=int(path.split('/mods/')[1].split('/')[0]))
         result=UpdateScanner(self.cache,NexusClient('test',request_json=fetch)).scan(self.snapshot,'deep')
         self.assertEqual(result['queried'],2)
         # A full raid-clear audit cannot rely on stale earlier cache entries.
         calls=[]
         def second_fetch(path):
             calls.append(path)
-            return {'version':'3.0','status':'published'}
+            return files_payload('3.0',mod_id=int(path.split('/mods/')[1].split('/')[0]))
         result2=UpdateScanner(self.cache,NexusClient('test',request_json=second_fetch)).scan(self.snapshot,'deep')
         self.assertEqual(result2['queried'],2)
         self.assertEqual(result2['cachedOrDeferred'],0)
@@ -108,7 +109,8 @@ class TestScanner(unittest.TestCase):
 
     def test_cached_profile(self):
         s={'items':[{'nexusId':5,'installedVersion':'1.0','latestKnownVersion':'2.0'}]}
-        self.assertEqual(local_mo2_candidates(s)['records']['5']['verdict'],'candidate')
+        self.assertEqual(local_mo2_candidates(s)['records']['5']['verdict'],'unverified')
+        self.assertEqual(local_mo2_candidates(s)['records']['5']['latestVersion'],'')
         with self.assertRaises(ValueError):safe_game_slug('../../evil')
 
 if __name__=='__main__':unittest.main()

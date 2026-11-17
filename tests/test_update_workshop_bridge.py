@@ -9,6 +9,8 @@ import urllib.request
 from pathlib import Path
 
 from mo2_update_arsenal.bridge import ArsenalService
+from mo2_update_arsenal.update_plan import nexus_file_proof
+from nexus_fixture import review_payload, with_lineage
 
 
 PROFILE = {"profileId": "profile-a", "profileName": "Skyrim SE",
@@ -24,6 +26,11 @@ PROFILE = {"profileId": "profile-a", "profileName": "Skyrim SE",
                 "installedVersion": "1.0"},
            ], "groups": []}
 
+FILES = review_payload(101, [{"fileId": n, "name": f"File {n}", "version": "2.0", "category": 1}
+                            for n in (11, 12)], [(1, 11), (2, 12)])
+with_lineage(PROFILE["items"][0], FILES, 1)
+with_lineage(PROFILE["items"][1], FILES, 2)
+
 
 class WorkshopHTTPTests(unittest.TestCase):
     def setUp(self):
@@ -37,10 +44,7 @@ class WorkshopHTTPTests(unittest.TestCase):
         self.service = ArsenalService("<html><!--__MO2_BOOT__--></html>",
                                      Path(self.tmp.name) / "cache.json",
                                      native, json.loads(json.dumps(PROFILE)))
-        self.service.fetch_files = lambda mid: {
-            "ok": True, "modId": mid,
-            "files": [{"fileId": n, "name": f"File {n}"} for n in (11, 12)]
-        }
+        self.service.fetch_files = lambda mid: json.loads(json.dumps(FILES))
         self.addr = self.service.start()
 
     def tearDown(self):
@@ -66,7 +70,8 @@ class WorkshopHTTPTests(unittest.TestCase):
     def file(item="live-one", fid=11, version="1.0", risk=True):
         return {"itemId": item, "modId": 101, "fileId": fid,
                 "installedVersion": version, "reviewed": True,
-                "riskAcknowledged": risk}
+                "riskAcknowledged": risk,
+                "fileProof": nexus_file_proof(PROFILE, next(row for row in PROFILE["items"] if row["id"] == item))}
 
     def packet(self, entries):
         return {"profileId": "profile-a", "confirm": "QUEUE_REVIEWED_DOWNLOADS",

@@ -1888,6 +1888,11 @@ pub(crate) fn apply_global_appearance(app: &tauri::AppHandle) -> Result<()> {
     maintenance::apply_appearance(app)
 }
 
+pub(crate) fn appearance_settings(app: &tauri::AppHandle) -> Value {
+    let settings = maintenance::settings(app);
+    json!({"theme":settings.theme,"locale":settings.locale})
+}
+
 pub(crate) fn set_global_theme(app: &tauri::AppHandle, theme: &str) -> Result<()> {
     maintenance::set_theme(app, theme)
 }

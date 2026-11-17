@@ -11,6 +11,7 @@ import zipfile
 
 from mo2_update_arsenal.content_recovery import ArchiveRunner, ContentRunner, canonical_json, file_identity
 from mo2_update_arsenal.operation_journal import OperationJournal
+from mo2_update_arsenal.nexus_files import installed_file_context
 from test_content_recovery import Fixture
 
 
@@ -74,6 +75,7 @@ class MixedFixture(Fixture):
             "gameRuntime": "1", "itemId": row["id"], "name": name, "modName": name, "provider": "nexus",
             "modId": row["nexusId"], "fileId": did, "fileName": "owned-fixture.zip", "reviewed": True,
             "installedVersion": row["installedVersion"], "status": "complete", "riskReasons": [],
+            "installedFileIdentity": installed_file_context(row),
             "autoInstallRequested": armed, "installContextEpoch": self.service._install_intent_epoch}
 
     def page(self, name, *, review_content=False):

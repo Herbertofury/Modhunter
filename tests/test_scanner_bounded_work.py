@@ -9,11 +9,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 from mo2_update_arsenal.scanner import Cache, MissingAuth, NexusClient, QuotaDepleted, UpdateScanner
+from nexus_fixture import files_payload, file_item
 
 
 def catalog(count=12000):
     return {"game": "skyrimspecialedition", "items": [
-        {"id": f"mod-{i}", "nexusId": i + 1, "installedVersion": "1.0"} for i in range(count)]}
+        file_item(i + 1, ident=f"mod-{i}") for i in range(count)]}
 
 
 class BoundedNexusAuditTests(unittest.TestCase):
@@ -43,7 +44,7 @@ class BoundedNexusAuditTests(unittest.TestCase):
                     entered.set()
             if not release.wait(3):
                 raise AssertionError("Blocked provider fixture was not released")
-            return {"version": "2.0", "status": "published"}
+            return files_payload(mod_id=int(path.split('/mods/')[1].split('/')[0]))
 
         self.cache.set("skyrimspecialedition", 1, {"checkedAt": 99, "meta": {"version": "3.0"}})
 
@@ -80,10 +81,10 @@ class BoundedNexusAuditTests(unittest.TestCase):
 
         def fetch(path):
             calls.append(path)
-            return {"version": "2.0", "status": "published"}
+            return files_payload(mod_id=int(path.split('/mods/')[1].split('/')[0]))
 
         data = catalog(37)
-        data["items"].append({**data["items"][0], "id": "second-copy", "installedVersion": "2.0"})
+        data["items"].append(file_item(1, current=True, ident="second-copy"))
         result = UpdateScanner(self.cache, NexusClient("fixture", fetch)).scan(data, "deep")
         self.assertEqual(len(calls), 37)
         self.assertEqual(len(set(calls)), 37)
@@ -134,7 +135,7 @@ class BoundedNexusAuditTests(unittest.TestCase):
                 raise AssertionError("Cache-write fixture was not released")
             return write(*args, **kwargs)
 
-        scanner = UpdateScanner(self.cache, NexusClient("fixture", lambda _: {"version": "2.0"}))
+        scanner = UpdateScanner(self.cache, NexusClient("fixture", lambda _: files_payload()))
         with patch.object(self.cache, "set_for_scan", side_effect=blocked):
             worker = threading.Thread(target=lambda: results.append(scanner.scan(
                 catalog(1), "deep", cancel_event=cancel)))
@@ -160,14 +161,14 @@ class BoundedNexusAuditTests(unittest.TestCase):
             entered.set()
             if not release.wait(3):
                 raise AssertionError("Old scan fixture was not released")
-            return {"version": "2.0"}
+            return files_payload()
 
         older = UpdateScanner(self.cache, NexusClient("fixture", older_fetch))
         worker = threading.Thread(target=lambda: results.append(older.scan(catalog(1), "deep")))
         worker.start()
         try:
             self.assertTrue(entered.wait(2))
-            newer = UpdateScanner(self.cache, NexusClient("fixture", lambda _: {"version": "3.0"}))
+            newer = UpdateScanner(self.cache, NexusClient("fixture", lambda _: files_payload("3.0")))
             current = newer.scan(catalog(1), "deep")
             self.assertFalse(current["cancelled"])
         finally:

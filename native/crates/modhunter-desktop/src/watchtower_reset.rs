@@ -61,6 +61,9 @@ pub(super) fn status(app: &tauri::AppHandle) -> Value {
         "scheduled":state.scheduled.load(Ordering::Acquire),"lastCompletion":state.coordinator.last_report().ok().flatten()})
 }
 pub(super) fn execute(app: &tauri::AppHandle, kind: &str, value: &Value) -> Result<Value> {
+    crate::instances_windows::with_idle_installation(app, || execute_idle(app, kind, value))
+}
+fn execute_idle(app: &tauri::AppHandle, kind: &str, value: &Value) -> Result<Value> {
     let state = app
         .try_state::<ResetRuntime>()
         .ok_or("Application reset is unavailable in this isolated fixture.")?;

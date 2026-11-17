@@ -2,7 +2,8 @@
 import copy
 import unittest
 
-from mo2_update_arsenal.update_plan import PlanError, plan_updates, validate_batch_selection, risk_reasons
+from mo2_update_arsenal.update_plan import PlanError, plan_updates, validate_batch_selection, risk_reasons, nexus_file_proof
+from nexus_fixture import review_payload, with_lineage
 
 
 SNAP = {
@@ -19,10 +20,16 @@ SNAP = {
     ],
 }
 
+_files = review_payload(101, [{"fileId": 11, "version": "2.0", "category": 1},
+                             {"fileId": 12, "version": "2.0", "category": 3}], [(1, 11), (2, 12)])
+with_lineage(SNAP["items"][0], _files, 1)
+with_lineage(SNAP["items"][1], _files, 2)
+
 
 def choice(item="live-a", mod_id=101, file_id=11, version="1.0", risk=True):
     return {"itemId": item, "modId": mod_id, "fileId": file_id,
-            "installedVersion": version, "reviewed": True, "riskAcknowledged": risk}
+            "installedVersion": version, "reviewed": True, "riskAcknowledged": risk,
+            "fileProof": nexus_file_proof(SNAP, next((row for row in SNAP["items"] if row["id"] == item), {}))}
 
 
 def packet(*entries, profile="profile-alpha", confirm="QUEUE_REVIEWED_DOWNLOADS"):

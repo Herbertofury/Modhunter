@@ -16,6 +16,7 @@
   $('connect').textContent=busy.has('connect')?'CONNECTING…':connected?'LINKED':'CONNECT';
   $('connect').disabled=busy.has('connect');
   $('openWatchtower').disabled=busy.has('watchtower');
+  $('openInstances').disabled=busy.has('instances');
   $('discover').disabled=busy.has('discover');
   $('discover').textContent=busy.has('discover')?'FINDING…':'FIND MO2';
   $('importMo2').disabled=!!state.endpoint||!!state.importing||busy.has('importMo2')||busy.has('refreshProfile');
@@ -30,7 +31,7 @@
   for(const id of ['configureIni','configureMods','clearPaths','configureEslifierData'])$(id).disabled=!!state.importing||busy.has(id);
   $('clearEslifierData').disabled=!state.eslifierDataPath||!!state.importing||busy.has('clearEslifierData');
   $('disconnect').disabled=!state.endpoint&&!busy.has('connect')&&!busy.has('discover');
-  for(const [id,kind] of [['connect','connect'],['openWatchtower','watchtower'],['discover','discover'],['importMo2','importMo2'],['refreshProfile','refreshProfile'],['diagnostics','diagnostics'],['pluginAudit','pluginAudit'],['cancelImport','cancelImport'],['configureIni','configureIni'],['configureMods','configureMods'],['clearPaths','clearPaths'],['configureEslifierData','configureEslifierData'],['clearEslifierData','clearEslifierData']]){
+  for(const [id,kind] of [['connect','connect'],['openInstances','instances'],['openWatchtower','watchtower'],['discover','discover'],['importMo2','importMo2'],['refreshProfile','refreshProfile'],['diagnostics','diagnostics'],['pluginAudit','pluginAudit'],['cancelImport','cancelImport'],['configureIni','configureIni'],['configureMods','configureMods'],['clearPaths','clearPaths'],['configureEslifierData','configureEslifierData'],['clearEslifierData','clearEslifierData']]){
    const working=busy.has(kind)||(kind==='pluginAudit'&&auditing)||(kind==='cancelImport'&&!!state.cancelling);
    $(id).setAttribute('aria-busy',String(working));
   }
@@ -60,7 +61,7 @@
   return true;
  }
  async function command(kind,value){
-  const exclusive=['watchtower','connect','discover','diagnostics','importMo2','refreshProfile','pluginAudit','cancelImport','configureIni','configureMods','configureEslifierData','clearEslifierData'].includes(kind);
+  const exclusive=['instances','watchtower','connect','discover','diagnostics','importMo2','refreshProfile','pluginAudit','cancelImport','configureIni','configureMods','configureEslifierData','clearEslifierData'].includes(kind);
   if(exclusive&&busy.has(kind))return null;
   if(exclusive){busy.add(kind);render(state)}
   try{
@@ -72,7 +73,7 @@
   }catch(error){message(String(error),true,true);return null}
   finally{if(exclusive){busy.delete(kind);render(state)}}
  }
- for(const [id,kind,value] of [['openWatchtower','watchtower'],['openReadiness','readiness'],['newDash','new','dashboard'],['newSiege','new','siege'],['newRealm','new','realm'],['back','back'],['forward','forward'],['reload','reload'],['open','external'],['copy','copy'],['diagnostics','diagnostics'],['disconnect','disconnect'],['importMo2','importMo2'],['refreshProfile','refreshProfile'],['pluginAudit','pluginAudit'],['configureIni','configureIni'],['configureMods','configureMods'],['clearPaths','clearPaths'],['configureEslifierData','configureEslifierData'],['clearEslifierData','clearEslifierData']])$(id).onclick=()=>command(kind,value);
+ for(const [id,kind,value] of [['openInstances','instances'],['openWatchtower','watchtower'],['openReadiness','readiness'],['newDash','new','dashboard'],['newSiege','new','siege'],['newRealm','new','realm'],['back','back'],['forward','forward'],['reload','reload'],['open','external'],['copy','copy'],['diagnostics','diagnostics'],['disconnect','disconnect'],['importMo2','importMo2'],['refreshProfile','refreshProfile'],['pluginAudit','pluginAudit'],['configureIni','configureIni'],['configureMods','configureMods'],['clearPaths','clearPaths'],['configureEslifierData','configureEslifierData'],['clearEslifierData','clearEslifierData']])$(id).onclick=()=>command(kind,value);
  $('connect').onclick=()=>command('connect',$('endpoint').value.trim());
  $('discover').onclick=()=>command('discover');
  $('cancelImport').onclick=()=>command('cancelImport',{epoch:state.epoch,importOperationId:state.importOperationId});

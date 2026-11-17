@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from .source_registry import discover_local_source, source_record
+from .mo2_metadata import native_color, native_files, read_metadata
+from .nexus_files import archive_name
 
 COLORS = ("mint", "violet", "sky", "pink", "ochre", "green", "slate", "rose", "gold", "cyan", "blue")
 
@@ -68,6 +70,10 @@ class LocalMetadataCache:
 
 def identity(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8", "surrogatepass")).hexdigest()[:16]
+
+
+def content_hash(items_hash: str, groups: list[dict]) -> str:
+    return hashlib.sha256((items_hash + json.dumps(groups, sort_keys=True)).encode()).hexdigest()
 
 
 def call_str(obj: Any, method: str, fallback: str = "") -> str:
@@ -138,7 +144,15 @@ def take_snapshot(organizer: Any, target_runtime: str = "unknown", *,
         except (ValueError, TypeError):
             priority = len(items)
         if sep:
-            group = {"id": "g-" + identity(profile_id + "|" + name), "name": label, "startPriority": priority, "color": COLORS[len(groups) % len(COLORS)], "count": 0}
+            color_available, color = native_color(mod)
+            color_source = "mo2-native" if color is not None else None
+            if not color_available and (path := call_str(mod, "absolutePath")):
+                color = read_metadata(Path(path)).get("separatorColor")
+                color_source = "mo2-meta" if color is not None else None
+            group = {"id": "g-" + identity(profile_id + "|" + name), "name": label, "startPriority": priority,
+                     "mo2InternalName": name,
+                     "color": COLORS[len(groups) % len(COLORS)], "separatorColor": color,
+                     "separatorColorSource": color_source, "count": 0}
             groups.append(group)
             continue
         if group is None:
@@ -170,6 +184,10 @@ def take_snapshot(organizer: Any, target_runtime: str = "unknown", *,
         except Exception:
             enabled = False
         mod_path = call_str(mod, "absolutePath", "")
+        installed_files = native_files(mod)
+        fallback = read_metadata(Path(mod_path)) if installed_files is None and mod_path else {}
+        if installed_files is None:
+            installed_files = fallback.get("installedFiles", [])
         notes = call_str(mod, "notes")
         if mod_path and metadata_cache is not None:
             active_paths.add(mod_path)
@@ -195,6 +213,9 @@ def take_snapshot(organizer: Any, target_runtime: str = "unknown", *,
             "name": label,
             "installedVersion": version,
             "latestKnownVersion": latest,
+            "installedFiles": installed_files,
+            "installationFile": archive_name(call_str(mod, "installationFile") or fallback.get("installationFile", "")),
+            "ignoredVersion": call_str(mod, "ignoredVersion") or fallback.get("ignoredVersion", ""),
             "enabled": enabled,
             "nexusId": nexus_id,
             "screenshotNote": notes,
@@ -210,6 +231,7 @@ def take_snapshot(organizer: Any, target_runtime: str = "unknown", *,
     if metadata_cache is not None:
         metadata_cache.retain(active_paths)
     stamp = datetime.now(timezone.utc).isoformat()
+    items_hash = hashlib.sha256(json.dumps(items, sort_keys=True).encode()).hexdigest()
     return {
         "schemaVersion": 2,
         "catalogId": "mo2-live-" + profile_id,
@@ -222,7 +244,7 @@ def take_snapshot(organizer: Any, target_runtime: str = "unknown", *,
         "skseRuntime": "2.0.20" if target_runtime == "1.5.97" and game == "skyrimspecialedition" else "",
         "groups": groups,
         "items": items,
-        "build": {"count": len(items), "groups": len(groups), "verifiedLinks": sum(bool(i["source"]["verified"]) for i in items), "unresolvedLinks": sum(not bool(i["source"]["verified"]) for i in items), "contentHash": hashlib.sha256(json.dumps(items, sort_keys=True).encode()).hexdigest()},
+        "build": {"count": len(items), "groups": len(groups), "verifiedLinks": sum(bool(i["source"]["verified"]) for i in items), "unresolvedLinks": sum(not bool(i["source"]["verified"]) for i in items), "itemsHash": items_hash, "contentHash": content_hash(items_hash, groups)},
         "sources": [{"kind": "live-mobase", "name": "Mod Organizer 2", "timestamp": stamp}],
     }
 

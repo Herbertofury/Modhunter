@@ -234,6 +234,7 @@ fn approved_top(name: &str, directory: bool, roles: &[String]) -> bool {
                 | "watchtower.lock"
                 | "maintenance.json"
                 | "native-preferences.json"
+                | "mo2-instances.json"
         ) {
             return true;
         }
@@ -921,6 +922,22 @@ mod tests {
         fs::create_dir(&recovery).unwrap();
         fs::write(recovery.join("saved.bin"), b"do not remove").unwrap();
         fs::write(f.paths.config.join("watchtower.json"), b"{}").unwrap();
+        let external_plugin = f._temp.path().join("MO2/plugins/mo2_update_arsenal");
+        fs::create_dir_all(&external_plugin).unwrap();
+        fs::write(
+            external_plugin.join("progress.json"),
+            b"preserved plugin data",
+        )
+        .unwrap();
+        fs::write(
+            f.paths.config.join("mo2-instances.json"),
+            json!({
+                "roots":[external_plugin.parent().unwrap().parent().unwrap()],
+                "install":{"results":[{"pluginDirectory":external_plugin}]}
+            })
+            .to_string(),
+        )
+        .unwrap();
         let preview = c.preview().unwrap();
         assert_eq!(preview["roots"].as_array().unwrap().len(), 2);
         let s = f.schedule(&c);
@@ -935,6 +952,10 @@ mod tests {
             b"do not remove"
         );
         assert!(s.completion_report.exists());
+        assert_eq!(
+            fs::read(external_plugin.join("progress.json")).unwrap(),
+            b"preserved plugin data"
+        );
         let reopened = f.open();
         assert!(reopened.last_report().unwrap().is_some());
     }

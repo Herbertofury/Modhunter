@@ -6,6 +6,10 @@ The independent Mod Organizer 2 Python tool provides the live Update Arsenal das
 
 ### Installation
 
+In the desktop app, open **MO2 Instances** to discover your MO2 applications, select one or several destinations, review them, and install the matching bundled plugin. Both the Windows installer and portable desktop include the complete plugin resource. Existing plugin data and previous-plugin backups are retained. See [MO2 Instances](MO2-Instances.md) for shared global configurations, per-target results and stopping safely.
+
+The manual portable workflow remains available:
+
 Download **Modhunter-Rust-Windows.zip** from [Windows releases](https://github.com/Herbertofury/Modhunter/releases) and extract the complete archive. Close MO2, run `Check_MO2_Readiness.bat`, and select the folder containing `ModOrganizer.exe`. Before installation, the saved report's `readyToInstall` should be `true`; `plugin_installed` can show **REVIEW** for an absent or older plugin.
 
 Run `Install_MO2_Plugin.bat` and select the same folder. The installer includes both native helpers and preserves existing plugin data and a backup of the previous plugin. Rerun the readiness checker: `plugin_installed` should pass with matching installed and expected versions, and `readyForConnectionTest` should be `true`. See [Daily use](Daily-Use.md) for the complete setup sequence. The older ZIP in `dist/` belongs to the historical Electron release series.

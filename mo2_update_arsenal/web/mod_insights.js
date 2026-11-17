@@ -36,7 +36,15 @@ function bugLabel(bugs={}){
  if(bugs.state==='available')return n===null?'Bugs tab visible':'Bugs '+n;
  return({disabled:'Bug reports disabled',hidden:'Bug reports hidden',locked:'Bug reports locked',unavailable:'Bug check unavailable',unsupported:'Provider issues'})[bugs.state]||'Bugs unverified';
 }
-function chips(mod){
+function bugCount(mod){const bugs=mod.modHealth?.bugs||{};return isNexus(mod)&&bugs.state==='available'&&Number.isSafeInteger(bugs.displayedCount)&&bugs.displayedCount>=0?bugs.displayedCount:null}
+function bugCell(mod){
+ const bugs=mod.modHealth?.bugs||{},nexus=isNexus(mod),n=bugCount(mod),stale=bugs.freshness?.state==='stale';
+ const label=n!==null?n+' displayed':nexus?bugLabel(bugs):'Provider issues';
+ const tone=['disabled','hidden','locked'].includes(bugs.state)?'warning':stale?'muted':n!==null?'info':'neutral';
+ const detail=(bugs.reason||(nexus?'Refresh public Nexus evidence in the inspector.':'Review the original provider for issue reports.'))+' Checked: '+checked(bugs.checkedAt)+'. The displayed tab count is not an open/total count or proof of installation safety.';
+ return '<button type="button" class="mod-bugs insight-chip '+tone+'" data-insight-act="inspect" data-id="'+esc(mod.id)+'" data-bug-state="'+esc(bugs.state||'unknown')+'" title="'+esc(detail)+'" aria-label="'+esc('Bug evidence for '+mod.name+': '+label+(stale?' · stale':''))+'">'+esc(label+(stale?' · stale':''))+'</button>';
+}
+function chips(mod,{includeBugs=true}={}){
  const s=summary(mod),a=mod.localAnalysis||{},health=mod.modHealth||{},bugs=health.bugs||{},parts=[];
  const add=(label,tone,title)=>parts.push('<button type="button" class="insight-chip '+tone+'" data-insight-act="inspect" data-id="'+esc(mod.id)+'" title="'+esc(title)+'">'+esc(label)+'</button>');
  if(s.stale)add('ESLifier needs review','warning','Recorded source, output, or winning plugin changed. Open details before trusting the converted copy.');
@@ -53,7 +61,7 @@ function chips(mod){
  if(s.invalid)add('Plugin read issue','danger','Some plugin files are malformed, unreadable, unsupported, or changed during the scan.');
  if(s.unresolved)add('Winner unverified','muted','MO2 winning origin could not be matched to a known physical copy.');
  if(!s.plugins&&a.inventoryComplete===true)add('No plugin files','neutral','No root plugin files were found in this mod folder in the completed scan.');
- if(isNexus(mod)){
+ if(includeBugs&&isNexus(mod)){
   const old=bugs.freshness?.state==='stale';
   add(bugLabel(bugs)+(old?' · stale':''),['disabled','hidden','locked'].includes(bugs.state)?'warning':old?'muted':'info',
    (bugs.reason||'Refresh public Nexus evidence in the inspector.')+' Checked: '+checked(bugs.checkedAt)+'. The displayed tab count is not an open/total count or proof of installation safety.');
@@ -103,9 +111,9 @@ function details(mod,{live=false,game='',auditState={}}={}){
  if(list(a.warnings).length)html+='<ul class="insight-evidence">'+a.warnings.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>';
  return html+'</section>';
 }
-function matches(mod,filter){const s=summary(mod);return filter==='maintenance'?s.maintenance:filter==='esl-review'?s.eslReview:filter==='light'?Boolean(s.light||s.lightOverrides):filter==='stale-conversion'?s.stale>0:filter==='masters'?s.masterIssues>0:filter==='bugs-disabled'?['disabled','hidden','locked'].includes(s.bugState):filter==='bugs-unknown'?['unknown','unavailable'].includes(s.bugState):filter==='all'}
+function matches(mod,filter){const s=summary(mod);return filter==='maintenance'?s.maintenance:filter==='esl-review'?s.eslReview:filter==='light'?Boolean(s.light||s.lightOverrides):filter==='stale-conversion'?s.stale>0:filter==='masters'?s.masterIssues>0:filter==='bugs-reported'?(bugCount(mod)??0)>0:filter==='bugs-zero'?bugCount(mod)===0:filter==='bugs-disabled'?['disabled','hidden','locked'].includes(s.bugState):filter==='bugs-unknown'?['unknown','unavailable'].includes(s.bugState):filter==='all'}
 function searchText(mod){const s=summary(mod);return[list(mod.localAnalysis?.plugins).map(p=>[p.name,p.eligibility?.status,p.provenance?.state,...list(p.masterIssues).map(x=>x.name+' '+x.status)].join(' ')).join(' '),s.light?'already light esl':'',s.stale?'stale conversion eslifier update rebuild':'',s.lightOverrides?'light override eslified':'',bugLabel(mod.modHealth?.bugs),mod.modHealth?.page?.status].join(' ').toLowerCase()}
 function csv(mod){const s=summary(mod),known=!!mod.localAnalysis;return[known?s.light:'',known?s.full:'',known?s.lightOverrides:'',known?s.candidates:'',known?s.compaction:'',known?s.stale:'',known?s.masterIssues:'',mod.localAnalysis?.checkedAt||'',s.bugState,s.bugCount??'',mod.modHealth?.bugs?.checkedAt||'']}
-const api={summary,chips,details,matches,searchText,csv,bugLabel,isNexus};
+const api={summary,chips,details,matches,searchText,csv,bugLabel,bugCell,bugCount,isNexus};
 root.ModhunterInsights=api;if(typeof module==='object'&&module.exports)module.exports=api;
 })(typeof window==='object'?window:globalThis);

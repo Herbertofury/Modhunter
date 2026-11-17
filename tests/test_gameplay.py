@@ -44,7 +44,7 @@ class ChronicleTests(unittest.TestCase):
     def test_library_preferences_survive_restart_without_crossing_profiles_or_awarding_xp(self):
         rows = {'live-01': {'note': 'Keep the optional patch', 'favorite': True}}
         prefs = {'libraryView': 'gallery', 'galleryGrouping': 'all', 'provider': 'modrinth', 'navExpanded': True,
-                 'density': 'comfy', 'autoCheckOnLaunch': False, 'collapsed': ['chapter-1']}
+                 'density': 'comfy', 'autoCheckOnLaunch': False, 'collapsed': ['chapter-1'], 'insight': 'bugs-reported', 'sort': 'bugs'}
         self.assertTrue(self.ledger.set_progress(self.profile, rows, prefs, '1.5.97', {'live-01'})['ok'])
         other = 'Different MO2 profile'
         self.ledger.set_progress(other, {}, {'libraryView': 'list', 'galleryGrouping': 'chapters', 'provider': 'nexus',
@@ -63,11 +63,12 @@ class ChronicleTests(unittest.TestCase):
         for value in (True, 1, [], {}, 'javascript:alert(1)', 'unknown-provider', 'x' * 10000):
             with self.subTest(value_type=type(value).__name__):
                 self.ledger.set_progress(self.profile, {}, {'libraryView': value, 'galleryGrouping': value, 'provider': value,
-                                                            'navExpanded': value}, '', set())
+                                                            'navExpanded': value, 'insight': value}, '', set())
                 saved = self.ledger.progress(self.profile)['prefs']
                 self.assertNotIn('libraryView', saved)
                 self.assertNotIn('galleryGrouping', saved)
                 self.assertNotIn('provider', saved)
+                self.assertNotIn('insight', saved)
                 if isinstance(value, bool):
                     self.assertIs(saved['navExpanded'], value)
                 else:

@@ -23,11 +23,11 @@ function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={
  const state={catalog:catalog('a',count),generation:1,failSnapshots,progressRows,progressReadFailures,score:0,scan:{state:'idle'},defer:new Set()};
  const document={hidden:false,activeElement:null,addEventListener(){},querySelectorAll(){return[]},createElement:name=>element(name),getElementById:id=>node(id),querySelector:selector=>node(selector)};
  function element(id){
-  const classes=new Set();let html='';
+  const classes=new Set(),listeners=new Map();let html='';
   return{id,textContent:'',value:'',checked:false,disabled:false,hidden:true,dataset:{},writes:0,
    style:{setProperty(){}},classList:{add(...names){names.forEach(n=>classes.add(n))},remove(...names){names.forEach(n=>classes.delete(n))},contains:name=>classes.has(name),toggle(name,force){const on=force??!classes.has(name);on?classes.add(name):classes.delete(name);return on}},
    get innerHTML(){return html},set innerHTML(value){html=value;this.writes++},
-   getContext(){return{setTransform(){}}},addEventListener(){},setAttribute(){},removeAttribute(){},querySelector:selector=>node(id+' '+selector),querySelectorAll(){return[]},
+   getContext(){return{setTransform(){}}},addEventListener(type,listener){listeners.set(type,listener)},dispatchEvent(event){return listeners.get(event.type)?.(event)},setAttribute(){},removeAttribute(){},querySelector:selector=>node(id+' '+selector),querySelectorAll(){return[]},
    append(){},appendChild(){},remove(){},scrollIntoView(){},focus(){document.activeElement=this},getBoundingClientRect(){return{left:0,top:0,width:800,height:50}},
    // This transport harness does not parse HTML. Only the static footer has
    // modeled children; actual row replacement is covered in Chromium tests.
@@ -75,7 +75,8 @@ function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={
     const id=new URL('http://fixture/'+endpoint).searchParams.get('itemId');
     value={ok:true,profileId:c.profileId,itemId:id,update:state.sourceDetails||c.items.find(m=>m.id===id)?.update||{}};
    }
-   else if(endpoint==='update-plan'||endpoint==='update-plan?details=full')value={ok:true,profileId:c.profileId,profileName:c.profileName,summary:{candidates:c.items.length,total:c.items.length,review:0,manual:0,current:0,risky:0},items:c.items.map(m=>({...m,lane:'candidate',latestVersion:'2.0',risks:[]}))};
+   else if(endpoint.startsWith('files?'))value=state.fileReview||{ok:false,error:'No reviewed file fixture'};
+   else if(endpoint==='update-plan'||endpoint==='update-plan?details=full')value={ok:true,profileId:c.profileId,profileName:c.profileName,summary:{candidates:c.items.length,total:c.items.length,review:0,manual:0,current:0,risky:0},items:c.items.map(m=>({...m,lane:'candidate',latestVersion:m.update?.latestVersion||'',risks:[]}))};
    else if(endpoint==='scan'){
     if(method==='POST'){state.scan={state:'running',mode:body.mode,total:c.items.length};value={ok:true,profileId:c.profileId,state:'running'}}
     else value={ok:true,profileId:c.profileId,scan:structuredClone(state.scan)};
@@ -85,7 +86,7 @@ function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={
    return{ok:true,json:async()=>value};
   }finally{active.set(key,active.get(key)-1)}
  };
- const instrument='window.__RUNTIME__={setRows,libraryRowCacheOwner,clearLibraryRowCache,rememberFilteredLibraryRows,takeFilteredLibraryRow,cacheMap:()=>LIBRARY_DETACHED_ROWS,importJSON,attachNativeTracking,trackPageIntent,trackModPage,getSrc,modHTML,renderWorkshop,sourceLinksPending,requestLiveCatalog,bridgeRequest,scanLive,fastUpdateAll,refreshWorkshop,refreshDownloads,nextWorkshopCandidate,pollLiveBridge,updatePrefs,save,counts,filtered,render,importOfflineCatalog,scheduleSearchRender,analyzePlugins,refreshModHealth,drawInspector,loadModInsights,loadSourceDetails,sourceDetailMod,openFilePicker,closeFilePicker,exportWorkshop,state:()=>({connected:LIVE_CONNECTED,quick:QUICK_RUNNING,profileEpoch:PROFILE_EPOCH}),setRow:(id,value,invalidatePlan=true)=>{markSourceEdit(getRow(id).url,value.url);STORE.rows[id]=value;save(invalidatePlan)},setQuery:q=>{STORE.prefs.query=q;scheduleSearchRender()}};';
+ const instrument='window.__RUNTIME__={setRows,libraryRowCacheOwner,clearLibraryRowCache,rememberFilteredLibraryRows,takeFilteredLibraryRow,cacheMap:()=>LIBRARY_DETACHED_ROWS,importJSON,attachNativeTracking,trackPageIntent,trackModPage,getSrc,modHTML,sortMods,chapterColor,renderWorkshop,sourceLinksPending,requestLiveCatalog,bridgeRequest,scanLive,fastUpdateAll,refreshWorkshop,refreshDownloads,reviewWorkshopFile,queueWorkshop,workshopChoiceMatches,workshopChoices:()=>WORKSHOP_CHOICES,nextWorkshopCandidate,pollLiveBridge,updatePrefs,save,counts,filtered,render,importOfflineCatalog,scheduleSearchRender,analyzePlugins,refreshModHealth,drawInspector,loadModInsights,loadSourceDetails,sourceDetailMod,openFilePicker,closeFilePicker,exportWorkshop,state:()=>({connected:LIVE_CONNECTED,quick:QUICK_RUNNING,profileEpoch:PROFILE_EPOCH}),setRow:(id,value,invalidatePlan=true)=>{markSourceEdit(getRow(id).url,value.url);STORE.rows[id]=value;save(invalidatePlan)},setQuery:q=>{STORE.prefs.query=q;scheduleSearchRender()}};';
  const source=APP.replace('/*__POWERSHELL__*/','""').replace(/\}\)\(\);\s*$/,instrument+'\n})();');
  vm.createContext(context);vm.runInContext(SOURCES,context,{filename:'source_insights.js'});vm.runInContext(INSIGHTS,context,{filename:'mod_insights.js'});vm.runInContext(source,context,{filename:'app.js'});
  return{context,state,nodes,timers,calls,active,maximum,pending,nativeNavigations,api:context.__RUNTIME__,qa:context.__ARSENAL_QA__,
@@ -118,6 +119,30 @@ test('loading source evidence preserves unsaved inspector notes',async()=>{
  const h=harness();await h.settle();const mod=h.qa.getCatalog().items[0];h.api.drawInspector(mod);
  h.context.document.getElementById('drawerNote').value='Keep my unsaved setup notes';await h.api.loadSourceDetails(mod);await h.settle();
  assert.equal(h.nodes.get('drawerNote').value,'Keep my unsaved setup notes');
+});
+test('manual Nexus alternatives carry the exact fresh installed-file proof and stale same-version choices are pruned',async()=>{
+ const h=harness({count:1});await h.settle();const mod=h.qa.getCatalog().items[0],proof='a'.repeat(64);
+ h.state.fileReview={ok:true,itemId:mod.id,fileProof:proof,installedVersion:'1.0',targetVersion:'2.1',update:{...mod.update,latestVersion:'2.1',fileEvidence:{status:'matched',targetFileId:9}},files:[{fileId:9,name:'Optional patch',fileName:'optional.zip',version:'2.1',category:2,suggested:true}],reviewAdvice:{hasUniqueFileMatch:true}};
+ await h.api.reviewWorkshopFile(mod.id);
+ assert.match(h.nodes.get('filePickerFiles').innerHTML,/MATCHED INSTALLED FILE/);assert.doesNotMatch(h.nodes.get('filePickerFiles').innerHTML,/MATCHED MAIN FILE/);
+ const button={dataset:{fileId:'19',modId:'1',archiveName:'user-chosen-variant.zip',fileVersion:'2.1'},closest:()=>({querySelector:()=>({textContent:'User chosen alternate'})})};
+ await h.nodes.get('filePickerFiles').dispatchEvent({type:'click',target:{closest:()=>button}});
+ const choice=h.api.workshopChoices().get(mod.id);
+ assert.equal(choice.fileProof,proof);assert.equal(choice.fileId,19);assert.equal(choice.installedVersion,'1.0');assert.equal(choice.targetVersion,'2.1');
+ h.state.catalog.items[0].update.latestVersion='2.1';h.state.catalog.items[0].fileProof=proof;
+ await h.api.queueWorkshop();
+ const sent=h.calls.find(call=>call.endpoint==='update-queue');assert.ok(sent);assert.equal(sent.body.entries[0].fileProof,proof);assert.equal(sent.body.entries[0].fileId,19);
+ h.state.catalog.items[0].fileProof='b'.repeat(64);await h.api.refreshWorkshop();
+ assert.equal(h.api.workshopChoices().size,0);
+});
+test('queue dispatch rechecks fresh plan proof and leaves source asset review semantics intact',async()=>{
+ const h=harness({count:1});await h.settle();
+ h.api.workshopChoices().set('item-0',{kind:'nexus',itemId:'item-0',profileId:'a',installedVersion:'1.0',targetVersion:'2.0',fileProof:'a'.repeat(64),modId:1,fileId:9});
+ h.state.catalog.items[0].fileProof='b'.repeat(64);
+ await h.api.queueWorkshop();assert.equal(h.calls.filter(call=>call.endpoint==='update-queue').length,0);assert.equal(h.api.workshopChoices().size,0);
+ const row={lane:'candidate',installedVersion:'1.0',latestVersion:'2.0',fileProof:'b'.repeat(64)};
+ assert.equal(h.api.workshopChoiceMatches(row,{kind:'nexus',installedVersion:'1.0',targetVersion:'2.0'}),false);
+ assert.equal(h.api.workshopChoiceMatches(row,{kind:'source',installedVersion:'1.0',targetVersion:'2.0',assetProof:'owned-provider-proof'}),true);
 });
 test('unknown sources have a readable label while raw identity and author names remain intact',()=>{
  const h=harness({live:false,count:1}),data=catalog('source-labels',1);
@@ -214,6 +239,43 @@ test('row markup retains metadata whitespace while omitting formatting-only boun
    assert.equal(html.includes('legacy-assessment'),layout==='legacy');
   }
  }
+});
+
+test('Bugs sort keeps observed counts numeric and missing or blocked evidence last',async()=>{
+ const h=harness({count:5});await h.settle();const mods=h.qa.getCatalog().items;
+ h.context.document.body.dataset.layout='compact';
+ mods[0].modHealth={provider:'nexus',bugs:{state:'unknown',displayedCount:null}};
+ mods[1].modHealth={provider:'nexus',bugs:{state:'available',displayedCount:0}};
+ mods[2].modHealth={provider:'nexus',bugs:{state:'available',displayedCount:12}};
+ mods[3].modHealth={provider:'nexus',bugs:{state:'available',displayedCount:3}};
+ mods[4].modHealth={provider:'nexus',bugs:{state:'hidden',displayedCount:99}};
+ h.api.updatePrefs({sort:'bugs'});
+ assert.deepEqual(Array.from(h.api.sortMods(mods),mod=>mod.id),['item-2','item-3','item-1','item-0','item-4']);
+ const unknown=h.api.modHTML(mods[0]),zero=h.api.modHTML(mods[1]);
+ assert.match(unknown,/class="mod-bugs insight-chip neutral"/);assert.match(unknown,/>Bugs unverified<\/button>/);assert.doesNotMatch(unknown,/>0 displayed</);
+ assert.match(zero,/>0 displayed<\/button>/);assert.match(zero,/not an open\/total count/);
+ h.api.updatePrefs({insight:'bugs-zero'});assert.deepEqual(Array.from(h.api.filtered(),mod=>mod.id),['item-1']);
+ h.api.updatePrefs({insight:'bugs-reported'});assert.deepEqual(Array.from(h.api.filtered(),mod=>mod.id),['item-2','item-3']);
+});
+
+test('actual MO2 separator RGBA overrides palette without admitting arbitrary CSS',()=>{
+ const h=harness({live:false,count:1});
+ assert.equal(h.api.chapterColor({color:'mint',separatorColor:'#19A8D480'}),'#19A8D480');
+ assert.equal(h.api.chapterColor({color:'mint',separatorColor:'#12345600'}),'#12345600');
+ const fallback=h.api.chapterColor({color:'mint'});
+ for(const invalid of ['#12345','red;position:fixed','url(https://example.com/x)','#123456',null,{}])assert.equal(h.api.chapterColor({color:'mint',separatorColor:invalid}),fallback);
+});
+
+test('per-device list column choices survive view, density, and profile changes',async()=>{
+ const h=harness({count:3});await h.settle();
+ h.context.localStorage.setItem('modhunter-library-columns:v1',JSON.stringify(['art','health','name','actions','invented']));
+ h.context.dispatchEvent({type:'storage',key:'modhunter-library-columns:v1'});
+ assert.equal(h.context.document.body.dataset.libraryHiddenColumns,'art health');
+ assert.match(h.context.document.body.dataset.libraryColumns,/name/);assert.match(h.context.document.body.dataset.libraryColumns,/actions/);
+ h.api.updatePrefs({libraryView:'gallery',density:'comfy'});h.api.updatePrefs({libraryView:'list'});
+ await h.qa.setCatalog(catalog('another-profile',3));
+ assert.equal(h.context.document.body.dataset.libraryHiddenColumns,'art health');
+ assert.equal(h.qa.getCatalog().items.length,3);
 });
 
 test('gallery geometry reuses one card rule without inherited subtree writes',async()=>{

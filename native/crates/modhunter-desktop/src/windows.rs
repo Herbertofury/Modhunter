@@ -178,6 +178,36 @@ pub(crate) fn inspect_available_instances() -> Result<Value> {
     ))
 }
 
+pub(crate) fn instance_discovery_hints(app: &tauri::AppHandle) -> Vec<PathBuf> {
+    let Some(state) = app.try_state::<Runtime>() else {
+        return Vec::new();
+    };
+    let m = state.model.lock().unwrap_or_else(|e| e.into_inner());
+    let mut paths: Vec<PathBuf> = m.prefs.ini_path.iter().cloned().collect();
+    if let Some(profile) = &m.prefs.profile {
+        paths.extend(profile.ini_path.iter().cloned());
+        paths.push(profile.modlist_path.clone());
+    }
+    paths
+}
+
+pub(crate) fn connect_verified_instance(
+    app: &tauri::AppHandle,
+    endpoint: &str,
+    expected_profile_id: &str,
+) -> Result<Value> {
+    let state = app.state::<Runtime>();
+    let epoch = state.epoch.fetch_add(1, Ordering::AcqRel) + 1;
+    let health = state.client.probe(endpoint).map_err(err)?;
+    if health.profile_id != expected_profile_id {
+        return Err(
+            "This MO2 session changed profile. Refresh the instance list and choose it again."
+                .into(),
+        );
+    }
+    connect_with_health(app, health, epoch)
+}
+
 impl Runtime {
     fn snapshot(&self) -> Value {
         let m = self.model.lock().unwrap_or_else(|e| e.into_inner());
@@ -1383,6 +1413,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
     match kind {
         "state" => return Ok(json!({"ok": true, "state": state.snapshot()})),
         "watchtower" => crate::watchtower_windows::open(app, None)?,
+        "instances" => crate::instances_windows::open(app)?,
         "readiness" => crate::watchtower_windows::open(app, Some(json!({"action":"readiness"})))?,
         "ready" => {
             smoke_event(app, "shell-ready-command", json!({}));
@@ -1675,7 +1706,8 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![
             shell_command,
-            crate::watchtower_windows::watchtower_command
+            crate::watchtower_windows::watchtower_command,
+            crate::instances_windows::instances_command
         ])
         .setup(|app| {
             if let Some(path) = std::env::args().skip(1).find_map(|arg| {
@@ -1687,6 +1719,7 @@ pub fn run() {
                 return Ok(());
             }
             crate::watchtower_windows::setup(app.handle()).map_err(std::io::Error::other)?;
+            crate::instances_windows::setup(app.handle()).map_err(std::io::Error::other)?;
             let prefs_path = app.path().app_config_dir()?.join("native-preferences.json");
             let mut prefs: Preferences = std::fs::File::open(&prefs_path)
                 .ok()
@@ -1762,6 +1795,9 @@ pub fn run() {
             window.on_window_event(move |event| {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
+                    if crate::instances_windows::guard_close(&handle) {
+                        return;
+                    }
                     if closing.swap(true, Ordering::AcqRel) {
                         return;
                     }

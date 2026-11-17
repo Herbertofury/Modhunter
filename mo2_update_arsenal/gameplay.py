@@ -126,7 +126,7 @@ class Chronicle:
                 item["status"] = "pending"
             sanitized[mid] = item
         safe_prefs = {}
-        for k in ("filter", "query", "sort", "theme", "density", "effect", "sound", "focus", "collapsed", "autoCheckOnLaunch", "libraryView", "galleryGrouping", "provider", "navExpanded"):
+        for k in ("filter", "query", "sort", "theme", "density", "effect", "sound", "focus", "collapsed", "autoCheckOnLaunch", "libraryView", "galleryGrouping", "provider", "navExpanded", "insight"):
             v = prefs.get(k)
             if k in ("autoCheckOnLaunch", "navExpanded") and not isinstance(v, bool):
                 continue
@@ -135,6 +135,11 @@ class Chronicle:
             if k == "galleryGrouping" and (not isinstance(v, str) or v not in {"all", "chapters"}):
                 continue
             if k == "provider" and (not isinstance(v, str) or v not in LIBRARY_PROVIDER_FILTERS):
+                continue
+            if k == "insight" and (not isinstance(v, str) or v not in {
+                    "all", "maintenance", "esl-review", "light", "stale-conversion", "masters",
+                    "bugs-reported", "bugs-zero", "bugs-disabled", "bugs-unknown", "source-stale",
+                    "source-manual", "source-dependencies", "source-incompatible"}):
                 continue
             if isinstance(v, (bool, str)):
                 safe_prefs[k] = v[:300] if isinstance(v, str) else v

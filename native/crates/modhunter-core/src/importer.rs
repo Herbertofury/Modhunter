@@ -1,4 +1,4 @@
-use crate::ini::{Ini, decode_text};
+use crate::ini::{Ini, decode_text, qsettings_color};
 use crate::plugin_analysis::{PluginAnalyzer, PluginAuditRequest, PluginMod};
 use crate::{CancellationCheck, CoreError, check_cancelled, io_error};
 use chrono::{SecondsFormat, Utc};
@@ -388,6 +388,13 @@ impl ProfileImporter {
                         row.item["priority"].as_u64().unwrap_or_default() as usize,
                     ));
                     group_index = groups.len() - 1;
+                    groups[group_index]["separatorColor"] = row.item["separatorColor"].clone();
+                    groups[group_index]["separatorColorSource"] =
+                        if row.item["separatorColor"].is_string() {
+                            json!("mo2-meta")
+                        } else {
+                            Value::Null
+                        };
                 }
                 continue;
             }
@@ -538,7 +545,7 @@ impl ProfileImporter {
         let separator = e.name.to_lowercase().ends_with("_separator");
         let mut meta = Arc::new(Ini::default());
         let mut flags = Vec::<&str>::new();
-        if !e.foreign && !separator {
+        if !e.foreign {
             if let Some(actual) = actual {
                 let dir = mods_dir.join(actual);
                 match self.read_meta(&dir.join("meta.ini"), &mut stats) {
@@ -549,7 +556,11 @@ impl ProfileImporter {
                         e.name
                     )),
                 }
-                match inspect_dlls(&dir, &mut stats) {
+                match if separator {
+                    Ok(false)
+                } else {
+                    inspect_dlls(&dir, &mut stats)
+                } {
                     Ok(true) => flags.push("DLL"),
                     Ok(false) => {}
                     Err(ex) => warnings.push(format!(
@@ -628,6 +639,31 @@ impl ProfileImporter {
             "" => "?",
             s => s,
         };
+        let mut installed_files = Vec::new();
+        for (key, value) in meta.entries("installedfiles") {
+            if let Some(index) = key.strip_suffix("\\modid")
+                && index.parse::<usize>().is_ok_and(|n| n > 0)
+                && let Ok(mid) = value.parse::<u64>()
+                && let Some(fid) = meta
+                    .get("installedfiles", &format!("{index}\\fileid"))
+                    .and_then(|s| s.parse::<u64>().ok())
+                && mid > 0
+                && fid > 0
+                && mid <= 9_007_199_254_740_991
+                && fid <= 9_007_199_254_740_991
+            {
+                installed_files.push(json!({"modId":mid,"fileId":fid}));
+            }
+        }
+        installed_files.sort_by_key(|row| (row["modId"].as_u64(), row["fileId"].as_u64()));
+        let separator_color = qsettings_color(meta.general("color"));
+        if separator
+            && !meta.general("color").is_empty()
+            && separator_color.is_none()
+            && !meta.general("color").contains("\\x43\\0")
+        {
+            warnings.push(format!("{}: separator color has an unsupported Qt representation; retained the theme fallback", e.name));
+        }
         let audit = if mismatched_game {
             json!({"verdict":"check","note":"MO2 metadata identifies a different game; verify the source before updating","evidence":"MO2 per-mod gameName"})
         } else if !flags.is_empty() {
@@ -640,6 +676,8 @@ impl ProfileImporter {
                 "id":format!("live-{}", identity(&format!("{profile_id}|{}", name_identity(&e.name)))),
                 "mo2InternalName":e.name,"name":e.name,"installedVersion":version,
                 "latestKnownVersion":meta.general("newestversion"),"enabled":e.enabled,"nexusId":mod_id,
+                "installedFiles":installed_files,"installationFile":meta.general("installationfile").rsplit(['/', '\\']).next().unwrap_or(""),
+                "ignoredVersion":meta.general("ignoredversion"),"separatorColor":separator_color,
                 "priority":priority,"flags":flags,"groupId":"","group":"Imported load order",
                 "screenshotNote":notes.chars().take(4000).collect::<String>(),"author":meta.general("author"),
                 "source":source,"screenshot":0,"audit":audit,"offlineImported":true,
@@ -1115,6 +1153,79 @@ mod identity_tests {
 #[cfg(test)]
 mod worker_pool_tests {
     use super::*;
+
+    #[test]
+    fn separator_colors_and_installed_file_ids_survive_import_and_color_only_cache_changes() {
+        let fixture = tempfile::tempdir().unwrap();
+        let profile = fixture.path().join("profiles/Test");
+        let separator = fixture.path().join("mods/Custom_separator");
+        let patch = fixture.path().join("mods/Fishing Patch");
+        for path in [&profile, &separator, &patch] {
+            fs::create_dir_all(path).unwrap();
+        }
+        fs::write(
+            profile.join("modlist.txt"),
+            "+Fishing Patch\n-Custom_separator\n",
+        )
+        .unwrap();
+        fs::write(
+            fixture.path().join("ModOrganizer.ini"),
+            "[General]\ngameName=Skyrim Special Edition\n",
+        )
+        .unwrap();
+        fs::write(
+            separator.join("meta.ini"),
+            r"[General]
+color=@Variant(\0\0\0\x43\x1\x80\x80\x20\x20\xa0\xa0\xf0\xf0\0\0)
+",
+        )
+        .unwrap();
+        fs::write(
+            patch.join("meta.ini"),
+            r"[General]
+modid=42
+version=1.0.1
+installationFile=D:\Downloads\Fishing Patch.7z
+[installedFiles]
+1\modid=42
+1\fileid=700
+size=1
+",
+        )
+        .unwrap();
+        let request = ImportRequest {
+            modlist_path: profile.join("modlist.txt"),
+            ini_path: None,
+            mods_path: None,
+            workers: Some(2),
+        };
+        let importer = ProfileImporter::new();
+        let first = importer.import(&request).unwrap();
+        assert_eq!(first.catalog["groups"][0]["separatorColor"], "#20a0f080");
+        assert_eq!(
+            first.catalog["groups"][0]["separatorColorSource"],
+            "mo2-meta"
+        );
+        assert_eq!(
+            first.catalog["items"][0]["installedFiles"][0],
+            json!({"modId":42,"fileId":700})
+        );
+        assert_eq!(
+            first.catalog["items"][0]["installationFile"],
+            "Fishing Patch.7z"
+        );
+        fs::write(
+            separator.join("meta.ini"),
+            r"[General]
+color=@Variant(\0\0\0\x43\x1\x80\x80\x30\x30\xa0\xa0\xf0\xf0\0\0)
+",
+        )
+        .unwrap();
+        let changed = importer.import(&request).unwrap();
+        assert_eq!(changed.catalog["groups"][0]["separatorColor"], "#30a0f080");
+        assert_eq!(first.catalog["items"], changed.catalog["items"]);
+        assert!(changed.stats.metadata_cache_hits >= 1);
+    }
 
     #[test]
     fn changing_import_workers_releases_the_previous_idle_pool() {

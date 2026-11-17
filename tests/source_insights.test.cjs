@@ -11,6 +11,16 @@ test('each provider has its own release label and compact asset count enables re
   assert.ok(sources.chips(mod).includes(sources.label(provider)));
  }
 });
+test('exact installed-file lineage stays visible and searchable without substituting a project version',()=>{
+ const mod=row();mod.update={provider:'nexus',verdict:'candidate',latestVersion:'1.1',fileEvidence:{status:'matched',basis:'installed-file-id',installedFileIds:[144],installedFileName:'Optional fishing patch 1.0.zip',targetFileId:155,targetFileName:'Optional fishing patch 1.1.zip',targetVersion:'1.1',updated:true,reason:'Matched the installed optional file lineage.'}};
+ const html=sources.details(mod),chips=sources.chips(mod);
+ assert.match(html,/Matched file version/);assert.match(html,/Optional fishing patch 1.0.zip/);assert.match(html,/Optional fishing patch 1.1.zip/);
+ assert.match(html,/>144<\/dd>/);assert.match(html,/>155<\/dd>/);assert.match(html,/Installed file ID/);
+ assert.match(chips,/Installed file matched/);assert.match(sources.searchText(mod),/optional fishing patch 1.1.zip/);
+ mod.update.latestVersion=null;mod.update.verdict='review';mod.update.fileEvidence={status:'ambiguous',installedFileName:'Unknown optional archive.zip',installedFileIds:[],reason:'Two optional branches need explicit review.'};
+ assert.match(sources.chips(mod),/File choice needs review/);assert.match(sources.details(mod),/Multiple file matches need review/);assert.match(sources.details(mod),/Not established/);
+ assert.doesNotMatch(sources.details(mod),/Optional fishing patch 1.1.zip/);
+});
 test('an expired candidate visibly needs refresh and has no review action',()=>{
  const mod=row();mod.update.expiresAt=1;
  assert.equal(sources.state(mod).stale,true);assert.match(sources.details(mod,{live:true}),/Refresh needed/);

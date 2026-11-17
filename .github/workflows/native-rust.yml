@@ -46,6 +46,7 @@ jobs:
           cargo clippy --manifest-path native/Cargo.toml --workspace --all-targets --locked -- -D warnings
           python3 -m unittest discover -s tests -p 'test_*.py' -q
           node --check native/ui/shell.js
+          node --check native/ui/instances.js
           node --check native/ui/watchtower.js
           node --check native/ui/watchtower-review.js
           node --check native/ui/watchtower-maintenance.js
@@ -61,7 +62,11 @@ jobs:
           node --test tests/mod_insights.test.cjs
           node --test tests/source_insights.test.cjs
           node --test tests/frontend_runtime.test.cjs
+          node --test tests/instances_runtime.test.cjs
           node --test desktop/offline_mo2.test.cjs
+          python3 native/scripts/prepare_mo2_installer.py --self-test
+          node --check native/scripts/verify_instances_manager.cjs
+          node native/scripts/verify_instances_manager.cjs --self-test
           python3 native/scripts/prepare_release.py --self-test
           python3 native/scripts/mo2_smoke_plugin/modhunter_native_smoke/audit_probe.py --self-test
       - name: Exercise actual dashboard in Chromium
@@ -82,6 +87,8 @@ jobs:
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_gallery_workspace.py' -v
           PYTHONPATH=. /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_compact_completion.py' -v
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/test_watchtower_browser.py
+          PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/test_instances_browser.py
+          PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/test_library_workspace.py
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p test_watchtower_sources_ui.py -v
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/test_watchtower_native_ui.py
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/ci_font_rendering_qa.py
@@ -207,6 +214,13 @@ jobs:
       - name: Verify plugin installation and progress-preserving upgrades
         shell: pwsh
         run: ./native/scripts/test_plugin_installer.ps1
+      - name: Build the exact release CLI and verified MO2 installer resource
+        shell: pwsh
+        run: |
+          cargo build --manifest-path native/Cargo.toml --release --locked -p modhunter-core
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python native/scripts/prepare_mo2_installer.py --cli native/target/release/modhunter-cli.exe --qt-bridge native/target/qt-bridge/Release/modhunter-qt-bridge.dll --commit '${{ github.sha }}' --run-url '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Test native Windows code
         run: |
           cargo test --manifest-path native/Cargo.toml --workspace --locked
@@ -220,8 +234,11 @@ jobs:
         # Ship the same tested bytes in NSIS and portable. This single-format
         # release does not use Tauri's per-bundle-type updater identification.
         run: npx --yes @tauri-apps/cli@2.12.2 build --no-binary-patching
-      - name: Build portable Rust diagnostic CLI
-        run: cargo build --manifest-path native/Cargo.toml --release --locked -p modhunter-core
+      - name: Stage the same installer resources beside the tested executable
+        shell: pwsh
+        run: |
+          if (Test-Path native/target/release/mo2-installer) { Remove-Item -Recurse -Force native/target/release/mo2-installer }
+          Copy-Item -Recurse native/resources/mo2-installer native/target/release/mo2-installer
       - name: Verify the exact release CLI and packaged archive helper
         run: python native/scripts/verify_archive_review.py --cli native/target/release/modhunter-cli.exe --output native/target/archive-review-proof.json
       - name: Launch actual Windows WebView2 and import a fixture profile
@@ -230,6 +247,18 @@ jobs:
       - name: Verify Watchtower sessions and page observations in actual WebView2
         shell: pwsh
         run: ./native/scripts/watchtower_smoke.ps1 -Executable "$PWD/native/target/release/Modhunter.exe" -Output "$PWD/native/target/watchtower-smoke"
+      - name: Discover, review and install selected MO2 plugins through the actual manager
+        if: ${{ !cancelled() && steps.build_windows.outcome == 'success' }}
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          $LiveTools = Join-Path $env:RUNNER_TEMP 'modhunter-live-tools'
+          if (!(Test-Path (Join-Path $LiveTools 'node_modules/playwright/package.json'))) {
+            npm install --prefix $LiveTools --no-audit --no-fund playwright@1.57.0
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          $env:NODE_PATH = Join-Path $LiveTools 'node_modules'
+          ./native/scripts/instances_manager_smoke.ps1 -Executable "$PWD/native/target/release/Modhunter.exe" -Output "$PWD/native/target/instances-smoke"
       - name: Exercise the compiled desktop connected to actual MO2
         shell: pwsh
         run: |
@@ -270,6 +299,7 @@ jobs:
           New-Item -ItemType Directory -Force native/target/portable/MO2 | Out-Null
           Copy-Item native/target/release/Modhunter.exe native/target/portable/
           Copy-Item -Recurse native/resources/archive-tools native/target/portable/archive-tools
+          Copy-Item -Recurse native/resources/mo2-installer native/target/portable/mo2-installer
           Copy-Item -Recurse mo2_update_arsenal native/target/portable/MO2/
           Get-ChildItem -Recurse native/target/portable -Directory -Filter __pycache__ | Remove-Item -Recurse -Force
           Copy-Item native/README.md native/target/portable/README.md
@@ -290,6 +320,7 @@ jobs:
           Copy-Item native/target/native-smoke/native-smoke.json native/target/portable/Evidence/
           Copy-Item native/target/watchtower-smoke/watchtower-smoke.json native/target/portable/Evidence/
           Copy-Item native/target/archive-review-proof.json native/target/portable/Evidence/
+          Copy-Item native/target/instances-smoke/instances-manager.json native/target/portable/Evidence/
           Copy-Item native/target/qt-forward/qt-forward.json native/target/portable/Evidence/
           Copy-Item native/target/live-mo2-smoke/desktop-live.json native/target/portable/Evidence/
           $BenchmarkFiles = @(python native/scripts/prepare_release.py --benchmark-files)
@@ -297,9 +328,10 @@ jobs:
           foreach ($EvidenceName in $BenchmarkFiles) {
             Copy-Item -LiteralPath "native/evidence/$EvidenceName" -Destination native/target/portable/Evidence/ -ErrorAction Stop
           }
-          @{ version = $ReleaseVersion; commit = '${{ github.sha }}'; workflow = '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}' } | ConvertTo-Json | Set-Content -Encoding utf8 native/target/portable/BUILD_INFO.json
+          Copy-Item native/resources/mo2-installer/BUILD_INFO.json native/target/portable/BUILD_INFO.json
           $packageRoot = (Resolve-Path native/target/portable).Path
-          Get-ChildItem -File -Recurse $packageRoot | Where-Object { $_.Name -ne 'SHA256SUMS.txt' } | Sort-Object FullName | ForEach-Object { $relative = [IO.Path]::GetRelativePath($packageRoot, $_.FullName).Replace('\', '/'); "$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $relative" } | Set-Content -Encoding utf8 native/target/portable/SHA256SUMS.txt
+          $outerManifest = Join-Path $packageRoot 'SHA256SUMS.txt'
+          Get-ChildItem -File -Recurse $packageRoot | Where-Object { $_.FullName -ne $outerManifest } | Sort-Object FullName | ForEach-Object { $relative = [IO.Path]::GetRelativePath($packageRoot, $_.FullName).Replace('\', '/'); "$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $relative" } | Set-Content -Encoding utf8 native/target/portable/SHA256SUMS.txt
           Compress-Archive -Path native/target/portable/* -DestinationPath native/target/Modhunter-Rust-Windows.zip -Force
       - name: Preserve native executable, installer and evidence
         if: always()
@@ -319,6 +351,9 @@ jobs:
             native/target/native-smoke/*.jsonl
             native/target/native-smoke/*.log
             native/target/native-smoke/*.png
+            native/target/instances-smoke/*.json
+            native/target/instances-smoke/*.png
+            native/target/instances-smoke/*.log
             native/target/watchtower-smoke/*.json
             native/target/watchtower-smoke/*.jsonl
             native/target/watchtower-smoke/*.log

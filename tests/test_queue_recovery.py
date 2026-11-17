@@ -9,6 +9,8 @@ import unittest
 from pathlib import Path
 
 from mo2_update_arsenal.bridge import ArsenalService
+from mo2_update_arsenal.update_plan import nexus_file_proof
+from nexus_fixture import review_payload, with_lineage
 
 
 SNAP = {
@@ -29,6 +31,15 @@ SNAP = {
                                       "url": "https://github.com/project/repo/releases/download/v2/github-mod.zip"}]}},
     ],
 }
+
+
+def nexus_files(mid):
+    return review_payload(mid, [{"fileId": 100 + mid, "name": "Latest main", "fileName": "mod-2.0.7z",
+                               "version": "2.0", "category": 1}], [(mid, 100 + mid)])
+
+
+for _row in SNAP["items"][:2]:
+    with_lineage(_row, nexus_files(_row["nexusId"]), _row["nexusId"])
 
 
 class RecoveryQueueTests(unittest.TestCase):
@@ -61,10 +72,7 @@ class RecoveryQueueTests(unittest.TestCase):
 
         self.service = ArsenalService("<html></html>", Path(self.tmp.name) / "cache.json",
                                      native, copy.deepcopy(SNAP))
-        self.service.fetch_files = lambda mid: {
-            "ok": True, "files": [{"fileId": 100 + mid, "name": "Latest main",
-                                   "fileName": "mod-2.0.7z", "version": "2.0", "category": 1}],
-        }
+        self.service.fetch_files = nexus_files
 
     def tearDown(self):
         for gate in self.gates.values():
@@ -79,7 +87,8 @@ class RecoveryQueueTests(unittest.TestCase):
         entries = [{"itemId": name, "modId": 101 if name == "alpha" else 102,
                     "fileId": 201 if name == "alpha" else 202,
                     "installedVersion": "1.0", "targetVersion": "2.0",
-                    "reviewed": True, "riskAcknowledged": True} for name in items]
+                    "reviewed": True, "riskAcknowledged": True,
+                    "fileProof": nexus_file_proof(SNAP, next(row for row in SNAP["items"] if row["id"] == name))} for name in items]
         return self.service.queue_reviewed_downloads({
             "profileId": SNAP["profileId"], "confirm": "QUEUE_REVIEWED_DOWNLOADS",
             "entries": entries,

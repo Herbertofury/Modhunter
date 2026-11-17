@@ -15,7 +15,8 @@ from pathlib import Path
 from playwright.sync_api import expect, sync_playwright
 
 from mo2_update_arsenal.file_advisor import advise_nexus_files
-from mo2_update_arsenal.update_plan import plan_updates
+from mo2_update_arsenal.update_plan import plan_updates, nexus_file_proof
+from nexus_fixture import review_payload, with_lineage
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = Path(os.environ.get('MODHUNTER_QA_OUTPUT', '/mnt/data/modhunter-sss/browser-proof'))
@@ -51,8 +52,15 @@ files = lambda mid: [
     {"fileId":100+mid,"name":"Exact latest main","fileName":"latest-se.zip","version":"2.0" if mid==44 else "2.3","category":1,"description":"Check runtime and dependencies"},
     {"fileId":200+mid,"name":"Optional textures","fileName":"textures.zip","version":"2.0","category":2,"description":"Optional upgrade"},
 ]
-review={str(mid): {"ok": True, "modId": mid, **advise_nexus_files(mods[ix],files(mid))}
-        for ix,mid in enumerate((44,45))}
+review = {}
+for ix, mid in enumerate((44, 45)):
+    payload = review_payload(mid, files(mid), [(90 + mid, 100 + mid)])
+    with_lineage(mods[ix], payload, 90 + mid)
+    review[str(mid)] = {**payload, **advise_nexus_files(mods[ix], payload["files"]),
+                       "fileProof": nexus_file_proof(catalog, mods[ix]),
+                       "installedVersion": mods[ix]["installedVersion"],
+                       "targetVersion": mods[ix]["update"]["latestVersion"],
+                       "update": copy.deepcopy(mods[ix]["update"])}
 history=[{"key":"previous:101","sessionId":"previous","sessionActive":False,"needsReview":True,
           "actionable":False,"firstAt":"2026-11-10T00:00:00+00:00","lastAt":"2026-11-10T00:01:00+00:00",
           "status":"complete","profileId":"sss-profile","downloadId":101,"provider":"nexus",

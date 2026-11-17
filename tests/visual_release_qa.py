@@ -204,10 +204,10 @@ def scroll_dashboard_to_top(page):
     # switch. Reset actual scroll containers, not just the window, and wait for
     # layout before recording the top of the application.
     page.evaluate("""() => {document.activeElement?.blur();scrollTo({top:0,left:0,behavior:'instant'});
-      for(const element of document.querySelectorAll('.shell,.maincol,.bodypad,.workbench'))
-        if(element.scrollTop)element.scrollTo({top:0,left:0,behavior:'instant'});}""")
+      for(const element of document.querySelectorAll('.shell,.maincol,.bodypad,.workbench,#libraryViewport'))
+        if(element.scrollTop||element.scrollLeft)element.scrollTo({top:0,left:0,behavior:'instant'});}""")
     settle(page)
-    page.wait_for_function("scrollY===0")
+    page.wait_for_function("scrollY===0&&(!document.getElementById('libraryViewport')||document.getElementById('libraryViewport').scrollTop===0)")
 
 
 def set_dashboard_theme(page, theme):

@@ -3,7 +3,7 @@
 .SYNOPSIS
 Regression checks for preserving fallback plugin data during a Windows upgrade.
 .DESCRIPTION
-Uses only disposable fixture packages and text-marker ModOrganizer.exe files.
+Uses only disposable fixture packages and inert x64 PE-marker ModOrganizer.exe files.
 The actual installer is invoked by Windows PowerShell 5.1, matching its .bat
 entry point. No fixture executable, Python plugin or real MO2 is launched.
 #>
@@ -44,7 +44,13 @@ function Write-FixtureManifest {
 
 function New-MO2Fixture([string]$Name) {
     $Directory = Join-Path $Root $Name
-    Write-FixtureFile (Join-Path $Directory 'ModOrganizer.exe') 'Text fixture marker; never execute this file.'
+    New-Item -ItemType Directory -Path $Directory -Force | Out-Null
+    $Bytes = [byte[]]::new(512)
+    [Text.Encoding]::ASCII.GetBytes('MZ').CopyTo($Bytes, 0)
+    [BitConverter]::GetBytes([uint32]128).CopyTo($Bytes, 60)
+    ([byte[]]@(0x50, 0x45, 0, 0)).CopyTo($Bytes, 128)
+    [BitConverter]::GetBytes([uint16]0x8664).CopyTo($Bytes, 132)
+    [IO.File]::WriteAllBytes((Join-Path $Directory 'ModOrganizer.exe'), $Bytes)
     return $Directory
 }
 
@@ -78,6 +84,57 @@ function Invoke-FixtureInstaller([string]$Directory, [bool]$MustSucceed = $true,
 
 function Assert-NoStaging([string]$Directory) {
     Require (@(Get-ChildItem -LiteralPath $Directory -Directory -Force -Filter '.modhunter-staging-*').Count -eq 0) 'Installer left a partial staging directory.'
+}
+
+function Fixture-Tree([string]$Directory) {
+    return (@(Get-ChildItem -LiteralPath $Directory -Force -Recurse | Sort-Object FullName | ForEach-Object {
+        $Relative = [IO.Path]::GetRelativePath($Directory, $_.FullName).Replace('\', '/')
+        if ($_.PSIsContainer) { 'd:' + $Relative } else { 'f:' + $Relative + ':' + (Hash $_.FullName) }
+    }) | ConvertTo-Json -Compress)
+}
+
+function Invoke-JsonInstaller([string]$Directory, [switch]$Preview, [string]$Fingerprint,
+        [hashtable]$Identity = @{}, [string]$ExpectedCode = '', [switch]$OmitIdentity) {
+    $StartInfo = [Diagnostics.ProcessStartInfo]::new()
+    $StartInfo.FileName = $WindowsPowerShell
+    $StartInfo.UseShellExecute = $false
+    $StartInfo.RedirectStandardOutput = $true
+    $StartInfo.RedirectStandardError = $true
+    $StartInfo.StandardOutputEncoding = [Text.UTF8Encoding]::new($false)
+    $StartInfo.StandardErrorEncoding = [Text.UTF8Encoding]::new($false)
+    foreach ($Argument in @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $Installer, '-Json')) {
+        $StartInfo.ArgumentList.Add($Argument)
+    }
+    if ($Directory) { $StartInfo.ArgumentList.Add('-MO2Directory'); $StartInfo.ArgumentList.Add($Directory) }
+    if ($Preview) { $StartInfo.ArgumentList.Add('-Preview') }
+    if ($Fingerprint) { $StartInfo.ArgumentList.Add('-ExpectedInstalledFingerprint'); $StartInfo.ArgumentList.Add($Fingerprint) }
+    if (!$OmitIdentity) {
+        $ManifestHash = if (Test-Path -LiteralPath (Join-Path $Package 'SHA256SUMS.txt')) { Hash (Join-Path $Package 'SHA256SUMS.txt') } else { '0' * 64 }
+        $Expected = @{ ExpectedVersion = $FixtureVersion; ExpectedCommit = ('a' * 40)
+            ExpectedManifestSha256 = $ManifestHash }
+        foreach ($Key in $Identity.Keys) { $Expected[$Key] = $Identity[$Key] }
+        foreach ($Key in $Expected.Keys) { $StartInfo.ArgumentList.Add('-' + $Key); $StartInfo.ArgumentList.Add($Expected[$Key]) }
+    }
+    $Child = [Diagnostics.Process]::Start($StartInfo)
+    try {
+        $Stdout = $Child.StandardOutput.ReadToEndAsync()
+        $Stderr = $Child.StandardError.ReadToEndAsync()
+        if (!$Child.WaitForExit(30000)) { throw 'JSON installer exceeded its fixture deadline.' }
+        $Text = $Stdout.GetAwaiter().GetResult()
+        $Errors = $Stderr.GetAwaiter().GetResult()
+        Require (!$Errors) "JSON installer wrote unexpected stderr: $Errors"
+        Require ($Text.StartsWith('{', [StringComparison]::Ordinal) -and $Text.Length -lt 65536) "Installer did not return one bounded UTF-8 JSON result: $Text"
+        $Result = $Text | ConvertFrom-Json
+        Require ($Result.schemaVersion -eq 1) 'Installer JSON schema changed.'
+        if ($ExpectedCode) {
+            $ExpectedExit = if ($ExpectedCode -in @('install_failed', 'rollback_failed')) { 1 } else { 2 }
+            Require (!$Result.ok -and $Result.status -eq 'failed' -and $Result.code -eq $ExpectedCode -and $Child.ExitCode -eq $ExpectedExit) "Unexpected installer refusal: $Text"
+        } else { Require ($Result.ok -and $Child.ExitCode -eq 0) "JSON installer failed: $Text" }
+        return $Result
+    } finally {
+        if (!$Child.HasExited) { Stop-Process -Id $Child.Id -ErrorAction SilentlyContinue }
+        $Child.Dispose()
+    }
 }
 
 try {
@@ -189,8 +246,8 @@ try {
     # Get-FileHash is unavailable. Shadow it only in a disposable installer copy
     # so this compatibility check remains deterministic on every Windows runner.
     $InstallerScript = [IO.File]::ReadAllText($Installer)
-    $ParameterDeclaration = 'param([string]$MO2Directory)'
-    Require ($InstallerScript.StartsWith($ParameterDeclaration, [StringComparison]::Ordinal)) 'Could not identify the installer parameter declaration for the missing-cmdlet fixture.'
+    $ParameterDeclaration = '$ErrorActionPreference = ''Stop'''
+    Require (([regex]::Matches($InstallerScript, [regex]::Escape($ParameterDeclaration))).Count -eq 1) 'Could not identify the installer initialization boundary for the missing-cmdlet fixture.'
     $PackagedInstaller = $Installer
     $Installer = Join-Path $Package 'Install_MO2_Plugin.no-filehash-fixture.ps1'
     $NoFileHash = New-MO2Fixture 'no-get-filehash-cmdlet'
@@ -404,6 +461,190 @@ try {
         Assert-NoStaging $Fixture
         $Checks.Add(@{ name = $Case + '_rejected_without_mutation'; passed = $true })
     }
+    # The nested desktop resource contains exactly the files the installer
+    # owns, rather than the development sources retained in the legacy ZIP.
+    $JsonPackage = Join-Path $Root 'json-package'
+    New-Item -ItemType Directory -Path (Join-Path $JsonPackage 'MO2') -Force | Out-Null
+    Copy-Item -LiteralPath $Source -Destination (Join-Path $JsonPackage 'MO2/mo2_update_arsenal') -Recurse
+    Copy-Item -LiteralPath $Installer -Destination (Join-Path $JsonPackage 'Install_MO2_Plugin.ps1')
+    Copy-Item -LiteralPath (Join-Path $Package 'BUILD_INFO.json') -Destination $JsonPackage
+    $Package = $JsonPackage
+    $Source = Join-Path $Package 'MO2/mo2_update_arsenal'
+    $Installer = Join-Path $Package 'Install_MO2_Plugin.ps1'
+    foreach ($Relative in @('bin/unrelated.exe', 'bin/Qt6Core.dll', 'bin/archive-tools/unrelated.exe')) {
+        Remove-Item -LiteralPath (Join-Path $Source $Relative)
+    }
+    Write-FixtureManifest
+    $OriginalJsonScript = [IO.File]::ReadAllText($Installer)
+    $JsonFresh = New-MO2Fixture 'JSON fresh 日本語 [selected]'
+    $BeforeTarget = Fixture-Tree $JsonFresh
+    $BeforePackage = Fixture-Tree $Package
+    $PreviewResult = Invoke-JsonInstaller -Directory $JsonFresh -Preview
+    Require ($PreviewResult.status -eq 'preview' -and $PreviewResult.code -eq 'ready' -and $PreviewResult.installedFingerprint -match '^[0-9a-f]{64}$') 'Preview omitted its reviewed target fingerprint.'
+    Require ($PreviewResult.targetDirectory -ceq $JsonFresh -and $PreviewResult.backupRoot -ceq (Join-Path $JsonFresh 'ModhunterBackups')) 'Preview changed the selected Unicode target.'
+    Require ((Fixture-Tree $JsonFresh) -eq $BeforeTarget -and (Fixture-Tree $Package) -eq $BeforePackage) 'Read-only preview changed the target or package.'
+    $InstalledResult = Invoke-JsonInstaller -Directory $JsonFresh -Fingerprint $PreviewResult.installedFingerprint
+    Require ($InstalledResult.status -eq 'installed' -and !$InstalledResult.backupDirectory -and !$InstalledResult.preservedData) 'Fresh JSON installation reported an upgrade.'
+    Require ((Fixture-Tree $Package) -eq $BeforePackage) 'JSON installation changed the verified resource bundle.'
+    Assert-NoStaging $JsonFresh
+    $Checks.Add(@{ name = 'json_preview_is_read_only_and_unicode_fresh_install_matches'; passed = $true })
+
+    $JsonPlugin = Join-Path $JsonFresh 'plugins/mo2_update_arsenal'
+    Write-FixtureFile (Join-Path $JsonPlugin 'data/chronicle.json') '{"progress":12345}'
+    New-Item -ItemType Directory -Path (Join-Path $JsonPlugin 'data/empty-directory') | Out-Null
+    $OldTree = Fixture-Tree $JsonPlugin
+    $PreviewResult = Invoke-JsonInstaller -Directory $JsonFresh -Preview
+    Require ($PreviewResult.previousVersion -eq $FixtureVersion) 'Preview did not read the current installed version.'
+    $Updated = Invoke-JsonInstaller -Directory $JsonFresh -Fingerprint $PreviewResult.installedFingerprint
+    Require ($Updated.status -eq 'updated' -and $Updated.preservedData -and $Updated.backupDirectory -and $Updated.rollback -eq 'not_needed') 'JSON upgrade omitted its progress or backup result.'
+    Require ((Fixture-Tree $Updated.backupDirectory) -eq $OldTree -and (Fixture-Tree $JsonPlugin) -eq $OldTree) 'JSON upgrade changed backed-up or active plugin progress.'
+    $Checks.Add(@{ name = 'json_upgrade_preserves_complete_progress_and_backup'; passed = $true })
+
+    $PreviewResult = Invoke-JsonInstaller -Directory $JsonFresh -Preview
+    Write-FixtureFile (Join-Path $JsonPlugin 'data/chronicle.json') '{"progress":54321}'
+    $ChangedTree = Fixture-Tree $JsonFresh
+    Invoke-JsonInstaller -Directory $JsonFresh -Fingerprint $PreviewResult.installedFingerprint -ExpectedCode 'target_changed' | Out-Null
+    Require ((Fixture-Tree $JsonFresh) -eq $ChangedTree) 'Stale-preview refusal modified the target.'
+    $Checks.Add(@{ name = 'json_stale_preview_rejects_progress_change_without_mutation'; passed = $true })
+    $NormalPreview = Invoke-JsonInstaller -Directory $JsonFresh -Preview
+    $ExtendedPreview = Invoke-JsonInstaller -Directory ('\\?\' + $JsonFresh) -Preview
+    Require ($ExtendedPreview.targetDirectory -ceq $JsonFresh -and $ExtendedPreview.installedFingerprint -eq $NormalPreview.installedFingerprint) 'Rust canonical Windows paths did not resolve to the same reviewed target.'
+    $Checks.Add(@{ name = 'json_rust_canonical_drive_path_matches_normal_target'; passed = $true })
+    foreach ($Case in @('unknown', 'x86', 'arm64')) {
+        $Unsupported = New-MO2Fixture ('json-unsupported-' + $Case)
+        $Executable = Join-Path $Unsupported 'ModOrganizer.exe'
+        if ($Case -eq 'unknown') { Write-FixtureFile $Executable 'Not a supported executable header; never run.' }
+        else {
+            $Bytes = [IO.File]::ReadAllBytes($Executable)
+            $Machine = if ($Case -eq 'x86') { [uint16]0x014c } else { [uint16]0xaa64 }
+            [BitConverter]::GetBytes($Machine).CopyTo($Bytes, 132)
+            [IO.File]::WriteAllBytes($Executable, $Bytes)
+        }
+        $BeforeUnsupported = Fixture-Tree $Unsupported
+        Invoke-JsonInstaller -Directory $Unsupported -Preview -ExpectedCode 'unsupported_target' | Out-Null
+        Invoke-JsonInstaller -Directory $Unsupported -Fingerprint ('0' * 64) -ExpectedCode 'unsupported_target' | Out-Null
+        Require ((Fixture-Tree $Unsupported) -eq $BeforeUnsupported) "Unsupported executable refusal changed its target: $Case"
+        $Checks.Add(@{ name = 'json_' + $Case + '_target_refused_without_mutation'; passed = $true })
+    }
+
+    foreach ($Case in @('no-target', 'no-identity', 'no-fingerprint', 'wrong-version', 'wrong-commit', 'wrong-manifest')) {
+        $BeforeTarget = Fixture-Tree $JsonFresh
+        switch ($Case) {
+            'no-target' { Invoke-JsonInstaller -Preview -ExpectedCode 'invalid_request' | Out-Null }
+            'no-identity' { Invoke-JsonInstaller -Directory $JsonFresh -Preview -OmitIdentity -ExpectedCode 'invalid_request' | Out-Null }
+            'no-fingerprint' { Invoke-JsonInstaller -Directory $JsonFresh -ExpectedCode 'invalid_request' | Out-Null }
+            'wrong-version' { Invoke-JsonInstaller -Directory $JsonFresh -Preview -Identity @{ExpectedVersion='0.0.0'} -ExpectedCode 'package_changed' | Out-Null }
+            'wrong-commit' { Invoke-JsonInstaller -Directory $JsonFresh -Preview -Identity @{ExpectedCommit=('b' * 40)} -ExpectedCode 'package_changed' | Out-Null }
+            'wrong-manifest' { Invoke-JsonInstaller -Directory $JsonFresh -Preview -Identity @{ExpectedManifestSha256=('0' * 64)} -ExpectedCode 'package_changed' | Out-Null }
+        }
+        Require ((Fixture-Tree $JsonFresh) -eq $BeforeTarget) "JSON refusal changed its target: $Case"
+        $Checks.Add(@{ name = 'json_' + $Case + '_rejected_without_mutation'; passed = $true })
+    }
+
+    $PackageBytes = @{}
+    foreach ($File in (Get-ChildItem -LiteralPath $Package -File -Recurse)) { $PackageBytes[$File.FullName] = [IO.File]::ReadAllBytes($File.FullName) }
+    foreach ($Case in @('missing-manifest', 'damaged-helper', 'changed-script', 'mixed-build', 'unlisted-file', 'duplicate-path', 'unsafe-manifest-path', 'oversized-version')) {
+        $BeforeTarget = Fixture-Tree $JsonFresh
+        $Extra = Join-Path $Package 'unlisted.txt'
+        try {
+            switch ($Case) {
+                'missing-manifest' { Remove-Item -LiteralPath (Join-Path $Package 'SHA256SUMS.txt') }
+                'damaged-helper' { Write-FixtureFile (Join-Path $Source 'bin/modhunter-cli.exe') 'Corrupted inert helper' }
+                'changed-script' { Write-FixtureFile $Installer ($OriginalJsonScript + "`n# Unmanifested script mutation`n") }
+                'mixed-build' {
+                    Write-FixtureFile (Join-Path $Package 'BUILD_INFO.json') (@{version='0.0.0';commit=('a' * 40)} | ConvertTo-Json)
+                    Write-FixtureManifest
+                }
+                'unlisted-file' { Write-FixtureFile $Extra 'Unmanifested fixture data' }
+                'duplicate-path' {
+                    $Manifest = Join-Path $Package 'SHA256SUMS.txt'
+                    $Line = ([IO.File]::ReadAllLines($Manifest))[0]
+                    [IO.File]::AppendAllText($Manifest, $Line + "`n", [Text.UTF8Encoding]::new($false))
+                }
+                'unsafe-manifest-path' {
+                    [IO.File]::AppendAllText((Join-Path $Package 'SHA256SUMS.txt'), ('0' * 64) + "  ../outside`n", [Text.UTF8Encoding]::new($false))
+                }
+                'oversized-version' { Write-FixtureFile (Join-Path $Source 'version.py') ('#' * 65537) }
+            }
+            Invoke-JsonInstaller -Directory $JsonFresh -Preview -ExpectedCode 'package_invalid' | Out-Null
+            Require ((Fixture-Tree $JsonFresh) -eq $BeforeTarget) "JSON package rejection modified its target: $Case"
+        } finally {
+            if (Test-Path -LiteralPath $Extra) { Remove-Item -LiteralPath $Extra }
+            foreach ($Path in $PackageBytes.Keys) { [IO.File]::WriteAllBytes($Path, $PackageBytes[$Path]) }
+        }
+        $Checks.Add(@{ name = 'json_' + $Case + '_package_refused_without_mutation'; passed = $true })
+    }
+
+    $LinkedTarget = Join-Path $Root 'linked-selected-root'
+    New-Item -ItemType Junction -Path $LinkedTarget -Target $JsonFresh | Out-Null
+    try {
+        $BeforeTarget = Fixture-Tree $JsonFresh
+        Invoke-JsonInstaller -Directory $LinkedTarget -Preview -ExpectedCode 'unsafe_path' | Out-Null
+        Require ((Fixture-Tree $JsonFresh) -eq $BeforeTarget) 'Linked target preview mutated the real target.'
+    } finally { [IO.Directory]::Delete($LinkedTarget) }
+    $Checks.Add(@{ name = 'json_linked_target_root_rejected_without_mutation'; passed = $true })
+
+    $Sha = [Security.Cryptography.SHA256]::Create()
+    try { $LockDigest = [BitConverter]::ToString($Sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($JsonFresh.ToUpperInvariant()))).Replace('-', '').ToLowerInvariant() }
+    finally { $Sha.Dispose() }
+    $Held = [Threading.Mutex]::new($false, ('Local\ModhunterPlugin-' + $LockDigest))
+    Require ($Held.WaitOne(0)) 'Could not acquire the disposable fixture lock.'
+    try { Invoke-JsonInstaller -Directory $JsonFresh -Preview -ExpectedCode 'target_busy' | Out-Null }
+    finally { $Held.ReleaseMutex(); $Held.Dispose() }
+    $Checks.Add(@{ name = 'json_same_target_installers_are_excluded'; passed = $true })
+
+    # Simulated process observations use real opened fixture paths. No inert
+    # ModOrganizer.exe marker is ever executed. Instrument only this copy.
+    $Unrelated = New-MO2Fixture 'known-unrelated-running-mo2'
+    $Boundary = '$ErrorActionPreference = ''Stop'''
+    foreach ($Case in @('selected-process', 'unknown-process', 'process-query-failure', 'unrelated-process', 'started-before-commit')) {
+        $Fixture = New-MO2Fixture ('json-' + $Case)
+        $ObservedPath = if ($Case -eq 'unrelated-process') { Join-Path $Unrelated 'ModOrganizer.exe' } else { Join-Path $Fixture 'ModOrganizer.exe' }
+        $PathExpression = if ($Case -eq 'unknown-process') { '$null' } else { "'" + $ObservedPath.Replace("'", "''") + "'" }
+        $Guard = if ($Case -eq 'started-before-commit') { 'if (!$script:FixtureProcessProbe) { $script:FixtureProcessProbe = 1; return };' } else { '' }
+        $Injected = '$script:FixtureProcessProbe = 0; function Get-Process { param($Name, $ErrorAction) ' + $Guard + ' [pscustomobject]@{ Path = ' + $PathExpression + '; Id = 12345 } }'
+        if ($Case -eq 'process-query-failure') { $Injected = 'function Get-Process { param($Name, $ErrorAction) throw ''Fixture process enumeration failed.'' }' }
+        try {
+            Write-FixtureFile $Installer ($OriginalJsonScript.Replace($Boundary, $Boundary + "`n" + $Injected))
+            Write-FixtureManifest
+            if ($Case -eq 'selected-process') { Invoke-JsonInstaller -Directory $Fixture -Preview -ExpectedCode 'mo2_running' | Out-Null }
+            elseif ($Case -in @('unknown-process', 'process-query-failure')) { Invoke-JsonInstaller -Directory $Fixture -Preview -ExpectedCode 'process_ambiguous' | Out-Null }
+            else {
+                $Reviewed = Invoke-JsonInstaller -Directory $Fixture -Preview
+                if ($Case -eq 'unrelated-process') {
+                    $Result = Invoke-JsonInstaller -Directory $Fixture -Fingerprint $Reviewed.installedFingerprint
+                    Require ($Result.status -eq 'installed') 'A known unrelated MO2 process blocked the selected application.'
+                } else {
+                    Invoke-JsonInstaller -Directory $Fixture -Fingerprint $Reviewed.installedFingerprint -ExpectedCode 'mo2_running' | Out-Null
+                    Require (!(Test-Path -LiteralPath (Join-Path $Fixture 'plugins/mo2_update_arsenal'))) 'The late process check allowed replacement.'
+                    Assert-NoStaging $Fixture
+                }
+            }
+        } finally { Write-FixtureFile $Installer $OriginalJsonScript; Write-FixtureManifest }
+        $Checks.Add(@{ name = 'json_' + $Case + '_process_guard'; passed = $true })
+    }
+
+    $RollbackFixture = New-MO2Fixture 'json-rollback'
+    $RollbackPlugin = Join-Path $RollbackFixture 'plugins/mo2_update_arsenal'
+    Write-FixtureFile (Join-Path $RollbackPlugin '__init__.py') '# original rollback fixture'
+    Write-FixtureFile (Join-Path $RollbackPlugin 'data/progress.json') '{"preserve":true}'
+    $OriginalTree = Fixture-Tree $RollbackPlugin
+    $Injected = @'
+function Move-Item {
+    param([string]$LiteralPath, [string]$Destination)
+    if ([IO.Path]::GetFileName($LiteralPath).StartsWith('.modhunter-staging-', [StringComparison]::Ordinal)) { throw 'Fixture replacement failure.' }
+    Microsoft.PowerShell.Management\Move-Item -LiteralPath $LiteralPath -Destination $Destination
+}
+'@
+    try {
+        Write-FixtureFile $Installer ($OriginalJsonScript.Replace($Boundary, $Boundary + "`n" + $Injected))
+        Write-FixtureManifest
+        $Reviewed = Invoke-JsonInstaller -Directory $RollbackFixture -Preview
+        $Failure = Invoke-JsonInstaller -Directory $RollbackFixture -Fingerprint $Reviewed.installedFingerprint -ExpectedCode 'install_failed'
+        Require ($Failure.rollback -eq 'restored' -and (Fixture-Tree $RollbackPlugin) -eq $OriginalTree) 'Failed JSON replacement did not restore all prior data.'
+        Assert-NoStaging $RollbackFixture
+    } finally { Write-FixtureFile $Installer $OriginalJsonScript; Write-FixtureManifest }
+    $Checks.Add(@{ name = 'json_replacement_failure_restores_original_plugin_and_progress'; passed = $true })
     $Passed = $true
     @{ ok = $true; test = 'windows-plugin-installer'; runtime = 'Windows PowerShell 5.1'; checks = $Checks.ToArray() } | ConvertTo-Json -Depth 6
 }

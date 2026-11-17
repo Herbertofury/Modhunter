@@ -11,6 +11,7 @@ from pathlib import Path
 
 from mo2_update_arsenal.operation_journal import OperationJournal
 from mo2_update_arsenal.bridge import ArsenalService
+from mo2_update_arsenal.nexus_files import installed_file_context
 
 
 def ticket(profile="p1", operation="op1"):
@@ -19,6 +20,7 @@ def ticket(profile="p1", operation="op1"):
         "game": "skyrimspecialedition", "gameRuntime": "1.5.97",
         "itemId": "live-1", "modName": "Animations", "installedVersion": "1.0",
         "targetVersion": "2.0", "provider": "nexus", "modId": 15, "fileId": 48,
+        "installedFileIdentity": installed_file_context(SNAPSHOT["items"][0]),
         "fileName": "Animations-2.0.7z", "reviewed": True,
         "status": "downloading",
         "apiKey": "SECRET_TOKEN_MUST_NEVER_SAVE",

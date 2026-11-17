@@ -1,17 +1,23 @@
 """Evidence-based file review. No false compatibility claims or missing files."""
 import copy
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
 from mo2_update_arsenal.file_advisor import advise_nexus_files
 from mo2_update_arsenal.bridge import ArsenalService
-from mo2_update_arsenal.update_plan import PlanError, validate_batch_selection, validate_release_asset
+from mo2_update_arsenal.update_plan import PlanError, validate_batch_selection, validate_release_asset, nexus_file_proof
+from nexus_fixture import review_payload
 
 
 def row(ident="primary", source="nexus-api", version="2.0"):
     return {"id": ident, "nexusId": 44, "installedVersion": "1.0", "flags": ["DLL"],
-            "update": {"verdict": "candidate", "source": source, "latestVersion": version}}
+            "installedFiles": [{"modId": 44, "fileId": 7}],
+            "update": {"verdict": "candidate", "source": source, "latestVersion": version,
+                       "checkedAt": time.time(), "expiresAt": time.time() + 14390, "freshness": "fresh",
+                       "fileEvidence": {"status": "matched", "updated": True, "targetFileId": 9,
+                                        "installedFileIds": [7]}}}
 
 
 FILES = [
@@ -23,7 +29,7 @@ FILES = [
 
 
 class AdvisorTest(unittest.TestCase):
-    def test_unique_published_version_main_is_visibly_reviewable_not_approved(self):
+    def test_exact_replacement_is_visibly_reviewable_not_compatibility_approved(self):
         original = copy.deepcopy(FILES)
         result = advise_nexus_files(row(), FILES)
         self.assertEqual(FILES, original)
@@ -35,13 +41,20 @@ class AdvisorTest(unittest.TestCase):
         self.assertFalse(result["files"][1]["suggested"])
         self.assertEqual({f["fileId"] for f in result["files"]}, {8, 9, 10, 11})
 
-    def test_multiple_equal_main_versions_are_ambiguous(self):
+    def test_equal_project_versions_cannot_replace_missing_lineage_evidence(self):
         files = FILES + [{"fileId": 12, "name": "AE", "version": "2.0", "category": 1}]
-        result = advise_nexus_files(row(), files)
-        self.assertEqual(result["reviewAdvice"]["matchingMainFiles"], 2)
+        item = row(); item['update'].pop('fileEvidence')
+        result = advise_nexus_files(item, files)
+        self.assertEqual(result["reviewAdvice"]["matchingMainFiles"], 0)
         self.assertFalse(result["reviewAdvice"]["hasUniqueMainMatch"])
         self.assertEqual(sum(bool(f["suggested"]) for f in result["files"]), 0)
         self.assertEqual(len(result["files"]), 5)
+
+    def test_exact_target_stays_distinct_from_an_unrelated_equal_version(self):
+        files = FILES + [{"fileId": 12, "name": "AE", "version": "2.0", "category": 1}]
+        result = advise_nexus_files(row(), files)
+        self.assertEqual([file['fileId'] for file in result['files'] if file['suggested']], [9])
+        self.assertEqual(len(result['files']), 5)
 
     def test_unknown_or_untrusted_project_version_cannot_suggest_file(self):
         for item in (row(source="github-release-api"), row(source="mo2-cached-metadata"),
@@ -61,7 +74,7 @@ class AdvisorTest(unittest.TestCase):
             row("nexus-project-row"), row("external-release-row", "github-release-api")]}
         with tempfile.TemporaryDirectory() as d:
             service = ArsenalService("<html/>", Path(d) / "cache.json", lambda r: r.finish({"ok": False}), snap)
-            service.fetch_files = lambda mod_id: {"ok": True, "modId": mod_id, "files": copy.deepcopy(FILES)}
+            service.fetch_files = lambda mod_id: review_payload(mod_id, copy.deepcopy(FILES), [(7, 9)])
             a = service.review_files(44, "nexus-project-row")
             b = service.review_files(44, "external-release-row")
             self.assertTrue(a["reviewAdvice"]["hasUniqueMainMatch"])
@@ -74,7 +87,8 @@ class AdvisorTest(unittest.TestCase):
         snap = {"profileId": "profile-A", "items": [row()]}
         selection = {"profileId": "profile-A", "confirm": "QUEUE_REVIEWED_DOWNLOADS", "entries": [
             {"itemId": "primary", "modId": 44, "fileId": 9, "installedVersion": "1.0",
-             "targetVersion": "2.0", "reviewed": True, "riskAcknowledged": True}]}
+             "targetVersion": "2.0", "reviewed": True, "riskAcknowledged": True,
+             "fileProof": nexus_file_proof(snap, snap["items"][0])}]}
         self.assertEqual(len(validate_batch_selection(snap, selection)), 1)
         changed = copy.deepcopy(snap)
         changed["items"][0]["update"]["latestVersion"] = "2.5"

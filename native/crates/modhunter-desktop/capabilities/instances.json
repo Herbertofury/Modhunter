@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "instances",
+  "description": "Only the bundled MO2 Instances manager can discover local applications and install a verified matching plugin into explicitly reviewed targets.",
+  "local": true,
+  "webviews": ["mo2-instances"],
+  "permissions": ["allow-instances-command", "core:event:allow-listen", "core:event:allow-unlisten"]
+}

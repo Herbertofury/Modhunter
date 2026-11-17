@@ -92,12 +92,19 @@ class VersionEvidenceTests(unittest.TestCase):
         self.assertIn('channel', legacy['reason'])
 
     def test_provider_summary_explains_strategy_without_mutating_identity(self):
-        item = {'id': 'installed-mod', 'nexusId': 42, 'installedVersion': 'Build 99'}
+        from nexus_fixture import files_payload, file_item, GAME
+        from mo2_update_arsenal.nexus_files import FileLineage, normalize_file_payload
+        item = file_item(42,version='Build 99',ident='installed-mod')
         original = copy.deepcopy(item)
-        evidence = summary_from_metadata(item, {'version': 'build 100', 'status': 'published'}, 123)
+        files = FileLineage(normalize_file_payload(files_payload('build 100',mod_id=42,installed='Build 99'),GAME,42),GAME,42)
+        evidence = summary_from_metadata(item, {'version': 'build 999', 'status': 'published'}, 123, files)
         self.assertEqual(evidence['versionComparison']['strategy'], 'build')
         self.assertEqual(evidence['verdict'], 'candidate')
-        self.assertIn('exact FILE', evidence['reason'])
+        self.assertEqual(evidence['latestVersion'], 'build 100')
+        self.assertIn('installed file', evidence['reason'])
+        project_only = summary_from_metadata(item, {'version':'build 999','status':'published'}, 123)
+        self.assertEqual(project_only['verdict'],'review')
+        self.assertEqual(project_only['latestVersion'],'')
         hidden = summary_from_metadata(item, {'status': 'hidden', 'version': 'build 999'}, 124)
         self.assertEqual(hidden['verdict'], 'review')
         self.assertEqual(item, original)

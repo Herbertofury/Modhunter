@@ -10,8 +10,11 @@ from pathlib import Path
 from unittest.mock import patch
 from mo2_update_arsenal.bridge import ArsenalService
 from mo2_update_arsenal.scanner import UpdateScanner,Cache,NexusClient
+from nexus_fixture import files_payload, file_item, review_payload
 
 PROFILE={'profileId':'p1','game':'skyrimspecialedition','items':[{'id':'m1','name':'One','nexusId':77,'installedVersion':'1.0','latestKnownVersion':'2.0'},{'id':'m2','name':'Two','nexusId':77,'installedVersion':'2.0','latestKnownVersion':'2.0'}],'groups':[]}
+PROFILE['items'][0].update(file_item(77,ident='m1'))
+PROFILE['items'][1].update(file_item(77,current=True,ident='m2'))
 class BridgeTests(unittest.TestCase):
  def setUp(self):
   self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
@@ -54,16 +57,16 @@ class BridgeTests(unittest.TestCase):
    time.sleep(.015)
   self.assertEqual(res['scan']['state'],'completed')
   snap=json.loads(self.call('GET','/api/snapshot')[1])['catalog']['items']
-  self.assertEqual(snap[0]['update']['verdict'],'candidate')
+  self.assertEqual(snap[0]['update']['verdict'],'unverified')
   self.assertEqual(snap[1]['update']['verdict'],'unverified')
  def test_deduplicated_nexus_projects_keep_per_item_verdict(self):
-  def fetch(path):return {'version':'2.0','status':'published'}
+  def fetch(path):return files_payload(mod_id=77)
   result=UpdateScanner(Cache(Path(self.tmp.name)/'dupes.json'),NexusClient('fake',request_json=fetch)).scan(PROFILE,'deep')
   self.assertEqual(result['queried'],1)
   self.assertEqual(result['itemRecords']['m1']['verdict'],'candidate')
   self.assertEqual(result['itemRecords']['m2']['verdict'],'current')
  def test_files_explicit_verification_and_profile_isolation(self):
-  self.service._file_cache[('skyrimspecialedition',77)]={'ok':True,'files':[{'fileId':9}]}
+  self.service._file_cache[('skyrimspecialedition',77)]=review_payload(77,[{'fileId':9}])
   rejected=self.service.request_download(77,7,'DOWNLOAD')
   self.assertFalse(rejected['ok'])
   permitted=self.service.request_download(77,9,'DOWNLOAD')

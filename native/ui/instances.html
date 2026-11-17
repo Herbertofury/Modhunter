@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+ <meta charset="utf-8">
+ <meta name="viewport" content="width=device-width,initial-scale=1">
+ <title>Modhunter · MO2 Instances</title>
+ <link rel="stylesheet" href="instances.css">
+ <link rel="stylesheet" href="preferences.css">
+</head>
+<body>
+ <a class="skip-link" href="#instancesMain">Skip to content</a>
+ <div class="workspace">
+  <header class="page-header">
+   <div class="heading-group">
+    <div class="eyebrow"><svg viewBox="0 0 32 36" aria-hidden="true" fill="none"><path d="m16 2 12 8v16L16 34 4 26V10Z"/><path d="m9 13 7 10 7-10M16 8v21"/></svg><span>MODHUNTER / LOCAL SETUP</span></div>
+    <h1>MO2 Instances</h1>
+    <p>Find your installations. Keep their Modhunter plugins ready.</p>
+   </div>
+   <div class="header-actions"><button id="addFolder" type="button" class="quiet">Add folder</button><button id="scanDeep" type="button">Search drives & folders</button><button id="scanKnown" type="button" class="primary"><span aria-hidden="true">↻</span> Scan known locations</button></div>
+  </header>
+  <main id="instancesMain" tabindex="-1">
+   <div id="connectionBanner" class="notice error" role="alert" hidden></div>
+   <div id="feedback" class="notice" role="status" aria-live="polite" hidden><span id="feedbackText" data-i18n-feedback></span><button id="dismissFeedback" class="quiet" type="button" aria-label="Dismiss message">×</button></div>
+   <div id="backendError" class="notice error" role="alert" hidden></div>
+   <section class="overview" aria-label="Installation overview">
+    <div class="inventory-counts"><div><strong id="installationCount">0</strong><span>app installations</span></div><div><strong id="instanceCount">0</strong><span>instances</span></div><div><strong id="profileCount">0</strong><span>profiles</span></div></div>
+    <div id="packagePanel" class="package-panel"><span id="packageMark" class="status-dot" aria-hidden="true"></span><div><strong id="packageVersion">Checking bundled plugin…</strong><p id="packageMessage">Package readiness is checked by the desktop.</p><details id="packageDetails" hidden><summary>Package identity</summary><code id="packageCommit" data-no-translate></code></details></div></div>
+   </section>
+   <section id="scanPanel" class="scan-panel" aria-labelledby="scanHeading" hidden>
+    <div class="scan-top"><div><span class="section-label">DISCOVERY</span><h2 id="scanHeading">Scanning known locations</h2></div><button id="cancelScan" type="button">Cancel scan</button></div>
+    <progress id="scanProgress" aria-label="Discovery in progress"></progress>
+    <p id="scanCounts" class="scan-counts" role="status" aria-live="polite"></p>
+    <code id="scanCurrentPath" class="path scan-path" data-no-translate></code>
+    <p id="scanMessage" class="scope-note"></p>
+   </section>
+   <section id="activityPanel" class="activity-panel" aria-labelledby="activityHeading" hidden>
+    <div class="section-top"><div><span class="section-label">PLUGIN INSTALLATION</span><h2 id="activityHeading" tabindex="-1">Installation progress</h2><p id="installSummary" role="status" aria-live="polite"></p></div><button id="cancelInstall" type="button">Stop after current installation</button></div>
+    <progress id="installProgress" max="1" value="0" aria-label="Completed installation targets"></progress>
+    <div id="installResults" class="result-list"></div>
+   </section>
+   <section class="inventory-section" aria-labelledby="installationsHeading">
+    <div class="section-top"><div><span class="section-label">APPLICATIONS & PROFILES</span><h2 id="installationsHeading">Your installations</h2></div><p id="inventoryScope" class="scope-note">Known locations have not been scanned yet.</p></div>
+    <div class="toolbar"><label class="search-field"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></svg><input id="instanceSearch" type="search" placeholder="Search paths, games, instances or profiles…" aria-label="Search installations and instances" autocomplete="off" spellcheck="false"></label><select id="statusFilter" aria-label="Filter by plugin status"><option value="all">All plugin statuses</option><option value="missing">Plugin missing</option><option value="different">Different version</option><option value="matching">Version matches</option><option value="attention">Needs review</option><option value="running">MO2 running</option></select></div>
+    <div class="list-controls"><label class="checkbox-label"><input id="selectVisible" type="checkbox"><span>Select visible installations</span></label><span id="visibleCount" class="muted" role="status"></span></div>
+    <div id="partialNotice" class="notice subtle" hidden>Partial findings are marked below. The last complete inventory stays available.</div>
+    <div id="installationList" class="installation-list"></div>
+    <div id="emptyInstallations" class="empty-state" hidden><svg viewBox="0 0 48 48" aria-hidden="true" fill="none"><rect x="5" y="8" width="38" height="27" rx="4"/><path d="M16 42h16m-8-7v7M17 20h14m-7-7v14"/></svg><h3 id="emptyTitle">Bring your MO2 installations together.</h3><p id="emptyDescription">Scan known locations or add the folder containing ModOrganizer.exe.</p><button id="emptyAddFolder" class="primary" type="button">Add an MO2 folder</button><button id="clearFilters" type="button" hidden>Clear filters</button></div>
+   </section>
+   <section id="unassociatedSection" class="unassociated-section" aria-labelledby="unassociatedHeading" hidden><div class="section-top"><div><h2 id="unassociatedHeading">Instances without a known installation</h2><p>These configuration folders are real findings. Add an MO2 application folder to review its plugin.</p></div></div><div id="unassociatedList"></div></section>
+   <section id="liveSessionsSection" class="unassociated-section" aria-labelledby="liveSessionsHeading" hidden><div class="section-top"><div><h2 id="liveSessionsHeading">Live sessions without a confirmed application</h2><p>These verified connections are available. Their application folder has not been associated with this inventory.</p></div></div><div id="liveSessionsList"></div></section>
+   <details id="discoveryIssues" class="discovery-issues" hidden><summary id="issueSummary">Discovery notes</summary><div id="issueList"></div></details>
+   <p class="ownership-note">Select application installations to install the plugin once in each. Profiles and shared global instances do not need separate plugin copies.</p>
+  </main>
+  <footer class="selection-bar"><div><strong id="selectionCount">No installations selected</strong><span id="selectionHint">Choose the application folders you want to update.</span></div><div class="selection-actions"><button id="clearSelection" type="button" class="quiet" disabled>Clear selection</button><button id="reviewSelected" type="button" class="primary" disabled>Review selected installations <span aria-hidden="true">→</span></button></div></footer>
+ </div>
+ <dialog id="deepScanDialog" aria-labelledby="deepScanTitle" aria-describedby="deepScanDescription">
+  <header class="dialog-head"><div><span class="section-label">COMPLETE FOLDER SEARCH</span><h2 id="deepScanTitle">Where should we look?</h2></div><button id="closeDeepScan" type="button" class="quiet" aria-label="Close folder search">×</button></header>
+  <div class="dialog-body"><p id="deepScanDescription">Search every subfolder in the drives and folders you choose. You can cancel and keep the findings discovered so far.</p><div id="deepRoots" class="root-list"></div><p id="noRoots" class="scope-note" hidden>Add a folder to make it available for discovery.</p><p id="deepScanError" class="form-error" role="alert"></p></div>
+  <footer class="dialog-footer"><button id="deepAddFolder" type="button" class="quiet">Add folder</button><button id="startDeepScan" type="button" class="primary" disabled>Scan selected locations</button></footer>
+ </dialog>
+ <dialog id="installPreview" class="preview-dialog" aria-labelledby="previewTitle" aria-describedby="previewDescription">
+  <header class="dialog-head"><div><span class="section-label">REVIEW BEFORE INSTALLING</span><h2 id="previewTitle">Confirm your plugin destinations</h2></div><button id="closePreview" type="button" class="quiet" aria-label="Close installation review">×</button></header>
+  <div class="dialog-body"><p id="previewDescription">Only these application folders will receive the bundled Modhunter plugin.</p><div id="previewPackage" class="preview-package"></div><div id="previewLoading" class="notice" role="status" hidden>Checking the package and selected installations…</div><div id="previewTargets" class="preview-targets"></div><p id="previewPolicy" class="scope-note">Existing plugin data is preserved. An existing plugin is backed up before replacement. Each target is checked again immediately before installation.</p><p id="previewExpiry" class="scope-note"></p><p id="previewError" class="form-error" role="alert"></p></div>
+  <footer class="dialog-footer"><button id="cancelPreview" type="button" class="quiet">Back to selection</button><button id="previewAgain" type="button" hidden>Check targets again</button><button id="confirmInstall" type="button" class="primary" disabled>Install plugin</button></footer>
+ </dialog>
+ <script src="locale-catalogs.js"></script><script src="preferences.js"></script><script src="instances.js"></script>
+</body>
+</html>

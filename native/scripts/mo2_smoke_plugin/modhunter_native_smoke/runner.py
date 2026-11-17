@@ -141,7 +141,8 @@ def exercise_native_nexus_binding(gateway, *, expected_qt_version="6.7.1"):
         require(meta.result.get("ok") is True and meta.result["meta"]["version"] == "2", meta.result)
         require(gateway.file_transport == "qt-raw-variant" and gateway._raw_source is source, gateway.files_error)
         files = owned("nexus-files", "modhunter:ci:files")
-        payload = {"files": [{"file_id": 12, "file_name": "Fixture.zip", "size_in_bytes": 3072}]}
+        payload = {"files": [{"file_id": 12, "name": "Optional fixture patch", "file_name": "Fixture.zip", "size_in_bytes": 3072,
+                               "version": "1.0.1", "category_id": 3}], "file_updates": []}
         source.nxmFilesAvailable.emit("skyrimspecialedition", 7, "other-plugin:fixture", payload, 3)
         require(files.state == "running", "An unowned raw files callback completed the fixture request")
         source.nxmFilesAvailable.emit("skyrimspecialedition", 7, "modhunter:ci:files", payload, 3)
@@ -149,6 +150,20 @@ def exercise_native_nexus_binding(gateway, *, expected_qt_version="6.7.1"):
         require(len(files.result["files"]) == 1, "The native file callback did not produce exactly one fixture file")
         normalized = files.result["files"][0]
         require(normalized["fileId"] == 12 and normalized["fileName"] == "Fixture.zip" and normalized["sizeInKB"] == 3, "The native raw JSON file identity or size did not match")
+        from mo2_update_arsenal.nexus_files import FileLineage
+        from mo2_update_arsenal.scanner import summary_from_metadata
+        installed = {"nexusId": 7, "installedVersion": "1.0.1", "installedFiles": [{"modId": 7, "fileId": 12}]}
+        summary = summary_from_metadata(installed, meta.result["meta"], time.time(), FileLineage(files.result, "skyrimspecialedition", 7))
+        require(summary["verdict"] == "current" and summary["latestVersion"] == "1.0.1", "An optional file inherited the unrelated project version")
+        replacement = owned("nexus-files", "modhunter:ci:replacement")
+        changed = {"files": [{"file_id": 13, "name": "Optional fixture replacement", "file_name": "RenamedFixture.zip",
+                              "version": "1.0.1", "category_id": 3}],
+                   "file_updates": [{"old_file_id": 12, "new_file_id": 13, "old_file_name": "Fixture.zip", "new_file_name": "RenamedFixture.zip"}]}
+        source.nxmFilesAvailable.emit("skyrimspecialedition", 7, "modhunter:ci:replacement", changed, 4)
+        require(replacement.result.get("ok") is True, replacement.result)
+        matched = FileLineage(replacement.result, "skyrimspecialedition", 7).evaluate(installed)
+        require(matched["verdict"] == "candidate" and matched["fileEvidence"]["targetFileId"] == 13,
+                "The native QVariant callback lost the exact optional-file replacement chain")
         cancelled = owned("nexus-files", "modhunter:ci:cancelled")
         cancelled_now = cancelled.cancel()
         require(cancelled_now, "The fixture request could not be cancelled")
@@ -442,14 +457,20 @@ class NativeSmokePlugin(ModUpdateArsenal):
             snapshot = api("/api/snapshot")
             catalog = snapshot.get("catalog", {})
             by_name = {item["mo2InternalName"]: item for item in catalog.get("items", [])}
+            color_group = next((group for group in catalog.get("groups", [])
+                                if group.get("mo2InternalName") == "Smoke Colors_separator"), {})
             self._check("native_profile_snapshot", snapshot.get("ok") is True
                         and catalog.get("profileName") == PROFILE_NAME
                         and catalog.get("game") == "modhuntersmoke"
                         and catalog.get("profileId") == health.get("profileId")
+                        and color_group.get("separatorColor") == "#20a0f080"
+                        and by_name.get("Smoke Enabled", {}).get("installedFiles") == [{"modId": 42, "fileId": 700}]
                         and all(name in by_name and all(by_name[name].get(key) == value
                                 for key, value in expected.items())
                                 for name, expected in EXPECTED_MODS.items()),
-                        itemCount=len(catalog.get("items", [])),
+                        itemCount=len(catalog.get("items", [])), separatorColor=color_group.get("separatorColor"),
+                        separatorColorSource=color_group.get("separatorColorSource"),
+                        installedFiles=by_name.get("Smoke Enabled", {}).get("installedFiles"),
                         fixtureMods={name: {key: by_name.get(name, {}).get(key)
                                            for key in expected}
                                      for name, expected in EXPECTED_MODS.items()})

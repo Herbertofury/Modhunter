@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import math
 import secrets
 import threading
 import time
@@ -21,7 +22,7 @@ from .gameplay import Chronicle
 from html import unescape
 import re
 from .source_registry import SourceScanner, canonical_source_url, source_record
-from .update_plan import PlanError, plan_updates, validate_batch_selection, validate_release_asset, risk_reasons
+from .update_plan import PlanError, plan_updates, validate_batch_selection, validate_release_asset, risk_reasons, nexus_file_proof, nexus_update_fresh
 from .file_advisor import advise_nexus_files
 from .install_brief import build_install_brief
 from .quick_update import choose_nexus_file, choose_release_asset
@@ -32,6 +33,8 @@ from .content_recovery import ContentRecovery
 from .duplicate_report import DuplicateReports
 from .source_adapters import compact_source_update, PUBLIC_API_PROVIDERS
 from .version import VERSION
+from .nexus_files import FileLineage, installed_file_context, installed_file_identity, normalize_file_payload, valid_file_payload
+from .scanner import STARTUP_CACHE_SECONDS, fresh_timestamp, summary_from_metadata, usable_project_metadata
 
 MAX_REQUEST = 16_384
 MAX_PROGRESS_REQUEST = 8_000_000
@@ -372,12 +375,14 @@ class ArsenalService:
             versions_changed = old_items.keys() != new_items.keys() or any(
                 old_items[key].get("installedVersion") != new_items[key].get("installedVersion")
                 or old_items[key].get("nexusId") != new_items[key].get("nexusId")
+                or installed_file_identity(old_items[key]) != installed_file_identity(new_items[key])
                 or source_identity(old_items[key]) != source_identity(new_items[key]) for key in old_items.keys() & new_items.keys())
             if same_profile and same_game and same_runtime:
                 for i in snapshot.get("items", []):
                     before = old_items.get(str(i["id"]))
                     if (before and before.get("installedVersion") == i.get("installedVersion")
                             and before.get("nexusId") == i.get("nexusId")
+                            and installed_file_identity(before) == installed_file_identity(i)
                             and source_identity(before) == source_identity(i) and before.get("update")):
                         i["update"] = before["update"]
             awards = self.chronicle.observe(old, snapshot) if same_profile else []
@@ -416,6 +421,31 @@ class ArsenalService:
                 # Selection-only changes are read by /api/revision directly.
                 # Do not invalidate the entire mod snapshot on every click.
                 self.selected_mod_id = mod_id
+
+    def set_separator_colors(self, profile_id: str, colors: dict) -> bool:
+        """Native GUI-thread color observations do not invalidate mod audits."""
+        from .model import content_hash
+        with self._guard:
+            if self._stopped or profile_id != self._snapshot.get("profileId"):
+                return False
+            changed = False
+            for group in self._snapshot.get("groups", []):
+                value = colors.get(group.get("id"))
+                if not isinstance(value, dict):
+                    continue
+                color, source = value.get("color"), value.get("source")
+                if color is not None and (not isinstance(color, str) or not re.fullmatch(r"#[0-9a-f]{8}", color)):
+                    continue
+                if source not in (None, "mo2-native", "mo2-meta"):
+                    continue
+                if group.get("separatorColor") != color or group.get("separatorColorSource") != source:
+                    group.update(separatorColor=color, separatorColorSource=source)
+                    changed = True
+            if changed:
+                build = self._snapshot.setdefault("build", {})
+                build["contentHash"] = content_hash(str(build.get("itemsHash", "")), self._snapshot.get("groups", []))
+                self._generation += 1
+            return True
 
     def focus_mod(self, mod_id: str, profile_id: str) -> dict:
         with self._guard:
@@ -643,10 +673,10 @@ class ArsenalService:
                             with self._guard:
                                 if not is_current():
                                     raise NexusError("MO2 scan was superseded")
-                            m = re.fullmatch(r"/v1/games/[a-z0-9_-]+/mods/([0-9]+)\.json", path)
+                            m = re.fullmatch(r"/v1/games/[a-z0-9_-]+/mods/([0-9]+)(/files)?\.json", path)
                             if m is None:
                                 raise NexusError("Unsupported native Nexus request")
-                            native = self.call_ui("nexus-metadata",
+                            native = self.call_ui("nexus-files" if m.group(2) else "nexus-metadata",
                                 {"game": game, "modId": int(m.group(1))}, timeout=70,
                                 cancel_event=scan_cancel)
                             if not native.get("ok"):
@@ -660,7 +690,7 @@ class ArsenalService:
                                     from .scanner import QuotaDepleted
                                     raise QuotaDepleted(message)
                                 raise NexusError(message)
-                            return native["meta"]
+                            return native if m.group(2) else native["meta"]
                         client = NexusClient("mo2-native", request_json=mo2_nexus_get)
                     else:
                         raise MissingAuth("Connect to Nexus in MO2 Settings > Nexus or use a fallback API key.")
@@ -696,7 +726,7 @@ class ArsenalService:
                             progress({"itemRecords": nexus.get("itemRecords", {})})
                             other = sources.result()
                     else:
-                        nexus, coverage = scan_nexus("deep" if key or native_nexus else "local")
+                        nexus, coverage = scan_nexus("startup" if key or native_nexus else "local")
                         progress({"itemRecords": nexus.get("itemRecords", {}), "phase": "querying-sources"})
                         with self._guard:
                             if not is_current():
@@ -759,8 +789,22 @@ class ArsenalService:
             domain = self._snapshot.get("game", "skyrimspecialedition")
             profile = self._snapshot.get("profileId")
             epoch = self._file_epoch
+            shared, shared_revision = self.cache.get_with_revision(domain, mod_id)
+            shared = shared or {}
             cached = self._file_cache.get((domain, mod_id))
-            if cached:
+            failure = shared.get("lastFailure")
+            failure_at = failure.get("checkedAt") if isinstance(failure, dict) else None
+            after_failure = (not failure or type(failure_at) in (int, float) and math.isfinite(failure_at) and failure_at >= 0
+                             and cached and fresh_timestamp(cached.get("checkedAt"))
+                             and cached["checkedAt"] > failure_at)
+            if (cached and valid_file_payload(cached, domain, mod_id)
+                    and fresh_timestamp(cached.get("checkedAt"))
+                    and after_failure):
+                return deepcopy(cached)
+            if (not shared.get("lastFailure") and valid_file_payload(shared.get("files"), domain, mod_id)
+                    and fresh_timestamp(shared.get("checkedAt"))):
+                cached = {"ok": True, **shared["files"], "checkedAt": shared["checkedAt"]}
+                self._file_cache[(domain, mod_id)] = cached
                 return deepcopy(cached)
             key = self.api_key
             native_nexus = self.native_nexus_available and self.native_nexus_files_available is not False
@@ -787,6 +831,9 @@ class ArsenalService:
                     result = {"ok": False, "error": "MO2 profile or scan changed while loading files; refresh and review again"}
                 elif result.get("ok"):
                     self._file_cache[(domain, mod_id)] = result
+                else:
+                    self.cache.mark_failed(domain, mod_id, str(result.get("error") or "File lookup failed"),
+                                           expected_revision=shared_revision)
                 flight["result"] = result
                 self._file_inflight.pop(identity, None)
                 flight["event"].set()
@@ -807,24 +854,17 @@ class ArsenalService:
                     {"game": safe_game_slug(domain), "modId": mod_id}, timeout=70)
                 if not response.get("ok"):
                     return response
-                files = response.get("files")
+                payload = response
             else:
                 payload = NexusClient(key).get(f"/v1/games/{safe_game_slug(domain)}/mods/{mod_id}/files.json")
-                files = payload.get("files") if isinstance(payload, dict) else None
-            if not isinstance(files, list):
-                return {"ok": False, "error": "Nexus did not return a files list"}
-            items = []
-            for file in files:
-                if not isinstance(file, dict):
-                    continue
-                try:
-                    fid = int(file.get("fileId") or file.get("file_id") or 0)
-                    if fid > 0:
-                        items.append({"fileId": fid, "name": str(file.get("name") or file.get("fileName") or file.get("file_name") or f"File {fid}")[:190], "version": str(file.get("version") or ""), "category": int(file.get("category", file.get("category_id", 0)) or 0), "sizeInKB": max(0, int(file.get("sizeInKB", file.get("size_kb", 0)) or 0)), "uploaded": str(file.get("uploaded_time") or ""), "fileName": str(file.get("fileName") or file.get("file_name") or "")[:190], "description": unescape(re.sub(r"<[^>]*>", " ", str(file.get("description") or "")))[:500].strip()})
-                except (TypeError, ValueError, OverflowError):
-                    continue
-            items.sort(key=lambda f: (f["category"] != 1, -f["fileId"]))
-            return {"ok": True, "files": items, "modId": mod_id}
+            result = normalize_file_payload(payload, domain, mod_id)
+            if not valid_file_payload(result, domain, mod_id):
+                return {"ok": False, "error": "Nexus file list or replacement history is incomplete; previous evidence retained"}
+            for file in result["files"]:
+                file["description"] = unescape(re.sub(r"<[^>]*>", " ", file["description"]))[:500].strip()
+                file["uploaded"] = file["uploaded_time"]
+            return {"ok": True, **result, "checkedAt": time.time(),
+                    **({"meta": payload["meta"]} if usable_project_metadata(payload.get("meta"), domain, mod_id) else {})}
         except (NexusError, MissingAuth, ValueError) as ex:
             return {"ok": False, "error": str(ex)}
 
@@ -839,14 +879,48 @@ class ArsenalService:
         response = self.fetch_files(mod_id)
         if not response.get("ok"):
             return response
-        if self.selection_snapshot([item_id]) != snapshot:
-            return {"ok": False, "error": "Selected mod changed while loading files; refresh and review again"}
-        advisory = advise_nexus_files(item, response["files"])
-        return {**response, **advisory, "itemId": item_id}
+        game = snapshot.get("game", "skyrimspecialedition")
+        if not valid_file_payload(response, game, mod_id) or not fresh_timestamp(response.get("checkedAt")):
+            return {"ok": False, "error": "Complete fresh Nexus file history is required; check this project again"}
+        with self._guard:
+            if self.selection_snapshot([item_id]) != snapshot:
+                return {"ok": False, "error": "Selected mod changed while loading files; refresh and review again"}
+            if (nexus_project_id(item, game) != mod_id
+                    or (item.get("update") or {}).get("source") in {f"{provider}-release-api" for provider in PUBLIC_API_PROVIDERS}):
+                return {**response, **advise_nexus_files(item, response["files"]), "itemId": item_id}
+            cached = self.cache.get(game, mod_id) or {}
+            metadata = response.get("meta", cached.get("meta", {}))
+            if not usable_project_metadata(metadata, game, mod_id):
+                metadata = {}
+            update = summary_from_metadata(item, metadata, response["checkedAt"], FileLineage(response, game, mod_id))
+            # File review does not discard already fetched artwork/author details.
+            for key in ("thumbnailUrl", "thumbnailKind", "author", "projectVersion"):
+                if not update.get(key) and (item.get("update") or {}).get(key):
+                    update[key] = deepcopy(item["update"][key])
+            self._items_by_id[item_id]["update"] = update
+            self._generation += 1
+            item = {**item, "update": update}
+            advisory = advise_nexus_files(item, response["files"])
+            return {**response, **advisory, "itemId": item_id, "update": deepcopy(update),
+                    "fileProof": nexus_file_proof(snapshot, item),
+                    "installedVersion": str(item.get("installedVersion") or ""),
+                    "targetVersion": str(update.get("latestVersion") or "")}
 
     def _start_native_download(self, command: str, native_payload: dict, ticket: dict) -> dict:
         """Register native IDs atomically with any completion signal received early."""
         with self._guard:
+            if ticket.get("provider") == "nexus" and ticket.get("itemId"):
+                item = self._items_by_id.get(str(ticket["itemId"]))
+                if (item is None or ticket.get("profileId") != self._snapshot.get("profileId")
+                        or str(item.get("installedVersion") or "") != str(ticket.get("installedVersion") or "")
+                        or int(item.get("nexusId") or 0) != int(ticket.get("modId") or 0)
+                        or native_payload.get("reviewedContext") is not None
+                        and not self.download_context_matches(native_payload["reviewedContext"])):
+                    return {"ok": False, "error": "Installed Nexus file or reviewed release changed before downloading; review the exact archive again"}
+                # Pin native observations before the handoff: a synchronous
+                # completion or subsequent same-version reinstall cannot lend
+                # this approval another installed archive's identity.
+                ticket["installedFileIdentity"] = installed_file_context(item)
             native_payload = {**native_payload, "profileId": ticket.get("profileId"),
                               "itemId": ticket.get("itemId", ""),
                               "gameRuntime": ticket.get("gameRuntime"),
@@ -914,23 +988,32 @@ class ArsenalService:
                 "nexusId": int(item.get("nexusId") or 0),
                 "sourceUrl": str(source.get("url") or ""), "sourceVerified": source.get("verified") is True,
                 "verdict": update.get("verdict"), "targetVersion": str(update.get("latestVersion") or ""),
-                "risks": risk_reasons(item)}
+                "risks": risk_reasons(item),
+                **({"installedFileIdentity": installed_file_context(item),
+                    "nexusFileEvidence": deepcopy(update.get("fileEvidence") or {})}
+                   if update.get("source") == "nexus-api" else {})}
 
     def download_context_matches(self, reviewed: dict) -> bool:
         """Revalidate immediately before a native download, even after Qt delay."""
         with self._guard:
             live = self.selection_snapshot([str(reviewed.get("itemId") or "")])
             rows = live.get("items", [])
-            return bool(rows and not self._stopped and self._download_context(live, rows[0]) == reviewed)
+            return bool(rows and not self._stopped and self._download_context(live, rows[0]) == reviewed
+                        and ((rows[0].get("update") or {}).get("source") != "nexus-api"
+                             or nexus_update_fresh(rows[0].get("update") or {})))
 
     @staticmethod
     def _ticket_blocks_update(ticket: dict, item: dict | None) -> bool:
         if ticket.get("status") in ("failed", "removed"):
             return False
         # A completed installation remains history. After MO2 observes a new
-        # installed version it must not permanently block the next release.
+        # installed archive or version it must not block the next release.
         if ticket.get("status") == "installed" and item is not None:
-            return str(ticket.get("installedVersion") or "") == str(item.get("installedVersion") or "")
+            if str(ticket.get("installedVersion") or "") != str(item.get("installedVersion") or ""):
+                return False
+            if ticket.get("provider") == "nexus" and "installedFileIdentity" in ticket:
+                return ticket["installedFileIdentity"] == installed_file_context(item)
+            return True
         return True
 
     def quick_update(self, payload: dict) -> dict:
@@ -1048,11 +1131,20 @@ class ArsenalService:
             found = self.review_files(nexus_id, item_id)
             if not found.get("ok"):
                 return {"skipped": [{"itemId": item_id, "reason": str(found.get("error") or "Nexus file list unavailable")}]}
+            refreshed = self.selection_snapshot([item_id])
+            if (refreshed.get("profileId") != profile
+                    or refreshed.get("executionEpoch") != live.get("executionEpoch")
+                    or not refreshed.get("items")
+                    or nexus_file_proof(refreshed, refreshed["items"][0]) != found.get("fileProof")):
+                return {"skipped": [{"itemId": item_id, "reason": "The selected installed archive or review changed"}]}
+            live, item = refreshed, refreshed["items"][0]
+            update = item.get("update") or {}
             picked, reason = choose_nexus_file(item, found.get("files", []))
             if picked:
                 entry = {"itemId": item_id, "modId": nexus_id,
                          "fileId": int(picked["fileId"]), "installedVersion": str(item.get("installedVersion") or ""),
                          "targetVersion": str(update.get("latestVersion") or ""),
+                         "fileProof": found["fileProof"],
                          "reviewed": True, "riskAcknowledged": True}
         elif update.get("source") in {f"{provider}-release-api" for provider in PUBLIC_API_PROVIDERS}:
             picked, reason = choose_release_asset(item)
@@ -1326,9 +1418,12 @@ class ArsenalService:
                 "autoInstall": old.get("installDisarmed") is not True and (old.get("autoInstallRequested") is True or
                                old.get("selectionMode") == "verified-match")}
         if old.get("provider") == "nexus":
-            if int(mod.get("nexusId") or 0) != int(old.get("modId") or 0) or not old.get("fileId"):
+            if (int(mod.get("nexusId") or 0) != int(old.get("modId") or 0) or not old.get("fileId")
+                    or old.get("installedFileIdentity") != installed_file_context(mod)
+                    or old.get("fileProof") != nexus_file_proof(snapshot, mod)):
                 return {"ok": False, "error": "Source identity changed. Choose the file again."}
-            entry = {**base, "modId": int(old["modId"]), "fileId": int(old["fileId"])}
+            entry = {**base, "modId": int(old["modId"]), "fileId": int(old["fileId"]),
+                     "fileProof": old["fileProof"]}
         elif old.get("provider") in PUBLIC_API_PROVIDERS:
             if (mod.get("update") or {}).get("source") != f"{old['provider']}-release-api" or not (old.get("assetKey") or old.get("assetId")):
                 return {"ok": False, "error": "Source release changed. Choose the file again."}
@@ -1424,10 +1519,13 @@ class ArsenalService:
         # against server-owned release results above, never client URLs.
         exact_files: dict[tuple[int, int], dict] = {}
         for item in approved:
-            available = self.fetch_files(item["modId"])
+            available = self.review_files(item["modId"], item["itemId"])
             if not available.get("ok"):
                 return {"ok": False, "queued": [], "failed": [{"itemId": item["itemId"],
                         "error": available.get("error", "Nexus file list unavailable")}]}
+            if available.get("fileProof") != nexus_file_proof(snapshot, reviewed_items[item["itemId"]]):
+                return {"ok": False, "queued": [], "failed": [{"itemId": item["itemId"],
+                        "error": "The installed archive's replacement history changed; review the current files again"}]}
             matched = next((f for f in available.get("files", [])
                             if int(f.get("fileId") or 0) == item["fileId"]), None)
             if not matched:
@@ -1498,6 +1596,8 @@ class ArsenalService:
                             "fileName": metadata.get("fileName") or metadata.get("name") or item.get("name") or "",
                             "fileVersion": str(metadata.get("version") or ""),
                         })
+                        if item.get("kind") != "source":
+                            live_ticket["fileProof"] = nexus_file_proof(live, selected_row)
                         if item.get("kind") == "source":
                             live_ticket["assetId"] = item.get("assetId")
                             live_ticket["assetKey"] = item.get("assetKey")

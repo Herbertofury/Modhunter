@@ -1,0 +1,516 @@
+{
+  "schema": 1,
+  "baselineRef": "3231bb689bebb050e597044c4f001e006f7ab82a",
+  "scope": "Controlled Python provider fixture; no live network, account, GUI or native MO2 timing.",
+  "comparisons": {
+    "standardCheck": "Actual old manual all/deep metadata-only check versus current exact-file plus metadata check. Cold adds required file/history requests; warm repeated standard checks reuse both for up to4hours.",
+    "completeEvidence": "Pinned old metadata scan plus its actual file-list adapter for every project, versus new forced full audit. Both timed workloads fetch all project metadata and full Files responses. Only the new path evaluates exact installed-file replacement history.",
+    "startup": "Old automatic startup already reused fresh project metadata. Its separate warm control prevents attributing that existing benefit to this change.",
+    "freshness": "Explicit Full audit refreshes both endpoints. Failed/incomplete evidence cannot renew current status. Native MO2 metadata bootstrap reuse is not simulated; all raw API calls are counted."
+  },
+  "projects": 600,
+  "installedRows": 4800,
+  "rowsPerProject": 8,
+  "perRequestSimulatedLatencySeconds": 0.01,
+  "workers": 5,
+  "repeats": 3,
+  "environment": {
+    "python": "3.12.14",
+    "platform": "Linux",
+    "machine": "x86_64"
+  },
+  "fixtureSha256": "9fb1978ece7eb233b342d6015c911cf7abd2abea81470dd91c7f768dc352aa78",
+  "baselineSourceHashes": {
+    "scanner.py": "d740d05252875253924c0954f46acd745f0c7d9368fb8c3c642bdf5edf327bc1",
+    "bridge.py": "c2b95af4220cf83184437399ea050e82d7090baae86adb6cb3383f7599267999"
+  },
+  "sourceHashes": {
+    "scanner.py": "10c504f6b1cf6f5b94fc7f1c229374c4afccda8966cc2b29c3580e690fa78644",
+    "nexus_files.py": "ab61e4ae1df1838e06030afc9c4909f6e408212cc3be619f5e0f9a64b04c16ed",
+    "bridge.py": "ded692ba5311e06b983938f2d62659c6ee99dc210258a14944f99e309fa98b77",
+    "file_advisor.py": "701bc1fcbbb17421e1f2f2338fd8b8ff24e4ab6d5ab22e21a46cfca835de0ca7",
+    "quick_update.py": "a5453479f521b5191351c003413fb981cbe66af8e6c95c1d381e10d0de750285",
+    "update_plan.py": "13f09a8d8cf8ff48cab2856619364ec209fc6d16e52c985ae9224c6c2e2e51df"
+  },
+  "benchmarkSha256": "f9a80160dc50cacf1ab977f0e9e30b787508e447b7307209c51484c24d0ec5a8",
+  "summary": {
+    "beforeProjectOnlyCold": {
+      "medianSeconds": 1.401204,
+      "medianCpuSeconds": 0.365481,
+      "providerRequests": [
+        600,
+        600,
+        600
+      ],
+      "metadataRequests": 600,
+      "fileRequests": 0,
+      "verdicts": {
+        "candidate": 4800
+      }
+    },
+    "beforeProjectOnlyRepeat": {
+      "medianSeconds": 1.321094,
+      "medianCpuSeconds": 0.310052,
+      "providerRequests": [
+        600,
+        600,
+        600
+      ],
+      "metadataRequests": 600,
+      "fileRequests": 0,
+      "verdicts": {
+        "candidate": 4800
+      }
+    },
+    "beforeStartupWarm": {
+      "medianSeconds": 0.147051,
+      "medianCpuSeconds": 0.14705,
+      "providerRequests": [
+        0,
+        0,
+        0
+      ],
+      "metadataRequests": 0,
+      "fileRequests": 0,
+      "verdicts": {
+        "candidate": 4800
+      }
+    },
+    "beforeCompleteEvidence": {
+      "medianSeconds": 2.669961,
+      "medianCpuSeconds": 0.51324,
+      "providerRequests": [
+        1200,
+        1200,
+        1200
+      ],
+      "metadataRequests": 600,
+      "fileRequests": 600,
+      "verdicts": {
+        "candidate": 4800
+      }
+    },
+    "afterCold": {
+      "medianSeconds": 2.676788,
+      "medianCpuSeconds": 0.596108,
+      "providerRequests": [
+        1200,
+        1200,
+        1200
+      ],
+      "metadataRequests": 600,
+      "fileRequests": 600,
+      "verdicts": {
+        "candidate": 2400,
+        "current": 2400
+      }
+    },
+    "afterRepeat": {
+      "medianSeconds": 0.239971,
+      "medianCpuSeconds": 0.239983,
+      "providerRequests": [
+        0,
+        0,
+        0
+      ],
+      "metadataRequests": 0,
+      "fileRequests": 0,
+      "verdicts": {
+        "candidate": 2400,
+        "current": 2400
+      }
+    },
+    "afterForcedAudit": {
+      "medianSeconds": 2.597344,
+      "medianCpuSeconds": 0.519783,
+      "providerRequests": [
+        1200,
+        1200,
+        1200
+      ],
+      "metadataRequests": 600,
+      "fileRequests": 600,
+      "verdicts": {
+        "candidate": 2400,
+        "current": 2400
+      }
+    }
+  },
+  "runs": [
+    {
+      "repeat": 1,
+      "case": "beforeProjectOnlyCold",
+      "seconds": 1.342695,
+      "cpuSeconds": 0.320053,
+      "providerRequests": 600,
+      "metadataRequests": 600,
+      "fileRequests": 0,
+      "peakProviderRequests": 5,
+      "installedRows": 4800,
+      "completeFileRows": 0,
+      "artworkRows": 4800,
+      "authorRows": 4800,
+      "verdicts": {
+        "candidate": 4800
+      }
+    },
+    {
+      "repeat": 1,
+      "case": "beforeProjectOnlyRepeat",
+      "seconds": 1.401111,
+      "cpuSeconds": 0.431669,
+      "providerRequests": 600,
+      "metadataRequests": 600,
+      "fileRequests": 0,
+      "peakProviderRequests": 5,
+      "installedRows": 4800,
+      "completeFileRows": 0,
+      "artworkRows": 4800,
+      "authorRows": 4800,
+      "verdicts": {
+        "candidate": 4800
+      }
+    },
+    {
+      "repeat": 1,
+      "case": "beforeStartupWarm",
+      "seconds": 0.185591,
+      "cpuSeconds": 0.185593,
+      "providerRequests": 0,
+      "metadataRequests": 0,
+      "fileRequests": 0,
+      "peakProviderRequests": 0,
+      "installedRows": 4800,
+      "completeFileRows": 0,
+      "artworkRows": 4800,
+      "authorRows": 4800,
+      "verdicts": {
+        "candidate": 4800
+      }
+    },
+    {
+      "repeat": 1,
+      "case": "beforeCompleteEvidence",
+      "seconds": 2.675871,
+      "cpuSeconds": 0.532801,
+      "providerRequests": 1200,
+      "metadataRequests": 600,
+      "fileRequests": 600,
+      "peakProviderRequests": 5,
+      "installedRows": 4800,
+      "completeFileRows": 1800,
+      "artworkRows": 4800,
+      "authorRows": 4800,
+      "verdicts": {
+        "candidate": 4800
+      }
+    },
+    {
+      "repeat": 1,
+      "case": "afterCold",
+      "seconds": 2.720558,
+      "cpuSeconds": 0.654188,
+      "providerRequests": 1200,
+      "metadataRequests": 600,
+      "fileRequests": 600,
+      "peakProviderRequests": 5,
+      "installedRows": 4800,
+      "completeFileRows": 1800,
+      "artworkRows": 4800,
+      "authorRows": 4800,
+      "verdicts": {
+        "candidate": 2400,
+        "current": 2400
+      }
+    },
+    {
+      "repeat": 1,
+      "case": "afterRepeat",
+      "seconds": 0.246601,
+      "cpuSeconds": 0.246574,
+      "providerRequests": 0,
+      "metadataRequests": 0,
+      "fileRequests": 0,
+      "peakProviderRequests": 0,
+      "installedRows": 4800,
+      "completeFileRows": 1800,
+      "artworkRows": 4800,
+      "authorRows": 4800,
+      "verdicts": {
+        "candidate": 2400,
+        "current": 2400
+      }
+    },
+    {
+      "repeat": 1,
+      "case": "afterForcedAudit",
+      "seconds": 2.682742,
+      "cpuSeconds": 0.592885,
+      "providerRequests": 1200,
+      "metadataRequests": 600,
+      "fileRequests": 600,
+      "peakProviderRequests": 5,
+      "installedRows": 4800,
+      "completeFileRows": 1800,
+      "artworkRows": 4800,
+      "authorRows": 4800,
+      "verdicts": {
+        "candidate": 2400,
+        "current": 2400
+      }
+    },
+    {
+      "repeat": 2,
+      "case": "beforeProjectOnlyCold",
+      "seconds": 1.401204,
+      "cpuSeconds": 0.365481,
+      "providerRequests": 600,
+      "metadataRequests": 600,
+      "fileRequests": 0,
+      "peakProviderRequests": 5,
+      "installedRows": 4800,
+      "completeFileRows": 0,
+      "artworkRows": 4800,
+      "authorRows": 4800,
+      "verdicts": {
+        "candidate": 4800
+      }
+    },
+    {
+      "repeat": 2,
+      "case": "beforeProjectOnlyRepeat",
+      "seconds": 1.305516,
+      "cpuSeconds": 0.277973,
+      "providerRequests": 600,
+      "metadataRequests": 600,
+      "fileRequests": 0,
+      "peakProviderRequests": 5,
+      "installedRows": 4800,
+      "completeFileRows": 0,
+      "artworkRows": 4800,
+      "authorRows": 4800,
+      "verdicts": {
+        "candidate": 4800
+      }
+    },
+    {
+      "repeat": 2,
+      "case": "beforeStartupWarm",
+      "seconds": 0.129311,
+      "cpuSeconds": 0.129198,
+      "providerRequests": 0,
+      "metadataRequests": 0,
+      "fileRequests": 0,
+      "peakProviderRequests": 0,
+      "installedRows": 4800,
+      "completeFileRows": 0,
+      "artworkRows": 4800,
+      "authorRows": 4800,
+      "verdicts": {
+        "candidate": 4800
+      }
+    },
+    {
+      "repeat": 2,
+      "case": "beforeCompleteEvidence",
+      "seconds": 2.669961,
+      "cpuSeconds": 0.51324,
+      "providerRequests": 1200,
+      "metadataRequests": 600,
+      "fileRequests": 600,
+      "peakProviderRequests": 5,
+      "installedRows": 4800,
+      "completeFileRows": 1800,
+      "artworkRows": 4800,
+      "authorRows": 4800,
+      "verdicts": {
+        "candidate": 4800
+      }
+    },
+    {
+      "repeat": 2,
+      "case": "afterCold",
+      "seconds": 2.632634,
+      "cpuSeconds": 0.541713,
+      "providerRequests": 1200,
+      "metadataRequests": 600,
+      "fileRequests": 600,
+      "peakProviderRequests": 5,
+      "installedRows": 4800,
+      "completeFileRows": 1800,
+      "artworkRows": 4800,
+      "authorRows": 4800,
+      "verdicts": {
+        "candidate": 2400,
+        "current": 2400
+      }
+    },
+    {
+      "repeat": 2,
+      "case": "afterRepeat",
+      "seconds": 0.212555,
+      "cpuSeconds": 0.212269,
+      "providerRequests": 0,
+      "metadataRequests": 0,
+      "fileRequests": 0,
+      "peakProviderRequests": 0,
+      "installedRows": 4800,
+      "completeFileRows": 1800,
+      "artworkRows": 4800,
+      "authorRows": 4800,
+      "verdicts": {
+        "candidate": 2400,
+        "current": 2400
+      }
+    },
+    {
+      "repeat": 2,
+      "case": "afterForcedAudit",
+      "seconds": 2.597288,
+      "cpuSeconds": 0.489692,
+      "providerRequests": 1200,
+      "metadataRequests": 600,
+      "fileRequests": 600,
+      "peakProviderRequests": 5,
+      "installedRows": 4800,
+      "completeFileRows": 1800,
+      "artworkRows": 4800,
+      "authorRows": 4800,
+      "verdicts": {
+        "candidate": 2400,
+        "current": 2400
+      }
+    },
+    {
+      "repeat": 3,
+      "case": "beforeProjectOnlyCold",
+      "seconds": 1.477093,
+      "cpuSeconds": 0.39144,
+      "providerRequests": 600,
+      "metadataRequests": 600,
+      "fileRequests": 0,
+      "peakProviderRequests": 5,
+      "installedRows": 4800,
+      "completeFileRows": 0,
+      "artworkRows": 4800,
+      "authorRows": 4800,
+      "verdicts": {
+        "candidate": 4800
+      }
+    },
+    {
+      "repeat": 3,
+      "case": "beforeProjectOnlyRepeat",
+      "seconds": 1.321094,
+      "cpuSeconds": 0.310052,
+      "providerRequests": 600,
+      "metadataRequests": 600,
+      "fileRequests": 0,
+      "peakProviderRequests": 5,
+      "installedRows": 4800,
+      "completeFileRows": 0,
+      "artworkRows": 4800,
+      "authorRows": 4800,
+      "verdicts": {
+        "candidate": 4800
+      }
+    },
+    {
+      "repeat": 3,
+      "case": "beforeStartupWarm",
+      "seconds": 0.147051,
+      "cpuSeconds": 0.14705,
+      "providerRequests": 0,
+      "metadataRequests": 0,
+      "fileRequests": 0,
+      "peakProviderRequests": 0,
+      "installedRows": 4800,
+      "completeFileRows": 0,
+      "artworkRows": 4800,
+      "authorRows": 4800,
+      "verdicts": {
+        "candidate": 4800
+      }
+    },
+    {
+      "repeat": 3,
+      "case": "beforeCompleteEvidence",
+      "seconds": 2.61129,
+      "cpuSeconds": 0.463256,
+      "providerRequests": 1200,
+      "metadataRequests": 600,
+      "fileRequests": 600,
+      "peakProviderRequests": 5,
+      "installedRows": 4800,
+      "completeFileRows": 1800,
+      "artworkRows": 4800,
+      "authorRows": 4800,
+      "verdicts": {
+        "candidate": 4800
+      }
+    },
+    {
+      "repeat": 3,
+      "case": "afterCold",
+      "seconds": 2.676788,
+      "cpuSeconds": 0.596108,
+      "providerRequests": 1200,
+      "metadataRequests": 600,
+      "fileRequests": 600,
+      "peakProviderRequests": 5,
+      "installedRows": 4800,
+      "completeFileRows": 1800,
+      "artworkRows": 4800,
+      "authorRows": 4800,
+      "verdicts": {
+        "candidate": 2400,
+        "current": 2400
+      }
+    },
+    {
+      "repeat": 3,
+      "case": "afterRepeat",
+      "seconds": 0.239971,
+      "cpuSeconds": 0.239983,
+      "providerRequests": 0,
+      "metadataRequests": 0,
+      "fileRequests": 0,
+      "peakProviderRequests": 0,
+      "installedRows": 4800,
+      "completeFileRows": 1800,
+      "artworkRows": 4800,
+      "authorRows": 4800,
+      "verdicts": {
+        "candidate": 2400,
+        "current": 2400
+      }
+    },
+    {
+      "repeat": 3,
+      "case": "afterForcedAudit",
+      "seconds": 2.597344,
+      "cpuSeconds": 0.519783,
+      "providerRequests": 1200,
+      "metadataRequests": 600,
+      "fileRequests": 600,
+      "peakProviderRequests": 5,
+      "installedRows": 4800,
+      "completeFileRows": 1800,
+      "artworkRows": 4800,
+      "authorRows": 4800,
+      "verdicts": {
+        "candidate": 2400,
+        "current": 2400
+      }
+    }
+  ],
+  "assertions": {
+    "completeInstalledInventory": true,
+    "projectMetadataPreserved": true,
+    "artworkAndAuthorsPreserved": true,
+    "completeFileListsPreserved": true,
+    "exactOptionalAndMainVerdicts": true,
+    "allProviderCallsCounted": true,
+    "fiveRequestConcurrencyBound": true
+  }
+}

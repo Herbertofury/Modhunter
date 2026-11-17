@@ -3,8 +3,13 @@
 mod catalog;
 mod discovery;
 mod import_operation;
+mod install_admission;
+mod installer_bundle;
+#[cfg(windows)]
+mod instances_windows;
 #[cfg_attr(not(windows), allow(dead_code))]
 mod locale;
+mod mo2_discovery;
 mod policy;
 mod watchtower_policy;
 #[cfg(windows)]

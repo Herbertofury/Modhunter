@@ -7,6 +7,7 @@ from __future__ import annotations
 import copy
 import json
 import tempfile
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -14,6 +15,9 @@ from pathlib import Path
 
 from mo2_update_arsenal.bridge import ArsenalService
 from mo2_update_arsenal.install_brief import build_install_brief
+from mo2_update_arsenal.nexus_files import FileLineage, installed_file_context, normalize_file_payload
+from mo2_update_arsenal.scanner import summary_from_metadata
+from mo2_update_arsenal.update_plan import nexus_file_proof
 
 
 SNAP = {
@@ -21,15 +25,25 @@ SNAP = {
     "gameRuntime": "1.5.97", "items": [{
         "id": "live-test", "name": "Test Animations", "mo2InternalName": "Test Animations",
         "nexusId": 45, "installedVersion": "1.1", "flags": ["DLL"],
+        "installedFiles": [{"modId": 45, "fileId": 47}],
         "audit": {"verdict": "check"},
         "update": {"verdict": "candidate", "latestVersion": "2.4", "source": "nexus-api"},
     }],
 }
+FILES = {"ok": True, "checkedAt": time.time(), **normalize_file_payload({
+    "files": [
+        {"file_id": 47, "file_name": "Animations-SE-1.1.7z", "version": "1.1", "category_id": 4},
+        {"file_id": 48, "file_name": "Animations-SE-2.4.7z", "name": "Main file", "version": "2.4", "category_id": 1},
+    ], "file_updates": [{"old_file_id": 47, "new_file_id": 48}],
+}, SNAP["game"], 45)}
+SNAP["items"][0]["update"] = summary_from_metadata(
+    SNAP["items"][0], {}, FILES["checkedAt"], FileLineage(FILES, SNAP["game"], 45))
 TICKET = {
     "profileId": "skyrim:main", "profileName": "Primary",
     "game": "skyrimspecialedition", "gameRuntime": "1.5.97", "status": "complete",
     "itemId": "live-test", "installedVersion": "1.1", "targetVersion": "2.4",
-    "provider": "nexus", "fileId": 48, "fileName": "Animations-SE-2.4.7z",
+    "provider": "nexus", "modId": 45, "fileId": 48, "fileName": "Animations-SE-2.4.7z",
+    "installedFileIdentity": installed_file_context(SNAP["items"][0]),
     "fileVersion": "2.4", "reviewed": True,
     "riskReasons": ["Native/configuration flag: DLL", "Existing compatibility advisory: check"],
 }
@@ -107,14 +121,12 @@ class InstallBriefServerTests(unittest.TestCase):
 
         self.service = ArsenalService("<html></html>", Path(self.temp.name) / "cache.json", ui,
                                      copy.deepcopy(SNAP))
-        self.service.fetch_files = lambda mid: {"ok": True, "files": [{
-            "fileId": 48, "fileName": "Animations-SE-2.4.7z", "name": "Main file",
-            "version": "2.4", "category": 1,
-        }]}
+        self.service.fetch_files = lambda mid: copy.deepcopy(FILES)
         self.queue_result = self.service.queue_reviewed_downloads({
             "profileId": SNAP["profileId"], "confirm": "QUEUE_REVIEWED_DOWNLOADS",
             "entries": [{"itemId": "live-test", "modId": 45, "fileId": 48,
                          "installedVersion": "1.1", "targetVersion": "2.4",
+                         "fileProof": nexus_file_proof(SNAP, SNAP["items"][0]),
                          "riskAcknowledged": True, "reviewed": True}],
         })
         self.assertTrue(self.queue_result["ok"])

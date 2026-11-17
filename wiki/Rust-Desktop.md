@@ -1,12 +1,12 @@
-# Rust Desktop 0.12.1
+# Rust Desktop 0.13.0
 
 [Home](Home.md) / [Windows releases](https://github.com/Herbertofury/Modhunter/releases) / [Native build results](https://github.com/Herbertofury/Modhunter/actions/workflows/native-rust.yml)
 
 ## What changed
 
-The [0.12.1 OLED release](OLED-0.12.1) restores colored separators and visible operation feedback, fixes packaged offline progress and version-aware MO2 readiness, and reduces full-library DOM work. [Daily use](Daily-Use) gives the complete setup and update workflow.
+The **[MO2 Instances](MO2-Instances)** manager discovers application installs, portable/global instances and profiles, then installs the matching bundled plugin into your explicitly selected applications. Both NSIS and portable desktop packages include the same complete verified plugin resource. Shared global configurations are shown as shared choices, and existing plugin data/backups are preserved.
 
-The current workspace combines a compact native shell, image-forward Gallery and List choices, adjustable density, source filters, custom vector navigation and coordinated OLED-black/neutral-light themes. The [0.12.1 verification guide](OLED-0.12.1) records the current screenshots and runtime results; the [Atelier 0.12 guide](Atelier-0.12) preserves the original design comparison. The complete library remains available without viewport virtualization or result caps.
+The library uses the available window width and height, with a sticky header, compact bottom search/control dock, visible Bugs/health/notes columns and remembered column visibility. Actual MO2 separator colors carry through to its chapter bars. Update evidence distinguishes installed files and addons on the same mod page. [Daily use](Daily-Use) explains the complete workflow. The [0.12.1 guide](OLED-0.12.1) and [Atelier guide](Atelier-0.12) retain historical design and performance evidence.
 
 Modhunter now has a compiled Rust Windows desktop. Rust owns the window and tab lifecycle, file dialogs, background profile import, cached metadata parsing, local preferences, MO2 discovery, connection health, export destinations and plugin record/hash analysis. WebView2 renders the shared updater and all existing game modes. The shipped app does not run Electron or require Node.
 
@@ -14,10 +14,10 @@ The presentation remains HTML/CSS/JavaScript. The Python/Qt plugin remains insid
 
 ## Install and connect
 
-1. Download the [Windows installer](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.1/Modhunter_0.12.1_x64-setup.exe), or extract the [portable package](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.1/Modhunter-Rust-Windows.zip) and run **Modhunter.exe**. The installer bootstraps Microsoft Edge WebView2 when needed. Version 0.12 also provides dedicated **MO2-Plugin** and **Standalone** archives derived from the same validated portable package.
+1. Download the [Windows installer](https://github.com/Herbertofury/Modhunter/releases/download/v0.13.0/Modhunter_0.13.0_x64-setup.exe), or extract the [portable package](https://github.com/Herbertofury/Modhunter/releases/download/v0.13.0/Modhunter-Rust-Windows.zip) and run **Modhunter.exe**. The installer bootstraps Microsoft Edge WebView2 when needed. Version 0.12 also provides dedicated **MO2-Plugin** and **Standalone** archives derived from the same validated portable package.
 2. For local inspection, click **Import MO2** and select the profile's `modlist.txt`. Portable instances are inferred. For separate configuration/data directories, first select **Instance INI**; **Mods path** provides an explicit override. **Auto paths** clears those overrides.
 3. Click **Refresh** after changing files. The toolbar reports measured import duration, metadata cache hits and warnings. **CANCEL** interrupts a native import/refresh or plugin audit; **CANCELING…** remains visible until its workers settle. The last complete catalog stays available and another refresh/audit can then run. Importing never changes the MO2 profile or installed mod files.
-4. To enable live updating, close MO2 and run **Install_MO2_Plugin.bat** from the portable package. Select the directory containing `ModOrganizer.exe`. The previous plugin is preserved in `ModhunterBackups`, outside MO2's plugin directory, and a failed replacement is rolled back.
+4. To enable live updating, open **MO2 Instances**, select the application installs, review their exact destinations, close the selected MO2 applications when requested, then install. The previous plugin is preserved in `ModhunterBackups`, outside MO2's plugin directory, and a failed replacement is rolled back. The portable manual installer remains available.
 5. Start MO2 and wait for the profile to load; the bridge starts automatically. In the Rust app, click **Find MO2**. Opening **Tools → Update Arsenal – Quest Board** remains optional. A single validated session connects; multiple sessions are offered for selection. Manual loopback URLs still work.
 6. Use the existing **Update now**, **Choose file**, background queue and **Install all ready** controls. MO2 supplies Nexus sign-in and its real FOMOD/replace dialogs. Network and disk analysis run in background workers. Native installer calls cross MO2's Qt queue; the dashboard stays responsive while MO2 owns its installer prompts.
 

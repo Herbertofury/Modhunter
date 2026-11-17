@@ -13,8 +13,8 @@ def sha(path):
         for block in iter(lambda:stream.read(1024*1024),b''):digest.update(block)
     return digest.hexdigest()
 def source_names():
-    paths=subprocess.check_output(['git','ls-files','-z','native/crates','native/ui','native/scripts/bind_native_proof.py','native/scripts/watchtower_smoke.ps1','native/scripts/windows_smoke.ps1','native/Cargo.toml','native/Cargo.lock'],cwd=ROOT).decode().split('\0')
-    return sorted(p for p in paths if p and (p.endswith(('.rs','.js','.css','.html','.toml','.json','.ps1','.py')) or p=='native/Cargo.lock'))
+    paths=subprocess.check_output(['git','ls-files','-z','native/crates','native/ui','native/scripts/bind_native_proof.py','native/scripts/watchtower_smoke.ps1','native/scripts/windows_smoke.ps1','native/scripts/instances_manager_smoke.ps1','native/scripts/verify_instances_manager.cjs','native/Cargo.toml','native/Cargo.lock'],cwd=ROOT).decode().split('\0')
+    return sorted(p for p in paths if p and (p.endswith(('.rs','.js','.cjs','.css','.html','.toml','.json','.ps1','.py')) or p=='native/Cargo.lock'))
 def capture_identity(executable):
     commit=subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip()
     # Keep the exact all-repository status that decided this identity. A later

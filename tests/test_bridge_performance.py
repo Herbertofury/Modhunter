@@ -7,6 +7,7 @@ import json
 import os
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -14,6 +15,7 @@ from unittest.mock import patch
 from mo2_update_arsenal.bridge import ArsenalService
 from mo2_update_arsenal.model import LocalMetadataCache, take_snapshot
 from mo2_update_arsenal.version import VERSION
+from nexus_fixture import review_payload
 
 
 def catalog(count=12000):
@@ -98,7 +100,7 @@ class LargeProfileTests(unittest.TestCase):
         self.assertEqual(self.service.selection_snapshot(["live-20"])["items"][0]["name"], "Mod 20")
 
     def test_cached_file_lookup_and_exact_focus_do_not_scan_all_mods(self):
-        self.service._file_cache[("skyrimspecialedition", 21)] = {"ok": True, "files": [{"fileId": 8}]}
+        self.service._file_cache[("skyrimspecialedition", 21)] = review_payload(21, [{"fileId": 8}])
         with patch.object(self.service, "snapshot", side_effect=AssertionError("Full scan")):
             self.assertTrue(self.service.fetch_files(21)["ok"])
             self.assertTrue(self.service.focus_mod("live-20", "large-profile")["ok"])
@@ -135,7 +137,7 @@ class NexusRequestSharingTests(unittest.TestCase):
             self.calls.append(args)
             self.started.set()
             self.release.wait(3)
-            return {"ok": True, "files": [{"fileId": 9, "version": "2.0"}], "modId": 1}
+            return review_payload(1, [{"fileId": 9, "version": "2.0"}])
         self.service._fetch_files_remote = remote
 
     def spawn(self):

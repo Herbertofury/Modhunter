@@ -10,7 +10,7 @@ use std::{
     path::Path,
     sync::{
         Mutex,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
 };
 
@@ -25,7 +25,7 @@ struct Descriptor {
     pid: u32,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Session {
     pub endpoint: String,
@@ -34,6 +34,8 @@ pub struct Session {
     pub version: String,
     pub generation: u64,
     pub latency_ms: f64,
+    /// A descriptor hint, never authority for installation or connection.
+    pub pid: u32,
 }
 
 fn linked(meta: &fs::Metadata) -> bool {
@@ -49,6 +51,25 @@ fn linked(meta: &fs::Metadata) -> bool {
 }
 
 pub fn discover(directory: &Path, client: &BridgeClient) -> std::io::Result<Vec<Session>> {
+    discover_scope(directory, client, &AtomicBool::new(false), true)
+}
+
+/// Complete, cancellable session inventory for the explicit Instances manager.
+/// The startup quick-connect path retains its separate bounded probe policy.
+pub fn discover_all(
+    directory: &Path,
+    client: &BridgeClient,
+    cancelled: &AtomicBool,
+) -> std::io::Result<Vec<Session>> {
+    discover_scope(directory, client, cancelled, false)
+}
+
+fn discover_scope(
+    directory: &Path,
+    client: &BridgeClient,
+    cancelled: &AtomicBool,
+    quick: bool,
+) -> std::io::Result<Vec<Session>> {
     let entries = match fs::read_dir(directory) {
         Ok(entries) => entries,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
@@ -59,6 +80,9 @@ pub fn discover(directory: &Path, client: &BridgeClient) -> std::io::Result<Vec<
     // retaining only 256 metadata entries and probing at most 32 endpoints.
     let mut candidates = BTreeSet::new();
     for entry in entries.flatten() {
+        if cancelled.load(Ordering::Acquire) {
+            break;
+        }
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) != Some("json") {
             continue;
@@ -70,13 +94,16 @@ pub fn discover(directory: &Path, client: &BridgeClient) -> std::io::Result<Vec<
             continue;
         }
         candidates.insert((meta.modified().unwrap_or(std::time::UNIX_EPOCH), path));
-        if candidates.len() > 256 {
+        if quick && candidates.len() > 256 {
             candidates.pop_first();
         }
     }
     let mut hints = Vec::new();
     let mut seen = HashSet::new();
     for (_, path) in candidates.into_iter().rev() {
+        if cancelled.load(Ordering::Acquire) {
+            break;
+        }
         let Ok(file) = fs::File::open(&path) else {
             continue;
         };
@@ -97,7 +124,7 @@ pub fn discover(directory: &Path, client: &BridgeClient) -> std::io::Result<Vec<
         if seen.insert(hint.endpoint.clone()) {
             hints.push(hint);
         }
-        if hints.len() == 32 {
+        if quick && hints.len() == 32 {
             break;
         }
     }
@@ -110,6 +137,9 @@ pub fn discover(directory: &Path, client: &BridgeClient) -> std::io::Result<Vec<
             let results = &results;
             scope.spawn(move || {
                 loop {
+                    if cancelled.load(Ordering::Acquire) {
+                        break;
+                    }
                     let i = next.fetch_add(1, Ordering::Relaxed);
                     let Some(hint) = hints.get(i) else {
                         break;
@@ -132,6 +162,7 @@ pub fn discover(directory: &Path, client: &BridgeClient) -> std::io::Result<Vec<
                             version: health.version,
                             generation: health.generation,
                             latency_ms: health.latency_ms,
+                            pid: hint.pid,
                         });
                 }
             });
@@ -150,6 +181,64 @@ pub fn discover(directory: &Path, client: &BridgeClient) -> std::io::Result<Vec<
 mod tests {
     use super::*;
     use std::{io::Write, net::TcpListener, time::Duration};
+    #[test]
+    fn explicit_inventory_probes_every_valid_session_beyond_the_quick_connect_cap() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut workers = Vec::new();
+        for index in 0..35 {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let endpoint = format!("http://{}/", listener.local_addr().unwrap());
+            fs::write(
+                temp.path().join(format!("{index}.json")),
+                serde_json::json!({"app":"Modhunter","protocol":1,"endpoint":endpoint,
+                    "profileId":format!("profile-{index}"),"profileName":format!("Profile {index}"),
+                    "pid":100+index})
+                .to_string(),
+            )
+            .unwrap();
+            workers.push(std::thread::spawn(move || {
+                let deadline = std::time::Instant::now()+Duration::from_secs(8);
+                let mut stream = loop {
+                    match listener.accept() {
+                        Ok((stream,_)) => break stream,
+                        Err(error) if error.kind()==std::io::ErrorKind::WouldBlock
+                            && std::time::Instant::now()<deadline =>
+                            std::thread::sleep(Duration::from_millis(5)),
+                        Err(error) => panic!("Complete discovery omitted session {index}: {error}"),
+                    }
+                };
+                stream.set_nonblocking(false).unwrap();
+                stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+                let mut request=Vec::new();
+                while !request.windows(4).any(|part|part==b"\r\n\r\n") {
+                    let mut buffer=[0_u8;1024];
+                    let count=stream.read(&mut buffer).unwrap();
+                    assert!(count>0 && request.len()<8192);
+                    request.extend_from_slice(&buffer[..count]);
+                }
+                let body=serde_json::json!({"ok":true,"app":"Modhunter","protocol":1,"live":true,
+                    "version":"0.13.0","profileId":format!("profile-{index}"),"generation":1}).to_string();
+                write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
+            }));
+        }
+        let sessions = discover_all(
+            temp.path(),
+            &BridgeClient::with_timeout(Duration::from_secs(2)).unwrap(),
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        for worker in workers {
+            worker.join().unwrap();
+        }
+        assert_eq!(sessions.len(), 35);
+        let cancelled = AtomicBool::new(true);
+        assert!(
+            discover_all(temp.path(), &BridgeClient::new().unwrap(), &cancelled)
+                .unwrap()
+                .is_empty()
+        );
+    }
     #[test]
     fn session_is_probed_and_duplicate_hints_do_not_duplicate_connections() {
         let temp = tempfile::tempdir().unwrap();

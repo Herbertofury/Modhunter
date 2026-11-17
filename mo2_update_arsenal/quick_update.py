@@ -19,7 +19,7 @@ def _requires_file_choice(item: dict) -> bool:
 
 
 def choose_nexus_file(item: dict, files: list[dict]) -> tuple[dict | None, str]:
-    """Pick exactly one latest-version MAIN file, or ask for an explicit choice."""
+    """Pick the exact proven replacement, including optional files, or review."""
     if (item.get("update") or {}).get("source") != "nexus-api" or (item.get("update") or {}).get("verdict") != "candidate":
         return None, "Review this mod's version evidence before selecting a file"
     if _requires_file_choice(item):
@@ -27,7 +27,7 @@ def choose_nexus_file(item: dict, files: list[dict]) -> tuple[dict | None, str]:
     advice = advise_nexus_files(item, files)
     suggested = [f for f in advice["files"] if f.get("suggested") is True]
     if len(suggested) != 1:
-        return None, "Several editions or no exact main-file match; choose the file you want"
+        return None, "No unique installed-file replacement was verified; choose the intended file manually"
     picked = suggested[0]
     try:
         identifier = int(picked.get("fileId", 0))
@@ -35,7 +35,7 @@ def choose_nexus_file(item: dict, files: list[dict]) -> tuple[dict | None, str]:
         identifier = 0
     if identifier <= 0 or isinstance(picked.get("fileId"), bool):
         return None, "File ID is not valid; choose a file manually"
-    return picked, "Matched the published Nexus version to a unique main file"
+    return picked, "Matched the publisher's exact replacement for the installed file"
 
 
 def choose_release_asset(item: dict) -> tuple[dict | None, str]:

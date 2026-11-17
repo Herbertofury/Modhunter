@@ -194,6 +194,8 @@ pub(super) fn apply_appearance(app: &tauri::AppHandle) -> Result<()> {
         if crate::policy::local_asset(&url, "/shell.html")
             || policy::trusted_manager(view.label(), &url)
             || crate::policy::local_asset(&url, "/index.html")
+            || (view.label() == "mo2-instances"
+                && crate::policy::local_asset(&url, "/instances.html"))
         {
             let _=view.eval(format!("window.dispatchEvent(new CustomEvent('modhunter-preferences',{{detail:{payload}}}));"));
         }

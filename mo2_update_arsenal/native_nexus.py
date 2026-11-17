@@ -15,7 +15,7 @@ from typing import Any
 def normalize_native_files(files: Any, *, raw_api: bool = False) -> list[dict]:
     """Convert known Nexus JSON or legacy converted file records into choices."""
     result = []
-    for row in files[:20000] if isinstance(files, (list, tuple)) else []:
+    for row in files if isinstance(files, (list, tuple)) else []:
         if isinstance(row, dict):
             fid = row.get("file_id", 0) if raw_api else row.get("fileId", row.get("file_id", 0))
             read = lambda key, default=None: row.get(key, default)
@@ -38,11 +38,11 @@ def normalize_native_files(files: Any, *, raw_api: bool = False) -> list[dict]:
                 size_kb = int(read("sizeInKB", read("size_kb", read("fileSize", read("size", 0)))) or 0)
             result.append({
                 "fileId": fid,
-                "name": str(read("name") or read("fileName") or read("file_name") or f"File {fid}")[:190],
-                "version": str(read("version") or "")[:75],
+                "name": str(read("name") or read("fileName") or read("file_name") or f"File {fid}"),
+                "version": str(read("version") or ""),
                 "category": int(read("category", read("categoryID", read("category_id", 0))) or 0),
                 "sizeInKB": max(0, size_kb),
-                "fileName": str(read("fileName", read("file_name", read("uri", ""))) or "")[:190],
+                "fileName": str(read("fileName", read("file_name", read("uri", ""))) or ""),
                 "description": str(read("description") or "")[:600],
                 "uploaded_time": str(read("uploaded_time") or "")[:80],
             })
@@ -291,6 +291,7 @@ class NativeNexusGateway:
             meta = self._metadata(game, mod_id, data)
             connected = self._capture_source()
             if bootstrap:
+                request._nexus_project_meta = meta
                 with self._pending_lock:
                     self._bootstrap.pop(ticket, None)
                     self._bootstrap_parent.pop(token, None)
@@ -321,13 +322,18 @@ class NativeNexusGateway:
                 or not isinstance(data, dict) or not isinstance(data.get("files"), list)):
             request.finish({"ok": False, "error": "MO2 returned no usable raw Nexus file list"})
             return
-        self._finish_files(request, mod_id, data["files"], raw_api=True)
+        self._finish_files(request, mod_id, data, raw_api=True)
 
     @staticmethod
     def _finish_files(request, mod_id, data, *, raw_api):
         try:
-            files = normalize_native_files(data, raw_api=raw_api)
-            request.finish({"ok": True, "modId": int(mod_id), "files": files, "transport": "mo2-native-nexus"})
+            from .nexus_files import normalize_file_payload
+            payload = data if raw_api else {"files": normalize_native_files(data), "updatesAvailable": False}
+            files = normalize_file_payload(payload, str(request.payload["game"]), int(mod_id))
+            response = {"ok": True, **files, "transport": "mo2-native-nexus"}
+            if metadata := getattr(request, "_nexus_project_meta", None):
+                response["meta"] = metadata
+            request.finish(response)
         except (TypeError, ValueError, RuntimeError) as exc:
             request.finish({"ok": False, "error": "Could not decode MO2 Nexus files: " + str(exc)[:160]})
 

@@ -274,7 +274,7 @@ class ModIntelligence:
                         item["localAnalysis"] = self._compact_analysis(local)
                     continue
                 health = build_mod_health(item, game=game, now=now,
-                    metadata=(cache or {}).get("meta"), metadata_checked_at=(cache or {}).get("checkedAt"),
+                    metadata=(cache or {}).get("meta"), metadata_checked_at=(cache or {}).get("metaCheckedAt", (cache or {}).get("checkedAt")),
                     page_evidence=evidence, local_analysis=local,
                     previous=self._previous_health.get(key))
                 if key:

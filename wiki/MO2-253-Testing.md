@@ -10,6 +10,8 @@ The helper accepts only the explicitly covered Qt 6.7 and 6.11 minor lines, refu
 
 ## Install and connect
 
+The desktop now includes **MO2 Instances** in both the Windows installer and portable package. You can discover application folders, select one or several, review exact destinations, and install the bundled matching plugin there. The guide below retains the detailed portable readiness workflow for this specific beta/runtime. See [MO2 Instances](MO2-Instances.md) for the in-app route.
+
 1. If upgrading, export your existing Modhunter progress backup. Close MO2 before installing the plugin. Extract the entire portable archive into a new folder; leave its checksum manifest, `BUILD_INFO.json`, `MO2` folder and helper binaries together.
 2. Run **Check_MO2_Readiness.bat** and select the folder containing **ModOrganizer.exe**. It checks the executable's version/64-bit header, the installed Qt runtime and verified package identity, then saves a small credential-free JSON report beside the script. Before installation, `readyToInstall` should be `true`; `plugin_installed` can show **REVIEW** for an absent or different-release plugin. The check reads installation/package files without launching MO2 or reading game/mod contents.
 3. Run **Install_MO2_Plugin.bat** and select that same MO2 folder. This is an **MO2 application plugin**, not an archive to install in the left-hand Skyrim mod list. The installer verifies the package, preserves the prior plugin under `ModhunterBackups`, carries forward its regular fallback `data` folder, and rolls back a failed replacement. It does not alter your mod archives, load order or saves.
@@ -19,7 +21,7 @@ The helper accepts only the explicitly covered Qt 6.7 and 6.11 minor lines, refu
 
 **Details** in the desktop toolbar shows the connected plugin version, Qt runtime, callback status and native/helper readiness without credentials. **Refresh** and **Plugin audit** now operate on the live dashboard when connected.
 
-The compiled desktop uses WebView2. The separate Windows installer can bootstrap WebView2 when missing; it does not replace the MO2 plugin installation step. There is no need to install Node, Rust, Qt SDKs or Python packages to use the release ZIP.
+The compiled desktop uses WebView2. The Windows installer can bootstrap WebView2 when missing and includes the plugin resource; choose the MO2 target applications in **MO2 Instances** after opening the app. There is no need to install Node, Rust, Qt SDKs or Python packages to use the release ZIP.
 
 See [Compact workspace and launch checking](Compact-Workspace.md) for detected status meanings and cache behavior.
 

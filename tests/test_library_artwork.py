@@ -7,6 +7,8 @@ from mo2_update_arsenal.native_nexus import NativeNexusGateway
 from mo2_update_arsenal.scanner import summary_from_metadata
 from mo2_update_arsenal.source_adapters import compact_source_update, normalize_adapter_record, preview_image_url
 from test_site_adapters import fixture
+from nexus_fixture import file_item, cached_files
+from mo2_update_arsenal.nexus_files import FileLineage
 
 
 class LibraryArtworkTests(unittest.TestCase):
@@ -21,7 +23,7 @@ class LibraryArtworkTests(unittest.TestCase):
         self.assertNotIn("api_key", metadata)
         self.assertNotIn("description", metadata)
         self.assertNotIn("uploaded_users_profile_url", metadata)
-        summary = summary_from_metadata({"installedVersion": "1.0"}, metadata, 1000)
+        summary = summary_from_metadata(file_item(123), metadata, 1000, FileLineage(cached_files(123), 'skyrimspecialedition', 123))
         self.assertEqual(summary["thumbnailUrl"], url)
         self.assertEqual(summary["author"]["name"], "Actual creator")
         self.assertEqual(summary["verdict"], "candidate")

@@ -21,6 +21,7 @@ import math
 import re
 import shutil
 import stat
+import statistics
 import struct
 import tempfile
 import tomllib
@@ -37,6 +38,7 @@ PORTABLE_EXPANDED_LIMIT = 512 * 1024 * 1024
 PRODUCTION_FILES = ("plugin.py", "version.py", "download_ids.py", "bridge.py", "gameplay.py", "model.py", "focus.py", "scanner.py", "version_evidence.py", "native_nexus.py", "qt_bridge.py", "intelligence.py",
                     "plugin_intelligence.py", "mod_health.py", "source_adapters.py",
                     "source_registry.py", "update_plan.py", "quick_update.py",
+                    "file_advisor.py", "nexus_files.py", "mo2_metadata.py",
                     "install_brief.py", "content_recovery.py", "duplicate_report.py", "notification_facts.py", "operation_journal.py", "web/index.html")
 # Historical evidence retains its original filename and baseline. Packaging and
 # public release staging share this list so a version bump cannot silently drop
@@ -47,7 +49,23 @@ BENCHMARK_FILES = (
     "mo2-preflight-comparison.json",
     "plugin-audit-comparison-0.9.2.json",
     "mo2-catalog-delivery-comparison-0.9.2.json",
+    "nexus-file-checks-0.13.0.json",
 )
+NEXUS_BENCHMARK = "nexus-file-checks-0.13.0.json"
+NEXUS_BENCHMARK_SOURCES = ("scanner.py", "nexus_files.py", "bridge.py", "file_advisor.py", "quick_update.py", "update_plan.py")
+NEXUS_BENCHMARK_BASELINE = "3231bb689bebb050e597044c4f001e006f7ab82a"
+NEXUS_BENCHMARK_BASELINE_HASHES = {
+    "scanner.py": "d740d05252875253924c0954f46acd745f0c7d9368fb8c3c642bdf5edf327bc1",
+    "bridge.py": "c2b95af4220cf83184437399ea050e82d7090baae86adb6cb3383f7599267999",
+}
+NEXUS_BENCHMARK_CASES = {
+    "beforeProjectOnlyCold": (1, 0), "beforeProjectOnlyRepeat": (1, 0), "beforeStartupWarm": (0, 0),
+    "beforeCompleteEvidence": (1, 1), "afterCold": (1, 1), "afterRepeat": (0, 0), "afterForcedAudit": (1, 1),
+}
+NEXUS_BENCHMARK_ASSERTIONS = {
+    "completeInstalledInventory", "projectMetadataPreserved", "artworkAndAuthorsPreserved",
+    "completeFileListsPreserved", "exactOptionalAndMainVerdicts", "allProviderCallsCounted", "fiveRequestConcurrencyBound",
+}
 BUNDLED_HELPER = "MO2/mo2_update_arsenal/bin/modhunter-cli.exe"
 BUNDLED_QT_HELPER = "MO2/mo2_update_arsenal/bin/modhunter-qt-bridge.dll"
 FIXTURE_PLUGIN_SHA256 = hashlib.sha256(
@@ -176,6 +194,59 @@ FONT_RENDERING_SCREENSHOTS = {'ci-font-library.png': (1440, 1000),
                             'ci-font-expedition.png': (900, 1000)}
 NATIVE_MANAGER_CHECKS = {'duplicate_report_preserves_whole_mod_and_file_ownership', 'cleanup_requires_a_matching_preview_and_confirmation', 'inventory_caches_complete_results_and_reveals_exact_ids', 'review_preserves_complete_selection_and_exact_install_ids', 'global_preferences_preserve_unsaved_edits_and_switch_language', 'unknown_native_outcome_remains_visible_and_cannot_be_discarded', 'support_export_uses_the_exact_preview_identity', 'new_content_requires_an_explicit_new_target', 'application_reset_requires_exact_phrase_and_preview', 'native_substates_update_without_watchstore_revision', 'readiness_identifies_live_and_offline_profiles_without_scanning', 'notice_click_uses_only_opaque_id_and_opens_current_native_item', 'fomod_selection_is_explicitly_advisory', 'retained_reviews_remain_visible_without_replay', 'retention_requires_exact_preview_and_explicit_confirmation', 'four_locales_preserve_names_focus_and_theme', 'shared_queue_controls_preserve_action_boundaries', 'notice_list_is_private_and_accepts_native_substate_updates', 'stale_notice_rejection_never_opens_a_target', 'lost_acknowledgement_refreshes_submission_state'}
 NATIVE_MANAGER_SCREENSHOTS = {'watchtower-exact-notice.png', 'watchtower-file-review.png', 'watchtower-duplicates.png', 'watchtower-file-inventory.png', 'watchtower-preferences-zh.png', 'watchtower-support-preview.png', 'watchtower-preferences-es.png'}
+WORKSPACE_BROWSER_SPECS = {
+    "instances-browser": {
+        "sources": (
+            "native/ui/instances.html", "native/ui/instances.css", "native/ui/instances.js",
+            "native/ui/locales/instances.json", "native/ui/locale-catalogs.js",
+            "native/ui/preferences.js", "native/ui/preferences.css",
+            "tests/fixtures/instances_native_fixture.js", "tests/test_instances_browser.py",
+            "tests/browser_receipt.py", "native/crates/modhunter-desktop/tauri.conf.json",
+        ),
+        "checks": {
+            "inventory_groups_apps_and_retains_every_profile", "exact_selection_review_and_terminal_receipts",
+            "blocked_target_prevents_partial_unreviewed_commit", "stale_state_and_deferred_preview_never_restore_obsolete_work",
+            "scan_cancellation_preserves_prior_and_new_findings", "native_process_refresh_does_not_discard_its_pending_preflight",
+            "stop_waits_for_current_transaction_and_uses_exact_operation", "live_actions_and_native_root_choices_keep_exact_authority",
+            "themes_four_locales_keyboard_and_narrow_geometry", "unavailable_native_or_invalid_package_cannot_install",
+            "interrupted_install_acknowledgement_never_replays_token", "expired_review_requires_fresh_preflight",
+        },
+        "screenshots": {
+            "instances-exact-review.png": (1440, 1020), "instances-results.png": (1440, 1020),
+            "instances-oled.png": (1440, 1020), "instances-light.png": (1060, 850),
+            "instances-narrow-review.png": (390, 844),
+        },
+    },
+    "library-workspace": {
+        "sources": (
+            "mo2_update_arsenal/web/app.js", "mo2_update_arsenal/web/app.template.html", "mo2_update_arsenal/web/atelier.css",
+            "mo2_update_arsenal/web/mod_insights.js", "mo2_update_arsenal/web/source_insights.js", "native/ui/locales/library.json",
+            "native/ui/locale-catalogs.js", "native/ui/preferences.js", "tests/test_library_workspace.py", "tests/test_frontend_responsiveness.py",
+            *("mo2_update_arsenal/web/" + name for name in (
+                "style.css", "aether_fx.css", "realm.css", "siege.css", "mod_insights.css", "source_insights.css",
+                "catalog.json", "aether_fx.js", "realm.js", "siege.js", "realm_layout.html", "siege_layout.html")),
+            "tests/browser_receipt.py", "native/crates/modhunter-desktop/tauri.conf.json",
+        ),
+        "checks": {
+            "full_viewport_and_pinned_search_do_not_cover_last_row_or_status",
+            "bugs_column_sorts_filters_and_keeps_unknown_distinct_from_zero",
+            "health_notes_and_exact_optional_file_details_are_visible",
+            "columns_persist_without_deleting_data_or_hiding_gallery_evidence",
+            "actual_rgba_separators_survive_theme_search_gallery_and_csp",
+            "ctrl_f_and_escape_keep_search_and_dialog_focus_predictable",
+            "every_workspace_and_library_view_remains_reachable",
+            "four_locales_and_first_use_setup_preserve_real_data_and_entry_points",
+        },
+        "screenshots": {
+            "library-bottom-1920.png": (1920, 1080), "library-bottom-2560.png": (2560, 1440),
+            "library-bottom-390.png": (390, 844), "library-full-window-oled.png": (1920, 1080),
+            **{"library-workspace-" + name + ".png": (1920, 1080)
+               for name in ("updates", "downloads", "history", "tools", "extras", "mods")},
+            "library-gallery-details.png": (1920, 1080), "library-gallery-light.png": (1920, 1080),
+            "library-gallery-narrow-light.png": (390, 844), "library-list-light.png": (1920, 1080),
+        },
+    },
+}
 QT_FORWARD_SOURCES = (
     "mo2_update_arsenal/qt_bridge.py", "tests/test_native_qt_bridge.py",
     "native/scripts/verify_qt_forward.py", "native/qt_bridge/qt_bridge.cpp",
@@ -249,6 +320,12 @@ MO2_PACKAGE_ROOT_FILES = frozenset({
     "PROJECT_NOTICE.txt", "THIRD_PARTY_NOTICES.json",
     "START-HERE-MO2-253.md", "GameSync-Update-Techniques.md",
 })
+MO2_INSTALLER_PREFIX = "mo2-installer/"
+MO2_RUNTIME_FILES = frozenset(path.name for path in (ROOT / "mo2_update_arsenal").glob("*.py")) | {
+    "web/index.html", "bin/modhunter-cli.exe", "bin/modhunter-qt-bridge.dll",
+    "bin/archive-tools/7z.exe", "bin/archive-tools/7z.dll",
+    "bin/archive-tools/License.txt", "bin/archive-tools/provenance.json",
+}
 VISUAL_BASELINE = "0f2d399244dbe0cc69e82521c497f006832678c3"
 INSTALLER_CHECKS = {
     "nsis_installs_executable", "installed_executable_matches_tested_binary",
@@ -260,7 +337,26 @@ INSTALLER_CHECKS = {
     "nsis_removes_current_user_registration",
     "installer_artifacts_stayed_unchanged",
     "candidate_source_stayed_unchanged",
+    "installed_plugin_resource_matches_prepared_bundle", "installed_plugin_resource_identifies_candidate",
+    "installed_plugin_preview_is_read_only", "installed_plugin_tool_installs_exact_payload",
+    "installed_plugin_upgrade_preserves_progress_and_backup", "uninstall_preserves_external_mo2_plugin",
 }
+INSTANCES_MANAGER_CHECKS = {
+    "owned_webview_profile", "real_manager_opens_from_shell", "owned_native_foreground",
+    "complete_application_instance_discovery", "matching_bundle_identity", "shared_global_associations",
+    "real_pointer_target_selection", "reviewed_exact_selected_targets", "preview_leaves_all_targets_unchanged",
+    "selected_installation_results_complete", "fresh_payload_matches_bundle", "upgrade_payload_matches_bundle",
+    "previous_plugin_backup_unchanged", "progress_and_empty_directories_preserved",
+    "trusted_pointer_review_and_confirmation", "unselected_application_unchanged",
+    "persisted_results_match_completed_targets", "reopened_manager_retains_results",
+    "foreign_shell_install_denied", "foreign_content_install_denied", "changed_reviewed_target_refused",
+    "failed_review_preserves_current_data", "consumed_review_cannot_replay",
+    "source_resources_unchanged", "executable_unchanged", "no_renderer_errors",
+}
+INSTANCES_MANAGER_SCREENSHOTS = {
+    "instances-discovery.png", "instances-preview.png", "instances-installed.png", "instances-reopened.png",
+}
+INSTANCES_PE_MARKER_SHA = "8c2a2f7328e85fc0868e174dd80057bbb9e136b5229d8d6f3ed316c67f37cd3b"
 NATIVE_LIBRARY_COUNT = 11207
 NATIVE_LIBRARY_FIXTURE_SHA = "afd855e4ac76f284630ffb4ed6d9dc37280113c9559aef4402516795b7fef0a0"
 NATIVE_LIBRARY_FIXTURE_BYTES = 4696493
@@ -301,7 +397,7 @@ VISUAL_SCREENSHOTS = {
 } | {"after/public-projects-gallery-1440-dark.png", "after/public-projects-gallery-1440-light.png"}
 
 
-def validate_installer_report(report: dict, commit: str, installer_hash: str, executable_hash: str) -> None:
+def validate_installer_report(report: dict, commit: str, installer_hash: str, executable_hash: str, bundle: dict) -> None:
     require(report.get("schemaVersion") == 1 and report.get("ok") is True
             and report.get("candidateCommit") == commit and report.get("sourceDirty") is False,
             "Windows installer receipt does not identify the clean tested candidate")
@@ -319,6 +415,81 @@ def validate_installer_report(report: dict, commit: str, installer_hash: str, ex
     resources = report.get("archiveResourceHashes")
     require(isinstance(resources, dict) and all(resources.get(name) == digest for name, digest in ARCHIVE_PINS.items()),
             "Installed application archive tools differ from the pinned helpers")
+    require(report.get("pluginInstallerVersion") == VERSION and report.get("pluginInstallerCommit") == commit,
+            "Installed MO2 installer resource identifies another release")
+    require(report.get("pluginInstallerManifestSha256") == bundle["manifestSha256"]
+            and report.get("pluginInstallerResourceHashes") == bundle["resourceHashes"],
+            "Installed MO2 installer resources differ from the verified portable bundle")
+    require(report.get("installedPluginPayloadHashes") == bundle["pluginPayloadHashes"],
+            "Installed MO2 plugin payload differs from the complete verified resource")
+
+
+def validate_instances_manager(report: dict, commit: str, executable_hash: str, bundle: dict) -> None:
+    require(report.get("schemaVersion") == 1 and report.get("ok") is True and report.get("phase") == "complete"
+            and report.get("nativeDesktop") is True and report.get("nativeWebView2") is True
+            and report.get("nativeMO2") is False and report.get("isolatedFilesystemFixture") is True
+            and report.get("accountAuthentication") is False and report.get("errors") == [],
+            "MO2 Instances acceptance must complete the actual native UI with honest isolated-fixture scope")
+    validate_native_binding(report, commit, executable_hash)
+    require(report.get("scriptSha256") == file_hash(ROOT / "native/scripts/verify_instances_manager.cjs")
+            and report.get("launcherSha256") == file_hash(ROOT / "native/scripts/instances_manager_smoke.ps1"),
+            "MO2 Instances acceptance scripts differ from this candidate")
+    require(type(report.get("nativeProcessId")) is int and report["nativeProcessId"] > 0,
+            "MO2 Instances acceptance omitted the owned native process")
+    checks = report.get("checks")
+    require(isinstance(checks, list) and len(checks) == len(INSTANCES_MANAGER_CHECKS)
+            and all(isinstance(row, dict) and row.get("passed") is True for row in checks)
+            and {row.get("name") for row in checks} == INSTANCES_MANAGER_CHECKS,
+            "MO2 Instances acceptance omitted or failed a required native interaction")
+    require(report.get("bundle") == {"version": VERSION, "commit": commit, "manifestSha256": bundle["manifestSha256"]},
+            "MO2 Instances installed a different plugin bundle")
+    fixture = report.get("fixture")
+    require(isinstance(fixture, dict) and fixture.get("schemaVersion") == 1 and fixture.get("inertExecutable") is True
+            and fixture.get("executedMO2") is False and fixture.get("peMarkerSha256") == INSTANCES_PE_MARKER_SHA
+            and all(fixture.get(key) == expected for key, expected in {
+                "applications": 3, "instances": 4, "profiles": 7, "portableAssociations": 3, "sharedGlobalAssociations": 2,
+            }.items()), "MO2 Instances acceptance reduced or changed the complete discovery fixture")
+    engine = report.get("engine")
+    require(isinstance(engine, dict) and isinstance(engine.get("product"), str)
+            and re.fullmatch(r"Chrome/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+", engine["product"])
+            and str(engine.get("executable", "")).lower().endswith("msedgewebview2.exe"),
+            "MO2 Instances acceptance did not identify actual Windows WebView2")
+    require(type(report.get("trustedPointerEvents")) is int and report["trustedPointerEvents"] >= 4,
+            "MO2 Instances acceptance omitted real pointer selection, review or confirmation")
+    authority = report.get("foreignAuthority")
+    require(isinstance(authority, dict) and set(authority) == {"shell", "content"}
+            and all(isinstance(value, dict) and value.get("denied") is True
+                    and type(value.get("apiAvailable")) is bool for value in authority.values()),
+            "MO2 Instances native installation authority was not denied to both foreign surfaces")
+    targets = report.get("targets")
+    require(isinstance(targets, list) and len(targets) == 2 and all(isinstance(row, dict) for row in targets)
+            and {row.get("fixture") for row in targets} == {"fresh", "upgrade"},
+            "MO2 Instances acceptance did not install exactly the two selected targets")
+    for target in targets:
+        upgraded = target["fixture"] == "upgrade"
+        require(target.get("status") == ("updated" if upgraded else "installed") and target.get("version") == VERSION
+                and target.get("installedFiles") == bundle["pluginPayloadHashes"]
+                and all(target.get(key) is upgraded for key in ("preservedData", "backupPreserved", "emptyDirectoryPreserved")),
+                "MO2 Instances omitted matching plugin files, preserved progress or the previous-plugin backup")
+    captures = report.get("captures")
+    require(isinstance(captures, list) and len(captures) == len(INSTANCES_MANAGER_SCREENSHOTS)
+            and all(isinstance(row, dict) for row in captures)
+            and {row.get("file") for row in captures} == INSTANCES_MANAGER_SCREENSHOTS
+            and all(row.get("foreground") is True and row.get("nativeProcessId") == report["nativeProcessId"]
+                    and type(row.get("width")) is int and row["width"] >= 800
+                    and type(row.get("height")) is int and row["height"] >= 620 for row in captures),
+            "MO2 Instances acceptance omitted complete owned native window captures")
+    isolation = report.get("isolation")
+    require(isinstance(isolation, dict) and isolation.get("ok") is True and isolation.get("cleanupErrors") == []
+            and isolation.get("policyValuesRemoved") == 2 and isinstance(isolation.get("restoredFolders"), list)
+            and len(isolation["restoredFolders"]) == 2
+            and all(isinstance(row, dict) and row.get("manifestMatched") is True for row in isolation["restoredFolders"]),
+            "MO2 Instances acceptance did not restore the original native configuration and app-scoped policies")
+    timings = report.get("timingsMs")
+    require(isinstance(timings, dict) and set(timings) == {"discovery", "preview", "selectedInstall"}
+            and all(type(value) in (int, float) and math.isfinite(value) and value >= 0 for value in timings.values()),
+            "MO2 Instances acceptance omitted its real workflow timings")
+    public_json(report)
 
 
 def validate_visual_report(report: dict, commit: str) -> None:
@@ -661,6 +832,116 @@ def validate_native_manager_ui(report: dict, commit: str) -> None:
             "Native review manager proof failed, repeated or omitted a required interaction")
 
 
+def validate_nexus_benchmark(report: dict) -> None:
+    """Bind the measured provider fixture, including every added cold request."""
+    require(type(report.get("schema")) is int and report["schema"] == 1
+            and report.get("baselineRef") == NEXUS_BENCHMARK_BASELINE
+            and report.get("baselineSourceHashes") == NEXUS_BENCHMARK_BASELINE_HASHES,
+            "Nexus benchmark does not identify its pinned actual baseline")
+    require(report.get("benchmarkSha256") == file_hash(ROOT / "native/scripts/benchmark_nexus_checks.py")
+            and report.get("sourceHashes") == {name: file_hash(ROOT / "mo2_update_arsenal" / name) for name in NEXUS_BENCHMARK_SOURCES},
+            "Nexus benchmark does not match the measured implementation and script")
+    require(all(type(report.get(key)) is int and report[key] > 0 for key in ("projects", "rowsPerProject", "installedRows", "repeats"))
+            and report["rowsPerProject"] >= 2 and report["repeats"] >= 3
+            and report["installedRows"] == report["projects"] * report["rowsPerProject"]
+            and type(report.get("workers")) is int and report["workers"] == 5,
+            "Nexus benchmark omitted the complete repeated workload or changed concurrency")
+    require(report.get("assertions") == {name: True for name in NEXUS_BENCHMARK_ASSERTIONS},
+            "Nexus benchmark did not preserve complete results, artwork, authors and exact optional-file verdicts")
+    require(isinstance(report.get("comparisons"), dict)
+            and set(report["comparisons"]) == {"standardCheck", "completeEvidence", "startup", "freshness"}
+            and all(isinstance(value, str) and value for value in report["comparisons"].values())
+            and isinstance(report.get("scope"), str) and bool(report["scope"])
+            and isinstance(report.get("fixtureSha256"), str) and re.fullmatch(r"[0-9a-f]{64}", report["fixtureSha256"]),
+            "Nexus benchmark omits its fixture identity or comparison scope")
+    latency = report.get("perRequestSimulatedLatencySeconds")
+    require(type(latency) in (int, float) and math.isfinite(latency) and 0 <= latency < 60,
+            "Nexus benchmark request latency is invalid")
+    runs, summaries = report.get("runs"), report.get("summary")
+    require(isinstance(runs, list) and len(runs) == len(NEXUS_BENCHMARK_CASES) * report["repeats"]
+            and isinstance(summaries, dict) and set(summaries) == set(NEXUS_BENCHMARK_CASES),
+            "Nexus benchmark omitted cold, repeated, startup or forced-audit cases")
+    seen = set()
+    for run in runs:
+        require(isinstance(run, dict) and run.get("case") in NEXUS_BENCHMARK_CASES
+                and type(run.get("repeat")) is int and 1 <= run["repeat"] <= report["repeats"],
+                "Nexus benchmark contains an invalid case or repeat")
+        key = (run["case"], run["repeat"])
+        require(key not in seen, "Nexus benchmark repeats a workload sample")
+        seen.add(key)
+        metadata, files = (count * report["projects"] for count in NEXUS_BENCHMARK_CASES[run["case"]])
+        expected = {"metadataRequests": metadata, "fileRequests": files, "providerRequests": metadata + files,
+                    "installedRows": report["installedRows"], "artworkRows": report["installedRows"], "authorRows": report["installedRows"],
+                    "completeFileRows": report["projects"] * 3 if run["case"].startswith("after") or run["case"] == "beforeCompleteEvidence" else 0}
+        require(all(type(run.get(name)) is int and run[name] == value for name, value in expected.items())
+                and type(run.get("peakProviderRequests")) is int and 0 <= run["peakProviderRequests"] <= min(5, metadata + files),
+                "Nexus benchmark hides provider requests, drops evidence or exceeds bounded concurrency")
+        require(all(type(run.get(name)) in (int, float) and math.isfinite(run[name]) and run[name] >= 0
+                    for name in ("seconds", "cpuSeconds")), "Nexus benchmark contains invalid timings")
+        expected_verdicts = ({"candidate": report["projects"] * ((report["rowsPerProject"] + 1) // 2),
+                              "current": report["projects"] * (report["rowsPerProject"] // 2)}
+                             if run["case"].startswith("after") else {"candidate": report["installedRows"]})
+        require(run.get("verdicts") == expected_verdicts, "Nexus benchmark lost exact optional-file result identity")
+    for case, summary in summaries.items():
+        values = [run for run in runs if run["case"] == case]
+        require(isinstance(summary, dict) and summary.get("providerRequests") == [run["providerRequests"] for run in values]
+                and all(summary.get(name) == values[0][name] for name in ("metadataRequests", "fileRequests", "verdicts"))
+                and summary.get("medianSeconds") == round(statistics.median(run["seconds"] for run in values), 6)
+                and summary.get("medianCpuSeconds") == round(statistics.median(run["cpuSeconds"] for run in values), 6),
+                "Nexus benchmark summary differs from its complete raw samples")
+
+
+def validate_workspace_browser(report: dict, commit: str, kind: str, evidence_dir: Path) -> dict[str, bytes]:
+    """Require complete named Chromium scenarios and their exact captured bytes."""
+    spec = WORKSPACE_BROWSER_SPECS[kind]
+    require(type(report.get("schema")) is int and report["schema"] == 1
+            and report.get("kind") == kind and report.get("version") == VERSION
+            and report.get("ok") is True and report.get("realChromium") is True,
+            kind + " requires a passing schema-1 Chromium receipt for this release")
+    require(report.get("nativeMO2") is False and report.get("nativeWebView2") is False,
+            kind + " browser fixtures must not claim native MO2 or WebView2 execution")
+    require(report.get("commit") == commit and report.get("commitAtStart") == commit
+            and report.get("dirty") is False and report.get("sourceUnchanged") is True,
+            kind + " proof does not identify unchanged clean candidate source")
+    require(all(type(report.get(name)) is int and report[name] == len(spec["checks"])
+                for name in ("testsRun", "requiredTests"))
+            and all(type(report.get(name)) is int and report[name] == 0 for name in ("failures", "errors", "skipped")),
+            kind + " proof failed, skipped or omitted a required scenario")
+    browser = report.get("browserIdentity")
+    require(isinstance(browser, dict) and browser.get("engine") == "chromium"
+            and isinstance(browser.get("version"), str) and re.fullmatch(r"[0-9]+(?:\.[0-9]+){3}", browser["version"])
+            and isinstance(browser.get("userAgent"), str), kind + " proof lacks an actual Chromium identity")
+    agent_version = re.search(r"(?:HeadlessChrome|Chrome)/([0-9]+)(?:\.[0-9]+){3}", browser["userAgent"])
+    require(agent_version is not None and agent_version[1] == browser["version"].split(".")[0],
+            kind + " Chromium version and user-agent identity differ")
+    sources = report.get("sourceSha256")
+    require(isinstance(sources, dict) and set(sources) == set(spec["sources"])
+            and report.get("sourceSha256AtStart") == sources
+            and all(sources[name] == file_hash(ROOT / name) for name in spec["sources"]),
+            kind + " proof does not match every shipped UI, fixture and acceptance source")
+    checks = report.get("checks")
+    require(isinstance(checks, list) and len(checks) == len(spec["checks"])
+            and all(isinstance(check, dict) and isinstance(check.get("name"), str) and check.get("passed") is True for check in checks)
+            and {check["name"] for check in checks} == spec["checks"],
+            kind + " proof failed, repeated or omitted a named required check")
+    screenshots, captures = report.get("screenshots"), report.get("screenshotEvidence")
+    require(isinstance(screenshots, list) and all(isinstance(name, str) for name in screenshots)
+            and len(screenshots) == len(spec["screenshots"]) and set(screenshots) == set(spec["screenshots"])
+            and isinstance(captures, dict) and set(captures) == set(spec["screenshots"]),
+            kind + " proof omitted or repeated a required screenshot")
+    result = {}
+    for name, dimensions in spec["screenshots"].items():
+        capture = captures[name]
+        require(isinstance(capture, dict) and all(type(capture.get(key)) is int for key in ("width", "height"))
+                and (capture["width"], capture["height"]) == dimensions,
+                kind + " screenshot viewport differs from its required scenario: " + name)
+        data = png_bytes(evidence_dir / name, dimensions)
+        require(capture.get("sha256") == hashlib.sha256(data).hexdigest(),
+                kind + " screenshot bytes differ from its Chromium receipt: " + name)
+        result["browser/" + name] = data
+    return result
+
+
 def font_coverage(text: str) -> dict:
     return {'text': text, 'method': 'fc-query FreeType/fontconfig charset',
             'glyphs': [{'character': char, 'codepoint': f'U+{ord(char):04X}', 'covered': True}
@@ -932,6 +1213,36 @@ def portable_checksums(archive: ZipFile, index: dict) -> dict[str, str]:
     return expected
 
 
+def validate_mo2_installer_bundle(archive: ZipFile, index: dict, outer_digests: dict, commit: str) -> dict:
+    nested = {name.removeprefix(MO2_INSTALLER_PREFIX): entry for name, entry in index.items()
+              if name.startswith(MO2_INSTALLER_PREFIX) and not entry.is_dir()}
+    expected_payload = {"MO2/mo2_update_arsenal/" + name for name in MO2_RUNTIME_FILES}
+    expected = expected_payload | MO2_PACKAGE_ROOT_FILES | {"SHA256SUMS.txt"}
+    require(set(nested) == expected,
+            "MO2 installer resource must contain the complete exact runtime payload, tools and manifest")
+    nested_digests = portable_checksums(archive, nested)
+    for name, digest in nested_digests.items():
+        require(outer_digests.get(MO2_INSTALLER_PREFIX + name) == digest,
+                f"Nested MO2 installer checksum differs from its outer manifest: {name}")
+        require(outer_digests.get(name) == digest,
+                f"Nested MO2 installer resource differs from the matching portable file: {name}")
+    build = json_object(archive.read(nested["BUILD_INFO.json"]), "MO2 installer BUILD_INFO.json")
+    require(build.get("version") == VERSION and build.get("commit") == commit,
+            "Nested MO2 installer resource identifies another release")
+    version_bytes = archive.read(nested["MO2/mo2_update_arsenal/version.py"])
+    require(len(version_bytes) <= 65536, "Nested MO2 plugin version source exceeds its limit")
+    try:
+        versions = re.findall(r'''(?m)^\s*VERSION\s*=\s*["'](\d+\.\d+\.\d+)["']\s*$''', version_bytes.decode("utf-8-sig"))
+    except UnicodeError as exc:
+        raise ReleaseError("Nested MO2 plugin version source is not UTF-8") from exc
+    require(versions == [VERSION], "Nested MO2 plugin version differs from its build identity")
+    resources = {name: outer_digests[MO2_INSTALLER_PREFIX + name] for name in sorted(nested)}
+    return {"schemaVersion": 1, "version": VERSION, "commit": commit,
+            "manifestSha256": resources["SHA256SUMS.txt"], "resourceHashes": resources,
+            "pluginPayloadHashes": {name: nested_digests["MO2/mo2_update_arsenal/" + name]
+                                    for name in sorted(MO2_RUNTIME_FILES)}}
+
+
 def validate_live_desktop(report: dict, commit: str, executable_hash: str) -> None:
     require(report.get("ok") is True and report.get("nativeDesktop") is True
             and report.get("nativeMO2") is True and report.get("nativeWebView2") is True,
@@ -968,7 +1279,7 @@ def portable_contents(path: Path, commit: str, run_url: str, native_report: dict
                 require(not stat.S_ISLNK(entry.external_attr >> 16), "Linked member in portable archive")
                 index[name] = entry
                 windows_names.add(name.casefold())
-            for name in ("BUILD_INFO.json", "Modhunter.exe", "modhunter-cli.exe", BUNDLED_HELPER, BUNDLED_QT_HELPER, "Install_MO2_Plugin.ps1", "Install_MO2_Plugin.bat", "Evidence/native-smoke.json", "Evidence/watchtower-smoke.json", "Evidence/qt-forward.json", "Evidence/desktop-live.json", "Evidence/archive-review-proof.json", "PROJECT_NOTICE.txt", "THIRD_PARTY_NOTICES.json", "Check_MO2_Readiness.ps1", "Check_MO2_Readiness.bat", "START-HERE-MO2-253.md", "GameSync-Update-Techniques.md"):
+            for name in ("BUILD_INFO.json", "Modhunter.exe", "modhunter-cli.exe", BUNDLED_HELPER, BUNDLED_QT_HELPER, "Install_MO2_Plugin.ps1", "Install_MO2_Plugin.bat", "Evidence/native-smoke.json", "Evidence/watchtower-smoke.json", "Evidence/qt-forward.json", "Evidence/desktop-live.json", "Evidence/archive-review-proof.json", "Evidence/instances-manager.json", "PROJECT_NOTICE.txt", "THIRD_PARTY_NOTICES.json", "Check_MO2_Readiness.ps1", "Check_MO2_Readiness.bat", "START-HERE-MO2-253.md", "GameSync-Update-Techniques.md"):
                 require(name in index and not index[name].is_dir() and index[name].file_size > 0, f"Portable package is missing {name}")
             require(archive.testzip() is None, "Portable ZIP failed its CRC check")
             digests = portable_checksums(archive, index)
@@ -1028,11 +1339,15 @@ def portable_contents(path: Path, commit: str, run_url: str, native_report: dict
                         f"Native MO2 proof omitted the production hash for {relative}")
                 observed = digests[name]
                 require(observed == expected.lower(), f"Tested MO2 source differs from the portable plugin: {relative}")
+            public["windows/plugin-installer-bundle.json"] = public_json(
+                validate_mo2_installer_bundle(archive, index, digests, commit))
             public["BUILD_INFO.json"] = public_json(build)
             for filename in BENCHMARK_FILES:
                 benchmark_name = "Evidence/" + filename
                 if benchmark_name in index:
                     benchmark = json_object(archive.read(index[benchmark_name]), filename)
+                    if filename == NEXUS_BENCHMARK:
+                        validate_nexus_benchmark(benchmark)
                     public["benchmarks/" + filename] = public_json(benchmark)
     except (BadZipFile, RuntimeError, OSError) as exc:
         raise ReleaseError(f"Cannot validate portable archive: {path.name}: {exc}") from exc
@@ -1094,11 +1409,24 @@ def component_assets(portable: Path, staged: Path) -> None:
 
 
 def release_notes(commit: str, run_url: str, repository_url: str, installer_name: str) -> str:
-    return f"""# Modhunter {VERSION} — OLED / Color restored
+    return f"""# Modhunter {VERSION} — MO2 setup and exact-file updates
 
-Modhunter now opens on true OLED black, with neutral surfaces and cool white/blue controls. Colored chapter separators, progress diamonds and manual completion cues return, with clearer feedback for actual checks, selection, bookmarks and errors. The complete gallery/list library and every existing update safeguard remain available.
+Discover your MO2 applications from the desktop, install the matching plugin into explicitly selected application folders, and work in a full-window mod library with search pinned at the bottom. Nexus updates now follow the exact installed archive and the publisher's replacement history, including optional files and same-version reuploads.
 
 This release continues the Rust desktop introduced in earlier versions. WebView2 renders the shared dashboard and preserved game modes; MO2 retains authenticated Nexus downloads and its native installer, including FOMOD choices. The Windows app does not require Node or Electron.
+
+## 0.13.0: selected MO2 setup, full-space library and exact file evidence
+
+- **In-app MO2 setup:** discover application folders, portable/global instances and every profile without treating profiles as separate plugin targets. Review the selected applications, plugin destinations and matching package before installation. The same verified resource is available in portable and installed desktop editions.
+- **Preserved installs and progress:** preview pins the existing plugin tree and progress. Each upgrade keeps a complete backup, preserves fallback progress and refuses changed reviewed targets, unsupported executable architectures, linked paths, damaged packages and ambiguous running-process ownership. A known unrelated MO2 application may remain open. Stop waits for the current transaction and cancels pending targets; saved results remain reviewable.
+- **Full-window library:** List and Gallery use the available workspace. Bottom search and its controls stay visible without covering the final mod row or status footer. Column preferences, sorting, filters, keyboard focus, themes, Details and every workspace remain available without virtualizing or capping records.
+- **Separate Bugs evidence:** the sortable Bugs column preserves the distinction between a displayed zero count, reported bugs, stale observations, disabled pages and unverified/unavailable evidence. Notes, plugin health and original source details remain independently inspectable.
+- **Actual MO2 separator colors:** native observations and bounded metadata fallback preserve each separator's RGBA color across refresh, search, grouping, Gallery and theme changes. Unknown colors use the existing fallback; arbitrary metadata cannot become CSS.
+- **Exact optional-file updates:** an installed Nexus file ID or exact archive name is matched to its own complete replacement history. A newer main-project version, similar filename or larger file ID cannot turn an unchanged optional patch into an update. Ambiguous, removed, conflicting or unavailable history requires review. Explicit alternate-file choices remain available and retain exact source ownership.
+- **Current approvals:** a file review is bound to its installed archive and replacement evidence, even when version labels are unchanged. Expired evidence, changed files, profile transitions and delayed callbacks cannot reuse an old approval. Failed or incomplete source refreshes retain the last complete file list and history while reporting the failure.
+- **Faster repeat checks with visible freshness:** normal Check and launch checks reuse complete successful Nexus evidence for at most four hours and identify cached results and their original check time. Use **Tools → Full audit** for a fresh Nexus check. Files and project artwork/author metadata retain separate freshness; a later failed refresh is not reported as current. Request reuse is measured with complete fixture results, not claimed as a speed guarantee for a real account or network.
+
+The release requires named Chromium Instances and library scenarios with matching source hashes and screenshot bytes. Windows acceptance separately opens the real native manager, selects isolated application fixtures, installs the actual bundled plugin, verifies all payload hashes, preserves progress/backups and tests stale-review refusal. These inert application markers do not claim execution of the user's MO2 installation. The actual MO2 2.5.2 fixture, Qt forward-runtime checks, NSIS acceptance and unchanged native library performance ceilings remain independent release requirements.
 
 ## 0.12.1: OLED black, colored chapters and visible feedback
 
@@ -1184,7 +1512,7 @@ See the [0.9.2 evidence and repeatable workloads]({repository_url}/blob/{commit}
 ## Download and run
 
 - **{PORTABLE_NAME}** includes Modhunter.exe, the compiled diagnostic CLI, the MO2 plugin with its narrow Qt interoperability helper, and its installer scripts. Extract it and run Modhunter.exe. The portable app requires Microsoft Edge WebView2 Runtime.
-- **{installer_name}** installs the Rust desktop for the current Windows user and bootstraps WebView2 when needed. Use the MO2 plugin archive or the portable ZIP's included plugin installer for live MO2 integration.
+- **{installer_name}** installs the Rust desktop for the current Windows user and bootstraps WebView2 when needed. Its complete verified MO2 installer resource supports the same in-app plugin installation as the portable edition.
 - **{MO2_PACKAGE_NAME}** is the complete MO2 plugin with its existing installer, embedded Rust/Qt/archive helpers, notices, build identity and scoped checksums. Extract the whole archive, close MO2 and run Install_MO2_Plugin.bat. The optional readiness checker and desktop app remain in the complete portable package.
 - **{STANDALONE_NAME}** contains the exact tested shared dashboard as Modhunter.html, BUILD_INFO.json and its own checksums. Open the HTML directly for its independent browser/offline experience and preserved game modes; optional live operations still use the existing MO2 bridge.
 - **{VERIFICATION_NAME}** contains the selected native receipts, screenshots, build identity and available benchmark evidence. **SHA256SUMS.txt** verifies the release files.
@@ -1193,7 +1521,7 @@ See the [0.9.2 evidence and repeatable workloads]({repository_url}/blob/{commit}
 
 Choose **Import MO2** and select a profile's modlist.txt. For split directories, select **Instance INI**, or set an explicit **Mods path**. **Auto paths** clears overrides. **Refresh** reloads metadata, reusing unchanged cached files; import remains read-only. **Plugin audit** performs deeper inspection. **CANCEL** stops either operation cooperatively; **CANCELING…** remains visible until its workers settle, leaving the last complete result available.
 
-For live updates, extract the complete portable ZIP with its checksum manifest and BUILD_INFO.json. Close MO2, run **Install_MO2_Plugin.bat**, select the folder containing ModOrganizer.exe, then restart MO2, let its profile finish loading and launch Modhunter. The bridge starts automatically; **Find MO2** reconnects on demand. Choose the intended session if several are running; opening the legacy Quest Board tool is optional. A loopback address can also be entered in **Connect**. Nexus sign-in stays in MO2. **Update now**, background queues, retries and sequential installation retain MO2's native installation choices.
+For live updates, open **MO2 Instances** in the installed or portable desktop, discover or add the intended MO2 application folder, and review the selected installation targets. Close the selected MO2 applications, confirm the preview, then restart MO2 and let its profile finish loading. The portable ZIP and separate plugin ZIP also retain **Install_MO2_Plugin.bat** for folder-based setup; extract the complete archive with its manifest first. The bridge starts automatically; **Find MO2** reconnects on demand. Choose the intended session if several are running; opening the legacy Quest Board tool is optional. A loopback address can also be entered in **Connect**. Nexus sign-in stays in MO2. **Update now**, background queues, retries and sequential installation retain MO2's native installation choices.
 
 JSON, CSV and PowerShell exports are saved to Windows Downloads with unique filenames. Export a progress backup in the older Electron edition and import it in the Rust edition after selecting the same portable profile. Existing Electron browser storage is not automatically migrated; the live MO2 Chronicle remains with the plugin.
 
@@ -1261,7 +1589,18 @@ def prepare(artifacts_dir: Path, output_dir: Path, commit: str, run_url: str) ->
     public = portable_contents(portable, commit, run_url, native_report, watchtower_report, mo2_result, file_hash(qt_helper), qt_forward_report, live_report,archive_report)
     require(file_hash(portable) == portable_digest, "Portable archive changed during release validation")
     installer_report = read_json(windows / "installer-smoke/installer-smoke.json")
-    validate_installer_report(installer_report, commit, file_hash(installer), native_report["executableSha256"])
+    bundle = json.loads(public["windows/plugin-installer-bundle.json"])
+    validate_installer_report(installer_report, commit, file_hash(installer), native_report["executableSha256"],
+                              bundle)
+    instances_report = read_json(windows / "instances-smoke/instances-manager.json")
+    validate_instances_manager(instances_report, commit, native_report["executableSha256"], bundle)
+    with ZipFile(portable) as archive:
+        require(json_object(archive.read("Evidence/instances-manager.json"), "portable Instances receipt") == instances_report,
+                "Portable MO2 Instances evidence differs from its actual native run")
+    public["windows/instances-manager.json"] = public_json(instances_report)
+    for capture in instances_report["captures"]:
+        public["windows/" + capture["file"]] = png_bytes(windows / "instances-smoke" / capture["file"],
+                                                        (capture["width"], capture["height"]))
     installed_launch = read_json(windows / "installer-smoke/native-launch/native-smoke.json")
     validate_native_report(installed_launch)
     validate_native_binding(installed_launch, commit, native_report["executableSha256"])
@@ -1295,6 +1634,10 @@ def prepare(artifacts_dir: Path, output_dir: Path, commit: str, run_url: str) ->
     public["browser/watchtower-browser.json"] = public_json(watchtower_browser)
     manager_ui = read_json(browser / "native-manager-ui.json")
     validate_native_manager_ui(manager_ui, commit)
+    for kind in WORKSPACE_BROWSER_SPECS:
+        workspace_report = read_json(browser / (kind + ".json"))
+        public.update(validate_workspace_browser(workspace_report, commit, kind, browser))
+        public["browser/" + kind + ".json"] = public_json(workspace_report)
     font_path = browser / 'ci-fonts.json'
     # Both actual-font receipts bind these original bytes. Parse/credential-check
     # the bounded snapshot once and publish it unchanged, including JSON escapes.
@@ -1391,6 +1734,25 @@ def self_test() -> None:
                                "testsRun":len(NATIVE_MANAGER_CHECKS),"skipped":0,
                                "sourceFiles":{name:file_hash(ROOT/name) for name in NATIVE_MANAGER_SOURCES},
                                "checks":[{"name":name,"passed":True} for name in sorted(NATIVE_MANAGER_CHECKS)]}
+            self.browser_workspaces = {}
+            for kind, spec in WORKSPACE_BROWSER_SPECS.items():
+                sources = {name: file_hash(ROOT / name) for name in spec["sources"]}
+                report = {"schema": 1, "kind": kind, "version": VERSION, "ok": True,
+                    "commit": self.commit, "commitAtStart": self.commit, "dirty": False, "sourceUnchanged": True,
+                    "realChromium": True, "nativeMO2": False, "nativeWebView2": False,
+                    "browserIdentity": {"engine": "chromium", "version": "157.0.0.0", "userAgent": "Synthetic validator fixture HeadlessChrome/157.0.0.0"},
+                    "scope": "Synthetic release-validator fixture; no Chromium or native execution",
+                    "testsRun": len(spec["checks"]), "requiredTests": len(spec["checks"]), "failures": 0, "errors": 0, "skipped": 0,
+                    "checks": [{"name": name, "passed": True} for name in sorted(spec["checks"])],
+                    "sourceSha256": sources, "sourceSha256AtStart": dict(sources),
+                    "screenshots": sorted(spec["screenshots"]), "screenshotEvidence": {}}
+                for name, dimensions in spec["screenshots"].items():
+                    data = self.png(*dimensions)
+                    (self.browser / name).write_bytes(data)
+                    report["screenshotEvidence"][name] = {"sha256": hashlib.sha256(data).hexdigest(),
+                                                          "width": dimensions[0], "height": dimensions[1]}
+                self.browser_workspaces[kind] = report
+                self.write_json(self.browser / (kind + ".json"), report)
             coverage = font_coverage(CJK_TEXT)
             self.font_receipt = {'schema': 1, 'ok': True,
                 'scope': 'Synthetic validator fixture; no font installation or glyph rendering',
@@ -1456,6 +1818,29 @@ def self_test() -> None:
             binding={"nativeBindingSchema":1,"candidateCommit":self.commit,"sourceDirty":False,"executableSha256":self.cli_hash,
                      "sourceFiles":{name:file_hash(ROOT/name) for name in native_sources()}}
             self.native.update(binding);self.watchtower.update(binding)
+            self.instances_proof = {**binding, "sourceFiles": dict(binding["sourceFiles"]),
+                "schemaVersion": 1, "ok": True, "phase": "complete", "errors": [],
+                "nativeDesktop": True, "nativeWebView2": True, "nativeMO2": False,
+                "isolatedFilesystemFixture": True, "accountAuthentication": False, "nativeProcessId": 1234,
+                "scriptSha256": file_hash(ROOT / "native/scripts/verify_instances_manager.cjs"),
+                "launcherSha256": file_hash(ROOT / "native/scripts/instances_manager_smoke.ps1"),
+                "scope": "Synthetic validator fixture; no Windows UI, IPC or MO2 execution",
+                "checks": [{"name": name, "passed": True} for name in sorted(INSTANCES_MANAGER_CHECKS)],
+                "fixture": {"schemaVersion": 1, "inertExecutable": True, "executedMO2": False,
+                    "applications": 3, "instances": 4, "profiles": 7, "portableAssociations": 3,
+                    "sharedGlobalAssociations": 2, "peMarkerSha256": INSTANCES_PE_MARKER_SHA},
+                "engine": {"product": "Chrome/150.0.0.0", "executable": r"C:\Synthetic\msedgewebview2.exe"},
+                "trustedPointerEvents": 4, "foreignAuthority": {
+                    role: {"denied": True, "apiAvailable": True} for role in ("shell", "content")},
+                "captures": [{"file": name, "foreground": True, "nativeProcessId": 1234, "width": 800, "height": 620}
+                             for name in sorted(INSTANCES_MANAGER_SCREENSHOTS)],
+                "timingsMs": {"discovery": 100, "preview": 100, "selectedInstall": 100},
+                "isolation": {"ok": True, "cleanupErrors": [], "policyValuesRemoved": 2,
+                    "restoredFolders": [{"manifestMatched": True}, {"manifestMatched": True}]}}
+            instances_image = self.png(800, 620)
+            for name in INSTANCES_MANAGER_SCREENSHOTS:
+                (self.windows / "instances-smoke").mkdir(parents=True, exist_ok=True)
+                (self.windows / "instances-smoke" / name).write_bytes(instances_image)
             self.archive_bytes={"7z.exe":b"synthetic non-executable archive helper","7z.dll":b"synthetic non-loadable archive library"}
             from unittest.mock import patch
             pins=patch.dict(ARCHIVE_PINS,{name:hashlib.sha256(body).hexdigest() for name,body in self.archive_bytes.items()},clear=True)
@@ -1504,7 +1889,9 @@ def self_test() -> None:
             self.qt.update(abi=1, buildQt="6.7.1", runtimeQt="6.7.1", qtVersion="6.7.1", mechanism="typed-qt-sender",
                 helperSha256=self.qt_hash, nativeQObject=True, metadataCompleted=True, rawFilesCompleted=True,
                 unownedIgnored=True, cancelledIgnored=True, networkRequests=0, accountAuthentication=False)
-            self.sources = {name: ("test fixture " + name).encode() for name in PRODUCTION_FILES}
+            source_names = set(PRODUCTION_FILES) | {name for name in MO2_RUNTIME_FILES if not name.startswith("bin/")}
+            self.sources = {name: ("test fixture " + name).encode() for name in source_names}
+            self.sources["version.py"] = f'VERSION = "{VERSION}"\n'.encode("utf-8")
             self.result = {"ok": True, "phase": "completed", "nativeExitCode": 0, "release": {"version": "2.5.2"},
                            "rustCli": {"required": True, "sha256": self.cli_hash}, "nativeReceipt": self.receipt,
                            "qtBridge": {"required": True, "sha256": self.qt_hash, "buildQt": "6.7.1"},
@@ -1524,7 +1911,11 @@ def self_test() -> None:
                 "executableSha256": self.cli_hash, "installedExecutableSha256": self.cli_hash,
                 "installerScriptSha256": file_hash(ROOT / "native/scripts/installer_smoke.ps1"),
                 "checks": [{"name": name, "passed": True} for name in sorted(INSTALLER_CHECKS)],
-                "archiveResourceHashes": dict(ARCHIVE_PINS)}
+                "archiveResourceHashes": dict(ARCHIVE_PINS),
+                "pluginInstallerVersion": VERSION, "pluginInstallerCommit": self.commit,
+                "pluginInstallerManifestSha256": self.resource_hashes["SHA256SUMS.txt"],
+                "pluginInstallerResourceHashes": dict(self.resource_hashes),
+                "installedPluginPayloadHashes": dict(self.plugin_payload_hashes)}
             self.write_json(self.windows / "installer-smoke/installer-smoke.json", self.installer_proof)
             self.write_json(self.windows / "installer-smoke/native-launch/native-smoke.json", self.native)
             (self.windows / "installer-smoke/native-launch/fixture-desktop.png").write_bytes(image)
@@ -1620,6 +2011,29 @@ def self_test() -> None:
                     archive.writestr(prefix+"provenance.json",json.dumps({"version":"26.06","files":ARCHIVE_PINS,"licenseSha256":hashlib.sha256(license_text).hexdigest()}))
                 for name, body in self.sources.items():
                     archive.writestr("MO2/mo2_update_arsenal/" + name, body)
+            with ZipFile(self.zip_path) as archive:
+                bodies = {name: archive.read(name) for name in archive.namelist()}
+            runtime_names = {"MO2/mo2_update_arsenal/" + name for name in MO2_RUNTIME_FILES}
+            resource = {name: body for name, body in bodies.items() if name in runtime_names | MO2_PACKAGE_ROOT_FILES}
+            resource["SHA256SUMS.txt"] = "".join(f"{hashlib.sha256(body).hexdigest()}  {name}\n"
+                for name, body in sorted(resource.items())).encode("utf-8")
+            self.resource_hashes = {name: hashlib.sha256(body).hexdigest() for name, body in resource.items()}
+            self.plugin_payload_hashes = {name: self.resource_hashes["MO2/mo2_update_arsenal/" + name]
+                for name in MO2_RUNTIME_FILES if "MO2/mo2_update_arsenal/" + name in self.resource_hashes}
+            self.instances_proof["bundle"] = {"version": VERSION, "commit": self.commit,
+                                              "manifestSha256": self.resource_hashes["SHA256SUMS.txt"]}
+            self.instances_proof["targets"] = [
+                {"fixture": role, "status": "updated" if role == "upgrade" else "installed", "version": VERSION,
+                 "installedFiles": dict(self.plugin_payload_hashes), "preservedData": role == "upgrade",
+                 "backupPreserved": role == "upgrade", "emptyDirectoryPreserved": role == "upgrade"}
+                for role in ("fresh", "upgrade")]
+            bodies["Evidence/instances-manager.json"] = public_json(self.instances_proof)
+            self.write_json(self.windows / "instances-smoke/instances-manager.json", self.instances_proof)
+            with ZipFile(self.zip_path, "w") as archive:
+                for name, body in bodies.items():
+                    archive.writestr(name, body)
+                for name, body in resource.items():
+                    archive.writestr(MO2_INSTALLER_PREFIX + name, body)
             self.refresh_portable_manifest()
 
         def refresh_portable_manifest(self):
@@ -1725,16 +2139,17 @@ def self_test() -> None:
         def test_new_benchmarks_are_preserved_with_identity_and_credential_checks(self):
             filenames = BENCHMARK_FILES
             fixture = {"method": "synthetic release-test fixture", "medianMs": 12.5}
+            fixtures = {name: self.nexus_benchmark_fixture() if name == NEXUS_BENCHMARK else fixture for name in filenames}
             with ZipFile(self.zip_path, "a") as archive:
                 for name in filenames:
-                    archive.writestr("Evidence/" + name, public_json(fixture))
+                    archive.writestr("Evidence/" + name, public_json(fixtures[name]))
             self.refresh_portable_manifest()
             dashboard = {"candidateCommit": self.commit, "method": "synthetic release-test fixture"}
             self.write_json(self.browser / "dashboard-render-comparison.json", dashboard)
             prepare(self.artifacts, self.output, self.commit, self.run)
             with ZipFile(self.output / VERIFICATION_NAME) as archive:
                 for name in filenames:
-                    self.assertEqual(json.loads(archive.read("benchmarks/" + name)), fixture)
+                    self.assertEqual(json.loads(archive.read("benchmarks/" + name)), fixtures[name])
                 self.assertEqual(json.loads(archive.read("benchmarks/dashboard-render-comparison.json")), dashboard)
             dashboard["candidateCommit"] = "b" * 40
             self.write_json(self.browser / "dashboard-render-comparison.json", dashboard)
@@ -1747,6 +2162,48 @@ def self_test() -> None:
             with self.assertRaisesRegex(ReleaseError, "Credential field"):
                 prepare(self.artifacts, rejected, self.commit, self.run)
             self.assertFalse(rejected.exists())
+
+        @staticmethod
+        def nexus_benchmark_fixture():
+            report = {"schema": 1, "baselineRef": NEXUS_BENCHMARK_BASELINE,
+                "scope": "Synthetic release-validator fixture; no provider or performance benchmark execution",
+                "comparisons": {name: "Synthetic validation of comparison scope" for name in ("standardCheck", "completeEvidence", "startup", "freshness")},
+                "projects": 3, "installedRows": 6, "rowsPerProject": 2, "repeats": 3, "workers": 5,
+                "perRequestSimulatedLatencySeconds": .01, "fixtureSha256": "f" * 64,
+                "baselineSourceHashes": dict(NEXUS_BENCHMARK_BASELINE_HASHES),
+                "sourceHashes": {name: file_hash(ROOT / "mo2_update_arsenal" / name) for name in NEXUS_BENCHMARK_SOURCES},
+                "benchmarkSha256": file_hash(ROOT / "native/scripts/benchmark_nexus_checks.py"),
+                "assertions": {name: True for name in NEXUS_BENCHMARK_ASSERTIONS}, "runs": [], "summary": {}}
+            for case, (metadata, files) in NEXUS_BENCHMARK_CASES.items():
+                verdicts = {"candidate": 3, "current": 3} if case.startswith("after") else {"candidate": 6}
+                sample = {"case": case, "seconds": .01, "cpuSeconds": .001,
+                    "metadataRequests": metadata * 3, "fileRequests": files * 3, "providerRequests": (metadata + files) * 3,
+                    "peakProviderRequests": min(5, (metadata + files) * 3), "installedRows": 6, "artworkRows": 6, "authorRows": 6,
+                    "completeFileRows": 9 if case.startswith("after") or case == "beforeCompleteEvidence" else 0,
+                    "verdicts": verdicts}
+                report["runs"].extend({**sample, "repeat": repeat} for repeat in range(1, 4))
+                report["summary"][case] = {"medianSeconds": .01, "medianCpuSeconds": .001,
+                    "providerRequests": [sample["providerRequests"]] * 3,
+                    **{name: sample[name] for name in ("metadataRequests", "fileRequests", "verdicts")}}
+            return report
+
+        def test_nexus_benchmark_rejects_source_drift_missing_requests_and_lost_evidence(self):
+            report = self.nexus_benchmark_fixture()
+            validate_nexus_benchmark(report)
+            for changes in ({"baselineRef": "a" * 40}, {"baselineSourceHashes": {}},
+                            {"benchmarkSha256": "0" * 64}, {"sourceHashes": {}}, {"assertions": {}},
+                            {"repeats": 1}, {"installedRows": 5}, {"runs": report["runs"][:-1]},
+                            {"summary": {}}, {"comparisons": {}}, {"perRequestSimulatedLatencySeconds": float("inf")}):
+                with self.subTest(changes=changes), self.assertRaises(ReleaseError):
+                    validate_nexus_benchmark({**report, **changes})
+            for key, value in (("providerRequests", 0), ("completeFileRows", 1), ("artworkRows", 0),
+                               ("authorRows", 0), ("peakProviderRequests", 6), ("verdicts", {"current": 6}),
+                               ("seconds", float("nan"))):
+                changed = json.loads(public_json(report))
+                row = next(row for row in changed["runs"] if row["case"] == "afterCold")
+                row[key] = value
+                with self.subTest(key=key), self.assertRaises(ReleaseError):
+                    validate_nexus_benchmark(changed)
 
         def test_live_desktop_gate_rejects_missing_wrong_binary_and_failed_checks(self):
             for changes in ({"ok": False}, {"nativeMO2": False}, {"sourceDirty": True},
@@ -1773,10 +2230,15 @@ def self_test() -> None:
                 expected = {"windows/desktop-live.json", "windows/desktop-live.png", "BUILD_INFO.json", "windows/qt-forward.json", "windows/native-smoke.json", "windows/watchtower-smoke.json", "windows/archive-review-proof.json", "mo2/result.json", "mo2/native-receipt.json", "mo2/mo2-fixture.png", "browser/review.png", "browser/watchtower-browser.json"}
                 expected.update("browser/" + name for name in WATCHTOWER_SCREENSHOTS | NATIVE_MANAGER_SCREENSHOTS)
                 expected.add("browser/native-manager-ui.json")
+                for kind, spec in WORKSPACE_BROWSER_SPECS.items():
+                    expected.add("browser/" + kind + ".json")
+                    expected.update("browser/" + name for name in spec["screenshots"])
                 expected.update({'browser/ci-fonts.json', 'browser/ci-font-rendering.json'})
                 expected.update('browser/' + name for name in FONT_RENDERING_SCREENSHOTS)
-                expected.update({"windows/installer-smoke.json", "windows/installed-native-smoke.json",
+                expected.update({"windows/installer-smoke.json", "windows/plugin-installer-bundle.json", "windows/installed-native-smoke.json",
                                  "windows/installed-desktop.png", "windows/native-library-performance.json", "visual/visual-release.json"})
+                expected.add("windows/instances-manager.json")
+                expected.update("windows/" + name for name in INSTANCES_MANAGER_SCREENSHOTS)
                 expected.update("windows/" + name for name in LIVE_DESKTOP_SCREENSHOTS)
                 expected.update("visual/" + name for name in VISUAL_SCREENSHOTS)
                 self.assertEqual(set(names), expected)
@@ -1823,6 +2285,11 @@ def self_test() -> None:
             for change in (lambda r: r.update(installedExecutableSha256="0"*64),
                            lambda r: r.update(installerSha256="0"*64),
                            lambda r: r.update(installerScriptSha256="0"*64),
+                           lambda r: r.update(pluginInstallerVersion="0.0.0"),
+                           lambda r: r.update(pluginInstallerCommit="b"*40),
+                           lambda r: r.update(pluginInstallerManifestSha256="0"*64),
+                           lambda r: r["pluginInstallerResourceHashes"].pop("BUILD_INFO.json"),
+                           lambda r: r["installedPluginPayloadHashes"].update({"bin/modhunter-cli.exe": "0"*64}),
                            lambda r: r["checks"].pop(),
                            lambda r: r["checks"][0].update(passed=False)):
                 report = deepcopy(original)
@@ -1831,6 +2298,91 @@ def self_test() -> None:
                 with self.assertRaises(ReleaseError):
                     prepare(self.artifacts, self.output, self.commit, self.run)
                 self.assertFalse(self.output.exists())
+
+        def test_nested_installer_rejects_missing_tampered_mixed_and_unowned_payload(self):
+            prefix = MO2_INSTALLER_PREFIX
+            cases = ("missing-manifest", "damaged-helper", "missing-python", "forged-helper",
+                     "mixed-build", "changed-installer", "unowned-web-source", "unlisted-file")
+            for case in cases:
+                with self.subTest(case=case):
+                    self.write_portable()
+                    with ZipFile(self.zip_path) as archive:
+                        bodies = {name: archive.read(name) for name in archive.namelist() if name != "SHA256SUMS.txt"}
+                    if case == "missing-manifest":
+                        del bodies[prefix + "SHA256SUMS.txt"]
+                    elif case in ("damaged-helper", "forged-helper"):
+                        bodies[prefix + BUNDLED_HELPER] += b"changed fixture bytes"
+                    elif case == "missing-python":
+                        del bodies[prefix + "MO2/mo2_update_arsenal/plugin.py"]
+                    elif case == "mixed-build":
+                        bodies[prefix + "BUILD_INFO.json"] = public_json({"version": VERSION, "commit": "b" * 40, "workflow": self.run})
+                    elif case == "changed-installer":
+                        bodies[prefix + "Install_MO2_Plugin.ps1"] += b"\n# substituted installer\n"
+                    elif case == "unowned-web-source":
+                        bodies[prefix + "MO2/mo2_update_arsenal/web/unowned.js"] = b"unowned source fixture"
+                    else:
+                        bodies[prefix + "unlisted.txt"] = b"unlisted fixture"
+                    if case in ("forged-helper", "mixed-build", "changed-installer", "unowned-web-source", "missing-python"):
+                        bodies[prefix + "SHA256SUMS.txt"] = "".join(
+                            f"{hashlib.sha256(body).hexdigest()}  {name.removeprefix(prefix)}\n"
+                            for name, body in sorted(bodies.items()) if name.startswith(prefix) and name != prefix + "SHA256SUMS.txt"
+                        ).encode("utf-8")
+                    with ZipFile(self.zip_path, "w") as archive:
+                        for name, body in bodies.items():
+                            archive.writestr(name, body)
+                    self.refresh_portable_manifest()
+                    with self.assertRaises(ReleaseError):
+                        prepare(self.artifacts, self.output, self.commit, self.run)
+                    self.assertFalse(self.output.exists())
+
+        def test_instances_manager_native_gate_rejects_wrong_scope_identity_payload_and_authority(self):
+            from copy import deepcopy
+            original = deepcopy(self.instances_proof)
+            for change in (
+                lambda r: r.update(nativeMO2=True), lambda r: r.update(nativeWebView2=False),
+                lambda r: r.update(accountAuthentication=True), lambda r: r.update(isolatedFilesystemFixture=False),
+                lambda r: r.update(executableSha256="0" * 64), lambda r: r.update(sourceFiles={}),
+                lambda r: r.update(scriptSha256="0" * 64), lambda r: r.update(launcherSha256="0" * 64),
+                lambda r: r["checks"].pop(), lambda r: r["checks"][0].update(passed=False),
+                lambda r: r["fixture"].update(instances=3), lambda r: r["fixture"].update(profiles=6),
+                lambda r: r["fixture"].update(peMarkerSha256="0" * 64),
+                lambda r: r["bundle"].update(manifestSha256="0" * 64),
+                lambda r: r["targets"][0]["installedFiles"].pop("plugin.py"),
+                lambda r: r["targets"][1].update(preservedData=False),
+                lambda r: r["targets"][1].update(backupPreserved=False),
+                lambda r: r["targets"][1].update(emptyDirectoryPreserved=False),
+                lambda r: r["foreignAuthority"]["content"].update(denied=False),
+                lambda r: r.update(trustedPointerEvents=3), lambda r: r["captures"].pop(),
+                lambda r: r["captures"][0].update(foreground=False),
+                lambda r: r["isolation"].update(policyValuesRemoved=1),
+                lambda r: r["isolation"]["restoredFolders"][0].update(manifestMatched=False),
+            ):
+                report = deepcopy(original)
+                change(report)
+                self.write_json(self.windows / "instances-smoke/instances-manager.json", report)
+                with self.assertRaises(ReleaseError):
+                    prepare(self.artifacts, self.output, self.commit, self.run)
+                self.assertFalse(self.output.exists())
+
+        def test_instances_manager_receipt_and_owned_screenshots_are_required(self):
+            proof = self.windows / "instances-smoke/instances-manager.json"
+            proof.unlink()
+            with self.assertRaisesRegex(ReleaseError, "Required artifact is missing"):
+                prepare(self.artifacts, self.output, self.commit, self.run)
+            self.write_json(proof, self.instances_proof)
+            image = self.windows / "instances-smoke/instances-preview.png"
+            image.write_bytes(self.png(1, 1))
+            with self.assertRaisesRegex(ReleaseError, "Unexpected PNG screenshot dimensions"):
+                prepare(self.artifacts, self.output, self.commit, self.run)
+            self.assertFalse(self.output.exists())
+
+        def test_portable_instances_receipt_must_match_actual_native_run(self):
+            report = json.loads(public_json(self.instances_proof))
+            report["timingsMs"]["discovery"] += 1
+            self.write_json(self.windows / "instances-smoke/instances-manager.json", report)
+            with self.assertRaisesRegex(ReleaseError, "Instances evidence differs"):
+                prepare(self.artifacts, self.output, self.commit, self.run)
+            self.assertFalse(self.output.exists())
 
         def test_native_library_receipt_is_mandatory_and_published_exactly(self):
             proof = self.windows / "native-library-performance/native-library-performance.json"
@@ -2257,6 +2809,78 @@ def self_test() -> None:
                 prepare(self.artifacts, self.output, self.commit, self.run)
             self.assertFalse(self.output.exists())
 
+        def test_workspace_browser_requires_clean_exact_complete_named_chromium_proof(self):
+            for kind, original in self.browser_workspaces.items():
+                cases = ({"schema": True}, {"kind": "wrong"}, {"version": "0.0.0"}, {"ok": False},
+                         {"realChromium": False}, {"nativeMO2": True}, {"nativeWebView2": True},
+                         {"commit": "b" * 40}, {"commitAtStart": "b" * 40}, {"dirty": True}, {"sourceUnchanged": False},
+                         {"testsRun": original["testsRun"] - 1}, {"requiredTests": original["requiredTests"] - 1},
+                         {"errors": 1}, {"failures": 1}, {"skipped": 1}, {"skipped": False},
+                         {"browserIdentity": {}}, {"sourceSha256": {}}, {"sourceSha256AtStart": {}},
+                         {"checks": original["checks"][:-1]},
+                         {"checks": [original["checks"][0]] * len(original["checks"])},
+                         {"screenshots": []}, {"screenshotEvidence": {}})
+                for changes in cases:
+                    with self.subTest(kind=kind, changes=changes), self.assertRaises(ReleaseError):
+                        validate_workspace_browser({**original, **changes}, self.commit, kind, self.browser)
+                changed = json.loads(public_json(original))
+                changed["checks"][0]["passed"] = False
+                with self.assertRaises(ReleaseError):
+                    validate_workspace_browser(changed, self.commit, kind, self.browser)
+                changed = json.loads(public_json(original))
+                changed["browserIdentity"]["userAgent"] = "HeadlessChrome/1.0.0.0"
+                with self.assertRaises(ReleaseError):
+                    validate_workspace_browser(changed, self.commit, kind, self.browser)
+                changed = json.loads(public_json(original))
+                name = next(iter(changed["sourceSha256"]))
+                changed["sourceSha256"][name] = changed["sourceSha256AtStart"][name] = "0" * 64
+                with self.assertRaises(ReleaseError):
+                    validate_workspace_browser(changed, self.commit, kind, self.browser)
+
+        def test_workspace_browser_receipts_are_required_before_staging_output(self):
+            for kind, report in self.browser_workspaces.items():
+                path = self.browser / (kind + ".json")
+                path.unlink()
+                try:
+                    with self.subTest(kind=kind), self.assertRaisesRegex(ReleaseError, "Required artifact is missing"):
+                        prepare(self.artifacts, self.output, self.commit, self.run)
+                    self.assertFalse(self.output.exists())
+                finally:
+                    self.write_json(path, report)
+
+        def test_workspace_browser_screenshots_bind_bytes_and_exact_viewports(self):
+            for kind, original in self.browser_workspaces.items():
+                name = original["screenshots"][0]
+                for key, value in (("sha256", "0" * 64), ("width", 1), ("height", True)):
+                    report = json.loads(public_json(original))
+                    report["screenshotEvidence"][name][key] = value
+                    with self.subTest(kind=kind, key=key), self.assertRaises(ReleaseError):
+                        validate_workspace_browser(report, self.commit, kind, self.browser)
+                path = self.browser / name
+                original_bytes = path.read_bytes()
+                path.unlink()
+                try:
+                    with self.assertRaisesRegex(ReleaseError, "Required artifact is missing"):
+                        validate_workspace_browser(original, self.commit, kind, self.browser)
+                finally:
+                    path.write_bytes(original_bytes)
+                path.write_bytes(self.png())
+                try:
+                    with self.assertRaises(ReleaseError):
+                        validate_workspace_browser(original, self.commit, kind, self.browser)
+                finally:
+                    path.write_bytes(original_bytes)
+
+        def test_workspace_browser_required_scenarios_match_acceptance_sources(self):
+            classes = {"instances-browser": ("tests/test_instances_browser.py", "InstancesBrowserTests"),
+                       "library-workspace": ("tests/test_library_workspace.py", "LibraryWorkspaceTests")}
+            for kind, (path, name) in classes.items():
+                node = next(value for value in ast.parse((ROOT / path).read_text("utf-8")).body
+                            if isinstance(value, ast.ClassDef) and value.name == name)
+                checks = {value.name.removeprefix("test_") for value in node.body
+                          if isinstance(value, ast.FunctionDef) and value.name.startswith("test_")}
+                self.assertEqual(checks, WORKSPACE_BROWSER_SPECS[kind]["checks"])
+
         def test_watchtower_browser_requires_matching_source_and_complete_real_chromium_receipt(self):
             path = self.browser / "watchtower-browser.json"
             path.unlink()
@@ -2362,7 +2986,7 @@ def self_test() -> None:
         def test_intelligence_and_adapter_sources_are_bound_to_native_proof(self):
             for name in ("version.py", "gameplay.py", "scanner.py", "version_evidence.py", "native_nexus.py", "qt_bridge.py", "intelligence.py", "plugin_intelligence.py", "mod_health.py",
                          "source_adapters.py", "source_registry.py", "update_plan.py",
-                         "quick_update.py", "install_brief.py"):
+                         "quick_update.py", "install_brief.py", "file_advisor.py", "nexus_files.py", "mo2_metadata.py"):
                 with self.subTest(name=name):
                     original = self.result["productionFileHashes"].pop(name)
                     self.write_json(self.mo2 / "result.json", self.result)

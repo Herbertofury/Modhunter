@@ -876,6 +876,7 @@ body[data-theme="snow"] .workshop-metric:last-child{border-right:0}
 .welcome-actions{display:flex;gap:12px;flex-wrap:wrap}.welcome-actions a{display:inline-flex;align-items:center;justify-content:center;gap:44px;text-decoration:none;border-radius:9px;padding:15px 22px;font-size:14px;font-weight:650;transition:background .15s}
 .welcome-primary{background:#b3dfcd;color:#0b2021;border:1px solid #c3ebda}.welcome-primary:hover{background:#d0f4e4}.welcome-secondary{background:#182634;color:#e1e9ef;border:1px solid #3c5362}.welcome-secondary:hover{background:#233b49}
 .welcome-safety{font-size:12px;color:#9caebb;max-width:660px;line-height:1.6;margin:17px 0 36px}
+.welcome-safety a{color:inherit;text-underline-offset:3px}
 .welcome-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-top:1px solid #30424d;border-bottom:1px solid #30424d;gap:26px;padding:28px 0}.welcome-steps article>span{font-size:10px;letter-spacing:.13em;color:#90b6b0;font-weight:700}.welcome-steps h2{font-size:17px;margin:12px 0 8px;color:#e4edf4}.welcome-steps p{font-size:13px;line-height:1.7;color:#a5b5c4;margin:0}
 .welcome-bottom{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:24px;font-size:12px;color:#94a5b5;line-height:1.6}.welcome-bottom button{flex-shrink:0;background:transparent;border:1px solid #40515f;color:#bfcbd8;border-radius:6px;padding:9px 12px;cursor:pointer;font:inherit}
 .connection-details{max-width:min(700px,90vw);max-height:80vh;background:#13212e;color:#e5edf4;border:1px solid #597c7b;border-radius:12px;padding:24px}.connection-details::backdrop{background:#000b}.connection-details>div{display:flex;align-items:center;justify-content:space-between;gap:24px}.connection-details h2{margin:0;font-size:22px}.connection-details p{color:#adc0ce;font-size:13px}.connection-details pre{white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.7 Consolas,monospace}.connection-details button{padding:7px 12px;color:#e7f1ee;background:#243e44;border:1px solid #6b8c8b;border-radius:5px;cursor:pointer}
@@ -1647,6 +1648,151 @@ body[data-layout="compact"] #workspaceScanProgress:not([value])::-webkit-progres
 /* The utility's OLED accent must not recolor the authored Adventures inset. */
 body[data-layout="compact"]:not(.realm-route) #gameBoard{--vault-primary:#d9bb83;--vault-primary-ink:#29251a;--vault-accent:#92bcaa;--vault-accent-bg:#243d32;--gold:#d9bb83;--teal:#92bcaa}
 
+/* 0.13 / A complete MO2-style work surface. The list scrolls independently;
+   the existing search and controls stay at the bottom in both library views. */
+.library-toolbar-actions{display:flex;align-items:center;gap:7px;min-width:0}
+body:not([data-layout="compact"]) .list-header .health-heading,
+body:not([data-layout="compact"]) .list-header .bugs-heading{display:none}
+body[data-layout="compact"]:not(.realm-route){--library-dock-height:52px;--library-list-columns:34px 40px minmax(220px,1.65fr) minmax(90px,.45fr) minmax(115px,.6fr) minmax(180px,1fr) 110px minmax(85px,.45fr) 130px;--library-list-min-width:1104px}
+body[data-layout="compact"]:not(.realm-route) .bodypad{max-width:none;margin:0;padding-inline:16px}
+body[data-layout="compact"][data-workspace="mods"]:not(.realm-route) .maincol{height:100dvh;min-height:0;overflow:hidden}
+body[data-layout="compact"][data-workspace="mods"]:not(.realm-route) .bodypad{height:100%;min-height:0;display:flex;flex-direction:column;padding:13px 16px var(--library-dock-height)}
+body[data-layout="compact"][data-workspace="mods"] .bodypad>.workspace-header,
+body[data-layout="compact"][data-workspace="mods"] .bodypad>.workspace-checkline,
+body[data-layout="compact"][data-workspace="mods"] .bodypad>.workspace-summary{flex:none}
+body[data-layout="compact"][data-workspace="mods"] .workspace-brand h1{font:600 21px/1.2 var(--mh-ui);letter-spacing:-.025em}
+body[data-layout="compact"][data-workspace="mods"] .workspace-brand p{margin-top:3px;font-size:10px}
+body[data-layout="compact"][data-workspace="mods"] .workspace-header{margin-bottom:5px}
+body[data-layout="compact"][data-workspace="mods"] .workspace-checkline{padding-bottom:7px;margin-bottom:8px;min-height:22px;font-size:10px}
+body[data-layout="compact"][data-workspace="mods"] .workspace-checkline #workspaceCheckDetail{font-size:10px}
+body[data-layout="compact"][data-workspace="mods"] .workspace-summary{margin-bottom:10px;gap:6px}
+body[data-layout="compact"][data-workspace="mods"] .workspace-summary button{min-height:28px;padding:4px 9px;font-size:10px;gap:8px}
+body[data-layout="compact"][data-workspace="mods"] #workbench{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;overflow:visible}
+body[data-layout="compact"][data-workspace="mods"] .workbench-head{flex:none;margin:0 0 8px;gap:12px}
+body[data-layout="compact"][data-workspace="mods"] .workbench-head h2{font-size:13px}
+body[data-layout="compact"][data-workspace="mods"] .library-description{display:none}
+body[data-layout="compact"][data-workspace="mods"] .toolbar-meta{font-size:10px}
+body[data-layout="compact"] .library-table-viewport{min-height:0;min-width:0;flex:1 1 auto;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;scrollbar-width:thin;border:1px solid var(--vault-line);border-radius:5px;background:var(--vault-bg);scroll-padding-block:38px 8px}
+body[data-layout="compact"] .library-table-viewport:focus-visible{outline-offset:-2px!important}
+body[data-layout="compact"][data-library-view="list"] .list-header,
+body[data-layout="compact"][data-library-view="list"] .mod-row{display:grid;grid-template-columns:var(--library-list-columns);min-width:var(--library-list-min-width);column-gap:10px;padding-inline:10px;align-items:center}
+body[data-layout="compact"][data-library-view="list"] .list-header{position:sticky;top:0;z-index:8;border-top:0;border-radius:0;min-height:30px;height:30px;font-size:8px;letter-spacing:.035em;background:var(--vault-surface)}
+body[data-layout="compact"][data-library-view="list"] .list-header>span:not(.notes-heading){display:flex;align-items:center;min-width:0}
+body[data-layout="compact"] .list-header button{display:flex;align-items:center;gap:5px;min-height:23px;height:23px;padding:0;border:0;background:none;color:inherit;font:inherit;letter-spacing:inherit;cursor:pointer;text-align:left}
+body[data-layout="compact"] .list-header button[aria-pressed="true"]{color:var(--vault-accent)}
+body[data-layout="compact"] .list-header button[aria-pressed="true"]:after{content:"↑";font-size:10px}
+body[data-layout="compact"] .list-header button[data-library-sort="bugs"][aria-pressed="true"]:after{content:"↓"}
+body[data-layout="compact"][data-library-view="list"] .mod-priority{display:block;font-size:10px}
+body[data-layout="compact"][data-library-view="list"] .mod-source{display:block;min-width:0}
+body[data-layout="compact"][data-library-view="list"] .mod-row{min-height:46px;padding-block:5px}
+body[data-layout="compact"] .mod-note{display:block;font-size:9px;line-height:1.4;color:var(--vault-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+body[data-layout="compact"] .mod-note.warning-note{color:var(--vault-warn)}
+body[data-layout="compact"] .mod-health{display:flex;flex-wrap:wrap;align-items:center;align-content:center;gap:4px;min-width:0;color:var(--vault-faint);font-size:10px;line-height:1.4}
+body[data-layout="compact"] .mod-health .mod-insights{display:flex;flex-wrap:wrap;gap:3px;margin:0;align-items:center;max-width:100%}
+body[data-layout="compact"] .mod-health .insight-chip{font:500 9px/1.35 var(--mh-ui);padding:2px 5px;min-height:20px;background:var(--vault-surface);border-color:var(--vault-line);color:var(--vault-muted);border-radius:3px;letter-spacing:0}
+body[data-layout="compact"] .mod-health .insight-chip.positive{color:var(--vault-success)}
+body[data-layout="compact"] .mod-health .insight-chip.warning{color:var(--vault-warn)}
+body[data-layout="compact"] .mod-health .insight-chip.danger{color:var(--vault-error)}
+body[data-layout="compact"] .mod-health .insight-chip.info{color:var(--vault-accent)}
+body[data-layout="compact"] .mod-bugs{display:block;min-width:0;max-width:100%;min-height:24px;padding:3px 6px;text-align:left;justify-self:stretch;font:500 9px/1.4 var(--mh-ui);letter-spacing:0;color:var(--vault-muted);border:1px solid var(--vault-line);background:var(--vault-surface);border-radius:4px;white-space:normal;overflow-wrap:anywhere}
+body[data-layout="compact"] .mod-bugs.info{color:var(--vault-accent)}
+body[data-layout="compact"] .mod-bugs.warning{color:var(--vault-warn);border-color:color-mix(in srgb,var(--vault-warn) 35%,var(--vault-line))}
+body[data-layout="compact"] .mod-bugs:hover{border-color:var(--vault-accent);color:var(--vault-text)}
+body[data-layout="compact"][data-density="comfy"][data-library-view="list"] .mod-row{padding-block:10px;min-height:62px}
+body[data-layout="compact"] .list-footer{display:flex;flex:none;align-items:center;justify-content:space-between;gap:12px;min-height:29px;padding:5px 2px;border:0;background:var(--vault-bg)}
+body[data-layout="compact"] #listFooter{font-size:8px;padding:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+body[data-layout="compact"] .list-footer button{min-height:24px;font-size:9px;padding:2px 6px;flex:none}
+body[data-layout="compact"][data-workspace="mods"] #controls{position:fixed;left:var(--vault-rail);right:0;bottom:0;top:auto;z-index:24;height:var(--library-dock-height);display:grid;grid-template-columns:minmax(180px,1fr) auto;align-items:center;gap:10px;padding:8px 16px;margin:0;border-top:1px solid var(--vault-line);background:var(--vault-surface);box-shadow:none}
+body[data-layout="compact"] #controls .searchbox{grid-column:auto;grid-row:auto;width:100%;min-width:0;max-width:none;margin:0;height:32px;min-height:32px;flex:none;border-radius:5px}
+body[data-layout="compact"] #controls .searchbox input{height:30px;min-height:30px;font-size:11px;padding:4px;background:transparent}
+body[data-layout="compact"] #controls .searchbox kbd{font-size:8px;white-space:nowrap}
+body[data-layout="compact"] #controls .library-toolbar-actions{display:flex;align-items:center;gap:7px;min-width:0;max-width:100%;overflow-x:auto;overflow-y:hidden;scrollbar-width:thin;white-space:nowrap;padding:2px}
+body[data-layout="compact"] #controls .library-toolbar-actions>*{flex:none}
+body[data-layout="compact"] #controls .library-view-switch{grid-column:auto;grid-row:auto;min-height:30px;height:30px;padding:2px}
+body[data-layout="compact"] #controls .library-view-switch button{min-height:24px;height:24px;padding:2px 6px;width:auto;font-size:10px}
+body[data-layout="compact"] #controls .library-view-switch .mh-icon{width:14px;height:14px}
+body[data-layout="compact"] #controls .select-pair{grid-column:auto;grid-row:auto;display:flex;min-width:0;gap:5px}
+body[data-layout="compact"] #controls .select-pair select{min-width:110px;width:110px;max-width:145px;min-height:30px;height:30px;font-size:10px;padding:4px 18px 4px 7px;flex:none}
+body[data-layout="compact"] #controls .density-control{min-height:30px;height:30px;min-width:30px;width:auto;padding:4px 6px;font-size:9px;flex:none}
+body[data-layout="compact"] #controls .library-provider-control{grid-column:auto;grid-row:auto;display:flex;align-items:center;gap:6px;min-width:0;width:auto;max-width:none;margin:0}
+body[data-layout="compact"] #controls .library-provider-label{position:static;width:auto;height:auto;overflow:visible;clip-path:none;font-size:10px}
+body[data-layout="compact"] #controls #providerFilter{width:125px;min-width:125px;max-width:160px;min-height:30px;height:30px;font-size:10px;padding:4px 18px 4px 7px}
+body[data-layout="compact"] #controls #libraryHealthFilter{min-width:160px;width:160px;max-width:180px;min-height:30px;height:30px;font-size:10px;padding:4px 18px 4px 7px;border-radius:4px}
+body[data-layout="compact"] #controls #libraryColumns,body[data-layout="compact"] #controls .reset-filters{grid-column:auto;grid-row:auto;justify-self:auto;min-width:0;min-height:30px;height:30px;padding:4px 8px;font-size:10px}
+body[data-layout="compact"][data-library-view="gallery"] .library-table-viewport{border:0;padding:1px 2px 8px;scroll-padding-top:8px}
+body[data-layout="compact"][data-library-view="gallery"] .mod-health{grid-column:1/-1;grid-row:5;align-self:start}
+body[data-layout="compact"][data-library-view="gallery"] .mod-bugs{grid-column:1/-1;grid-row:6;align-self:start}
+body[data-layout="compact"][data-library-view="gallery"] .mod-source{grid-row:7}
+body[data-layout="compact"][data-library-view="gallery"] .inspect-col{grid-row:7}
+body[data-layout="compact"][data-library-view="list"][data-library-hidden-columns~="art"] :is(.mod-art,.preview-heading),
+body[data-layout="compact"][data-library-view="list"][data-library-hidden-columns~="priority"] :is(.mod-priority,.priority-heading),
+body[data-layout="compact"][data-library-view="list"][data-library-hidden-columns~="version"] :is(.mod-version,.version-heading),
+body[data-layout="compact"][data-library-view="list"][data-library-hidden-columns~="status"] :is(.mod-assessment,.status-heading),
+body[data-layout="compact"][data-library-view="list"][data-library-hidden-columns~="health"] :is(.mod-health,.health-heading),
+body[data-layout="compact"][data-library-view="list"][data-library-hidden-columns~="bugs"] :is(.mod-bugs,.bugs-heading),
+body[data-layout="compact"][data-library-view="list"][data-library-hidden-columns~="source"] :is(.mod-source,.source-heading){display:none!important}
+.library-columns-dialog{position:fixed;inset:0;width:min(440px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:0;border:1px solid var(--vault-line,var(--line));border-radius:9px;color:var(--vault-text,var(--text));background:var(--vault-surface,var(--panel));box-shadow:0 20px 80px #0008}
+.library-columns-dialog::backdrop{background:#0009}
+.library-columns-dialog>header{display:flex;align-items:flex-start;justify-content:space-between;gap:15px;padding:20px;border-bottom:1px solid var(--vault-line,var(--line))}
+.library-columns-dialog h2{margin:0;font:600 19px/1.3 var(--mh-ui)}
+.library-columns-dialog p{font:11px/1.6 var(--mh-ui);color:var(--vault-muted,var(--muted));margin:6px 0 0}
+.library-column-choices{padding:12px 20px;max-height:55dvh;overflow-y:auto}
+.library-column-choices label{display:flex;align-items:center;gap:11px;padding:9px 0;font-size:12px;cursor:pointer}
+.library-column-choices input{width:16px;height:16px;min-height:16px;accent-color:var(--vault-accent,var(--teal))}
+.library-column-choices small{font-size:10px;color:var(--vault-faint,var(--muted));margin-left:auto}
+.library-columns-dialog>footer{display:flex;justify-content:space-between;gap:12px;padding:15px 20px;border-top:1px solid var(--vault-line,var(--line))}
+@media(max-width:1500px){body[data-layout="compact"] #controls .density-control>span{display:none}body[data-layout="compact"] #controls .library-provider-label{display:none}}
+@media(max-width:1200px){
+ body[data-layout="compact"]:not(.realm-route){--library-dock-height:88px}
+ body[data-layout="compact"][data-workspace="mods"] #controls{grid-template-columns:minmax(0,1fr);grid-template-rows:32px 32px;gap:5px;padding-block:7px}
+ body[data-layout="compact"] #controls .library-toolbar-actions{width:100%;padding:0 0 2px;gap:7px;justify-content:space-between}
+ body[data-layout="compact"] #controls .library-view-switch button>span{display:inline}
+}
+@media(max-width:820px){
+ body[data-layout="compact"][data-workspace="mods"]:not(.realm-route) .bodypad{padding-inline:11px;padding-top:10px}
+ body[data-layout="compact"][data-workspace="mods"] .workspace-brand h1{font-size:19px}
+ body[data-layout="compact"][data-workspace="mods"] .workspace-actions{gap:5px}
+ body[data-layout="compact"][data-workspace="mods"] .workspace-actions button{font-size:10px;padding:5px 7px;min-height:29px}
+ body[data-layout="compact"][data-workspace="mods"] .workspace-summary{margin-bottom:8px;gap:4px}
+ body[data-layout="compact"][data-workspace="mods"] .workspace-summary button{min-height:25px;padding:3px 6px;font-size:9px}
+ body[data-layout="compact"][data-library-view="list"] .list-header{display:none}
+ body[data-layout="compact"][data-library-view="list"] .mod-row{min-width:0;grid-template-columns:30px minmax(0,1fr) 112px;gap:5px 8px;padding:8px;min-height:76px}
+ body[data-layout="compact"][data-library-view="list"] .mod-art{grid-column:1;grid-row:1;width:30px;height:34px}
+ body[data-layout="compact"][data-library-view="list"] .mod-priority{grid-column:1;grid-row:2;align-self:start;font-size:9px}
+ body[data-layout="compact"][data-library-view="list"] .mod-primary{grid-column:2;grid-row:1}
+ body[data-layout="compact"][data-library-view="list"] .mod-version{grid-column:2;grid-row:2;display:flex;font-size:10px;gap:5px;flex-wrap:wrap}
+ body[data-layout="compact"][data-library-view="list"] .mod-assessment{grid-column:3;grid-row:1;justify-content:flex-end}
+ body[data-layout="compact"][data-library-view="list"] .inspect-col{grid-column:3;grid-row:2}
+ body[data-layout="compact"][data-library-view="list"] .mod-health{grid-column:2/-1;grid-row:3;font-size:9px}
+ body[data-layout="compact"][data-library-view="list"] .mod-bugs{grid-column:2;grid-row:4;justify-self:start;max-width:100%;font-size:9px;min-height:22px}
+ body[data-layout="compact"][data-library-view="list"] .mod-source{grid-column:3;grid-row:4;display:block;align-self:center;text-align:right}
+ body[data-layout="compact"][data-library-view="list"] .mod-source .source-btn{font-size:9px;min-height:22px;padding:2px 5px}
+ body[data-layout="compact"][data-workspace="mods"] #controls{padding-inline:11px}
+ body[data-layout="compact"] #controls .library-toolbar-actions{justify-content:flex-start}
+ body[data-layout="compact"] #controls .library-view-switch button>span{display:none}
+ body[data-layout="compact"] #controls .select-pair select{width:105px;min-width:105px}
+ body[data-layout="compact"] .library-table-viewport{scroll-padding-top:8px}
+}
+@media(max-width:580px){
+ body[data-layout="compact"][data-workspace="mods"]:not(.realm-route) .maincol{height:calc(100dvh - 53px)}
+ body[data-layout="compact"][data-workspace="mods"] .workspace-header{gap:8px}
+ body[data-layout="compact"][data-workspace="mods"] .workspace-brand h1{font-size:18px}
+ body[data-layout="compact"][data-workspace="mods"] .workspace-brand p{font-size:9px;max-width:45vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ body[data-layout="compact"][data-workspace="mods"] .workspace-summary{display:flex;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin;gap:4px}
+ body[data-layout="compact"][data-workspace="mods"] .workspace-summary button{flex:none;flex-direction:row;min-width:0;min-height:27px;padding:4px 6px;white-space:nowrap;font-size:9px}
+ body[data-layout="compact"][data-workspace="mods"] .workspace-summary b{font-size:10px}
+ body[data-layout="compact"][data-workspace="mods"] .workspace-checkline{font-size:9px;margin-bottom:7px;padding-bottom:5px;gap:4px}
+ body[data-layout="compact"][data-workspace="mods"] .workspace-checkline #workspaceCheckDetail{font-size:9px;flex-basis:auto;margin-left:0}
+ body[data-layout="compact"][data-workspace="mods"] .workbench-head{margin-bottom:6px;gap:8px}
+ body[data-layout="compact"][data-workspace="mods"] .workbench-head h2{font-size:12px}
+ body[data-layout="compact"][data-workspace="mods"] .toolbar-meta{font-size:8px;max-width:none}
+ body[data-layout="compact"][data-workspace="mods"] #controls{left:0}
+ body[data-layout="compact"] .library-heading-tools{max-width:65%}
+ body[data-layout="compact"] #galleryGrouping{min-height:24px;height:24px;font-size:9px}
+ body[data-layout="compact"][data-library-view="gallery"] .mod-source{grid-row:7}
+ body[data-layout="compact"][data-library-view="gallery"] .inspect-col{grid-row:8}
+}
+
 .mod-insights{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px;align-items:center}
 .insight-chip{appearance:none;font:600 10px/1.35 var(--sans,system-ui);letter-spacing:.015em;border:1px solid color-mix(in srgb,var(--teal,#8bd4c2) 27%,transparent);border-radius:5px;background:color-mix(in srgb,var(--teal,#8bd4c2) 6%,transparent);color:var(--muted,#b4baca);padding:3px 6px;cursor:pointer;text-align:left;max-width:100%;white-space:normal}
 .insight-chip:hover,.insight-chip:focus-visible{outline:1px solid var(--gold,#dfbc7d);outline-offset:2px;color:var(--text,#ecebe5)}
@@ -1665,24 +1811,24 @@ body[data-layout="compact"]:not(.realm-route) #gameBoard{--vault-primary:#d9bb83
 .workshop-selected{min-width:0;overflow-wrap:anywhere}
 </style>
 </head>
-<body data-theme="night" data-density="compact" data-layout="compact" data-workspace="mods" data-library-view="list" data-nav="compact">
+<body data-theme="night" data-density="compact" data-layout="compact" data-workspace="mods" data-library-view="list" data-nav="compact" data-library-columns="art priority name version status health bugs source actions">
 <section id="nativeWelcome" class="native-welcome" hidden aria-labelledby="nativeWelcomeTitle">
  <div class="welcome-grid" aria-hidden="true"></div>
  <div class="welcome-body">
   <div class="welcome-eyebrow"><span class="welcome-orb"></span> MODHUNTER / CONNECT YOUR LOAD ORDER</div>
   <h1 id="nativeWelcomeTitle">Connect your mod library</h1>
-  <p class="welcome-lead">Open MO2, then connect to see your installed mods, update status, and maintenance findings.</p>
+  <p class="welcome-lead">Select your MO2 installation, review its bundled plugin setup, then open MO2 to connect your installed mods.</p>
   <div class="welcome-actions">
-   <a href="modhunter-shell://discover" class="welcome-primary">Find my MO2 <span aria-hidden="true">&#8594;</span></a>
-   <a href="modhunter-shell://import" class="welcome-secondary">Import a read-only profile</a>
+   <a href="modhunter-shell://instances" class="welcome-primary">Set up MO2 <span aria-hidden="true">&#8594;</span></a>
+   <a href="modhunter-shell://discover" class="welcome-secondary">Find connected MO2</a>
   </div>
-  <p class="welcome-safety">Only your connected profile is shown. Connecting never installs, removes, or enables mods.</p>
+  <p class="welcome-safety">Already connected? Find your running MO2 session. You can also <a href="modhunter-shell://import">import a read-only profile</a>.</p>
   <div class="welcome-steps">
-   <article><span>01 / CONNECT</span><h2>Open your MO2 instance</h2><p>The included plugin starts its local connection automatically after MO2 finishes loading. No browser or port hunting required.</p></article>
+   <article><span>01 / SET UP</span><h2>Choose your MO2 installations</h2><p>MO2 Instances discovers your application folders and profiles. Review the exact destinations, install the bundled plugin, then launch MO2.</p></article>
    <article><span>02 / REVIEW</span><h2>Know what changed</h2><p>Check exact sources, version evidence, dependencies, and plugin conversion history before choosing an archive.</p></article>
    <article><span>03 / UPDATE</span><h2>Keep MO2 in control</h2><p>Your Nexus sign-in, downloads, installer choices, and load order stay under MO2's control.</p></article>
   </div>
-  <div class="welcome-bottom"><span>First use? Run Install_MO2_Plugin.bat from the full release ZIP, then restart MO2.</span><button id="nativeWelcomeDemo" type="button">Open demo &#8599;</button></div>
+  <div class="welcome-bottom"><span>Setup backs up an existing plugin and preserves its data. Connecting never installs, removes, or enables mods.</span><button id="nativeWelcomeDemo" type="button">Open demo &#8599;</button></div>
  </div>
 </section>
 <dialog id="connectionDetails" class="connection-details" aria-labelledby="connectionDetailsTitle">
@@ -1742,7 +1888,7 @@ body[data-layout="compact"]:not(.realm-route) #gameBoard{--vault-primary:#d9bb83
   <div class="bodypad">
    <header class="workspace-header">
     <div class="workspace-brand"><span class="workspace-mark" aria-hidden="true"><svg class="mh-icon" aria-hidden="true"><use href="#mh-mark"/></svg></span><div><span class="workspace-overline">MODHUNTER / YOUR WORKSPACE</span><h1 id="workspaceTitle">The mod library</h1><p id="workspaceProfile">Connect your MO2 profile</p></div></div>
-    <div class="workspace-actions"><button id="workspaceAppearance" class="quiet-button workspace-appearance" type="button" aria-label="Switch light or dark theme" title="Switch light or dark theme"><svg class="mh-icon" aria-hidden="true"><use href="#mh-theme"/></svg></button><button class="quiet-button" id="workspaceCancel" type="button" hidden>Cancel check</button><button class="quiet-button" id="workspaceDetails" type="button">Connection</button><button class="button-bright" id="unifiedScan" type="button">Check for updates</button></div>
+    <div class="workspace-actions"><button id="workspaceAppearance" class="quiet-button workspace-appearance" type="button" aria-label="Switch light or dark theme" title="Switch light or dark theme"><svg class="mh-icon" aria-hidden="true"><use href="#mh-theme"/></svg></button><button class="quiet-button" id="workspaceCancel" type="button" hidden>Cancel check</button><button class="quiet-button" id="workspaceDetails" type="button">Connection</button><button class="button-bright" id="unifiedScan" type="button" title="Normal checks reuse complete Nexus file evidence for up to 4 hours. Full audit fetches fresh evidence. Source details show when the evidence was checked and whether it was cached.">Check for updates</button></div>
    </header>
    <div class="workspace-checkline" id="workspaceCheckLine" role="status"><span class="workspace-dot" id="workspaceDot" aria-hidden="true"></span><span id="workspaceCheckStatus">Waiting for MO2</span><progress id="workspaceScanProgress" aria-labelledby="workspaceCheckStatus" hidden></progress><span id="workspaceCheckDetail"></span></div>
 
@@ -1758,7 +1904,7 @@ body[data-layout="compact"]:not(.realm-route) #gameBoard{--vault-primary:#d9bb83
     <label><input id="autoCheckOnLaunch" type="checkbox" checked> Check updates and plugin health when connecting</label>
     <p>Shows cached results first, then checks missing or expired sources. Runs once per profile context, across all tabs. Never installs anything.</p>
     <div class="secondary-tools"><button class="quiet-button focus-btn" id="focusToggle" title="Switch to the compact checklist-only battle view (F)" aria-pressed="false">◎ Focus</button><button class="quiet-button mo2-link-btn" id="mo2Btn" title="Import actual Nexus IDs from your MO2 installed mod metadata">⌁ Link MO2</button><button class="quiet-button" id="backupBtn">↓ Export</button><button class="quiet-button" id="importBtn">↑ Restore</button><button class="quiet-button" id="csvBtn">⇩ CSV</button></div>
-    <div class="insight-toolbar" aria-label="Plugin and mod health controls"><label for="insightFilter">Mod health<select id="insightFilter"><option value="all">Every mod</option><option value="maintenance">Needs maintenance</option><option value="esl-review">ESL review</option><option value="light">Already light / light override</option><option value="stale-conversion">ESLifier changes</option><option value="masters">Master issues</option><option value="bugs-disabled">Bugs disabled / hidden / locked</option><option value="bugs-unknown">Bugs unverified / unavailable</option><option value="source-stale">Source refresh needed</option><option value="source-manual">Source-page / account review</option><option value="source-dependencies">Declared dependencies</option><option value="source-incompatible">Source compatibility review</option></select></label><button class="quiet-button" type="button" id="analyzePlugins">Analyze plugins</button><p id="pluginAuditStatus" role="status">Inspect any mod for plugin and source evidence.</p></div>
+    <div class="insight-toolbar" aria-label="Plugin and mod health controls"><label for="insightFilter">Mod health<select id="insightFilter"><option value="all">Every mod</option><option value="maintenance">Needs maintenance</option><option value="esl-review">ESL review</option><option value="light">Already light / light override</option><option value="stale-conversion">ESLifier changes</option><option value="masters">Master issues</option><option value="bugs-reported">Bugs: displayed count above zero</option><option value="bugs-zero">Bugs showing zero</option><option value="bugs-disabled">Bugs disabled / hidden / locked</option><option value="bugs-unknown">Bugs unverified / unavailable</option><option value="source-stale">Source refresh needed</option><option value="source-manual">Source-page / account review</option><option value="source-dependencies">Declared dependencies</option><option value="source-incompatible">Source compatibility review</option></select></label><button class="quiet-button" type="button" id="analyzePlugins">Analyze plugins</button><p id="pluginAuditStatus" role="status">Inspect any mod for plugin and source evidence.</p></div>
    </section>
 
    <section class="hero" aria-label="Dashboard overview">
@@ -1819,7 +1965,7 @@ body[data-layout="compact"]:not(.realm-route) #gameBoard{--vault-primary:#d9bb83
    <section class="live-hub" id="liveHub" aria-labelledby="liveHubTitle">
     <div class="live-hub-heading"><div><span class="label-overline">THE FORGE NETWORK <span>✦</span> OFFLINE OR LIVE</span><h2 id="liveHubTitle">Mod Organizer 2 <i>connected arsenal</i></h2><p id="liveState" role="status">Not connected. Connect MO2 to check your own profile.</p></div><span class="live-pill" id="livePill">◎ SAMPLE MODE</span></div>
     <div class="live-panels"><div class="live-panel"><span>ACTIVE PROFILE</span><strong id="liveProfile">Sample / Skyrim 1.5.97</strong><small id="liveCount">227 hand-captured mods</small></div><div class="live-panel"><span>NEXUS INTELLIGENCE</span><strong id="liveUpdateCount">Not scanned</strong><small id="liveCached">MO2 cached / fast 30-day / full audit</small></div><div class="live-panel"><span>SCAN STATUS</span><strong id="liveScanProgress">Standby</strong><small id="liveSync">No live connection</small></div></div>
-    <div class="live-toolbar"><button class="button-bright" id="liveAll" disabled>✧ Check all mod sources</button><button class="quiet-button" id="liveQuick" disabled>ϟ Fast Nexus / MO2 cached</button><button class="quiet-button" id="liveDeep" disabled>◎ Full audit</button><button class="quiet-button" id="liveLocal" disabled>↻ MO2 cached</button><button class="quiet-button" id="liveRefresh" disabled>⟳ Refresh profile</button><button class="quiet-button" id="liveRuntime" disabled>⚙ Game runtime</button><button class="quiet-button" id="liveConnect" disabled>♜ Nexus connection</button><button class="quiet-button" id="liveBackup" disabled>⛨ Backup MO2 profile</button></div>
+    <div class="live-toolbar"><button class="button-bright" id="liveAll" disabled title="Normal checks reuse complete Nexus file evidence for up to 4 hours. Full audit fetches fresh evidence. Source details show when the evidence was checked and whether it was cached.">✧ Check all mod sources</button><button class="quiet-button" id="liveQuick" disabled>ϟ Fast Nexus / MO2 cached</button><button class="quiet-button" id="liveDeep" disabled title="Fetch fresh Nexus file evidence, ignoring the normal check cache.">◎ Full audit</button><button class="quiet-button" id="liveLocal" disabled>↻ MO2 cached</button><button class="quiet-button" id="liveRefresh" disabled>⟳ Refresh profile</button><button class="quiet-button" id="liveRuntime" disabled>⚙ Game runtime</button><button class="quiet-button" id="liveConnect" disabled>♜ Nexus connection</button><button class="quiet-button" id="liveBackup" disabled>⛨ Backup MO2 profile</button></div>
     <section class="update-workshop" id="updateWorkshop" aria-labelledby="workshopTitle">
       <div class="workshop-heading"><div><span class="label-overline">MOD MANAGEMENT / REVIEWED UPDATES</span><h3 id="workshopTitle">Available <em>updates</em></h3><p>Your MO2 updates in one place. Use Update now for a verified match; only choose files when editions differ.</p></div><span class="workshop-count" id="workshopCount">OFFLINE INTELLIGENCE</span></div>
       <div class="workshop-command" aria-label="Mod update workflow">
@@ -1879,21 +2025,32 @@ body[data-layout="compact"]:not(.realm-route) #gameBoard{--vault-primary:#d9bb83
    </section>
    <section class="workbench" id="workbench" tabindex="-1" aria-label="Installed mods and detected status">
     <div class="workbench-head"><div><h2>Installed mods</h2><p class="library-description">Your collection. Every source, version and detail.</p></div><div class="library-heading-tools"><div class="toolbar-meta" id="resultsMeta">227 mods across 115 chapters</div><label class="library-grouping" for="galleryGrouping"><span class="mh-visually-hidden">Gallery grouping</span><select id="galleryGrouping" aria-label="Gallery grouping" title="Choose a continuous gallery or keep your chapter organization"><option value="all">All mods</option><option value="chapters">By chapter</option></select></label></div></div>
-    <div class="controls" id="controls">
-     <label class="searchbox" for="search"><span>⌕</span><input id="search" placeholder='Search mods, authors or notes' autocomplete="off" aria-label="Search mods"><kbd>Ctrl K</kbd><button id="clearSearch" title="Clear search" aria-label="Clear search">×</button></label>
-     <div class="library-view-switch" role="group" aria-label="Library presentation"><button type="button" id="libraryList" title="List view" aria-label="List view" aria-pressed="true"><svg class="mh-icon" aria-hidden="true"><use href="#mh-list"/></svg><span>List</span></button><button type="button" id="libraryGallery" title="Gallery view" aria-label="Gallery view" aria-pressed="false"><svg class="mh-icon" aria-hidden="true"><use href="#mh-library"/></svg><span>Gallery</span></button></div><div class="select-pair"><select id="sortSelect" title="Sort within chapters" aria-label="Sort mods"><option value="priority">Priority ↑</option><option value="name">Name A–Z</option><option value="version">Installed version</option></select><button id="densityToggle" class="icon-button density-control" title="Switch to comfortable spacing" aria-label="Switch to comfortable spacing" aria-pressed="false"><svg class="mh-icon" aria-hidden="true"><use href="#mh-density"/></svg><span>Compact</span></button></div>
-
-    <label class="library-provider-control" for="providerFilter"><span class="library-provider-label">Source</span><select id="providerFilter" aria-label="Filter mods by source"><option value="all">Every provider</option></select></label><button id="clearFilters" class="quiet-button reset-filters">Reset filters</button></div>
+    <div class="controls" id="controls" aria-label="Library search and filters">
+     <label class="searchbox" for="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Search mods, authors or notes" autocomplete="off" aria-label="Search mods"><kbd>Ctrl F</kbd><button id="clearSearch" title="Clear search" aria-label="Clear search">×</button></label>
+     <div class="library-toolbar-actions">
+      <div class="library-view-switch" role="group" aria-label="Library presentation"><button type="button" id="libraryList" title="List view" aria-label="List view" aria-pressed="true"><svg class="mh-icon" aria-hidden="true"><use href="#mh-list"/></svg><span>List</span></button><button type="button" id="libraryGallery" title="Gallery view" aria-label="Gallery view" aria-pressed="false"><svg class="mh-icon" aria-hidden="true"><use href="#mh-library"/></svg><span>Gallery</span></button></div><div class="select-pair"><select id="sortSelect" title="Sort within chapters" aria-label="Sort mods"><option value="priority">Priority ↑</option><option value="name">Name A–Z</option><option value="version">Installed version</option><option value="bugs">Bugs count ↓</option></select><button id="densityToggle" class="icon-button density-control" title="Switch to comfortable spacing" aria-label="Switch to comfortable spacing" aria-pressed="false"><svg class="mh-icon" aria-hidden="true"><use href="#mh-density"/></svg><span>Compact</span></button></div>
+      <label class="library-provider-control" for="providerFilter"><span class="library-provider-label">Source</span><select id="providerFilter" aria-label="Filter mods by source"><option value="all">Every provider</option></select></label>
+      <label class="library-health-control" for="libraryHealthFilter"><span class="mh-visually-hidden">Health and bugs</span><select id="libraryHealthFilter" aria-label="Filter by health and bugs"><option value="all">Health & bugs: all</option><option value="maintenance">Needs maintenance</option><option value="esl-review">ESL review</option><option value="light">Already light / light override</option><option value="stale-conversion">ESLifier changes</option><option value="masters">Master issues</option><option value="bugs-reported">Bugs: displayed count above zero</option><option value="bugs-zero">Bugs showing zero</option><option value="bugs-disabled">Bugs disabled / hidden / locked</option><option value="bugs-unknown">Bugs unverified / unavailable</option><option value="source-stale">Source refresh needed</option><option value="source-manual">Source-page / account review</option><option value="source-dependencies">Declared dependencies</option><option value="source-incompatible">Source compatibility review</option></select></label>
+      <button id="libraryColumns" class="quiet-button" type="button" aria-haspopup="dialog">Columns</button><button id="clearFilters" class="quiet-button reset-filters">Reset filters</button>
+     </div>
+    </div>
     <div class="filterstrip"><div class="filterchips" id="filterChips"><button data-filter="all" class="active">All records</button><button data-filter="pending">To do</button><button data-filter="done">Cleared</button><button data-filter="review">Review</button><button data-filter="updates">ϟ Updates</button><button data-filter="risky">⚠ Watchlist</button><button data-filter="unlinked">No direct link</button><button data-filter="favorites">✧ Saved</button></div></div>
 
-    <div class="list-header"><span>NOTES</span><span class="preview-heading" title="Preview"><svg class="mh-icon" aria-hidden="true"><use href="#mh-preview"/></svg><span class="mh-visually-hidden">Preview</span></span><span class="priority-heading" title="MO2 priority"><span aria-hidden="true">#</span><span class="mh-visually-hidden">Priority</span></span><span>MOD</span><span>INSTALLED</span><span>DETECTED STATUS</span><span>FILE SOURCE</span><span>ACTIONS</span></div>
+    <div class="library-table-viewport" id="libraryViewport" tabindex="0" aria-label="Installed mod list">
+    <div class="list-header"><span class="notes-heading">NOTES</span><span class="preview-heading" title="Preview"><svg class="mh-icon" aria-hidden="true"><use href="#mh-preview"/></svg><span class="mh-visually-hidden">Preview</span></span><span class="priority-heading"><button type="button" data-library-sort="priority" title="Sort by MO2 priority" aria-label="Sort by MO2 priority">#</button></span><span class="name-heading"><button type="button" data-library-sort="name">MOD</button></span><span class="version-heading"><button type="button" data-library-sort="version">INSTALLED</button></span><span class="status-heading">DETECTED STATUS</span><span class="health-heading">PLUGIN & SOURCE HEALTH</span><span class="bugs-heading"><button type="button" data-library-sort="bugs" title="Sort by the observed displayed bug count; unverified counts stay last">BUGS</button></span><span class="source-heading">FILE SOURCE</span><span class="actions-heading">ACTIONS</span></div>
     <div id="modList" class="modlist" aria-live="polite"></div>
+    </div>
     <div class="list-footer"><span id="listFooter">END OF YOUR CHRONICLE.</span><button id="backToTop">↑ Back to top</button></div>
    </section>
    <footer class="pagefooter"><span>ᛟ &nbsp; BUILT FOR SKYRIM SE 1.5.97 / SKSE 2.0.20</span><span>100% OFFLINE CHECKLIST · MANUAL SOURCE VERIFICATION · SAVE LOCALLY</span><a href="https://www.nexusmods.com/skyrimspecialedition" target="_blank" rel="noopener noreferrer">NEXUS MODS ↗</a></footer>
   </div>
  </div>
 </div>
+<dialog id="libraryColumnsDialog" class="library-columns-dialog" aria-labelledby="libraryColumnsTitle">
+ <header><div><h2 id="libraryColumnsTitle">List columns</h2><p>Choose the details you want beside each mod. Saved on this device.</p></div><button id="libraryColumnsClose" class="close-button" type="button" aria-label="Close column settings">×</button></header>
+ <div id="libraryColumnChoices" class="library-column-choices"></div>
+ <footer><button id="libraryColumnsReset" class="quiet-button" type="button">Show all columns</button><button id="libraryColumnsDone" class="button-bright" type="button">Done</button></footer>
+</dialog>
 <section class="fx-studio" id="fxStudio" hidden aria-label="Forge FX animation settings">
  <header><div><small>SKYFORGE • POWER MODE</small><strong>✧ Forge FX Studio</strong></div><button class="close-button" id="fxClose" aria-label="Close Forge FX Studio">×</button></header>
  <p>Every mod you select, inspect, or check off can spark runes and cinematic combat effects. Rewards still require actual MO2 proof.</p>
@@ -1918,7 +2075,7 @@ body[data-layout="compact"]:not(.realm-route) #gameBoard{--vault-primary:#d9bb83
 <div class="mo2-match-grid"><label for="mo2From">Imported folder<select id="mo2From" aria-label="Imported renamed MO2 folder"></select></label><label for="mo2To">Link to checklist mod<select id="mo2To" aria-label="Mod to associate with imported folder"></select></label></div>
 <div id="mo2MatchPreview" class="mo2-preview" aria-live="polite"></div><button id="mo2Bind" class="button-bright" disabled>↗ Bind confirmed Nexus ID</button><small class="muted-help">Only choose a match if the imported folder really belongs to that checklist mod. Links are stored locally and included in your progress JSON backup.</small></section>
 </div></div>
-<div class="modal-veil" id="helpVeil" hidden><div class="help-dialog" role="dialog" aria-modal="true" aria-labelledby="helpTitle"><button id="helpClose" class="close-button" aria-label="Close help">×</button><div class="kicker">FIELD MANUAL / OPERATIONS</div><h2 id="helpTitle">How to survive the gauntlet</h2><p>Switch between List and Gallery without losing your filters or place. Open Details or right-click a mod for notes, source links, bookmarks and available file actions. Use the density control for compact or comfortable spacing. Adventures keeps every game and the adjustable FX Studio together; visual effects stay optional.</p><div class="shortcut-grid"><span><kbd>Ctrl / ⌘ K</kbd> Search the vault</span><span><kbd>J</kbd> Next visible mod</span><span><kbd>K</kbd> Previous visible mod</span><span><kbd>Space</kbd> Toggle focused row</span><span><kbd>N</kbd> Jump to next pending</span><span><kbd>F</kbd> Toggle compact Focus Mode</span><span><kbd>Esc</kbd> Close panel</span></div><p class="muted-help"><b>Live MO2:</b> Click a mod name or use Reveal in the inspector to select and center that exact mod in MO2. Manual clears are practice only; ranked XP and crowns require native version-upgrade evidence plus a fresh full Nexus audit.</p><p class="muted-help">Use <b>⌁ Link MO2</b> to import exact Nexus IDs from your installed MO2 metadata. Source honesty: verified links open exact project Files or Bethesda Creation pages. Unresolved entries have targeted lookup buttons rather than invented links. Add a confirmed file URL in the inspector to upgrade them.</p><button id="helpOK" class="button-bright">Return to the quest →</button></div></div>
+<div class="modal-veil" id="helpVeil" hidden><div class="help-dialog" role="dialog" aria-modal="true" aria-labelledby="helpTitle"><button id="helpClose" class="close-button" aria-label="Close help">×</button><div class="kicker">FIELD MANUAL / OPERATIONS</div><h2 id="helpTitle">How to survive the gauntlet</h2><p>Switch between List and Gallery without losing your filters or place. Open Details or right-click a mod for notes, source links, bookmarks and available file actions. Use the density control for compact or comfortable spacing. Adventures keeps every game and the adjustable FX Studio together; visual effects stay optional.</p><p class="muted-help">Normal checks reuse complete Nexus file evidence for up to 4 hours. Full audit fetches fresh evidence. Source details show when the evidence was checked and whether it was cached.</p><div class="shortcut-grid"><span><kbd>Ctrl / ⌘ K</kbd> Search the vault</span><span><kbd>J</kbd> Next visible mod</span><span><kbd>K</kbd> Previous visible mod</span><span><kbd>Space</kbd> Toggle focused row</span><span><kbd>N</kbd> Jump to next pending</span><span><kbd>F</kbd> Toggle compact Focus Mode</span><span><kbd>Esc</kbd> Close panel</span></div><p class="muted-help"><b>Live MO2:</b> Click a mod name or use Reveal in the inspector to select and center that exact mod in MO2. Manual clears are practice only; ranked XP and crowns require native version-upgrade evidence plus a fresh full Nexus audit.</p><p class="muted-help">Use <b>⌁ Link MO2</b> to import exact Nexus IDs from your installed MO2 metadata. Source honesty: verified links open exact project Files or Bethesda Creation pages. Unresolved entries have targeted lookup buttons rather than invented links. Add a confirmed file URL in the inspector to upgrade them.</p><button id="helpOK" class="button-bright">Return to the quest →</button></div></div>
 <div class="modal-veil" id="queueReviewVeil" hidden>
  <section class="operation-dialog" role="dialog" aria-modal="true" aria-labelledby="queueReviewTitle">
   <div class="operation-header"><span class="operation-eyebrow">MODHUNTER / REVIEWED DOWNLOADS</span><span class="operation-emblem" aria-hidden="true">✦</span></div>
@@ -2170,10 +2327,12 @@ function state(mod,now=Date.now()/1000){
 }
 function chips(mod){
  const u=mod.update||{},s=state(mod);
- if(!u.capabilities&&!u.freshness&&!u.releaseId&&!u.outcome&&!u.checkedAt&&!u.expiresAt&&!u.retryAt)return'';
+ if(!u.capabilities&&!u.freshness&&!u.releaseId&&!u.outcome&&!u.checkedAt&&!u.expiresAt&&!u.retryAt&&!u.fileEvidence)return'';
  const detail=s.caps.reason||u.reason||'Open source details for evidence and supported actions.';
  const tag=(value,tone,title)=>'<button type="button" class="insight-chip '+tone+'" data-source-act="inspect" data-id="'+esc(mod.id)+'" title="'+esc(title)+'">'+esc(value)+'</button>';
- return '<div class="mod-insights source-chips" aria-label="Source adapter evidence">'+tag(label(s.provider),'neutral',detail)+tag(s.status,s.tone,u.reason||s.status)+(s.dependencies?tag(s.dependencies+' declared dependenc'+(s.dependencies===1?'y':'ies'),'info','Provider declarations; installed dependency compatibility requires review.'):'')+'</div>';
+ const file=u.fileEvidence,fileLabel=file?.status==='matched'?'Installed file matched':file?.status==='ambiguous'||file?.status==='unmatched'?'File choice needs review':file?'File match unavailable':'';
+ const fileDetail=file?[(file.installedFileName||''),(file.targetFileName?'→ '+file.targetFileName:''),file.reason||''].filter(Boolean).join(' · '):'';
+ return '<div class="mod-insights source-chips" aria-label="Source adapter evidence">'+tag(label(s.provider),'neutral',detail)+tag(s.status,s.tone,u.reason||s.status)+(fileLabel?tag(fileLabel,file.status==='matched'?'info':'warning',fileDetail):'')+(s.dependencies?tag(s.dependencies+' declared dependenc'+(s.dependencies===1?'y':'ies'),'info','Provider declarations; installed dependency compatibility requires review.'):'')+'</div>';
 }
 function person(value,role){
  if(!value)return'';
@@ -2198,10 +2357,15 @@ function details(mod,{live=false,loading=false,error=''}={}){
  const u=mod.update||{},s=state(mod),caps=s.caps;
  const mode=({'native-api':'MO2 native API','public-api':'Public release API','manual':'Original page review','api-key':'Provider API key required'})[caps.checkMode]||'Run a source check';
  let html='<section class="insight-panel source-panel"><div class="insight-heading"><div><span class="drawer-label">SOURCE & RELEASE</span><h3>'+esc(label(s.provider))+'</h3></div><span class="insight-depth">'+esc(s.status)+'</span></div>';
- html+='<div class="source-release-grid"><div><small>Installed</small><strong>'+esc(mod.installedVersion||'Unknown')+'</strong></div><div><small>Published release</small><strong>'+esc(u.latestVersion||'Not established')+'</strong></div></div>';
+ html+='<div class="source-release-grid"><div><small>Installed</small><strong>'+esc(mod.installedVersion||'Unknown')+'</strong></div><div><small>'+(u.fileEvidence?'Matched file version':'Published release')+'</small><strong>'+esc(u.latestVersion||'Not established')+'</strong></div></div>';
  if(loading)html+='<p class="insight-note" role="status">Loading release details…</p>';
  if(error)html+='<p class="insight-alert">'+esc(error)+'</p>';
  html+='<p class="insight-note">'+esc(u.reason||caps.reason||'Check this exact source to establish its release information.')+'</p>';
+ const file=u.fileEvidence;
+ if(file){
+  const fileStatus=({matched:'Installed file matched',ambiguous:'Multiple file matches need review',unmatched:'Installed file has no verified match',unavailable:'File matching unavailable'})[file.status]||'File matching unavailable';
+  html+='<section class="insight-section source-file-lineage"><h4>Installed file and update target</h4><p class="insight-note">'+esc(fileStatus)+'</p><dl><dt>Installed archive</dt><dd data-no-translate>'+esc(file.installedFileName||'—')+'</dd><dt>Installed file IDs</dt><dd data-no-translate>'+esc(list(file.installedFileIds).join(', ')||'—')+'</dd><dt>Target file</dt><dd data-no-translate>'+esc(file.targetFileName||'—')+'</dd><dt>Target file ID</dt><dd data-no-translate>'+esc(file.targetFileId??'—')+'</dd><dt>Target version</dt><dd data-no-translate>'+esc(file.targetVersion||'—')+'</dd><dt>Match basis</dt><dd>'+esc(({"installed-file-id":'Installed file ID',"archive-name":'Installed archive name'})[file.basis]||'Not established')+'</dd></dl>'+(file.reason?'<p class="insight-note">'+esc(file.reason)+'</p>':'')+'</section>';
+ }
  html+='<dl class="source-facts"><dt>Adapter</dt><dd>'+esc(mode)+'</dd><dt>Source checked</dt><dd>'+esc(checked(u.checkedAt))+'</dd><dt>Release published</dt><dd>'+esc(checked(u.publishedAt))+'</dd><dt>Download support</dt><dd>'+esc(caps.reviewedDownload?'Reviewed provider files → MO2':caps.authentication==='mo2'?'MO2 native download manager':'Open the original provider')+'</dd>'+(u.moderationStatus?'<dt>Provider moderation</dt><dd>'+esc(u.moderationStatus)+' · provider listing status; not a compatibility assessment</dd>':'')+'</dl>';
  if(u.retryAt)html+='<p class="insight-note">Provider retry time: '+esc(checked(u.retryAt))+'.</p>';
  if(u.summary)html+='<p class="source-summary">'+esc(text(u.summary).slice(0,4000))+'</p>';
@@ -2230,7 +2394,7 @@ function coverage(items){
  return '<div class="source-coverage-table"><table><thead><tr><th scope="col">Source</th><th scope="col">Mods</th><th scope="col">Update checks</th><th scope="col">File workflow</th></tr></thead><tbody>'+rows.map(r=>'<tr><th scope="row">'+esc(label(r.provider))+'</th><td>'+r.count+(r.stale?' · '+r.stale+' stale':'')+'</td><td>'+esc(({'native-api':'MO2 native API','public-api':'Public release API','manual':'Original page review','api-key':'Provider key required'})[r.caps.checkMode]||'Check sources to establish support')+'</td><td>'+esc(r.caps.reviewedDownload?'Reviewed files in MO2':r.caps.authentication==='mo2'?'MO2 download manager':'Original provider page')+'</td></tr>').join('')+'</tbody></table></div>';
 }
 function matches(mod,filter){const s=state(mod);return filter==='source-stale'?s.stale||s.rateLimited:filter==='source-manual'?['manual','api-key'].includes(s.caps.checkMode):filter==='source-dependencies'?s.dependencies>0:filter==='source-incompatible'?!!compatibilityAlerts[mod.update?.compatibility?.status]:filter==='all'}
-function searchText(mod){const u=mod.update||{},s=state(mod);return [s.provider,label(s.provider),s.status,u.latestVersion,u.releaseId,u.availability,u.compatibility?.status,u.author?.name,u.publisher?.name,...list(u.dependencies).slice(0,128).map(d=>d.name||d.projectId||d.versionId)].map(text).join(' ').toLowerCase()}
+function searchText(mod){const u=mod.update||{},s=state(mod);return [s.provider,label(s.provider),s.status,u.latestVersion,u.releaseId,u.availability,u.compatibility?.status,u.author?.name,u.publisher?.name,u.fileEvidence?.installedFileName,u.fileEvidence?.targetFileName,u.fileEvidence?.reason,...list(u.dependencies).slice(0,128).map(d=>d.name||d.projectId||d.versionId)].map(text).join(' ').toLowerCase()}
 const csvHeaders=['Release provider','Release version','Release ID','Release URL','Release published at','Source checked at','Source expires at','Source freshness','Source availability','Adapter mode','Provider compatibility','Declared dependencies','Release files'];
 function csv(mod){const u=mod.update||{},s=state(mod);return [s.provider,u.latestVersion||'',u.releaseId||'',safeURL(u.releaseUrl),u.publishedAt||'',u.checkedAt||'',u.expiresAt||'',u.freshness||'',u.availability||'',s.caps.checkMode||'',u.compatibility?.status||'',s.dependenciesKnown?s.dependencies:'',s.assetsKnown?s.assets:'']}
 const api={provider,label,checked,state,hasAssets,canReview,chips,details,coverage,searchText,matches,csv,csvHeaders,assetCards,assetIdentity,safeURL};
@@ -2275,7 +2439,15 @@ function bugLabel(bugs={}){
  if(bugs.state==='available')return n===null?'Bugs tab visible':'Bugs '+n;
  return({disabled:'Bug reports disabled',hidden:'Bug reports hidden',locked:'Bug reports locked',unavailable:'Bug check unavailable',unsupported:'Provider issues'})[bugs.state]||'Bugs unverified';
 }
-function chips(mod){
+function bugCount(mod){const bugs=mod.modHealth?.bugs||{};return isNexus(mod)&&bugs.state==='available'&&Number.isSafeInteger(bugs.displayedCount)&&bugs.displayedCount>=0?bugs.displayedCount:null}
+function bugCell(mod){
+ const bugs=mod.modHealth?.bugs||{},nexus=isNexus(mod),n=bugCount(mod),stale=bugs.freshness?.state==='stale';
+ const label=n!==null?n+' displayed':nexus?bugLabel(bugs):'Provider issues';
+ const tone=['disabled','hidden','locked'].includes(bugs.state)?'warning':stale?'muted':n!==null?'info':'neutral';
+ const detail=(bugs.reason||(nexus?'Refresh public Nexus evidence in the inspector.':'Review the original provider for issue reports.'))+' Checked: '+checked(bugs.checkedAt)+'. The displayed tab count is not an open/total count or proof of installation safety.';
+ return '<button type="button" class="mod-bugs insight-chip '+tone+'" data-insight-act="inspect" data-id="'+esc(mod.id)+'" data-bug-state="'+esc(bugs.state||'unknown')+'" title="'+esc(detail)+'" aria-label="'+esc('Bug evidence for '+mod.name+': '+label+(stale?' · stale':''))+'">'+esc(label+(stale?' · stale':''))+'</button>';
+}
+function chips(mod,{includeBugs=true}={}){
  const s=summary(mod),a=mod.localAnalysis||{},health=mod.modHealth||{},bugs=health.bugs||{},parts=[];
  const add=(label,tone,title)=>parts.push('<button type="button" class="insight-chip '+tone+'" data-insight-act="inspect" data-id="'+esc(mod.id)+'" title="'+esc(title)+'">'+esc(label)+'</button>');
  if(s.stale)add('ESLifier needs review','warning','Recorded source, output, or winning plugin changed. Open details before trusting the converted copy.');
@@ -2292,7 +2464,7 @@ function chips(mod){
  if(s.invalid)add('Plugin read issue','danger','Some plugin files are malformed, unreadable, unsupported, or changed during the scan.');
  if(s.unresolved)add('Winner unverified','muted','MO2 winning origin could not be matched to a known physical copy.');
  if(!s.plugins&&a.inventoryComplete===true)add('No plugin files','neutral','No root plugin files were found in this mod folder in the completed scan.');
- if(isNexus(mod)){
+ if(includeBugs&&isNexus(mod)){
   const old=bugs.freshness?.state==='stale';
   add(bugLabel(bugs)+(old?' · stale':''),['disabled','hidden','locked'].includes(bugs.state)?'warning':old?'muted':'info',
    (bugs.reason||'Refresh public Nexus evidence in the inspector.')+' Checked: '+checked(bugs.checkedAt)+'. The displayed tab count is not an open/total count or proof of installation safety.');
@@ -2342,10 +2514,10 @@ function details(mod,{live=false,game='',auditState={}}={}){
  if(list(a.warnings).length)html+='<ul class="insight-evidence">'+a.warnings.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>';
  return html+'</section>';
 }
-function matches(mod,filter){const s=summary(mod);return filter==='maintenance'?s.maintenance:filter==='esl-review'?s.eslReview:filter==='light'?Boolean(s.light||s.lightOverrides):filter==='stale-conversion'?s.stale>0:filter==='masters'?s.masterIssues>0:filter==='bugs-disabled'?['disabled','hidden','locked'].includes(s.bugState):filter==='bugs-unknown'?['unknown','unavailable'].includes(s.bugState):filter==='all'}
+function matches(mod,filter){const s=summary(mod);return filter==='maintenance'?s.maintenance:filter==='esl-review'?s.eslReview:filter==='light'?Boolean(s.light||s.lightOverrides):filter==='stale-conversion'?s.stale>0:filter==='masters'?s.masterIssues>0:filter==='bugs-reported'?(bugCount(mod)??0)>0:filter==='bugs-zero'?bugCount(mod)===0:filter==='bugs-disabled'?['disabled','hidden','locked'].includes(s.bugState):filter==='bugs-unknown'?['unknown','unavailable'].includes(s.bugState):filter==='all'}
 function searchText(mod){const s=summary(mod);return[list(mod.localAnalysis?.plugins).map(p=>[p.name,p.eligibility?.status,p.provenance?.state,...list(p.masterIssues).map(x=>x.name+' '+x.status)].join(' ')).join(' '),s.light?'already light esl':'',s.stale?'stale conversion eslifier update rebuild':'',s.lightOverrides?'light override eslified':'',bugLabel(mod.modHealth?.bugs),mod.modHealth?.page?.status].join(' ').toLowerCase()}
 function csv(mod){const s=summary(mod),known=!!mod.localAnalysis;return[known?s.light:'',known?s.full:'',known?s.lightOverrides:'',known?s.candidates:'',known?s.compaction:'',known?s.stale:'',known?s.masterIssues:'',mod.localAnalysis?.checkedAt||'',s.bugState,s.bugCount??'',mod.modHealth?.bugs?.checkedAt||'']}
-const api={summary,chips,details,matches,searchText,csv,bugLabel,isNexus};
+const api={summary,chips,details,matches,searchText,csv,bugLabel,bugCell,bugCount,isNexus};
 root.ModhunterInsights=api;if(typeof module==='object'&&module.exports)module.exports=api;
 })(typeof window==='object'?window:globalThis);
 
@@ -2360,7 +2532,7 @@ let STORAGE='dragonborn-mod-update-arsenal-v1';
 const BRIDGE=window.__MO2_BRIDGE_BOOT__||{active:false};
 const INSIGHTS=window.ModhunterInsights;
 const SOURCES=window.ModhunterSources;
-let LIVE_SCAN=null,LIVE_CATALOG=null,SCAN_TIMER=null,FILE_PICKER_MOD=null,LIVE_GENERATION=0,LIVE_REFRESH_BUSY=false;
+let LIVE_SCAN=null,LIVE_CATALOG=null,SCAN_TIMER=null,FILE_PICKER_MOD=null,FILE_PICKER_REVIEW=null,LIVE_GENERATION=0,LIVE_REFRESH_BUSY=false;
 let WORKSHOP_PLAN=null,WORKSHOP_CHOICES=new Map(),WORKSHOP_BUSY=false,WORKSHOP_REVIEW_ID=null,FAST_PICKER_ID=null;
 let QUICK_RUNNING=false,QUICK_POLL=null,QUICK_SKIPPED=new Map();
 let QUEUE_PENDING=null,INSTALL_PREVIEW_ID=null,INSTALL_PREVIEW_PROFILE='',PREVIEW_RETURN_FOCUS=null,INSPECTOR_RETURN_FOCUS=null;
@@ -2857,16 +3029,18 @@ function buildModHTML(m){const compact=document.body.dataset.layout==='compact',
  `${compact?'':`<div class="mod-status"><button class="complete-btn" data-act="complete" data-id="${m.id}" aria-label="${escapeHTML(statusLabel+' for '+m.name)}" title="${escapeHTML(statusLabel)}">${stat==='done'?'✓':stat==='review'?'!':''}</button></div>`}`+
  `${thumbnailMarkup(m,false,s)}`+
  `<div class="mod-priority">${m.priority}</div>`+
- `<div class="mod-primary" data-priority="${m.priority}" data-chapter-label="${escapeHTML(m.group||GROUP_MAP.get(m.groupId)?.name||'')}"><div class="mod-name-actions"><a class="mod-title source-title ${s.verified?'':'unknown'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHTML((s.verified?'Open source page for ':'Search for original source of ')+m.name)}" title="${escapeHTML(m.name+' — '+(s.verified?'Open original source':'Find original source'))}" data-act="source" data-id="${escapeHTML(m.id)}">${escapeHTML(m.name)}<span class="source-open-glyph" aria-hidden="true">↗</span></a>${BRIDGE.active?`<button class="mod-inline-locate" type="button" title="Reveal this mod in Mod Organizer 2" aria-label="Reveal ${escapeHTML(m.name)} in MO2" data-act="locate" data-id="${escapeHTML(m.id)}">⌖</button>`:''}</div>${modAuthor(m)?`<div class="mod-author" data-no-translate>${escapeHTML(modAuthor(m))}</div>`:''}${note?`<div class="mod-note ${/do not|ctd|crash|hard esp|incompati|needs update|bugs/i.test(note)?'warning-note':''}" title="${escapeHTML(note)}">${escapeHTML(note)}</div>`:''}${INSIGHTS?.chips(m)||''}${SOURCES?.chips(m)||''}</div>`+
+ `<div class="mod-primary" data-priority="${m.priority}" data-chapter-label="${escapeHTML(m.group||GROUP_MAP.get(m.groupId)?.name||'')}"><div class="mod-name-actions"><a class="mod-title source-title ${s.verified?'':'unknown'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHTML((s.verified?'Open source page for ':'Search for original source of ')+m.name)}" title="${escapeHTML(m.name+' — '+(s.verified?'Open original source':'Find original source'))}" data-act="source" data-id="${escapeHTML(m.id)}">${escapeHTML(m.name)}<span class="source-open-glyph" aria-hidden="true">↗</span></a>${BRIDGE.active?`<button class="mod-inline-locate" type="button" title="Reveal this mod in Mod Organizer 2" aria-label="Reveal ${escapeHTML(m.name)} in MO2" data-act="locate" data-id="${escapeHTML(m.id)}">⌖</button>`:''}</div>${modAuthor(m)?`<div class="mod-author" data-no-translate>${escapeHTML(modAuthor(m))}</div>`:''}${note?`<div class="mod-note ${/do not|ctd|crash|hard esp|incompati|needs update|bugs/i.test(note)?'warning-note':''}" title="${escapeHTML(note)}">${escapeHTML(note)}</div>`:''}${compact?'':(INSIGHTS?.chips(m)||'')+(SOURCES?.chips(m)||'')}</div>`+
  `<div class="mod-version" title="Installed version recorded by source">${escapeHTML(m.installedVersion||'Unknown')}${m.update?.latestVersion&&m.update.latestVersion!==m.installedVersion?`<small class="newer-version" title="Latest metadata, not necessarily compatible">→ ${escapeHTML(m.update.latestVersion)}</small>`:''}</div>`+
  `<div class="mod-assessment">${detectedMarkup(m)}${['done','review','skipped'].includes(stat)?`<span class="manual-status" data-manual="${stat}">${stat==='done'?'Manually cleared':stat==='review'?'Manual review':'Manually skipped'}</span>`:''}${compact?'':'<span class="legacy-assessment">'+assessmentHTML(m)+'</span>'}</div>`+
+ `${compact?`<div class="mod-health" aria-label="Plugin and source health">${(INSIGHTS?.chips(m,{includeBugs:false})||'')+(SOURCES?.chips(m)||'')||'Not analyzed'}</div>${INSIGHTS?.bugCell(m)||'<span class="mod-bugs">Bugs unverified</span>'}`:''}`+
  `<div class="mod-source"><a class="source-btn ${s.verified?'':'lookup'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" data-act="source" data-id="${m.id}" title="${escapeHTML(sourceText+' — '+(s.type==='creations'?'Exact Bethesda Creation listing. Install from in-game Creations menu.':s.verified?'Exact mod files page':'Search for the correct mod project; source not yet verified'))}">${sourceText}</a></div>`+
  `<div class="inspect-col">${BRIDGE.active&&m.nexusId?`<button class="file-download-btn" title="Choose an exact Nexus file in MO2" aria-label="Choose Nexus files for ${escapeHTML(m.name)}" data-act="files" data-id="${m.id}">${isUpdate(m)?'Review':'⇩'}</button>`:''}<button class="favorite-btn ${isFav(m)?'active':''}" title="${isFav(m)?'Remove bookmark':'Bookmark mod'}" aria-label="${isFav(m)?'Remove bookmark for':'Bookmark'} ${escapeHTML(m.name)}" aria-pressed="${isFav(m)}" data-act="favorite" data-id="${m.id}">${isFav(m)?'★':'☆'}</button><button class="inspect-btn" title="Inspect mod, notes, compatibility and source" aria-label="Inspect ${escapeHTML(m.name)}" data-act="inspect" data-id="${m.id}">Details</button></div>`+
  `</article>`}
 let GROUP_PROGRESS=new Map();function groupProgress(){GROUP_PROGRESS=new Map(DATA.groups.map(g=>[g.id,{done:0,total:0}]));for(const m of DATA.items){if(!GROUP_PROGRESS.has(m.groupId))GROUP_PROGRESS.set(m.groupId,{done:0,total:0});const o=GROUP_PROGRESS.get(m.groupId);o.total++;if(isDone(m))o.done++}}
-function renderChapters(){let needle=$('chapterSearch').value.trim().toLowerCase();const groups=DATA.groups.filter(g=>!needle||g.name.toLowerCase().includes(needle));const html=groups.map(g=>{const num=GROUP_PROGRESS.get(g.id)?.done||0;return `<button class="chapter-link" data-chapter="${escapeHTML(g.id)}" title="Jump to ${escapeHTML(g.name)}"><i></i><span>${escapeHTML(g.name)}</span><em>${num}/${g.count}</em></button>`}).join('');const container=$('chapters');setHTML(container,html||'<div class="drawer-micro">No chapter found.</div>');for(const node of container.querySelectorAll('.chapter-link')){const group=GROUP_MAP.get(node.dataset.chapter);node.style.setProperty('--group-clr',PALETTE[group?.color]||PALETTE.slate)}}
+function chapterColor(group){const authored=group?.separatorColor;return typeof authored==='string'&&/^#[0-9a-f]{8}$/i.test(authored)?authored:PALETTE[group?.color]||PALETTE.slate}
+function renderChapters(){let needle=$('chapterSearch').value.trim().toLowerCase();const groups=DATA.groups.filter(g=>!needle||g.name.toLowerCase().includes(needle));const html=groups.map(g=>{const num=GROUP_PROGRESS.get(g.id)?.done||0;return `<button class="chapter-link" data-chapter="${escapeHTML(g.id)}" title="Jump to ${escapeHTML(g.name)}"><i></i><span>${escapeHTML(g.name)}</span><em>${num}/${g.count}</em></button>`}).join('');const container=$('chapters');setHTML(container,html||'<div class="drawer-micro">No chapter found.</div>');for(const node of container.querySelectorAll('.chapter-link')){const group=GROUP_MAP.get(node.dataset.chapter);node.style.setProperty('--group-clr',chapterColor(group))}}
 let VISIBLE_ROW_IDS=[];
-function sortMods(items){const sorted=[...items];if(STORE.prefs.sort==='name')sorted.sort((a,b)=>txt(a.name).localeCompare(txt(b.name)));else if(STORE.prefs.sort==='version')sorted.sort((a,b)=>txt(a.installedVersion).localeCompare(txt(b.installedVersion)));else sorted.sort((a,b)=>a.priority-b.priority);return sorted}
+function sortMods(items){const sorted=[...items];if(STORE.prefs.sort==='name')sorted.sort((a,b)=>txt(a.name).localeCompare(txt(b.name)));else if(STORE.prefs.sort==='version')sorted.sort((a,b)=>txt(a.installedVersion).localeCompare(txt(b.installedVersion)));else if(STORE.prefs.sort==='bugs')sorted.sort((a,b)=>{const av=INSIGHTS?.bugCount(a),bv=INSIGHTS?.bugCount(b);return av==null?(bv==null?a.priority-b.priority:1):bv==null?-1:bv-av||a.priority-b.priority});else sorted.sort((a,b)=>a.priority-b.priority);return sorted}
 function renderList(){
  refreshGalleryLabelStyles();
  const visible=filtered(),byGroup=new Map();for(const m of visible){if(!byGroup.has(m.groupId))byGroup.set(m.groupId,[]);byGroup.get(m.groupId).push(m)}
@@ -2879,7 +3053,7 @@ function renderList(){
   const ms=byGroup.get(g.id);if(!ms||!ms.length)continue;
   const gd=GROUP_PROGRESS.get(g.id)?.done||0,collapsed=STORE.prefs.collapsed.includes(g.id),pct=Math.round((gd/(g.count||1))*100);
   entries.push({key:'group:'+g.id,html:`<button class="chapterbar ${collapsed?'closed':''}" id="section-${escapeHTML(g.id)}" data-chapter-toggle="${escapeHTML(g.id)}" aria-expanded="${!collapsed}" data-completion="${g.count>0&&gd>=g.count?'complete':gd>0?'partial':'empty'}" title="Manual checklist: ${gd} of ${g.count} cleared"><span class="diamond" aria-hidden="true">◆</span><strong>${escapeHTML(g.name)}</strong><span class="chapter-count">${gd}/${g.count}</span><span class="chapter-mini-progress"><i></i></span><span class="chapter-priority">#${g.startPriority}</span></button>`});
-  chapterPaint.push({id:g.id,color:PALETTE[g.color]||PALETTE.slate,pct});
+  chapterPaint.push({id:g.id,color:chapterColor(g),pct});
   if(!collapsed)for(const m of sortMods(ms))addMod(m);
  }
  setRows($('modList'),entries,`<div class="empty-state"><div class="empty-icon">ᛟ</div><h3>No foes in this chamber.</h3><p>Nothing matches your current search and filters.</p><button id="emptyReset">Clear filters</button></div>`);
@@ -2888,7 +3062,8 @@ function renderList(){
  // in both local imports and the live dashboard without relaxing that policy.
  for(const chapter of chapterPaint){const node=$('section-'+chapter.id);if(!node)continue;node.style.setProperty('--chapter-color',chapter.color);const fill=node.querySelector('.chapter-mini-progress>i');if(fill)fill.style.width=chapter.pct+'%'}
  VISIBLE_ROW_IDS=renderedIds;
- const listCounts=counts(),sourceCount=listCounts.total-listCounts.unlinked,parts=[visible.length+' of '+DATA.items.length+(DATA.items.length===1?' mod':' mods'),byGroup.size+(byGroup.size===1?' chapter':' chapters')];if(STORE.prefs.query)parts.push('query: '+STORE.prefs.query);SET('resultsMeta',parts.join(' · '));SET('listFooter',`YOU'VE REACHED THE END · ${visible.length} MATCHING MOD${visible.length===1?'':'S'} · ${sourceCount} EXACT ORIGINAL SOURCE${sourceCount===1?'':'S'}`);$('sortSelect').value=STORE.prefs.sort;const provider=$('providerFilter');if(provider)provider.value=STORE.prefs.provider||'all';
+ const listCounts=counts(),sourceCount=listCounts.total-listCounts.unlinked,parts=[visible.length+' of '+DATA.items.length+(DATA.items.length===1?' mod':' mods'),byGroup.size+(byGroup.size===1?' chapter':' chapters')];if(STORE.prefs.query)parts.push('query: '+STORE.prefs.query);SET('resultsMeta',parts.join(' · '));SET('listFooter',`${visible.length} MATCHING MOD${visible.length===1?'':'S'} · ${sourceCount} EXACT ORIGINAL SOURCE${sourceCount===1?'':'S'}`);$('sortSelect').value=STORE.prefs.sort;const provider=$('providerFilter');if(provider)provider.value=STORE.prefs.provider||'all';
+ for(const button of $all('[data-library-sort]'))button.setAttribute('aria-pressed',String(button.dataset.librarySort===STORE.prefs.sort));
 }
 function render(){renderProviderFilter();if(SEARCH_FRAME!==null){cancelAnimationFrame(SEARCH_FRAME);SEARCH_FRAME=null}RENDER_COUNTS=counts();try{groupProgress();renderStats();renderList();renderChapters();renderQuest();paintNativeSelection();renderWorkshop();renderInsightToolbar();renderSourceCoverage();renderWorkspace()}finally{RENDER_COUNTS=null}}
 function renderSearch(){SEARCH_FRAME=null;renderList();paintNativeSelection()}
@@ -2997,7 +3172,7 @@ document.addEventListener('click',async e=>{
 });
 function renderInsightToolbar(){
  const select=$('insightFilter'),button=$('analyzePlugins');if(!select||!button)return;
- select.value=STORE.prefs.insight||'all';
+ select.value=STORE.prefs.insight||'all';if($('libraryHealthFilter'))$('libraryHealthFilter').value=select.value;
  const job=DATA.pluginAuditState||{},analysis=DATA.pluginAnalysis||{},running=['queued','running'].includes(job.state);
  button.disabled=running||(BRIDGE.active&&!LIVE_CONNECTED);
  button.textContent=running?'Analyzing…':'Analyze plugins';
@@ -3261,10 +3436,39 @@ function updateGalleryColumns(width){
  }else GALLERY_GEOMETRY_RULE.style.setProperty('flex-basis',basis);
  list.dataset.galleryGeometry=key;
 }
+const LIBRARY_COLUMNS=[
+ {id:'art',label:'Preview',track:'34px',min:34},
+ {id:'priority',label:'Priority',track:'40px',min:40},
+ {id:'name',label:'Mod, author and notes',track:'minmax(220px,1.65fr)',min:220,required:true},
+ {id:'version',label:'Installed version',track:'minmax(90px,.45fr)',min:90},
+ {id:'status',label:'Detected status',track:'minmax(115px,.6fr)',min:115},
+ {id:'health',label:'Plugin and source health',track:'minmax(180px,1fr)',min:180},
+ {id:'bugs',label:'Bugs',track:'110px',min:110},
+ {id:'source',label:'File source',track:'minmax(85px,.45fr)',min:85},
+ {id:'actions',label:'Actions',track:'130px',min:130,required:true}
+];
+const LIBRARY_COLUMNS_STORAGE='modhunter-library-columns:v1';
+let HIDDEN_LIBRARY_COLUMNS=new Set(),APPLIED_LIBRARY_COLUMNS='';
+function loadLibraryColumns(){try{const saved=JSON.parse(localStorage.getItem(LIBRARY_COLUMNS_STORAGE)||'[]');HIDDEN_LIBRARY_COLUMNS=new Set((Array.isArray(saved)?saved:[]).filter(id=>LIBRARY_COLUMNS.some(column=>column.id===id&&!column.required)))}catch{HIDDEN_LIBRARY_COLUMNS=new Set()}}
+function applyLibraryColumns(){
+ const columns=LIBRARY_COLUMNS.filter(column=>column.required||!HIDDEN_LIBRARY_COLUMNS.has(column.id)),key=columns.map(column=>column.id).join(' ');
+ if(APPLIED_LIBRARY_COLUMNS===key)return;APPLIED_LIBRARY_COLUMNS=key;
+ setBodyPreference('libraryColumns',key);
+ setBodyPreference('libraryHiddenColumns',[...HIDDEN_LIBRARY_COLUMNS].join(' '));
+ // Column choices are device presentation. This guarded property write happens
+ // only when those choices change, never per row, keystroke or density toggle.
+ document.body.style.setProperty('--library-list-columns',columns.map(column=>column.track).join(' '));
+ document.body.style.setProperty('--library-list-min-width',(columns.reduce((sum,column)=>sum+column.min,0)+(columns.length-1)*10+20)+'px');
+}
+function renderLibraryColumnChoices(){setHTML($('libraryColumnChoices'),LIBRARY_COLUMNS.map(column=>'<label><input type="checkbox" data-library-column="'+column.id+'"'+(!HIDDEN_LIBRARY_COLUMNS.has(column.id)?' checked':'')+(column.required?' disabled':'')+'><span>'+escapeHTML(column.label)+'</span>'+(column.required?'<small>Always shown</small>':'')+'</label>').join(''))}
+function saveLibraryColumns(){const focus=document.activeElement?.dataset.libraryColumn;try{localStorage.setItem(LIBRARY_COLUMNS_STORAGE,JSON.stringify([...HIDDEN_LIBRARY_COLUMNS]))}catch{toast('Column choices could not be saved on this device.')}applyLibraryColumns();renderLibraryColumnChoices();if(focus)$('libraryColumnChoices').querySelector('[data-library-column="'+focus+'"]')?.focus()}
+function closeLibraryColumns(){const dialog=$('libraryColumnsDialog');if(dialog?.open)dialog.close();$('libraryColumns')?.focus({preventScroll:true})}
+loadLibraryColumns();
 function applyLibraryAppearance(){
  // Read one existing container width before changing the view. The outer
  // gallery wraps complete cards instead of sizing thousands of grid tracks.
  updateGalleryColumns();
+ applyLibraryColumns();
  setBodyPreference('libraryView',STORE.prefs.libraryView==='gallery'?'gallery':'list');
  setBodyPreference('galleryGrouping',STORE.prefs.galleryGrouping==='chapters'?'chapters':'all');
  if($('galleryGrouping'))$('galleryGrouping').value=document.body.dataset.galleryGrouping;
@@ -3301,6 +3505,14 @@ let GALLERY_RESIZE_FRAME=null,GALLERY_OBSERVED_WIDTH=0;
 if(typeof ResizeObserver==='function')new ResizeObserver(entries=>{for(const entry of entries)if(entry.target===$('modList')&&entry.contentRect.width!==GALLERY_OBSERVED_WIDTH){GALLERY_OBSERVED_WIDTH=entry.contentRect.width;if(GALLERY_RESIZE_FRAME===null)GALLERY_RESIZE_FRAME=requestAnimationFrame(()=>{GALLERY_RESIZE_FRAME=null;updateGalleryColumns(GALLERY_OBSERVED_WIDTH)})}}).observe($('modList'));
 else window.addEventListener('resize',()=>updateGalleryColumns());
 $('providerFilter').onchange=event=>updatePrefs({provider:event.target.value});
+$('libraryHealthFilter').onchange=event=>updatePrefs({insight:event.target.value});
+for(const button of $all('[data-library-sort]'))button.onclick=()=>updatePrefs({sort:button.dataset.librarySort});
+$('libraryColumns').onclick=()=>{renderLibraryColumnChoices();$('libraryColumnsDialog').showModal()};
+for(const id of ['libraryColumnsClose','libraryColumnsDone'])$(id).onclick=closeLibraryColumns;
+$('libraryColumnsDialog').addEventListener('cancel',event=>{event.preventDefault();closeLibraryColumns()});
+$('libraryColumnChoices').addEventListener('change',event=>{const input=event.target.closest('[data-library-column]');if(!input||!LIBRARY_COLUMNS.some(column=>column.id===input.dataset.libraryColumn&&!column.required))return;if(input.checked)HIDDEN_LIBRARY_COLUMNS.delete(input.dataset.libraryColumn);else HIDDEN_LIBRARY_COLUMNS.add(input.dataset.libraryColumn);saveLibraryColumns()});
+$('libraryColumnsReset').onclick=()=>{HIDDEN_LIBRARY_COLUMNS.clear();saveLibraryColumns()};
+window.addEventListener('storage',event=>{if(event.key===LIBRARY_COLUMNS_STORAGE){loadLibraryColumns();applyLibraryColumns();if($('libraryColumnsDialog').open)renderLibraryColumnChoices()}});
 $('railToggle').onclick=()=>updatePrefs({navExpanded:!STORE.prefs.navExpanded});
 $('railTheme').onclick=()=>$('themeToggle').click();
 $('workspaceAppearance').onclick=()=>$('themeToggle').click();
@@ -3317,7 +3529,7 @@ window.addEventListener('resize',()=>closeModContextMenu(false));
 
 // Centralized controls: the list is fully rendered, with event delegation and no viewport record caps.
 $('modList').addEventListener('pointerover',e=>{const r=e.target.closest('.mod-row');if(r)window.AetherFX?.hover(r)});
-$('modList').addEventListener('click',e=>{if(e.target.closest('[data-insight-act]'))return;const togg=e.target.closest('[data-chapter-toggle]');if(togg){const id=togg.dataset.chapterToggle,keepFocus=document.activeElement===togg;STORE.prefs.collapsed=STORE.prefs.collapsed.includes(id)?STORE.prefs.collapsed.filter(x=>x!==id):[...STORE.prefs.collapsed,id];save();render();if(keepFocus)$('section-'+id)?.focus({preventScroll:true});return}
+$('modList').addEventListener('click',e=>{if(e.target.closest('[data-insight-act],[data-source-act]'))return;const togg=e.target.closest('[data-chapter-toggle]');if(togg){const id=togg.dataset.chapterToggle,keepFocus=document.activeElement===togg;STORE.prefs.collapsed=STORE.prefs.collapsed.includes(id)?STORE.prefs.collapsed.filter(x=>x!==id):[...STORE.prefs.collapsed,id];save();render();if(keepFocus)$('section-'+id)?.focus({preventScroll:true});return}
  const row=e.target.closest('.mod-row');const act=e.target.closest('[data-act]');if(!act){if(e.target.id==='emptyReset')resetFilters();if(row){const hit=ITEM_MAP.get(row.dataset.id);if(hit){focusedRowId=hit.id;window.AetherFX?.select(row,{source:'app'});if(BRIDGE.active)locateInMO2(hit,row)}}return}const m=ITEM_MAP.get(act.dataset.id);if(!m)return;if(row&&act.dataset.act!=='complete'){focusedRowId=m.id;window.AetherFX?.select(row,{source:'app'})}
  if(act.dataset.act==='complete'){e.preventDefault();focusedRowId=m.id;toggleDone(m.id,act)}
  if(act.dataset.act==='locate'){e.preventDefault();locateInMO2(m,act);return}
@@ -3353,7 +3565,7 @@ window.addEventListener('modhunter-appearance-applied',()=>applyAppearance());
 // its event listener to apply the canonical payload before reading it.
 window.addEventListener('modhunter-preferences',()=>Promise.resolve().then(()=>{if(typeof window.modhunterRequestTheme==='function')applyAppearance()}));
 $('nextPending').onclick=nextPending;$('showCritical').onclick=()=>{STORE.prefs.filter='risky';STORE.prefs.provider='all';STORE.prefs.query='';$('search').value='';STORE.prefs.collapsed=[];save();render();$('workbench')?.scrollIntoView({behavior:'smooth'})};
-$('backToTop').onclick=()=>scrollTo({top:0,behavior:'smooth'});
+$('backToTop').onclick=()=>{const viewport=$('libraryViewport'),options={top:0,behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'};if(document.body.dataset.layout==='compact'&&viewport?.scrollTo)viewport.scrollTo(options);else scrollTo(options)};
 $('advisoryToggle').onclick=()=>{const s=document.querySelector('.advisory');s.classList.toggle('collapsed');$('advisoryBody').hidden=s.classList.contains('collapsed');$('advisoryToggle').setAttribute('aria-expanded',String(!s.classList.contains('collapsed')))};
 $('exportTop').onclick=exportJSON;$('backupBtn').onclick=exportJSON;$('sidebarBackup').onclick=exportJSON;$('csvBtn').onclick=exportCSV;
 $('importBtn').onclick=()=>$('importFile').click();$('importFile').onchange=e=>importJSON(e.target.files?.[0]);
@@ -3364,8 +3576,9 @@ $('drawerClose').onclick=closeInspector;$('drawerVeil').onclick=closeInspector;
 $('helpToggle').onclick=()=>help(true);$('helpClose').onclick=()=>help(false);$('helpOK').onclick=()=>help(false);$('helpVeil').addEventListener('click',e=>{if(e.target===$('helpVeil'))help(false)});
 $('menuToggle').onclick=()=>$('sidebar').classList.toggle('open');document.addEventListener('click',e=>{if(!$('fxStudio').hidden&&!e.target.closest('#fxStudio')&&!e.target.closest('#fxSettingsToggle')){$('fxStudio').hidden=true;$('fxSettingsToggle').setAttribute('aria-expanded','false')}if($('sidebar').classList.contains('open')&&!e.target.closest('#sidebar')&&!e.target.closest('#menuToggle')&&!e.target.closest('#railCollections'))$('sidebar').classList.remove('open')});
 document.addEventListener('keydown',e=>{
+ if($('libraryColumnsDialog')?.open){if(e.key==='Escape'){e.preventDefault();closeLibraryColumns()}return}
  if(!$('nativeWelcome').hidden||$('connectionDetails').open)return;const inField=e.target.matches('input,textarea,select,[contenteditable]');if(e.key==='Escape'){closeModContextMenu();$('fxStudio').hidden=true;$('fxSettingsToggle').setAttribute('aria-expanded','false');closeInspector();help(false);mo2Close();closeFilePicker();closeInstallPreview();closeQueuePreview();closeVictory();$('sidebar').classList.remove('open');if(inField)e.target.blur();return}
- if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();closeInspector();selectWorkspace('mods');$('search').focus();$('search').select();return}
+ if((e.ctrlKey||e.metaKey)&&['k','f'].includes(e.key.toLowerCase())){if(!$('helpVeil').hidden||!$('mo2Veil').hidden||!$('installPreviewVeil').hidden||!$('queueReviewVeil').hidden||!$('filePickerVeil').hidden)return;e.preventDefault();closeInspector();selectWorkspace('mods');$('search').focus();$('search').select();return}
  if(inField||!$('helpVeil').hidden||!$('mo2Veil').hidden||!$('installPreviewVeil').hidden||!$('queueReviewVeil').hidden||!$('filePickerVeil').hidden||$('detailDrawer').classList.contains('open'))return;
  if(e.altKey&&e.key.toLowerCase()==='u'){e.preventDefault();unifiedScroll('updateWorkshop');$('workshopSearch').focus();return;}
  if(e.altKey&&e.key.toLowerCase()==='r'&&BRIDGE.active){e.preventDefault();reviewNextWorkshopCandidate();return;}
@@ -3489,6 +3702,22 @@ function workshopLocalPlan(){
  return{ok:true,profileId:LIVE_CATALOG?.profileId||'',profileName:LIVE_CATALOG?.profileName||'Standalone sample',game:DATA.game||'skyrimspecialedition',gameRuntime:DATA.gameRuntime||'unknown',summary,items};
 }
 function currentWorkshopPlan(){return WORKSHOP_PLAN||(LOCAL_PLAN_CACHE??=workshopLocalPlan())}
+function workshopChoiceMatches(m,choice){return !!m&&m.lane==='candidate'&&m.installedVersion===choice.installedVersion&&String(m.latestVersion||'')===String(choice.targetVersion||'')&&(choice.kind==='source'||(/^[a-f0-9]{64}$/i.test(choice.fileProof||'')&&choice.fileProof===m.fileProof))}
+function pruneWorkshopChoices(plan){const records=new Map(plan.items.map(m=>[m.id,m]));for(const [id,choice] of WORKSHOP_CHOICES)if(choice.profileId!==plan.profileId||!workshopChoiceMatches(records.get(id),choice))WORKSHOP_CHOICES.delete(id)}
+function rememberNexusFileReview(mod,result,profile){
+ if(result.itemId!==mod.id||!/^[a-f0-9]{64}$/i.test(result.fileProof||'')||typeof result.installedVersion!=='string'||typeof result.targetVersion!=='string'||!result.update||typeof result.update!=='object')throw Error('The installed file review is incomplete. Refresh the matching MO2 plugin and review the files again.');
+ FILE_PICKER_REVIEW={mod,profileId:profile,fileProof:result.fileProof,installedVersion:result.installedVersion,targetVersion:result.targetVersion};
+ mod.update=result.update;SEARCH_CACHE.delete(mod);LOCAL_PLAN_CACHE=null;
+ const detail=SOURCE_DETAILS.get(mod);if(detail?.update)SOURCE_DETAILS.set(mod,{...detail,update:{...detail.update,...result.update}});
+ const plan=currentWorkshopPlan(),record=plan.items.find(row=>row.id===mod.id),verdict=result.update.verdict||'unverified';
+ if(record){
+  const lane=verdict==='candidate'?'candidate':['current','newer-installed'].includes(verdict)?'current':'review',summary={...plan.summary},counter=lane=>lane==='candidate'?'candidates':lane;
+  if(record.lane!==lane){summary[counter(record.lane)]--;summary[counter(lane)]++;}
+  const updated={...record,installedVersion:result.installedVersion,latestVersion:result.targetVersion,fileProof:result.fileProof,fileEvidence:result.update.fileEvidence,verdict,lane};
+  WORKSHOP_PLAN={...plan,summary,items:plan.items.map(row=>row.id===mod.id?updated:row)};pruneWorkshopChoices(WORKSHOP_PLAN);
+ }
+ renderList();renderWorkshop();refreshInspectorInsights();
+}
 function workshopSetStatus(value){SET('workshopStatus',value)}
 function renderWorkshopJourney(){
  const p=currentWorkshopPlan(),s=p.summary;
@@ -3568,8 +3797,7 @@ async function refreshWorkshop(){
  const p=await bridgeRequest('GET','update-plan');
  if(!contextIsCurrent(context)||request!==WORKSHOP_REQUEST||p.profileId!==profile)return;
  WORKSHOP_PLAN=p;
- const candidates=new Map(p.items.filter(m=>m.lane==='candidate').map(m=>[m.id,m]));
- for(const [id,choice] of WORKSHOP_CHOICES){const m=candidates.get(id);if(choice.profileId!==profile||!m||!(m.installedVersion===choice.installedVersion&&String(m.latestVersion||'')===String(choice.targetVersion||'')))WORKSHOP_CHOICES.delete(id);}
+ pruneWorkshopChoices(p);
  renderWorkshop();workshopSetStatus('Ready: use Update now for a one-click download and interactive MO2 install, or choose any file manually.');
 }
 async function exportWorkshop(){
@@ -3684,6 +3912,8 @@ async function performQueuedWorkshop(entries,profile){
  try{
   const latest=await bridgeRequest('GET','update-plan');
   if(!active()||latest.profileId!==profile||LIVE_CATALOG?.profileId!==profile)throw Error('Active profile changed. Reopen the Workshop.');
+  const records=new Map(latest.items.map(row=>[row.id,row]));
+  if(entries.some(choice=>choice.profileId!==profile||!workshopChoiceMatches(records.get(choice.itemId),choice))){WORKSHOP_PLAN=latest;pruneWorkshopChoices(latest);throw Error('A reviewed installed file or update target changed. Choose its current files again.');}
   const response=await bridgeRequest('POST','update-queue',{profileId:profile,confirm:'QUEUE_REVIEWED_DOWNLOADS',entries});
   if(!active())return;
   for(const item of response.queued||[]){sent++;WORKSHOP_CHOICES.delete(item.itemId)}
@@ -4008,7 +4238,7 @@ $('filePickerSearch').oninput=filterFilePicker;
 async function openFilePicker(m){
  const nativeNexus=Boolean(INSIGHTS?.isNexus(m)&&(!SOURCES||SOURCES.provider(m)==='nexus'));
  if(!BRIDGE.active||(!nativeNexus&&!hasReleaseAssets(m))){toast('No verified download assets for this source.');return}
- const context=profileContext();FILE_PICKER_MOD=m;
+ const context=profileContext();FILE_PICKER_MOD=m;FILE_PICKER_REVIEW=null;
  $('filePickerSearch').value='';$('filePickerMatchCount').textContent='Loading…';
  $('filePickerTitle').textContent=m.name;
  $('filePickerSummary').textContent='Installed: '+m.installedVersion+' · Target runtime: '+(DATA.gameRuntime||'unknown')+'. Inspect file version, requirements and FOMOD instructions.';
@@ -4026,15 +4256,16 @@ async function openFilePicker(m){
  try{
   const j=await bridgeRequest('GET','files?modId='+m.nexusId+'&itemId='+encodeURIComponent(m.id));
   if(!j.ok)throw Error(j.error||'Nexus file review unavailable');
-  if(FILE_PICKER_MOD!==m||!contextIsCurrent(context))return;
+  if(FILE_PICKER_MOD!==m||!contextIsCurrent(context)||ITEM_MAP.get(m.id)!==m)return;
+  rememberNexusFileReview(m,j,context.profile);
   const nexus=(j.files||[]).map(f=>{
-   const tag=f.suggested?'◈ VERSION-MATCHED MAIN FILE':f.releaseVersionMatch?'✓ PROJECT VERSION MATCH':f.category===1?'MAIN FILE':'OPTIONAL / OTHER';
+   const tag=f.suggested?'◈ MATCHED INSTALLED FILE':f.releaseVersionMatch?'✓ INSTALLED FILE LINEAGE':f.category===1?'MAIN FILE':'OPTIONAL / OTHER';
    return '<div class="picker-file'+(f.suggested?' picker-suggested':'')+'"><div class="picker-file-main"><span class="picker-match-tag">'+escapeHTML(tag)+'</span><strong>'+escapeHTML(f.name)+'</strong><span>v'+escapeHTML(f.version||'?')+' · '+escapeHTML(f.fileName||'')+' · '+escapeHTML(f.sizeInKB||'?')+' KB '+(f.category===1?' · MAIN FILE':'')+'</span>'+(f.reviewHint?'<p class="picker-hint">'+escapeHTML(f.reviewHint)+'</p>':'')+(f.description?'<p class="picker-file-desc">'+escapeHTML(f.description)+'</p>':'')+'</div><button class="button-bright" data-file-id="'+Number(f.fileId)+'" data-file-version="'+escapeHTML(f.version||'')+'" data-mod-id="'+Number(m.nexusId)+'" data-archive-name="'+escapeHTML(f.fileName||f.name)+'">Select Nexus file</button></div>';
   }).join('');
   if(!nexus&&!releaseFiles)throw Error('No files available for this project');
   $('filePickerFiles').innerHTML=(nexus?'<div class="picker-source-title">NEXUS MODS · EXACT FILES</div>'+nexus:'')+releaseFiles;
-  if(j.reviewAdvice?.hasUniqueMainMatch)$('filePickerSummary').textContent='One main Nexus file matches the published project version. Verify game/runtime, required files, and FOMOD options.';
-  else if(j.reviewAdvice?.matchingMainFiles>1)$('filePickerSummary').textContent='Several main files share the published version. Compare the variants carefully for your runtime and mod configuration.';
+  if(j.reviewAdvice?.hasUniqueFileMatch||j.reviewAdvice?.hasUniqueMainMatch)$('filePickerSummary').textContent='One exact replacement matches the installed file. Verify its runtime, requirements and installer options.';
+  else if(j.reviewAdvice?.matchingMainFiles>1)$('filePickerSummary').textContent='The target file has conflicting records. Refresh its source evidence before choosing a file.';
   filterFilePicker();
  }catch(ex){
   if(FILE_PICKER_MOD!==m||!contextIsCurrent(context))return;
@@ -4042,7 +4273,7 @@ async function openFilePicker(m){
   filterFilePicker();
  }
 }
-function closeFilePicker(){$('filePickerVeil').hidden=true;FILE_PICKER_MOD=null;WORKSHOP_REVIEW_ID=null;FAST_PICKER_ID=null}
+function closeFilePicker(){$('filePickerVeil').hidden=true;FILE_PICKER_MOD=null;FILE_PICKER_REVIEW=null;WORKSHOP_REVIEW_ID=null;FAST_PICKER_ID=null}
 $('filePickerClose').onclick=closeFilePicker;$('filePickerCancel').onclick=closeFilePicker;$('filePickerVeil').addEventListener('click',e=>{if(e.target===$('filePickerVeil'))closeFilePicker()});
 $('filePickerNexus').onclick=()=>{if(FILE_PICKER_MOD)window.open(getSrc(FILE_PICKER_MOD).url,'_blank','noopener,noreferrer')};
 $('filePickerFiles').addEventListener('click',async e=>{const b=e.target.closest('button[data-file-id]');if(!b)return;const m=FILE_PICKER_MOD;if(!m)return;
@@ -4053,9 +4284,11 @@ $('filePickerFiles').addEventListener('click',async e=>{const b=e.target.closest
   // Exact archive selection is the user action; compatibility hints stay visible.
   const riskAcknowledged=true;
   const sourceChoice=b.dataset.sourceKind==='release';
+  const reviewed=FILE_PICKER_REVIEW;
+  if(!sourceChoice&&(!reviewed||reviewed.mod!==m||reviewed.profileId!==plan.profileId||!workshopChoiceMatches(record,reviewed))){toast('The reviewed installed file changed. Reopen its current file details.');return;}
   const exactFile={fileName:b.dataset.archiveName||label,displayName:label,fileVersion:b.dataset.fileVersion||''};
   const fast=FAST_PICKER_ID===WORKSHOP_REVIEW_ID;
-  const selection=sourceChoice?{kind:'source',itemId:WORKSHOP_REVIEW_ID,assetKey:b.dataset.assetKey||'',assetProof:b.dataset.assetProof||'',...(Number(b.dataset.fileId)>0?{assetId:Number(b.dataset.fileId)}:{}),provider:b.dataset.sourceProvider||record.provider,installedVersion:record.installedVersion,targetVersion:record.latestVersion,profileId:plan.profileId,reviewed:true,riskAcknowledged,autoInstall:fast,...exactFile}:{kind:'nexus',itemId:WORKSHOP_REVIEW_ID,modId:Number(m.nexusId),fileId:Number(b.dataset.fileId),installedVersion:record.installedVersion,targetVersion:record.latestVersion,profileId:plan.profileId,reviewed:true,riskAcknowledged,autoInstall:fast,...exactFile};
+  const selection=sourceChoice?{kind:'source',itemId:WORKSHOP_REVIEW_ID,assetKey:b.dataset.assetKey||'',assetProof:b.dataset.assetProof||'',...(Number(b.dataset.fileId)>0?{assetId:Number(b.dataset.fileId)}:{}),provider:b.dataset.sourceProvider||record.provider,installedVersion:record.installedVersion,targetVersion:record.latestVersion,profileId:plan.profileId,reviewed:true,riskAcknowledged,autoInstall:fast,...exactFile}:{kind:'nexus',itemId:WORKSHOP_REVIEW_ID,modId:Number(m.nexusId),fileId:Number(b.dataset.fileId),fileProof:reviewed.fileProof,installedVersion:reviewed.installedVersion,targetVersion:reviewed.targetVersion,profileId:plan.profileId,reviewed:true,riskAcknowledged,autoInstall:fast,...exactFile};
   WORKSHOP_CHOICES.set(WORKSHOP_REVIEW_ID,selection);
   FAST_PICKER_ID=null;closeFilePicker();renderWorkshop();
   if(fast)return performQueuedWorkshop([selection],plan.profileId);

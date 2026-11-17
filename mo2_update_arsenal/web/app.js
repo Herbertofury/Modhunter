@@ -9,7 +9,7 @@ let STORAGE='dragonborn-mod-update-arsenal-v1';
 const BRIDGE=window.__MO2_BRIDGE_BOOT__||{active:false};
 const INSIGHTS=window.ModhunterInsights;
 const SOURCES=window.ModhunterSources;
-let LIVE_SCAN=null,LIVE_CATALOG=null,SCAN_TIMER=null,FILE_PICKER_MOD=null,LIVE_GENERATION=0,LIVE_REFRESH_BUSY=false;
+let LIVE_SCAN=null,LIVE_CATALOG=null,SCAN_TIMER=null,FILE_PICKER_MOD=null,FILE_PICKER_REVIEW=null,LIVE_GENERATION=0,LIVE_REFRESH_BUSY=false;
 let WORKSHOP_PLAN=null,WORKSHOP_CHOICES=new Map(),WORKSHOP_BUSY=false,WORKSHOP_REVIEW_ID=null,FAST_PICKER_ID=null;
 let QUICK_RUNNING=false,QUICK_POLL=null,QUICK_SKIPPED=new Map();
 let QUEUE_PENDING=null,INSTALL_PREVIEW_ID=null,INSTALL_PREVIEW_PROFILE='',PREVIEW_RETURN_FOCUS=null,INSPECTOR_RETURN_FOCUS=null;
@@ -506,16 +506,18 @@ function buildModHTML(m){const compact=document.body.dataset.layout==='compact',
  `${compact?'':`<div class="mod-status"><button class="complete-btn" data-act="complete" data-id="${m.id}" aria-label="${escapeHTML(statusLabel+' for '+m.name)}" title="${escapeHTML(statusLabel)}">${stat==='done'?'✓':stat==='review'?'!':''}</button></div>`}`+
  `${thumbnailMarkup(m,false,s)}`+
  `<div class="mod-priority">${m.priority}</div>`+
- `<div class="mod-primary" data-priority="${m.priority}" data-chapter-label="${escapeHTML(m.group||GROUP_MAP.get(m.groupId)?.name||'')}"><div class="mod-name-actions"><a class="mod-title source-title ${s.verified?'':'unknown'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHTML((s.verified?'Open source page for ':'Search for original source of ')+m.name)}" title="${escapeHTML(m.name+' — '+(s.verified?'Open original source':'Find original source'))}" data-act="source" data-id="${escapeHTML(m.id)}">${escapeHTML(m.name)}<span class="source-open-glyph" aria-hidden="true">↗</span></a>${BRIDGE.active?`<button class="mod-inline-locate" type="button" title="Reveal this mod in Mod Organizer 2" aria-label="Reveal ${escapeHTML(m.name)} in MO2" data-act="locate" data-id="${escapeHTML(m.id)}">⌖</button>`:''}</div>${modAuthor(m)?`<div class="mod-author" data-no-translate>${escapeHTML(modAuthor(m))}</div>`:''}${note?`<div class="mod-note ${/do not|ctd|crash|hard esp|incompati|needs update|bugs/i.test(note)?'warning-note':''}" title="${escapeHTML(note)}">${escapeHTML(note)}</div>`:''}${INSIGHTS?.chips(m)||''}${SOURCES?.chips(m)||''}</div>`+
+ `<div class="mod-primary" data-priority="${m.priority}" data-chapter-label="${escapeHTML(m.group||GROUP_MAP.get(m.groupId)?.name||'')}"><div class="mod-name-actions"><a class="mod-title source-title ${s.verified?'':'unknown'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHTML((s.verified?'Open source page for ':'Search for original source of ')+m.name)}" title="${escapeHTML(m.name+' — '+(s.verified?'Open original source':'Find original source'))}" data-act="source" data-id="${escapeHTML(m.id)}">${escapeHTML(m.name)}<span class="source-open-glyph" aria-hidden="true">↗</span></a>${BRIDGE.active?`<button class="mod-inline-locate" type="button" title="Reveal this mod in Mod Organizer 2" aria-label="Reveal ${escapeHTML(m.name)} in MO2" data-act="locate" data-id="${escapeHTML(m.id)}">⌖</button>`:''}</div>${modAuthor(m)?`<div class="mod-author" data-no-translate>${escapeHTML(modAuthor(m))}</div>`:''}${note?`<div class="mod-note ${/do not|ctd|crash|hard esp|incompati|needs update|bugs/i.test(note)?'warning-note':''}" title="${escapeHTML(note)}">${escapeHTML(note)}</div>`:''}${compact?'':(INSIGHTS?.chips(m)||'')+(SOURCES?.chips(m)||'')}</div>`+
  `<div class="mod-version" title="Installed version recorded by source">${escapeHTML(m.installedVersion||'Unknown')}${m.update?.latestVersion&&m.update.latestVersion!==m.installedVersion?`<small class="newer-version" title="Latest metadata, not necessarily compatible">→ ${escapeHTML(m.update.latestVersion)}</small>`:''}</div>`+
  `<div class="mod-assessment">${detectedMarkup(m)}${['done','review','skipped'].includes(stat)?`<span class="manual-status" data-manual="${stat}">${stat==='done'?'Manually cleared':stat==='review'?'Manual review':'Manually skipped'}</span>`:''}${compact?'':'<span class="legacy-assessment">'+assessmentHTML(m)+'</span>'}</div>`+
+ `${compact?`<div class="mod-health" aria-label="Plugin and source health">${(INSIGHTS?.chips(m,{includeBugs:false})||'')+(SOURCES?.chips(m)||'')||'Not analyzed'}</div>${INSIGHTS?.bugCell(m)||'<span class="mod-bugs">Bugs unverified</span>'}`:''}`+
  `<div class="mod-source"><a class="source-btn ${s.verified?'':'lookup'}" href="${escapeHTML(s.url)}" target="_blank" rel="noopener noreferrer" data-act="source" data-id="${m.id}" title="${escapeHTML(sourceText+' — '+(s.type==='creations'?'Exact Bethesda Creation listing. Install from in-game Creations menu.':s.verified?'Exact mod files page':'Search for the correct mod project; source not yet verified'))}">${sourceText}</a></div>`+
  `<div class="inspect-col">${BRIDGE.active&&m.nexusId?`<button class="file-download-btn" title="Choose an exact Nexus file in MO2" aria-label="Choose Nexus files for ${escapeHTML(m.name)}" data-act="files" data-id="${m.id}">${isUpdate(m)?'Review':'⇩'}</button>`:''}<button class="favorite-btn ${isFav(m)?'active':''}" title="${isFav(m)?'Remove bookmark':'Bookmark mod'}" aria-label="${isFav(m)?'Remove bookmark for':'Bookmark'} ${escapeHTML(m.name)}" aria-pressed="${isFav(m)}" data-act="favorite" data-id="${m.id}">${isFav(m)?'★':'☆'}</button><button class="inspect-btn" title="Inspect mod, notes, compatibility and source" aria-label="Inspect ${escapeHTML(m.name)}" data-act="inspect" data-id="${m.id}">Details</button></div>`+
  `</article>`}
 let GROUP_PROGRESS=new Map();function groupProgress(){GROUP_PROGRESS=new Map(DATA.groups.map(g=>[g.id,{done:0,total:0}]));for(const m of DATA.items){if(!GROUP_PROGRESS.has(m.groupId))GROUP_PROGRESS.set(m.groupId,{done:0,total:0});const o=GROUP_PROGRESS.get(m.groupId);o.total++;if(isDone(m))o.done++}}
-function renderChapters(){let needle=$('chapterSearch').value.trim().toLowerCase();const groups=DATA.groups.filter(g=>!needle||g.name.toLowerCase().includes(needle));const html=groups.map(g=>{const num=GROUP_PROGRESS.get(g.id)?.done||0;return `<button class="chapter-link" data-chapter="${escapeHTML(g.id)}" title="Jump to ${escapeHTML(g.name)}"><i></i><span>${escapeHTML(g.name)}</span><em>${num}/${g.count}</em></button>`}).join('');const container=$('chapters');setHTML(container,html||'<div class="drawer-micro">No chapter found.</div>');for(const node of container.querySelectorAll('.chapter-link')){const group=GROUP_MAP.get(node.dataset.chapter);node.style.setProperty('--group-clr',PALETTE[group?.color]||PALETTE.slate)}}
+function chapterColor(group){const authored=group?.separatorColor;return typeof authored==='string'&&/^#[0-9a-f]{8}$/i.test(authored)?authored:PALETTE[group?.color]||PALETTE.slate}
+function renderChapters(){let needle=$('chapterSearch').value.trim().toLowerCase();const groups=DATA.groups.filter(g=>!needle||g.name.toLowerCase().includes(needle));const html=groups.map(g=>{const num=GROUP_PROGRESS.get(g.id)?.done||0;return `<button class="chapter-link" data-chapter="${escapeHTML(g.id)}" title="Jump to ${escapeHTML(g.name)}"><i></i><span>${escapeHTML(g.name)}</span><em>${num}/${g.count}</em></button>`}).join('');const container=$('chapters');setHTML(container,html||'<div class="drawer-micro">No chapter found.</div>');for(const node of container.querySelectorAll('.chapter-link')){const group=GROUP_MAP.get(node.dataset.chapter);node.style.setProperty('--group-clr',chapterColor(group))}}
 let VISIBLE_ROW_IDS=[];
-function sortMods(items){const sorted=[...items];if(STORE.prefs.sort==='name')sorted.sort((a,b)=>txt(a.name).localeCompare(txt(b.name)));else if(STORE.prefs.sort==='version')sorted.sort((a,b)=>txt(a.installedVersion).localeCompare(txt(b.installedVersion)));else sorted.sort((a,b)=>a.priority-b.priority);return sorted}
+function sortMods(items){const sorted=[...items];if(STORE.prefs.sort==='name')sorted.sort((a,b)=>txt(a.name).localeCompare(txt(b.name)));else if(STORE.prefs.sort==='version')sorted.sort((a,b)=>txt(a.installedVersion).localeCompare(txt(b.installedVersion)));else if(STORE.prefs.sort==='bugs')sorted.sort((a,b)=>{const av=INSIGHTS?.bugCount(a),bv=INSIGHTS?.bugCount(b);return av==null?(bv==null?a.priority-b.priority:1):bv==null?-1:bv-av||a.priority-b.priority});else sorted.sort((a,b)=>a.priority-b.priority);return sorted}
 function renderList(){
  refreshGalleryLabelStyles();
  const visible=filtered(),byGroup=new Map();for(const m of visible){if(!byGroup.has(m.groupId))byGroup.set(m.groupId,[]);byGroup.get(m.groupId).push(m)}
@@ -528,7 +530,7 @@ function renderList(){
   const ms=byGroup.get(g.id);if(!ms||!ms.length)continue;
   const gd=GROUP_PROGRESS.get(g.id)?.done||0,collapsed=STORE.prefs.collapsed.includes(g.id),pct=Math.round((gd/(g.count||1))*100);
   entries.push({key:'group:'+g.id,html:`<button class="chapterbar ${collapsed?'closed':''}" id="section-${escapeHTML(g.id)}" data-chapter-toggle="${escapeHTML(g.id)}" aria-expanded="${!collapsed}" data-completion="${g.count>0&&gd>=g.count?'complete':gd>0?'partial':'empty'}" title="Manual checklist: ${gd} of ${g.count} cleared"><span class="diamond" aria-hidden="true">◆</span><strong>${escapeHTML(g.name)}</strong><span class="chapter-count">${gd}/${g.count}</span><span class="chapter-mini-progress"><i></i></span><span class="chapter-priority">#${g.startPriority}</span></button>`});
-  chapterPaint.push({id:g.id,color:PALETTE[g.color]||PALETTE.slate,pct});
+  chapterPaint.push({id:g.id,color:chapterColor(g),pct});
   if(!collapsed)for(const m of sortMods(ms))addMod(m);
  }
  setRows($('modList'),entries,`<div class="empty-state"><div class="empty-icon">ᛟ</div><h3>No foes in this chamber.</h3><p>Nothing matches your current search and filters.</p><button id="emptyReset">Clear filters</button></div>`);
@@ -537,7 +539,8 @@ function renderList(){
  // in both local imports and the live dashboard without relaxing that policy.
  for(const chapter of chapterPaint){const node=$('section-'+chapter.id);if(!node)continue;node.style.setProperty('--chapter-color',chapter.color);const fill=node.querySelector('.chapter-mini-progress>i');if(fill)fill.style.width=chapter.pct+'%'}
  VISIBLE_ROW_IDS=renderedIds;
- const listCounts=counts(),sourceCount=listCounts.total-listCounts.unlinked,parts=[visible.length+' of '+DATA.items.length+(DATA.items.length===1?' mod':' mods'),byGroup.size+(byGroup.size===1?' chapter':' chapters')];if(STORE.prefs.query)parts.push('query: '+STORE.prefs.query);SET('resultsMeta',parts.join(' · '));SET('listFooter',`YOU'VE REACHED THE END · ${visible.length} MATCHING MOD${visible.length===1?'':'S'} · ${sourceCount} EXACT ORIGINAL SOURCE${sourceCount===1?'':'S'}`);$('sortSelect').value=STORE.prefs.sort;const provider=$('providerFilter');if(provider)provider.value=STORE.prefs.provider||'all';
+ const listCounts=counts(),sourceCount=listCounts.total-listCounts.unlinked,parts=[visible.length+' of '+DATA.items.length+(DATA.items.length===1?' mod':' mods'),byGroup.size+(byGroup.size===1?' chapter':' chapters')];if(STORE.prefs.query)parts.push('query: '+STORE.prefs.query);SET('resultsMeta',parts.join(' · '));SET('listFooter',`${visible.length} MATCHING MOD${visible.length===1?'':'S'} · ${sourceCount} EXACT ORIGINAL SOURCE${sourceCount===1?'':'S'}`);$('sortSelect').value=STORE.prefs.sort;const provider=$('providerFilter');if(provider)provider.value=STORE.prefs.provider||'all';
+ for(const button of $all('[data-library-sort]'))button.setAttribute('aria-pressed',String(button.dataset.librarySort===STORE.prefs.sort));
 }
 function render(){renderProviderFilter();if(SEARCH_FRAME!==null){cancelAnimationFrame(SEARCH_FRAME);SEARCH_FRAME=null}RENDER_COUNTS=counts();try{groupProgress();renderStats();renderList();renderChapters();renderQuest();paintNativeSelection();renderWorkshop();renderInsightToolbar();renderSourceCoverage();renderWorkspace()}finally{RENDER_COUNTS=null}}
 function renderSearch(){SEARCH_FRAME=null;renderList();paintNativeSelection()}
@@ -646,7 +649,7 @@ document.addEventListener('click',async e=>{
 });
 function renderInsightToolbar(){
  const select=$('insightFilter'),button=$('analyzePlugins');if(!select||!button)return;
- select.value=STORE.prefs.insight||'all';
+ select.value=STORE.prefs.insight||'all';if($('libraryHealthFilter'))$('libraryHealthFilter').value=select.value;
  const job=DATA.pluginAuditState||{},analysis=DATA.pluginAnalysis||{},running=['queued','running'].includes(job.state);
  button.disabled=running||(BRIDGE.active&&!LIVE_CONNECTED);
  button.textContent=running?'Analyzing…':'Analyze plugins';
@@ -910,10 +913,39 @@ function updateGalleryColumns(width){
  }else GALLERY_GEOMETRY_RULE.style.setProperty('flex-basis',basis);
  list.dataset.galleryGeometry=key;
 }
+const LIBRARY_COLUMNS=[
+ {id:'art',label:'Preview',track:'34px',min:34},
+ {id:'priority',label:'Priority',track:'40px',min:40},
+ {id:'name',label:'Mod, author and notes',track:'minmax(220px,1.65fr)',min:220,required:true},
+ {id:'version',label:'Installed version',track:'minmax(90px,.45fr)',min:90},
+ {id:'status',label:'Detected status',track:'minmax(115px,.6fr)',min:115},
+ {id:'health',label:'Plugin and source health',track:'minmax(180px,1fr)',min:180},
+ {id:'bugs',label:'Bugs',track:'110px',min:110},
+ {id:'source',label:'File source',track:'minmax(85px,.45fr)',min:85},
+ {id:'actions',label:'Actions',track:'130px',min:130,required:true}
+];
+const LIBRARY_COLUMNS_STORAGE='modhunter-library-columns:v1';
+let HIDDEN_LIBRARY_COLUMNS=new Set(),APPLIED_LIBRARY_COLUMNS='';
+function loadLibraryColumns(){try{const saved=JSON.parse(localStorage.getItem(LIBRARY_COLUMNS_STORAGE)||'[]');HIDDEN_LIBRARY_COLUMNS=new Set((Array.isArray(saved)?saved:[]).filter(id=>LIBRARY_COLUMNS.some(column=>column.id===id&&!column.required)))}catch{HIDDEN_LIBRARY_COLUMNS=new Set()}}
+function applyLibraryColumns(){
+ const columns=LIBRARY_COLUMNS.filter(column=>column.required||!HIDDEN_LIBRARY_COLUMNS.has(column.id)),key=columns.map(column=>column.id).join(' ');
+ if(APPLIED_LIBRARY_COLUMNS===key)return;APPLIED_LIBRARY_COLUMNS=key;
+ setBodyPreference('libraryColumns',key);
+ setBodyPreference('libraryHiddenColumns',[...HIDDEN_LIBRARY_COLUMNS].join(' '));
+ // Column choices are device presentation. This guarded property write happens
+ // only when those choices change, never per row, keystroke or density toggle.
+ document.body.style.setProperty('--library-list-columns',columns.map(column=>column.track).join(' '));
+ document.body.style.setProperty('--library-list-min-width',(columns.reduce((sum,column)=>sum+column.min,0)+(columns.length-1)*10+20)+'px');
+}
+function renderLibraryColumnChoices(){setHTML($('libraryColumnChoices'),LIBRARY_COLUMNS.map(column=>'<label><input type="checkbox" data-library-column="'+column.id+'"'+(!HIDDEN_LIBRARY_COLUMNS.has(column.id)?' checked':'')+(column.required?' disabled':'')+'><span>'+escapeHTML(column.label)+'</span>'+(column.required?'<small>Always shown</small>':'')+'</label>').join(''))}
+function saveLibraryColumns(){const focus=document.activeElement?.dataset.libraryColumn;try{localStorage.setItem(LIBRARY_COLUMNS_STORAGE,JSON.stringify([...HIDDEN_LIBRARY_COLUMNS]))}catch{toast('Column choices could not be saved on this device.')}applyLibraryColumns();renderLibraryColumnChoices();if(focus)$('libraryColumnChoices').querySelector('[data-library-column="'+focus+'"]')?.focus()}
+function closeLibraryColumns(){const dialog=$('libraryColumnsDialog');if(dialog?.open)dialog.close();$('libraryColumns')?.focus({preventScroll:true})}
+loadLibraryColumns();
 function applyLibraryAppearance(){
  // Read one existing container width before changing the view. The outer
  // gallery wraps complete cards instead of sizing thousands of grid tracks.
  updateGalleryColumns();
+ applyLibraryColumns();
  setBodyPreference('libraryView',STORE.prefs.libraryView==='gallery'?'gallery':'list');
  setBodyPreference('galleryGrouping',STORE.prefs.galleryGrouping==='chapters'?'chapters':'all');
  if($('galleryGrouping'))$('galleryGrouping').value=document.body.dataset.galleryGrouping;
@@ -950,6 +982,14 @@ let GALLERY_RESIZE_FRAME=null,GALLERY_OBSERVED_WIDTH=0;
 if(typeof ResizeObserver==='function')new ResizeObserver(entries=>{for(const entry of entries)if(entry.target===$('modList')&&entry.contentRect.width!==GALLERY_OBSERVED_WIDTH){GALLERY_OBSERVED_WIDTH=entry.contentRect.width;if(GALLERY_RESIZE_FRAME===null)GALLERY_RESIZE_FRAME=requestAnimationFrame(()=>{GALLERY_RESIZE_FRAME=null;updateGalleryColumns(GALLERY_OBSERVED_WIDTH)})}}).observe($('modList'));
 else window.addEventListener('resize',()=>updateGalleryColumns());
 $('providerFilter').onchange=event=>updatePrefs({provider:event.target.value});
+$('libraryHealthFilter').onchange=event=>updatePrefs({insight:event.target.value});
+for(const button of $all('[data-library-sort]'))button.onclick=()=>updatePrefs({sort:button.dataset.librarySort});
+$('libraryColumns').onclick=()=>{renderLibraryColumnChoices();$('libraryColumnsDialog').showModal()};
+for(const id of ['libraryColumnsClose','libraryColumnsDone'])$(id).onclick=closeLibraryColumns;
+$('libraryColumnsDialog').addEventListener('cancel',event=>{event.preventDefault();closeLibraryColumns()});
+$('libraryColumnChoices').addEventListener('change',event=>{const input=event.target.closest('[data-library-column]');if(!input||!LIBRARY_COLUMNS.some(column=>column.id===input.dataset.libraryColumn&&!column.required))return;if(input.checked)HIDDEN_LIBRARY_COLUMNS.delete(input.dataset.libraryColumn);else HIDDEN_LIBRARY_COLUMNS.add(input.dataset.libraryColumn);saveLibraryColumns()});
+$('libraryColumnsReset').onclick=()=>{HIDDEN_LIBRARY_COLUMNS.clear();saveLibraryColumns()};
+window.addEventListener('storage',event=>{if(event.key===LIBRARY_COLUMNS_STORAGE){loadLibraryColumns();applyLibraryColumns();if($('libraryColumnsDialog').open)renderLibraryColumnChoices()}});
 $('railToggle').onclick=()=>updatePrefs({navExpanded:!STORE.prefs.navExpanded});
 $('railTheme').onclick=()=>$('themeToggle').click();
 $('workspaceAppearance').onclick=()=>$('themeToggle').click();
@@ -966,7 +1006,7 @@ window.addEventListener('resize',()=>closeModContextMenu(false));
 
 // Centralized controls: the list is fully rendered, with event delegation and no viewport record caps.
 $('modList').addEventListener('pointerover',e=>{const r=e.target.closest('.mod-row');if(r)window.AetherFX?.hover(r)});
-$('modList').addEventListener('click',e=>{if(e.target.closest('[data-insight-act]'))return;const togg=e.target.closest('[data-chapter-toggle]');if(togg){const id=togg.dataset.chapterToggle,keepFocus=document.activeElement===togg;STORE.prefs.collapsed=STORE.prefs.collapsed.includes(id)?STORE.prefs.collapsed.filter(x=>x!==id):[...STORE.prefs.collapsed,id];save();render();if(keepFocus)$('section-'+id)?.focus({preventScroll:true});return}
+$('modList').addEventListener('click',e=>{if(e.target.closest('[data-insight-act],[data-source-act]'))return;const togg=e.target.closest('[data-chapter-toggle]');if(togg){const id=togg.dataset.chapterToggle,keepFocus=document.activeElement===togg;STORE.prefs.collapsed=STORE.prefs.collapsed.includes(id)?STORE.prefs.collapsed.filter(x=>x!==id):[...STORE.prefs.collapsed,id];save();render();if(keepFocus)$('section-'+id)?.focus({preventScroll:true});return}
  const row=e.target.closest('.mod-row');const act=e.target.closest('[data-act]');if(!act){if(e.target.id==='emptyReset')resetFilters();if(row){const hit=ITEM_MAP.get(row.dataset.id);if(hit){focusedRowId=hit.id;window.AetherFX?.select(row,{source:'app'});if(BRIDGE.active)locateInMO2(hit,row)}}return}const m=ITEM_MAP.get(act.dataset.id);if(!m)return;if(row&&act.dataset.act!=='complete'){focusedRowId=m.id;window.AetherFX?.select(row,{source:'app'})}
  if(act.dataset.act==='complete'){e.preventDefault();focusedRowId=m.id;toggleDone(m.id,act)}
  if(act.dataset.act==='locate'){e.preventDefault();locateInMO2(m,act);return}
@@ -1002,7 +1042,7 @@ window.addEventListener('modhunter-appearance-applied',()=>applyAppearance());
 // its event listener to apply the canonical payload before reading it.
 window.addEventListener('modhunter-preferences',()=>Promise.resolve().then(()=>{if(typeof window.modhunterRequestTheme==='function')applyAppearance()}));
 $('nextPending').onclick=nextPending;$('showCritical').onclick=()=>{STORE.prefs.filter='risky';STORE.prefs.provider='all';STORE.prefs.query='';$('search').value='';STORE.prefs.collapsed=[];save();render();$('workbench')?.scrollIntoView({behavior:'smooth'})};
-$('backToTop').onclick=()=>scrollTo({top:0,behavior:'smooth'});
+$('backToTop').onclick=()=>{const viewport=$('libraryViewport'),options={top:0,behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'};if(document.body.dataset.layout==='compact'&&viewport?.scrollTo)viewport.scrollTo(options);else scrollTo(options)};
 $('advisoryToggle').onclick=()=>{const s=document.querySelector('.advisory');s.classList.toggle('collapsed');$('advisoryBody').hidden=s.classList.contains('collapsed');$('advisoryToggle').setAttribute('aria-expanded',String(!s.classList.contains('collapsed')))};
 $('exportTop').onclick=exportJSON;$('backupBtn').onclick=exportJSON;$('sidebarBackup').onclick=exportJSON;$('csvBtn').onclick=exportCSV;
 $('importBtn').onclick=()=>$('importFile').click();$('importFile').onchange=e=>importJSON(e.target.files?.[0]);
@@ -1013,8 +1053,9 @@ $('drawerClose').onclick=closeInspector;$('drawerVeil').onclick=closeInspector;
 $('helpToggle').onclick=()=>help(true);$('helpClose').onclick=()=>help(false);$('helpOK').onclick=()=>help(false);$('helpVeil').addEventListener('click',e=>{if(e.target===$('helpVeil'))help(false)});
 $('menuToggle').onclick=()=>$('sidebar').classList.toggle('open');document.addEventListener('click',e=>{if(!$('fxStudio').hidden&&!e.target.closest('#fxStudio')&&!e.target.closest('#fxSettingsToggle')){$('fxStudio').hidden=true;$('fxSettingsToggle').setAttribute('aria-expanded','false')}if($('sidebar').classList.contains('open')&&!e.target.closest('#sidebar')&&!e.target.closest('#menuToggle')&&!e.target.closest('#railCollections'))$('sidebar').classList.remove('open')});
 document.addEventListener('keydown',e=>{
+ if($('libraryColumnsDialog')?.open){if(e.key==='Escape'){e.preventDefault();closeLibraryColumns()}return}
  if(!$('nativeWelcome').hidden||$('connectionDetails').open)return;const inField=e.target.matches('input,textarea,select,[contenteditable]');if(e.key==='Escape'){closeModContextMenu();$('fxStudio').hidden=true;$('fxSettingsToggle').setAttribute('aria-expanded','false');closeInspector();help(false);mo2Close();closeFilePicker();closeInstallPreview();closeQueuePreview();closeVictory();$('sidebar').classList.remove('open');if(inField)e.target.blur();return}
- if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();closeInspector();selectWorkspace('mods');$('search').focus();$('search').select();return}
+ if((e.ctrlKey||e.metaKey)&&['k','f'].includes(e.key.toLowerCase())){if(!$('helpVeil').hidden||!$('mo2Veil').hidden||!$('installPreviewVeil').hidden||!$('queueReviewVeil').hidden||!$('filePickerVeil').hidden)return;e.preventDefault();closeInspector();selectWorkspace('mods');$('search').focus();$('search').select();return}
  if(inField||!$('helpVeil').hidden||!$('mo2Veil').hidden||!$('installPreviewVeil').hidden||!$('queueReviewVeil').hidden||!$('filePickerVeil').hidden||$('detailDrawer').classList.contains('open'))return;
  if(e.altKey&&e.key.toLowerCase()==='u'){e.preventDefault();unifiedScroll('updateWorkshop');$('workshopSearch').focus();return;}
  if(e.altKey&&e.key.toLowerCase()==='r'&&BRIDGE.active){e.preventDefault();reviewNextWorkshopCandidate();return;}
@@ -1138,6 +1179,22 @@ function workshopLocalPlan(){
  return{ok:true,profileId:LIVE_CATALOG?.profileId||'',profileName:LIVE_CATALOG?.profileName||'Standalone sample',game:DATA.game||'skyrimspecialedition',gameRuntime:DATA.gameRuntime||'unknown',summary,items};
 }
 function currentWorkshopPlan(){return WORKSHOP_PLAN||(LOCAL_PLAN_CACHE??=workshopLocalPlan())}
+function workshopChoiceMatches(m,choice){return !!m&&m.lane==='candidate'&&m.installedVersion===choice.installedVersion&&String(m.latestVersion||'')===String(choice.targetVersion||'')&&(choice.kind==='source'||(/^[a-f0-9]{64}$/i.test(choice.fileProof||'')&&choice.fileProof===m.fileProof))}
+function pruneWorkshopChoices(plan){const records=new Map(plan.items.map(m=>[m.id,m]));for(const [id,choice] of WORKSHOP_CHOICES)if(choice.profileId!==plan.profileId||!workshopChoiceMatches(records.get(id),choice))WORKSHOP_CHOICES.delete(id)}
+function rememberNexusFileReview(mod,result,profile){
+ if(result.itemId!==mod.id||!/^[a-f0-9]{64}$/i.test(result.fileProof||'')||typeof result.installedVersion!=='string'||typeof result.targetVersion!=='string'||!result.update||typeof result.update!=='object')throw Error('The installed file review is incomplete. Refresh the matching MO2 plugin and review the files again.');
+ FILE_PICKER_REVIEW={mod,profileId:profile,fileProof:result.fileProof,installedVersion:result.installedVersion,targetVersion:result.targetVersion};
+ mod.update=result.update;SEARCH_CACHE.delete(mod);LOCAL_PLAN_CACHE=null;
+ const detail=SOURCE_DETAILS.get(mod);if(detail?.update)SOURCE_DETAILS.set(mod,{...detail,update:{...detail.update,...result.update}});
+ const plan=currentWorkshopPlan(),record=plan.items.find(row=>row.id===mod.id),verdict=result.update.verdict||'unverified';
+ if(record){
+  const lane=verdict==='candidate'?'candidate':['current','newer-installed'].includes(verdict)?'current':'review',summary={...plan.summary},counter=lane=>lane==='candidate'?'candidates':lane;
+  if(record.lane!==lane){summary[counter(record.lane)]--;summary[counter(lane)]++;}
+  const updated={...record,installedVersion:result.installedVersion,latestVersion:result.targetVersion,fileProof:result.fileProof,fileEvidence:result.update.fileEvidence,verdict,lane};
+  WORKSHOP_PLAN={...plan,summary,items:plan.items.map(row=>row.id===mod.id?updated:row)};pruneWorkshopChoices(WORKSHOP_PLAN);
+ }
+ renderList();renderWorkshop();refreshInspectorInsights();
+}
 function workshopSetStatus(value){SET('workshopStatus',value)}
 function renderWorkshopJourney(){
  const p=currentWorkshopPlan(),s=p.summary;
@@ -1217,8 +1274,7 @@ async function refreshWorkshop(){
  const p=await bridgeRequest('GET','update-plan');
  if(!contextIsCurrent(context)||request!==WORKSHOP_REQUEST||p.profileId!==profile)return;
  WORKSHOP_PLAN=p;
- const candidates=new Map(p.items.filter(m=>m.lane==='candidate').map(m=>[m.id,m]));
- for(const [id,choice] of WORKSHOP_CHOICES){const m=candidates.get(id);if(choice.profileId!==profile||!m||!(m.installedVersion===choice.installedVersion&&String(m.latestVersion||'')===String(choice.targetVersion||'')))WORKSHOP_CHOICES.delete(id);}
+ pruneWorkshopChoices(p);
  renderWorkshop();workshopSetStatus('Ready: use Update now for a one-click download and interactive MO2 install, or choose any file manually.');
 }
 async function exportWorkshop(){
@@ -1333,6 +1389,8 @@ async function performQueuedWorkshop(entries,profile){
  try{
   const latest=await bridgeRequest('GET','update-plan');
   if(!active()||latest.profileId!==profile||LIVE_CATALOG?.profileId!==profile)throw Error('Active profile changed. Reopen the Workshop.');
+  const records=new Map(latest.items.map(row=>[row.id,row]));
+  if(entries.some(choice=>choice.profileId!==profile||!workshopChoiceMatches(records.get(choice.itemId),choice))){WORKSHOP_PLAN=latest;pruneWorkshopChoices(latest);throw Error('A reviewed installed file or update target changed. Choose its current files again.');}
   const response=await bridgeRequest('POST','update-queue',{profileId:profile,confirm:'QUEUE_REVIEWED_DOWNLOADS',entries});
   if(!active())return;
   for(const item of response.queued||[]){sent++;WORKSHOP_CHOICES.delete(item.itemId)}
@@ -1657,7 +1715,7 @@ $('filePickerSearch').oninput=filterFilePicker;
 async function openFilePicker(m){
  const nativeNexus=Boolean(INSIGHTS?.isNexus(m)&&(!SOURCES||SOURCES.provider(m)==='nexus'));
  if(!BRIDGE.active||(!nativeNexus&&!hasReleaseAssets(m))){toast('No verified download assets for this source.');return}
- const context=profileContext();FILE_PICKER_MOD=m;
+ const context=profileContext();FILE_PICKER_MOD=m;FILE_PICKER_REVIEW=null;
  $('filePickerSearch').value='';$('filePickerMatchCount').textContent='Loading…';
  $('filePickerTitle').textContent=m.name;
  $('filePickerSummary').textContent='Installed: '+m.installedVersion+' · Target runtime: '+(DATA.gameRuntime||'unknown')+'. Inspect file version, requirements and FOMOD instructions.';
@@ -1675,15 +1733,16 @@ async function openFilePicker(m){
  try{
   const j=await bridgeRequest('GET','files?modId='+m.nexusId+'&itemId='+encodeURIComponent(m.id));
   if(!j.ok)throw Error(j.error||'Nexus file review unavailable');
-  if(FILE_PICKER_MOD!==m||!contextIsCurrent(context))return;
+  if(FILE_PICKER_MOD!==m||!contextIsCurrent(context)||ITEM_MAP.get(m.id)!==m)return;
+  rememberNexusFileReview(m,j,context.profile);
   const nexus=(j.files||[]).map(f=>{
-   const tag=f.suggested?'◈ VERSION-MATCHED MAIN FILE':f.releaseVersionMatch?'✓ PROJECT VERSION MATCH':f.category===1?'MAIN FILE':'OPTIONAL / OTHER';
+   const tag=f.suggested?'◈ MATCHED INSTALLED FILE':f.releaseVersionMatch?'✓ INSTALLED FILE LINEAGE':f.category===1?'MAIN FILE':'OPTIONAL / OTHER';
    return '<div class="picker-file'+(f.suggested?' picker-suggested':'')+'"><div class="picker-file-main"><span class="picker-match-tag">'+escapeHTML(tag)+'</span><strong>'+escapeHTML(f.name)+'</strong><span>v'+escapeHTML(f.version||'?')+' · '+escapeHTML(f.fileName||'')+' · '+escapeHTML(f.sizeInKB||'?')+' KB '+(f.category===1?' · MAIN FILE':'')+'</span>'+(f.reviewHint?'<p class="picker-hint">'+escapeHTML(f.reviewHint)+'</p>':'')+(f.description?'<p class="picker-file-desc">'+escapeHTML(f.description)+'</p>':'')+'</div><button class="button-bright" data-file-id="'+Number(f.fileId)+'" data-file-version="'+escapeHTML(f.version||'')+'" data-mod-id="'+Number(m.nexusId)+'" data-archive-name="'+escapeHTML(f.fileName||f.name)+'">Select Nexus file</button></div>';
   }).join('');
   if(!nexus&&!releaseFiles)throw Error('No files available for this project');
   $('filePickerFiles').innerHTML=(nexus?'<div class="picker-source-title">NEXUS MODS · EXACT FILES</div>'+nexus:'')+releaseFiles;
-  if(j.reviewAdvice?.hasUniqueMainMatch)$('filePickerSummary').textContent='One main Nexus file matches the published project version. Verify game/runtime, required files, and FOMOD options.';
-  else if(j.reviewAdvice?.matchingMainFiles>1)$('filePickerSummary').textContent='Several main files share the published version. Compare the variants carefully for your runtime and mod configuration.';
+  if(j.reviewAdvice?.hasUniqueFileMatch||j.reviewAdvice?.hasUniqueMainMatch)$('filePickerSummary').textContent='One exact replacement matches the installed file. Verify its runtime, requirements and installer options.';
+  else if(j.reviewAdvice?.matchingMainFiles>1)$('filePickerSummary').textContent='The target file has conflicting records. Refresh its source evidence before choosing a file.';
   filterFilePicker();
  }catch(ex){
   if(FILE_PICKER_MOD!==m||!contextIsCurrent(context))return;
@@ -1691,7 +1750,7 @@ async function openFilePicker(m){
   filterFilePicker();
  }
 }
-function closeFilePicker(){$('filePickerVeil').hidden=true;FILE_PICKER_MOD=null;WORKSHOP_REVIEW_ID=null;FAST_PICKER_ID=null}
+function closeFilePicker(){$('filePickerVeil').hidden=true;FILE_PICKER_MOD=null;FILE_PICKER_REVIEW=null;WORKSHOP_REVIEW_ID=null;FAST_PICKER_ID=null}
 $('filePickerClose').onclick=closeFilePicker;$('filePickerCancel').onclick=closeFilePicker;$('filePickerVeil').addEventListener('click',e=>{if(e.target===$('filePickerVeil'))closeFilePicker()});
 $('filePickerNexus').onclick=()=>{if(FILE_PICKER_MOD)window.open(getSrc(FILE_PICKER_MOD).url,'_blank','noopener,noreferrer')};
 $('filePickerFiles').addEventListener('click',async e=>{const b=e.target.closest('button[data-file-id]');if(!b)return;const m=FILE_PICKER_MOD;if(!m)return;
@@ -1702,9 +1761,11 @@ $('filePickerFiles').addEventListener('click',async e=>{const b=e.target.closest
   // Exact archive selection is the user action; compatibility hints stay visible.
   const riskAcknowledged=true;
   const sourceChoice=b.dataset.sourceKind==='release';
+  const reviewed=FILE_PICKER_REVIEW;
+  if(!sourceChoice&&(!reviewed||reviewed.mod!==m||reviewed.profileId!==plan.profileId||!workshopChoiceMatches(record,reviewed))){toast('The reviewed installed file changed. Reopen its current file details.');return;}
   const exactFile={fileName:b.dataset.archiveName||label,displayName:label,fileVersion:b.dataset.fileVersion||''};
   const fast=FAST_PICKER_ID===WORKSHOP_REVIEW_ID;
-  const selection=sourceChoice?{kind:'source',itemId:WORKSHOP_REVIEW_ID,assetKey:b.dataset.assetKey||'',assetProof:b.dataset.assetProof||'',...(Number(b.dataset.fileId)>0?{assetId:Number(b.dataset.fileId)}:{}),provider:b.dataset.sourceProvider||record.provider,installedVersion:record.installedVersion,targetVersion:record.latestVersion,profileId:plan.profileId,reviewed:true,riskAcknowledged,autoInstall:fast,...exactFile}:{kind:'nexus',itemId:WORKSHOP_REVIEW_ID,modId:Number(m.nexusId),fileId:Number(b.dataset.fileId),installedVersion:record.installedVersion,targetVersion:record.latestVersion,profileId:plan.profileId,reviewed:true,riskAcknowledged,autoInstall:fast,...exactFile};
+  const selection=sourceChoice?{kind:'source',itemId:WORKSHOP_REVIEW_ID,assetKey:b.dataset.assetKey||'',assetProof:b.dataset.assetProof||'',...(Number(b.dataset.fileId)>0?{assetId:Number(b.dataset.fileId)}:{}),provider:b.dataset.sourceProvider||record.provider,installedVersion:record.installedVersion,targetVersion:record.latestVersion,profileId:plan.profileId,reviewed:true,riskAcknowledged,autoInstall:fast,...exactFile}:{kind:'nexus',itemId:WORKSHOP_REVIEW_ID,modId:Number(m.nexusId),fileId:Number(b.dataset.fileId),fileProof:reviewed.fileProof,installedVersion:reviewed.installedVersion,targetVersion:reviewed.targetVersion,profileId:plan.profileId,reviewed:true,riskAcknowledged,autoInstall:fast,...exactFile};
   WORKSHOP_CHOICES.set(WORKSHOP_REVIEW_ID,selection);
   FAST_PICKER_ID=null;closeFilePicker();renderWorkshop();
   if(fast)return performQueuedWorkshop([selection],plan.profileId);

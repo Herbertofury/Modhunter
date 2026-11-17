@@ -15,8 +15,9 @@
 **Get Started**
 * [🚀 Installation](Getting-Started)
 * [Daily use and updates](Daily-Use)
+* [MO2 instance discovery and plugin setup](MO2-Instances)
 * [🖥️ Desktop App](Desktop-App)
-* [Rust Desktop 0.12](Rust-Desktop)
+* [Rust Desktop 0.13](Rust-Desktop)
 * [Watchtower pages and sign-ins](Watchtower)
 * [🛠️ MO2 Plugin](MO2-Plugin)
 * [🔎 Updater Sources](Updater-Source-Coverage)

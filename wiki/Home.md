@@ -5,7 +5,7 @@
 
 **Browse your mods · Review every update · Keep your world intact**
 
-![Version](https://img.shields.io/badge/Rust-v0.12.1-b9dcff?style=for-the-badge&labelColor=000000)
+![Version](https://img.shields.io/badge/Rust-v0.13.0-b9dcff?style=for-the-badge&labelColor=000000)
 ![Play](https://img.shields.io/badge/Play-Offline-a8b8d0?style=for-the-badge&labelColor=000000)
 ![Integrations](https://img.shields.io/badge/MO2-Optional-9abcf5?style=for-the-badge&labelColor=000000)
 
@@ -13,7 +13,7 @@
 
 ![Modhunter Gallery with authentic project artwork](https://raw.githubusercontent.com/Herbertofury/Modhunter/main/screenshots/v0.12.1/library-gallery-dark.png)
 
-*Actual shared-dashboard capture. Public project names and icons are authentic; installed versions and update states are test fixtures.*
+*Earlier 0.12.1 shared-dashboard capture. Public project names and icons are authentic; installed versions and update states are test fixtures. The 0.13.0 library adds the persistent bottom search and visible Bugs/health columns.*
 
 > **Welcome to the Mod Vault.** Browse your complete collection, review exact sources and files, and keep verified backups when installing updates. Your unfinished world still holds quests, battles and rewards when you want to explore it.
 
@@ -27,13 +27,15 @@
 
 ## Library and updates
 
-**[Daily use and setup](Daily-Use)** · **[OLED 0.12.1 verification](OLED-0.12.1)**
+**[Daily use and setup](Daily-Use)** · **[MO2 instance discovery and plugin setup](MO2-Instances)**
 
-**[Windows installer](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.1/Modhunter_0.12.1_x64-setup.exe)** · **[Portable package](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.1/Modhunter-Rust-Windows.zip)** · **[Release, components and checksums](https://github.com/Herbertofury/Modhunter/releases/tag/v0.12.1)** · **[Atelier guide](Atelier-0.12)**
+**[Windows installer](https://github.com/Herbertofury/Modhunter/releases/download/v0.13.0/Modhunter_0.13.0_x64-setup.exe)** · **[Portable package](https://github.com/Herbertofury/Modhunter/releases/download/v0.13.0/Modhunter-Rust-Windows.zip)** · **[Release, components and checksums](https://github.com/Herbertofury/Modhunter/releases/tag/v0.13.0)**
 
-The workspace offers an image-forward gallery, compact and comfortable list views, provider filtering, a collapsible navigation rail and coordinated OLED-black and neutral-light themes. Real source artwork appears when the exact mod record supplies it. The complete library, reviewed update workflow, backup and recovery controls, and every existing adventure remain available. See the [0.12.1 guide](OLED-0.12.1) for current screenshots, corrected chapter progress, readiness checks and release verification; the [Atelier guide](Atelier-0.12) records the original design comparison.
+Open **MO2 Instances** to find installed and portable applications, inspect their instances/profiles, and install the matching plugin into your chosen destinations. Both desktop distributions include the complete verified plugin resource, with per-target results, preserved data and previous-plugin backups.
 
-Release **v0.12.1** uses commit [`f96b86969ec9f9c7ba6928284f16223b673d33c0`](https://github.com/Herbertofury/Modhunter/tree/f96b86969ec9f9c7ba6928284f16223b673d33c0), tested in the [final main-branch workflow](https://github.com/Herbertofury/Modhunter/actions/runs/43992734962). [Get started](Getting-Started) with a read-only profile import, then connect MO2 when you want live update operations.
+The complete library fills the available window. Its compact bottom search/control bar stays available while rows scroll beneath a sticky header. Bugs, health and notes are visible, column choices are remembered, and MO2 separator colors are honored. Source checking distinguishes each installed file or addon from the main release on the same page.
+
+The release's verification archive records exact-source Windows/WebView2, installer, browser, MO2 and full-library performance evidence. The [0.12.1 OLED guide](OLED-0.12.1) and [Atelier guide](Atelier-0.12) preserve earlier design captures and measurements.
 
 The current desktop uses Rust for the shell, parallel profile importer, metadata cache, native operations and MO2 discovery. The shared dashboard and complete games continue in WebView2; MO2's Python adapter retains its native Nexus/download/install integration. Earlier combined archives below preserve the previous Electron release series.
 

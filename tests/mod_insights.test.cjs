@@ -51,6 +51,24 @@ test('an observed zero is preserved and an unknown bug count never becomes zero'
   assert.doesNotMatch(insights.details(unknown), /Nexus displayed tab count: 0/);
 });
 
+test('dedicated Bugs cells preserve states and health splitting does not duplicate bug evidence',()=>{
+ const zero=mod([plugin()],{health:{bugs:{state:'available',displayedCount:0}}});
+ assert.match(insights.bugCell(zero),/>0 displayed<\/button>/);
+ assert.match(insights.bugCell(zero),/data-insight-act="inspect"/);
+ assert.match(insights.bugCell(zero),/not an open\/total count/);
+ assert.equal(insights.bugCount(zero),0);
+ assert.equal(insights.matches(zero,'bugs-zero'),true);assert.equal(insights.matches(zero,'bugs-reported'),false);
+ assert.doesNotMatch(insights.chips(zero,{includeBugs:false}),/Bugs 0/);
+ assert.match(insights.chips(zero,{includeBugs:false}),/ESL candidate/);
+ for(const state of ['hidden','disabled','locked','unknown','unavailable']){
+  const row=mod([],{health:{bugs:{state,displayedCount:0}}});
+  assert.equal(insights.bugCount(row),null);assert.equal(insights.matches(row,'bugs-zero'),false);
+  assert.doesNotMatch(insights.bugCell(row),/>0 displayed</);
+ }
+ const nonNexus=mod([],{nexusId:0,health:{provider:'github',bugs:{state:'unsupported',displayedCount:0}}});
+ assert.equal(insights.bugCount(nonNexus),null);assert.match(insights.bugCell(nonNexus),/>Provider issues<\/button>/);
+});
+
 test('stale public counts keep their age and never infer author removal or an open total', () => {
   const row = mod([], { health: { bugs: { state: 'available', displayedCount: 1,
     checkedAt: '2026-11-10T12:00:00Z', freshness: { state: 'stale' }, reason: 'Observed Nexus tab badge.' } } });

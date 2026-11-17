@@ -73,6 +73,74 @@ impl Ini {
     pub fn general(&self, key: &str) -> &str {
         self.get("general", key).unwrap_or("")
     }
+
+    pub fn entries(&self, section: &str) -> impl Iterator<Item = (&str, &str)> {
+        self.sections
+            .get(&section.to_ascii_lowercase())
+            .into_iter()
+            .flat_map(|section| {
+                section
+                    .iter()
+                    .map(|(key, value)| (key.as_str(), value.as_str()))
+            })
+    }
+}
+
+/// Qt QSettings serializes QColor as a Qt_4_0 QVariant (type 67), then
+/// its color spec and five big-endian 16-bit channels. Only the RGB color
+/// space is decoded here; unsupported/invalid values remain explicit absence.
+pub fn qsettings_color(raw: &str) -> Option<String> {
+    let raw = raw
+        .trim()
+        .trim_matches('"')
+        .strip_prefix("@Variant(")?
+        .strip_suffix(')')?;
+    let mut bytes = Vec::new();
+    let mut chars = raw.chars().peekable();
+    while let Some(character) = chars.next() {
+        let value = if character == '\\' {
+            match chars.next()? {
+                'x' => {
+                    let mut digits = String::new();
+                    while digits.len() < 4 && chars.peek().is_some_and(char::is_ascii_hexdigit) {
+                        digits.push(chars.next()?);
+                    }
+                    u32::from_str_radix(&digits, 16).ok()?
+                }
+                '0' => 0,
+                'a' => 7,
+                'b' => 8,
+                'f' => 12,
+                'n' => 10,
+                'r' => 13,
+                't' => 9,
+                'v' => 11,
+                '\\' => 92,
+                '"' => 34,
+                '\'' => 39,
+                '?' => 63,
+                _ => return None,
+            }
+        } else {
+            character as u32
+        };
+        if value > 255 || bytes.len() >= 15 {
+            return None;
+        }
+        bytes.push(value as u8);
+    }
+    if bytes.len() != 15 || bytes[..5] != [0, 0, 0, 67, 1] {
+        return None;
+    }
+    let channel =
+        |offset| (u32::from(u16::from_be_bytes([bytes[offset], bytes[offset + 1]])) + 128) / 257;
+    Some(format!(
+        "#{:02x}{:02x}{:02x}{:02x}",
+        channel(7),
+        channel(9),
+        channel(11),
+        channel(5)
+    ))
 }
 
 pub fn decode_text(bytes: &[u8]) -> Result<String, CoreError> {

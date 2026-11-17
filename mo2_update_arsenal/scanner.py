@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import json
+import math
 import os
 import re
 import threading
@@ -18,6 +19,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .version_evidence import compare_versions
+from .nexus_files import FileLineage, normalize_file_payload, valid_file_payload
 
 API = "https://api.nexusmods.com/v1"
 DAY = 24 * 3600
@@ -50,16 +52,18 @@ def version_verdict(installed: str, latest: str) -> str:
     return compare_versions(installed, latest)["verdict"]
 
 
-def summary_from_metadata(item: dict, meta: dict, checked_at: float) -> dict[str, Any]:
-    if not isinstance(meta, dict) or not meta:
+def summary_from_metadata(item: dict, meta: dict, checked_at: float,
+                          file_index: FileLineage | None = None) -> dict[str, Any]:
+    if file_index is None and (not isinstance(meta, dict) or not meta):
         return {"verdict": "unknown", "checkedAt": checked_at, "reason": "No Nexus metadata"}
-    if meta.get("status") not in (None, "published", "Published"):
-        return {"verdict": "review", "checkedAt": checked_at, "reason": "Nexus listing status: " + str(meta.get("status"))[:80], "latestVersion": str(meta.get("version") or "")}
-    latest = str(meta.get("version") or "")
-    comparison = compare_versions(item.get("installedVersion", ""), latest)
-    result = comparison["verdict"]
-    summary = {"versionComparison": comparison, "verdict": result, "checkedAt": checked_at,
-            "expiresAt": checked_at + STARTUP_CACHE_SECONDS, "freshness": "fresh", "latestVersion": latest, "latestFileUpdate": meta.get("updated_timestamp"), "reason": "Review exact FILE selection and installed option; project versions alone are not an install guarantee." if result == "candidate" else comparison["reason"], "source": "nexus-api"}
+    meta = meta if isinstance(meta, dict) else {}
+    summary = (file_index.evaluate(item) if file_index is not None else
+               {"verdict": "review", "latestVersion": "",
+                "reason": "Project metadata does not identify the installed file. Check its exact file replacement history."})
+    if meta.get("status") not in (None, "published", "Published") or meta.get("available") is False:
+        summary.update(verdict="review", reason="Nexus listing status: " + str(meta.get("status") or "unavailable")[:80])
+    summary.update(checkedAt=checked_at, expiresAt=checked_at + STARTUP_CACHE_SECONDS,
+                   freshness="fresh", source="nexus-api", projectVersion=str(meta.get("version") or ""))
     from .source_adapters import preview_image_url
     image = preview_image_url(meta.get("picture_url"), "nexus")
     if image:
@@ -173,6 +177,28 @@ class Cache:
             self._entry_revisions[f"{game}/{mod_id}"] = self._revision
             return True
 
+    def mark_failed(self, game: str, mod_id: int, reason: str, *,
+                    expected_revision: int | None = None) -> bool:
+        """Retain the last complete observation, but never renew it after failure."""
+        with self.lock:
+            key = f"{game}/{mod_id}"
+            if expected_revision is not None and self._entry_revisions.get(key, 0) != expected_revision:
+                return False
+            previous = self.data["entries"].get(key)
+            if not isinstance(previous, dict):
+                return False
+            entry = dict(previous)
+            entry["lastFailure"] = {"checkedAt": time.time(), "reason": str(reason)}
+            self.set(game, mod_id, entry)
+            return True
+
+    def mark_failed_for_scan(self, game: str, mod_id: int, reason: str, *,
+                             epoch: int | None, cancel_event: threading.Event) -> bool:
+        with self.lock:
+            if not self.scan_is_current(game, epoch, cancel_event):
+                return False
+            return self.mark_failed(game, mod_id, reason)
+
     def persist_for_scan(self, game: str, *, epoch: int | None,
                          cancel_event: threading.Event) -> bool:
         with self.lock:
@@ -220,6 +246,20 @@ def metadata_identity_matches(metadata: object, game: str, mod_id: int) -> bool:
     supplied_id = metadata.get("mod_id")
     return ((supplied_id is None or (type(supplied_id) is int and supplied_id == mod_id))
             and metadata.get("domain_name", game) == game)
+
+
+def fresh_timestamp(value: object, now: float | None = None) -> bool:
+    return (type(value) in (int, float) and math.isfinite(value)
+            and 0 <= (time.time() if now is None else now) - value < STARTUP_CACHE_SECONDS)
+
+
+def usable_project_metadata(metadata: object, game: str, mod_id: int) -> bool:
+    return (metadata_identity_matches(metadata, game, mod_id)
+            and (isinstance(metadata.get("version"), str) and bool(metadata["version"].strip())
+                 or isinstance(metadata.get("status"), str)
+                 and metadata["status"].lower() in {"published", "hidden", "removed", "wastebinned",
+                     "under_moderation", "not_published", "publish_with_game", "not_found"}
+                 or type(metadata.get("available")) is bool))
 
 
 class UpdateScanner:
@@ -275,12 +315,16 @@ class UpdateScanner:
             except (TypeError, ValueError, OverflowError):
                 checked_at = 0
             metadata = (cached or {}).get("meta")
-            fresh = (metadata_identity_matches(metadata, game, mod_id) and bool(metadata.get("version"))
-                     and metadata.get("status") in (None, "published", "Published")
-                     and 0 <= now - checked_at < STARTUP_CACHE_SECONDS)
+            fresh = (not (cached or {}).get("lastFailure")
+                     and valid_file_payload((cached or {}).get("files"), game, mod_id)
+                     and fresh_timestamp(checked_at, now))
+            metadata_fresh = (usable_project_metadata(metadata, game, mod_id)
+                              and fresh_timestamp((cached or {}).get("metaCheckedAt", checked_at), now))
             should = (mode == "deep" or (mod_id in candidate_ids and mode == "quick")
-                      or (mode == "startup" and not fresh)
-                      or (cached is not None and (not metadata_identity_matches(metadata, game, mod_id)
+                      or (mode == "startup" and not (fresh and metadata_fresh))
+                      or (cached is not None and (not valid_file_payload(cached.get("files"), game, mod_id)
+                                                 or not usable_project_metadata(metadata, game, mod_id)
+                                                 or cached.get("lastFailure")
                                                  or not 0 <= checked_at <= now)))
             if not cached and mode == "quick" and mod_id not in candidate_ids:
                 for item in grouped[mod_id]:
@@ -288,8 +332,12 @@ class UpdateScanner:
                     item_records[str(item.get("id", ""))]=info
                     output[str(mod_id)]=info
             elif cached and not should:
+                index = FileLineage(cached.get("files", {}), game, mod_id)
                 for item in grouped[mod_id]:
-                    info=summary_from_metadata(item, cached.get("meta", {}), checked_at)
+                    info=summary_from_metadata(item, cached.get("meta", {}), checked_at, index)
+                    info["freshness"] = "cached" if fresh else "stale"
+                    if not fresh:
+                        info.update(verdict="review", reason="File evidence is stale; run a fresh check before selecting an update.")
                     item_records[str(item.get("id", ""))]=info
                     output[str(mod_id)]=info
             else:
@@ -316,18 +364,46 @@ class UpdateScanner:
                 if stopped():
                     return None
                 queried += 1
+            cached = self.cache.get(game, mod_id) or {}
+            force = mode == "deep" or mode == "quick" and mod_id in candidate_ids
+            files, checked_at = cached.get("files"), cached.get("checkedAt")
+            metadata = cached.get("meta")
+            meta_checked_at = cached.get("metaCheckedAt", checked_at)
             try:
-                metadata = self.client.get(f"/v1/games/{game}/mods/{mod_id}.json")
+                if (force or cached.get("lastFailure") or not valid_file_payload(files, game, mod_id)
+                        or not fresh_timestamp(checked_at)):
+                    payload = self.client.get(f"/v1/games/{game}/mods/{mod_id}/files.json")
+                    files = normalize_file_payload(payload, game, mod_id)
+                    if not valid_file_payload(files, game, mod_id):
+                        raise NexusError("Nexus file list or replacement history is incomplete; previous evidence retained")
+                    checked_at = time.time()
+                    # Older MO2 gateways bootstrap the same request with project
+                    # metadata. Reuse that actual response instead of fetching twice.
+                    bootstrap = payload.get("meta") if isinstance(payload, dict) else None
+                    if usable_project_metadata(bootstrap, game, mod_id):
+                        metadata, meta_checked_at = bootstrap, checked_at
+                        force = False
+                if stopped():
+                    return None
+                if (force or not usable_project_metadata(metadata, game, mod_id)
+                        or not fresh_timestamp(meta_checked_at)):
+                    metadata = self.client.get(f"/v1/games/{game}/mods/{mod_id}.json")
+                    if not usable_project_metadata(metadata, game, mod_id):
+                        raise NexusError(f"Nexus project metadata is incomplete or does not match project {mod_id}")
+                    meta_checked_at = time.time()
             except (QuotaDepleted, MissingAuth):
                 halt.set()
                 raise
-            if not isinstance(metadata, dict):
-                raise NexusError(f"Unexpected metadata for {mod_id}")
-            if not metadata_identity_matches(metadata, game, mod_id):
-                raise NexusError(f"Nexus metadata identity did not match project {mod_id}")
-            return metadata
+            return {"checkedAt": checked_at, "files": files, "meta": metadata,
+                    "metaCheckedAt": meta_checked_at}
 
         def record(mid: int, info: dict) -> None:
+            cached = self.cache.get(game, mid) or {}
+            metadata = cached.get("meta")
+            if usable_project_metadata(metadata, game, mid):
+                previous = summary_from_metadata(grouped[mid][0], metadata, 0)
+                info = {**{key: previous[key] for key in ("thumbnailUrl", "thumbnailKind", "author", "projectVersion")
+                           if key in previous}, **info, "freshness": "stale"}
             output[str(mid)] = info
             for item in grouped[mid]:
                 item_records[str(item.get("id", ""))] = info
@@ -347,16 +423,17 @@ class UpdateScanner:
                 for future in finished:
                     mid = pending.pop(future)
                     try:
-                        meta = future.result()
-                        if meta is None:
+                        entry = future.result()
+                        if entry is None:
                             continue  # Submitted before cancellation, never queried.
                         checked += 1
                         consecutive_failures = 0
-                        if not self.cache.set_for_scan(game, mid, {"checkedAt": now, "meta": meta},
+                        if not self.cache.set_for_scan(game, mid, entry,
                                                        epoch=cache_epoch, cancel_event=cancel_event):
                             continue  # Superseded work must not overwrite a newer cache.
+                        index = FileLineage(entry["files"], game, mid)
                         for item in grouped[mid]:
-                            info = summary_from_metadata(item, meta, now)
+                            info = summary_from_metadata(item, entry["meta"], entry["checkedAt"], index)
                             item_records[str(item.get("id", ""))] = info
                             output[str(mid)] = info
                     except (QuotaDepleted, MissingAuth) as ex:
@@ -366,10 +443,12 @@ class UpdateScanner:
                             errors.append(str(ex))
                         halt_info = {"availability": "authentication-required" if isinstance(ex, MissingAuth) else "rate-limited",
                                      "reason": str(ex)}
+                        self.cache.mark_failed_for_scan(game, mid, str(ex), epoch=cache_epoch, cancel_event=cancel_event)
                         record(mid, {"verdict": "unknown", "source": "nexus-api", **halt_info})
                     except (NexusError, ValueError) as ex:
                         checked += 1
                         errors.append(f"{mid}: {ex}")
+                        self.cache.mark_failed_for_scan(game, mid, str(ex), epoch=cache_epoch, cancel_event=cancel_event)
                         consecutive_failures += 1
                         if mode == "startup" and consecutive_failures >= MAX_NEXUS_WORKERS:
                             halt.set()
@@ -407,10 +486,10 @@ def local_mo2_candidates(snapshot: dict) -> dict:
         latest = item.get("latestKnownVersion", "")
         if mid <= 0:
             continue
-        verdict = version_verdict(item.get("installedVersion", ""), latest) if latest else "unverified"
-        if verdict in ("current", "newer-installed"):
-            verdict = "unverified"  # Cached equality cannot prove current server truth.
-        info={"verdict": verdict, "latestVersion": latest, "source": "mo2-cached-metadata", "reason": "Cached MO2 metadata only. Connect Nexus for a verified current check."}
+        # Older MO2 releases store the project's version here. It cannot prove
+        # an optional file update, even when greater than the installed label.
+        info={"verdict": "unverified", "latestVersion": "", "projectVersion": latest,
+              "source": "mo2-cached-metadata", "reason": "Cached MO2 metadata only. Connect Nexus to verify this installed file's replacement history."}
         output[str(mid)] = info
         item_records[str(item.get("id", ""))]=info
     return {"records": output, "itemRecords": item_records, "mode": "local", "queried": 0, "errors": [], "uniqueNexusMods": len(output), "checkedAt": datetime.now(timezone.utc).isoformat()}

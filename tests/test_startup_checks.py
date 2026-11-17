@@ -10,11 +10,13 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from mo2_update_arsenal.bridge import ArsenalService
 from mo2_update_arsenal.scanner import Cache, NexusClient, UpdateScanner, MissingAuth, NexusError, STARTUP_CACHE_SECONDS
+from nexus_fixture import GAME, files_payload, file_item
+from mo2_update_arsenal.nexus_files import normalize_file_payload
 
 
 def profile(count=2):
     return {'profileId':'A','profileName':'A','game':'skyrimspecialedition','gameRuntime':'1.5.97',
-            'groups':[], 'items':[{'id':str(i),'name':f'Mod {i}','nexusId':i+1,'installedVersion':'1.0',
+            'groups':[], 'items':[{**file_item(i+1,ident=str(i)),'name':f'Mod {i}',
             'source':{'verified':True,'type':'nexus','url':f'https://www.nexusmods.com/skyrimspecialedition/mods/{i+1}'}}
             for i in range(count)]}
 
@@ -23,15 +25,22 @@ class StartupScannerTests(unittest.TestCase):
         temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup)
         self.cache=Cache(Path(temp.name)/'metadata.json')
     def cached(self,mid,meta,age=1):
-        self.cache.set('skyrimspecialedition',mid,{'meta':meta,'checkedAt':time.time()-age})
+        entry={'meta':meta,'checkedAt':time.time()-age}
+        if (meta.get('version') and meta.get('status') in (None,'published')
+                and meta.get('mod_id',mid)==mid and meta.get('domain_name',GAME)==GAME):
+            payload=files_payload(meta['version'],mod_id=mid)
+            payload['files']=[{**payload['files'][0],'category_id':1,'version':meta['version']}]
+            payload['file_updates']=[]
+            entry['files']=normalize_file_payload(payload,GAME,mid)
+        self.cache.set(GAME,mid,entry)
     def test_startup_uses_recent_complete_metadata_and_publishes_it_before_network(self):
         self.cached(1,{'version':'1.0','status':'published'})
         events=[];calls=[]
         def request(path):
             self.assertEqual(events[0]['itemRecords']['0']['verdict'],'current')
-            calls.append(path);return {'version':'2.0','status':'published'}
+            calls.append(path);return files_payload(mod_id=2)
         result=UpdateScanner(self.cache,NexusClient('fixture',request)).scan(profile(),'startup',events.append)
-        self.assertEqual(calls,['/v1/games/skyrimspecialedition/mods/2.json'])
+        self.assertEqual(calls,['/v1/games/skyrimspecialedition/mods/2/files.json'])
         self.assertEqual(result['fromCache'],1);self.assertEqual(result['queried'],1)
         self.assertEqual(result['itemRecords']['1']['verdict'],'candidate')
         self.assertEqual(events[-1]['itemRecords']['1']['verdict'],'candidate')
@@ -42,11 +51,11 @@ class StartupScannerTests(unittest.TestCase):
         for meta,age in cases:
             with self.subTest(meta=meta,age=age):
                 self.cached(1,meta,age);calls=[]
-                result=UpdateScanner(self.cache,NexusClient('fixture',lambda p:calls.append(p) or {'version':'2.0'})).scan(profile(1),'startup')
+                result=UpdateScanner(self.cache,NexusClient('fixture',lambda p:calls.append(p) or files_payload())).scan(profile(1),'startup')
                 self.assertEqual(len(calls),1);self.assertEqual(result['fromCache'],0)
     def test_shared_project_compares_each_installed_version_and_requests_once(self):
-        data=profile();data['items'][1]['nexusId']=1;data['items'][1]['installedVersion']='2.0';data['items'][1]['source']=copy.deepcopy(data['items'][0]['source'])
-        result=UpdateScanner(self.cache,NexusClient('fixture',lambda p:{'version':'2.0'})).scan(data,'startup')
+        data=profile();data['items'][1].update(file_item(1,current=True,ident='1'));data['items'][1]['source']=copy.deepcopy(data['items'][0]['source'])
+        result=UpdateScanner(self.cache,NexusClient('fixture',lambda p:files_payload())).scan(data,'startup')
         self.assertEqual(result['queried'],1)
         self.assertEqual(result['itemRecords']['0']['verdict'],'candidate')
         self.assertEqual(result['itemRecords']['1']['verdict'],'current')
@@ -78,12 +87,12 @@ class StartupScannerTests(unittest.TestCase):
     def test_wrong_project_metadata_is_never_cached_or_reported_current(self):
         for meta in ({'version':'1.0','mod_id':99}, {'version':'1.0','mod_id':True},
                      {'version':'1.0','domain_name':'fallout4'}):
-            result=UpdateScanner(self.cache,NexusClient('fixture',lambda p:meta)).scan(profile(1),'startup')
+            result=UpdateScanner(self.cache,NexusClient('fixture',lambda p:{**files_payload(),**meta})).scan(profile(1),'startup')
             self.assertEqual(result['itemRecords']['0']['availability'],'unavailable')
             self.assertIsNone(self.cache.get('skyrimspecialedition',1))
     def test_foreign_cached_metadata_is_revalidated_even_when_recent(self):
         self.cached(1,{'version':'1.0','mod_id':99})
-        result=UpdateScanner(self.cache,NexusClient('fixture',lambda p:{'version':'2.0','mod_id':1})).scan(profile(1),'startup')
+        result=UpdateScanner(self.cache,NexusClient('fixture',lambda p:files_payload())).scan(profile(1),'startup')
         self.assertEqual(result['queried'],1);self.assertEqual(result['fromCache'],0)
         self.assertEqual(result['itemRecords']['0']['verdict'],'candidate')
 

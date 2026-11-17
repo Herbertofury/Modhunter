@@ -22,6 +22,7 @@ from .plugin_intelligence import attach_native_plugin_state, build_audit_request
 from .version import VERSION
 from .download_ids import download_id as parse_download_id
 from .content_recovery import NativeContent
+from .mo2_metadata import native_color, read_metadata
 
 LOG = logging.getLogger(__name__)
 
@@ -56,6 +57,9 @@ class ModUpdateArsenal(mobase.IPluginTool):
         self._snapshot_ms = 0.0
         self._content_native = NativeContent(self)
         self._content_launch_guard = False
+        self._separator_watch = {}
+        self._separator_profile = ""
+        self._separator_watch_started = False
 
     def name(self) -> str:
         return "MO2 Update Arsenal"
@@ -252,6 +256,10 @@ class ModUpdateArsenal(mobase.IPluginTool):
         self._snapshot_error = ""
         self._snapshot_ms = (time.perf_counter() - started) * 1000
         self._bind_native_selection()
+        self._remember_separator_colors(snap)
+        if not self._separator_watch_started:
+            self._separator_watch_started = True
+            QtCore.QTimer.singleShot(2000, self._sync_separator_colors)
         self._publish_diagnostics()
         LOG.info("Modhunter %s ready: %d mods, Qt %s; desktop discovery enabled",
                  VERSION, len(snap["items"]), QtCore.qVersion())
@@ -308,6 +316,39 @@ class ModUpdateArsenal(mobase.IPluginTool):
         self._dirty = True
         QtCore.QTimer.singleShot(150, self._refresh_snapshot)
 
+    def _remember_separator_colors(self, snapshot):
+        self._separator_profile = str(snapshot.get("profileId") or "")
+        self._separator_watch = {group["id"]: (group["mo2InternalName"], group.get("separatorColor"))
+                                 for group in snapshot.get("groups", []) if group.get("mo2InternalName")}
+
+    def _sync_separator_colors(self):
+        # IModList has no public color-change callback. Read only the already
+        # known separators on Qt's thread, never enumerate the full mod list or
+        # rescan content merely because a user edits a separator's QColor.
+        if self._closing:
+            return
+        try:
+            if self.server is not None and not self._dirty and self._separator_watch:
+                colors, observed = {}, {}
+                mods = self.org.modList()
+                for group_id, (name, before) in self._separator_watch.items():
+                    mod = mods.getMod(name)
+                    if mod is None:
+                        continue
+                    available, color = native_color(mod)
+                    source = "mo2-native" if color is not None else None
+                    if not available and (path := call_str(mod, "absolutePath")):
+                        color = read_metadata(Path(path)).get("separatorColor")
+                        source = "mo2-meta" if color is not None else None
+                    if color != before:
+                        colors[group_id] = {"color": color, "source": source}
+                    observed[group_id] = (name, color)
+                if colors and self.server.set_separator_colors(self._separator_profile, colors):
+                    self._separator_watch.update(observed)
+        except (AttributeError, TypeError, ValueError, RuntimeError, OSError):
+            pass  # A profile transition is handled by the normal native refresh.
+        QtCore.QTimer.singleShot(2000, self._sync_separator_colors)
+
     def _refresh_snapshot(self, *, force_metadata: bool = False) -> dict:
         self._dirty = False
         if not self.server:
@@ -318,6 +359,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
                                      force_metadata=force_metadata)
             attach_native_plugin_state(self.org, snapshot)
             self.server.set_snapshot(snapshot)
+            self._remember_separator_colors(snapshot)
             self._snapshot_error = ""
             self._snapshot_ms = (time.perf_counter() - started) * 1000
             self._publish_diagnostics()

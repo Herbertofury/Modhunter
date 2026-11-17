@@ -6,7 +6,7 @@
 
 **Browse your mods. Review every update. Keep your world intact.**
 
-[![Edition](https://img.shields.io/badge/Edition-Rust%200.12.1-b9dcff?style=for-the-badge&labelColor=000000)](wiki/Rust-Desktop.md)
+[![Edition](https://img.shields.io/badge/Edition-Rust%200.13.0-b9dcff?style=for-the-badge&labelColor=000000)](wiki/Rust-Desktop.md)
 [![MO2](https://img.shields.io/badge/MO2-Optional%20Live%20Link-a8b8d0?style=for-the-badge&labelColor=000000)](wiki/MO2-Plugin.md)
 [![Modes](https://img.shields.io/badge/Modes-Siege%20%7C%20Survival%20%7C%20Atlas-b78cde?style=for-the-badge&labelColor=000000)](wiki/Game-Modes.md)
 
@@ -14,31 +14,31 @@
 
 ---
 
-## OLED 0.12.1 · Ready for everyday mod maintenance
+## 0.13.0 · MO2 setup and a complete daily-use library
 
-**[Download the Windows installer](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.1/Modhunter_0.12.1_x64-setup.exe)** · **[Portable Windows app](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.1/Modhunter-Rust-Windows.zip)** · **[Release and checksums](https://github.com/Herbertofury/Modhunter/releases/tag/v0.12.1)**
+**[Download the Windows installer](https://github.com/Herbertofury/Modhunter/releases/download/v0.13.0/Modhunter_0.13.0_x64-setup.exe)** · **[Portable Windows app](https://github.com/Herbertofury/Modhunter/releases/download/v0.13.0/Modhunter-Rust-Windows.zip)** · **[Release and checksums](https://github.com/Herbertofury/Modhunter/releases/tag/v0.13.0)**
 
-![Modhunter Gallery in the dark theme, with authentic project artwork](screenshots/v0.12.1/library-gallery-dark.png)
+Open **MO2 Instances** to discover your installed and portable MO2 applications, see their instances/profiles, and choose exactly where to install the matching Modhunter plugin. Both desktop packages carry the complete plugin. Known-location discovery starts automatically; selected drives and folders can be searched completely. Review exact destinations and shared global instances, install one or several applications, and keep per-target results, existing data and verified backups. [Instance discovery and setup](wiki/MO2-Instances.md).
 
-*The actual shared dashboard. Project names and icons come from official Modrinth records; installed versions and update states in this capture are clearly labeled test fixtures.*
+The Library uses the available window width and height. A compact bottom search/control bar stays reachable while the complete list scrolls, and column headers stay in view. **Bugs**, plugin-health details and notes are visible again; missing evidence stays unknown. Choose the columns you want and keep those choices on your device. Custom separator colors from MO2 carry through to chapters and navigation.
 
-The **[Mod Vault](wiki/OLED-0.12.1.md)** gives your complete collection two useful views: image-forward Gallery cards and compact List rows. Search, provider and status filters stay close to the collection; version evidence, exact source links and update review stay close to each mod. Expand the navigation rail for labels, choose comfortable spacing when you need it, or keep the compact workspace for a dense library.
+Update checks distinguish **source and installed file identity**. A main download, optional addon and patch may share a page while following different versions and update histories. Modhunter uses exact file evidence instead of assigning the page's headline version to every installed component. Shared project-file evidence avoids duplicate requests while each installed component keeps its own result. Missing or ambiguous matches remain reviewable.
 
-True OLED black, neutral surfaces and cool white/blue controls carry through the Rust shell, Library, Update Workshop, Watchtower, settings and dialogs. Colored chapter bands, diamonds, manual progress, focus, selection and operation feedback remain visible. The neutral light theme has the same controls and hierarchy. Real artwork appears only when an exact Nexus, Modrinth or Thunderstore record supplies it; missing or failed previews keep a readable fallback. Compact desktop rows retain their 48-pixel rhythm, and the shell uses 116 pixels instead of 144.
+Normal checks reuse complete Nexus file evidence for up to four hours; **Full audit** requests fresh data. In the controlled 600-project/4,800-mod fixture, repeated manual checks fell from **1.32 s to 0.24 s**, with **600 requests reduced to zero** while evidence remained fresh. Artwork, author metadata and the complete inventory were retained. Cold checks now fetch exact file/history data as well as project metadata, so this is a warm-check improvement, not a claim that every first check is faster. [Complete measurements, request counts and scope](native/evidence/nexus-file-checks-0.13.0.json).
 
-**Updates remain deliberate.** Review the observed release and exact file, keep the current profile and compatibility context, then use MO2's supported download and interactive installation path. Backups, verified installation and guarded recovery remain in place. Search restoration reuses unchanged inactive rows safely; no matching results are capped, virtualized or skipped.
-
-Questbound, AetherFX/FX Studio, Shiverfell, Mythforge, Siege and Atlas remain available with their progression, saves and customization. The standalone HTML and MO2 plugin are still independent entry points. [Daily-use setup and workflow](wiki/Daily-Use.md) · [0.12.1 release verification](wiki/OLED-0.12.1.md) · [Original Atelier comparison](wiki/Atelier-0.12.md).
+**[Daily-use setup and workflow](wiki/Daily-Use.md)** · **[Rust desktop guide](wiki/Rust-Desktop.md)** · **[Update Workshop](wiki/Update-Workshop.md)**
 
 | Download | Use it for |
 | --- | --- |
-| [Windows installer](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.1/Modhunter_0.12.1_x64-setup.exe) | Install the Rust desktop app |
-| [Portable Windows package](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.1/Modhunter-Rust-Windows.zip) | Run without installation; includes the MO2 setup tools |
-| [MO2 components](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.1/Modhunter-0.12.1-MO2-Plugin.zip) | Install or update the independent plugin |
-| [Standalone HTML](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.1/Modhunter-0.12.1-Standalone.zip) | Open the complete dashboard and games in a modern browser |
-| [Verification archive](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.1/Modhunter-0.12.1-Verification.zip) · [SHA-256 checksums](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.1/SHA256SUMS.txt) | Check build identity, scoped runtime receipts and downloaded bytes |
+| [Windows installer](https://github.com/Herbertofury/Modhunter/releases/download/v0.13.0/Modhunter_0.13.0_x64-setup.exe) | Install the Rust app with its in-app MO2 plugin installer. |
+| [Portable Windows package](https://github.com/Herbertofury/Modhunter/releases/download/v0.13.0/Modhunter-Rust-Windows.zip) | Run without installing the desktop; includes the same matching plugin and manual setup tools. |
+| [MO2 components](https://github.com/Herbertofury/Modhunter/releases/download/v0.13.0/Modhunter-0.13.0-MO2-Plugin.zip) | Install the independent plugin and use its browser dashboard. |
+| [Standalone HTML](https://github.com/Herbertofury/Modhunter/releases/download/v0.13.0/Modhunter-0.13.0-Standalone.zip) | Open the complete dashboard and games in a modern browser. |
+| [Verification archive](https://github.com/Herbertofury/Modhunter/releases/download/v0.13.0/Modhunter-0.13.0-Verification.zip) · [SHA-256 checksums](https://github.com/Herbertofury/Modhunter/releases/download/v0.13.0/SHA256SUMS.txt) | Check source/build identity, scoped runtime receipts and the downloaded bytes. |
 
-Release **v0.12.1** is bound to commit [`f96b86969ec9f9c7ba6928284f16223b673d33c0`](https://github.com/Herbertofury/Modhunter/tree/f96b86969ec9f9c7ba6928284f16223b673d33c0) and the [successful main-branch workflow](https://github.com/Herbertofury/Modhunter/actions/runs/43992734962). [Install and connect](wiki/Getting-Started.md) · [Rust desktop guide](wiki/Rust-Desktop.md).
+Publication requires the exact-source Windows, WebView2, MO2, browser, installer and complete-library performance gates. The release records their tested commit and executable identity. The separate [0.12.1 OLED guide](wiki/OLED-0.12.1.md) preserves that earlier release's screenshots and measurements.
+
+Gallery, List, offline import, Watchtower, Questbound, AetherFX/FX Studio, Shiverfell, Mythforge, Siege and Atlas remain available. Update review, MO2's native downloads and interactive installers, verified installation and guarded recovery retain their existing ownership.
 
 ### Rust desktop, shared dashboard
 

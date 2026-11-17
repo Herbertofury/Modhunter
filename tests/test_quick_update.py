@@ -11,12 +11,15 @@ from unittest.mock import patch
 
 from mo2_update_arsenal.bridge import ArsenalService
 from mo2_update_arsenal.quick_update import choose_nexus_file, choose_github_asset, choose_release_asset
+from mo2_update_arsenal.update_plan import nexus_file_proof
+from nexus_fixture import review_payload, with_lineage
 
 
 def mod(mid, project, *, flags=None, source="nexus-api"):
     result = {"id": mid, "name": mid, "mo2InternalName": mid, "nexusId": project,
               "installedVersion": "1.0", "flags": flags or [],
-              "update": {"verdict": "candidate", "latestVersion": "2.0", "source": source}}
+              "update": {"verdict": "candidate", "latestVersion": "2.0", "source": source,
+                         "fileEvidence": {"status": "matched", "updated": True, "targetFileId": 200 + project}}}
     if source == "github-release-api":
         result["source"] = {"type": "github", "url": "https://github.com/org/my-mod", "verified": True}
         result["update"]["releaseAssets"] = [{"assetId": 17, "name": "archive.zip",
@@ -36,15 +39,23 @@ def files(mid):
              "version": "1.0", "category": 1}]
 
 
+def payload(mid):
+    return review_payload(mid, files(mid), [(100 + mid, 200 + mid)])
+
+
+for _row in SNAP["items"][:3]:
+    with_lineage(_row, payload(_row["nexusId"]), 100 + _row["nexusId"])
+
+
 class QuickSelectionTests(unittest.TestCase):
     def test_unique_version_main_is_selected_without_hiding_alternates(self):
         selected, reason = choose_nexus_file(mod("live-a", 101), files(101))
         self.assertEqual(selected["fileId"], 301)
-        self.assertIn("unique", reason)
+        self.assertIn("exact replacement", reason)
         self.assertEqual(len(files(101)), 2)
 
     def test_ambiguous_editions_and_risky_dll_get_a_choice_not_an_auto_queue(self):
-        for candidates in (files(101) + [dict(files(101)[0], fileId=777)], files(101)[:1]):
+        for candidates in (files(101) + [dict(files(101)[0], name='Conflicting target')], files(101)[:1]):
             with self.subTest(candidates=candidates):
                 chosen, _ = choose_nexus_file(mod("live-a", 101), candidates)
                 self.assertEqual(bool(chosen), len(candidates) == 1)
@@ -93,7 +104,7 @@ class QuickServiceTests(unittest.TestCase):
 
         self.service = ArsenalService("<html></html>", Path(self.tmp.name) / "cache.json",
                                      native, copy.deepcopy(SNAP))
-        self.service.fetch_files = lambda mid: {"ok": True, "files": files(mid)}
+        self.service.fetch_files = payload
 
     def tearDown(self):
         self.gate.set()
@@ -140,7 +151,9 @@ class QuickServiceTests(unittest.TestCase):
             "profileId": SNAP["profileId"], "confirm": "QUEUE_REVIEWED_DOWNLOADS",
             "entries": [{"itemId": "live-risky", "modId": 103, "fileId": 303,
                          "installedVersion": "1.0", "targetVersion": "2.0", "reviewed": True,
-                         "riskAcknowledged": True, "autoInstall": True}]})
+                         "riskAcknowledged": True, "autoInstall": True,
+                         "fileProof": nexus_file_proof(self.service.selection_snapshot(["live-risky"]),
+                                                       self.service.selection_snapshot(["live-risky"])["items"][0])}]})
         self.assertTrue(manual["ok"], manual)
         did = manual["queued"][0]["downloadId"]
         self.assertTrue(self.service.downloads()[did]["autoInstallRequested"])
@@ -179,8 +192,8 @@ class QuickServiceTests(unittest.TestCase):
         self.assertEqual(self.service.downloads(), {})
 
     def test_ambiguous_nexus_files_never_auto_select(self):
-        self.service.fetch_files = lambda mid: {"ok": True, "files": files(mid) + [
-            dict(files(mid)[0], fileId=999)]}
+        self.service.fetch_files = lambda mid: review_payload(mid, files(mid) + [
+            dict(files(mid)[0], name='Conflicting target')], [(100 + mid, 200 + mid)])
         result = self.service.quick_update({"profileId": SNAP["profileId"], "itemIds": ["live-a"]})
         self.assertFalse(result["queued"])
         self.assertTrue(result["skipped"])

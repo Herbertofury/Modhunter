@@ -142,6 +142,7 @@ pub fn setup_command(target: &Url, source: &Url) -> Option<&'static str> {
     }
     match target.host_str()? {
         "discover" => Some("discover"),
+        "instances" => Some("instances"),
         "import" => Some("importMo2"),
         _ => None,
     }
@@ -224,6 +225,10 @@ mod tests {
     #[test]
     fn setup_actions_are_argument_free_and_packaged_origin_only() {
         let source = Url::parse("http://tauri.localhost/Modhunter.html").unwrap();
+        assert_eq!(
+            setup_command(&Url::parse("modhunter-shell://instances").unwrap(), &source),
+            Some("instances")
+        );
         assert_eq!(
             setup_command(&Url::parse("modhunter-shell://discover").unwrap(), &source),
             Some("discover")

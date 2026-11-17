@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 from .download_ids import download_id as parse_download_id
+from .nexus_files import installed_file_context
 from .update_plan import risk_reasons, validate_release_asset, PlanError
 
 
@@ -58,6 +59,9 @@ def build_install_brief(snapshot: dict, ticket: dict | None, download_id: Any, *
         if (ticket.get("provider") == "nexus" and queued_project
                 and _positive_int(item.get("nexusId")) != queued_project):
             failures.append("The Nexus project linked to this mod changed; review the exact archive again")
+        if (ticket.get("provider") == "nexus"
+                and ticket.get("installedFileIdentity") != installed_file_context(item)):
+            failures.append("The installed Nexus file identity changed or was not recorded; review the exact archive again")
         if str(item.get("installedVersion") or "") != str(ticket.get("installedVersion") or ""):
             failures.append("The installed version changed after you queued this download")
         latest = str((item.get("update") or {}).get("latestVersion") or "")

@@ -7,6 +7,24 @@ import unittest
 from pathlib import Path
 
 from mo2_update_arsenal.bridge import ArsenalService
+from mo2_update_arsenal.nexus_files import FileLineage, normalize_file_payload
+from mo2_update_arsenal.scanner import summary_from_metadata
+from mo2_update_arsenal.update_plan import nexus_file_proof
+
+
+def files_evidence(installed_file=54, target_file=55, installed_version="1.0", target_version="2.0"):
+    return {"ok": True, "checkedAt": time.time(), **normalize_file_payload({
+        "files": [
+            {"file_id": installed_file, "file_name": f"installed-{installed_file}.7z", "version": installed_version, "category_id": 4},
+            {"file_id": target_file, "file_name": f"target-{target_file}.7z", "version": target_version, "category_id": 1},
+        ], "file_updates": [{"old_file_id": installed_file, "new_file_id": target_file}],
+    }, "skyrimspecialedition", 101)}
+
+
+def refresh_evidence(snapshot, files):
+    row = snapshot["items"][0]
+    row["installedFiles"] = [{"modId": 101, "fileId": files["fileUpdates"][0]["oldFileId"]}]
+    row["update"] = summary_from_metadata(row, {}, files["checkedAt"], FileLineage(files, snapshot["game"], 101))
 
 
 SNAPSHOT = {
@@ -17,6 +35,7 @@ SNAPSHOT = {
          "update": {"verdict": "candidate", "latestVersion": "2.0"}, "flags": []},
     ]
 }
+refresh_evidence(SNAPSHOT, files_evidence())
 
 
 class TicketLifecycleTests(unittest.TestCase):
@@ -41,7 +60,7 @@ class TicketLifecycleTests(unittest.TestCase):
                 req.finish({"ok": False, "error": "Unexpected command"})
         self.service = ArsenalService("<html></html>", Path(self.tmp.name) / "cache.json",
                                      native, copy.deepcopy(SNAPSHOT))
-        self.service.fetch_files = lambda mid: {"ok": True, "files": [{"fileId": 55}]}
+        self.service.fetch_files = lambda mid: files_evidence()
 
     def tearDown(self):
         self.install_gate.set()
@@ -61,6 +80,7 @@ class TicketLifecycleTests(unittest.TestCase):
         return self.service.queue_reviewed_downloads({
             "profileId": SNAPSHOT["profileId"], "confirm": "QUEUE_REVIEWED_DOWNLOADS",
             "entries": [{"itemId": "live-test", "modId": 101, "fileId": 55,
+                         "fileProof": nexus_file_proof(SNAPSHOT, SNAPSHOT["items"][0]),
                          "installedVersion": "1.0", "reviewed": True}]})
 
     def test_queue_tracks_exact_row_and_rejects_duplicate_downloads(self):
@@ -139,13 +159,15 @@ class TicketLifecycleTests(unittest.TestCase):
         self.assertFalse(self.queue()["ok"], "Unconfirmed installed version still prevents duplicate execution")
         changed = copy.deepcopy(SNAPSHOT)
         changed["items"][0]["installedVersion"] = "2.0"
-        changed["items"][0]["update"]["latestVersion"] = "3.0"
+        next_files = files_evidence(55, 66, "2.0", "3.0")
+        refresh_evidence(changed, next_files)
         self.service.set_snapshot(changed)
-        self.service.fetch_files = lambda mid: {"ok": True, "files": [{"fileId": 66, "version": "3.0"}]}
+        self.service.fetch_files = lambda mid: copy.deepcopy(next_files)
         self.service.ui_call = lambda req: req.finish({"ok": True, "downloadId": 745})
         result = self.service.queue_reviewed_downloads({
             "profileId": SNAPSHOT["profileId"], "confirm": "QUEUE_REVIEWED_DOWNLOADS",
             "entries": [{"itemId": "live-test", "modId": 101, "fileId": 66,
+                         "fileProof": nexus_file_proof(changed, changed["items"][0]),
                          "installedVersion": "2.0", "targetVersion": "3.0", "reviewed": True}]})
         self.assertEqual(result["queued"][0]["downloadId"], 745)
         self.assertEqual(self.service.downloads()[744]["status"], "installed")
@@ -165,7 +187,7 @@ class TicketLifecycleTests(unittest.TestCase):
                         row["flags"] = value
                     else:
                         self.service._snapshot["gameRuntime"] = value
-                    return {"ok": True, "files": [{"fileId": 55}]}
+                    return files_evidence()
 
                 self.service.fetch_files = files
                 result = self.queue()
@@ -220,6 +242,7 @@ class TicketLifecycleTests(unittest.TestCase):
         result = self.service.queue_reviewed_downloads({"profileId": SNAPSHOT["profileId"],
             "executionEpoch": old, "confirm": "QUEUE_REVIEWED_DOWNLOADS", "entries": [
                 {"itemId": "live-test", "modId": 101, "fileId": 55,
+                 "fileProof": nexus_file_proof(SNAPSHOT, SNAPSHOT["items"][0]),
                  "installedVersion": "1.0", "reviewed": True}]})
         self.assertFalse(result["ok"])
         self.assertFalse(self.calls)

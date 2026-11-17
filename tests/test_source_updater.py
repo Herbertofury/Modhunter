@@ -10,7 +10,8 @@ from mo2_update_arsenal.bridge import ArsenalService
 from mo2_update_arsenal.native_nexus import NativeNexusGateway, normalize_native_files
 from mo2_update_arsenal.source_registry import (
     SourceScanner, canonical_source_url, discover_local_source, provider_of, release_verdict)
-from mo2_update_arsenal.update_plan import PlanError, plan_updates, validate_release_asset
+from mo2_update_arsenal.update_plan import PlanError, plan_updates, validate_release_asset, nexus_file_proof
+from nexus_fixture import review_payload, with_lineage
 
 
 ASSET = {"assetId": 555, "name": "supermod-v2.zip",
@@ -27,6 +28,9 @@ PROFILE = {
          "nexusId": 101, "flags": [], "update": {"verdict": "candidate", "latestVersion": "2.0"}},
     ], "groups": [],
 }
+
+NEXUS_FILES = review_payload(101, [{"fileId": 12, "version": "2.0", "category": 1}], [(11, 12)])
+with_lineage(PROFILE["items"][1], NEXUS_FILES, 11)
 
 
 def source_selection():
@@ -198,8 +202,7 @@ class MixedDownloadTests(unittest.TestCase):
             req.finish({"ok": True, "downloadId": 100 + len(self.commands)})
         self.service = ArsenalService("<html></html>", Path(self.tmp.name) / "cache.json",
                                      native, copy.deepcopy(PROFILE))
-        self.service.fetch_files = lambda mod_id: {"ok": True, "files": [{"fileId": 12}],
-                                                    "modId": mod_id}
+        self.service.fetch_files = lambda mod_id: copy.deepcopy(NEXUS_FILES)
     def tearDown(self):
         self.service.stop()
         self.tmp.cleanup()
@@ -216,7 +219,8 @@ class MixedDownloadTests(unittest.TestCase):
 
     def test_mixed_batch_preflights_nexus_and_release(self):
         nexus = {"itemId": "nexus-row", "modId": 101, "fileId": 12,
-                 "installedVersion": "1.0", "reviewed": True}
+                 "installedVersion": "1.0", "reviewed": True,
+                 "fileProof": nexus_file_proof(PROFILE, PROFILE["items"][1])}
         receipt = self.service.queue_reviewed_downloads(self.pkt([source_selection(), nexus]))
         self.assertTrue(receipt["ok"], receipt)
         self.assertEqual(len(receipt["queued"]), 2)
@@ -225,7 +229,8 @@ class MixedDownloadTests(unittest.TestCase):
 
     def test_invalid_source_blocks_entire_batch(self):
         nexus = {"itemId": "nexus-row", "modId": 101, "fileId": 12,
-                 "installedVersion": "1.0", "reviewed": True}
+                 "installedVersion": "1.0", "reviewed": True,
+                 "fileProof": nexus_file_proof(PROFILE, PROFILE["items"][1])}
         invalid = {**source_selection(), "assetId": 999}
         result = self.service.queue_reviewed_downloads(self.pkt([nexus, invalid]))
         self.assertFalse(result["ok"])

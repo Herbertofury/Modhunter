@@ -1,0 +1,55 @@
+name: Windows discovery diagnosis
+on:
+  push:
+    branches: ['diagnostics/windows-discovery-0.13.0']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: modhunter-windows-discovery-diagnostic-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  discovery:
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.99.1'
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+          cache-on-failure: 'true'
+      - name: Prepare genuine compile dependencies and a non-installable diagnostic marker
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python native/scripts/prepare_assets.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python native/scripts/prepare_archive_tools.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python native/scripts/prepare_notices.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # The filtered discovery tests do not install or load a plugin bundle.
+          # This intentionally invalid include_bytes input cannot pass the real
+          # bundle parser and is never a package, runtime or release receipt.
+          New-Item -ItemType Directory -Force native/resources/mo2-installer | Out-Null
+          [IO.File]::WriteAllText((Join-Path $PWD 'native/resources/mo2-installer/SHA256SUMS.txt'), "DIAGNOSTIC_ONLY_NOT_AN_INSTALLABLE_BUNDLE`n", [Text.UTF8Encoding]::new($false))
+          New-Item -ItemType Directory -Force native/target/discovery-diagnostic | Out-Null
+          git rev-parse HEAD | Set-Content -Encoding utf8 native/target/discovery-diagnostic/source-commit.txt
+          git status --porcelain | Set-Content -Encoding utf8 native/target/discovery-diagnostic/source-status.txt
+      - name: Exercise actual Windows discovery fixtures with native observations
+        shell: pwsh
+        run: |
+          cargo test --manifest-path native/Cargo.toml --locked -p modhunter-desktop --bin Modhunter mo2_discovery:: -- --nocapture 2>&1 | Tee-Object -FilePath native/target/discovery-diagnostic/discovery-tests.log
+          $DiscoveryExitCode = $LASTEXITCODE
+          exit $DiscoveryExitCode
+      - name: Preserve diagnostic observations only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Modhunter-Windows-Discovery-Diagnostic
+          path: native/target/discovery-diagnostic/
+          if-no-files-found: error
+          retention-days: 30

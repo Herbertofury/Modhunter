@@ -1051,14 +1051,14 @@ mod tests {
     #[repr(C)]
     struct ShellLinkWriterVTable {
         unknown: UnknownVTable,
-        get_path: usize,
+        get_path: unsafe extern "system" fn(*mut c_void, *mut u16, i32, *mut c_void, u32) -> i32,
         get_id_list: usize,
         set_id_list: usize,
         get_description: usize,
         set_description: usize,
         get_working_directory: usize,
         set_working_directory: usize,
-        get_arguments: usize,
+        get_arguments: unsafe extern "system" fn(*mut c_void, *mut u16, i32) -> i32,
         set_arguments: unsafe extern "system" fn(*mut c_void, *const u16) -> i32,
         get_hotkey: usize,
         set_hotkey: usize,
@@ -1109,6 +1109,59 @@ mod tests {
         assert!(result >= 0, "IPersistFile::Save({path:?}): {result:#x}");
     }
 
+    fn observe_saved_shortcut(path: &Path) -> (String, String, String, String) {
+        let mut object = ptr::null_mut();
+        let result = unsafe {
+            CoCreateInstance(
+                &CLSID_SHELL_LINK,
+                ptr::null_mut(),
+                CLSCTX_INPROC_SERVER,
+                &IID_SHELL_LINK_W,
+                &mut object,
+            )
+        };
+        assert!(
+            result >= 0 && !object.is_null(),
+            "CoCreateInstance: {result:#x}"
+        );
+        let object = ComObject(object);
+        let persist = object.query(&IID_PERSIST_FILE).unwrap();
+        let persist_vtable = unsafe { &**(persist.0 as *const *const PersistFileVTable) };
+        let result = unsafe { (persist_vtable.load)(persist.0, wide(path).as_ptr(), 0) };
+        assert!(result >= 0, "IPersistFile::Load({path:?}): {result:#x}");
+        let vtable = unsafe { &**(object.0 as *const *const ShellLinkWriterVTable) };
+        // This short, owned fixture fits both buffers. These direct getters are
+        // diagnostic only, never a production fallback with silent truncation.
+        let mut target = [0_u16; 32768];
+        let result = unsafe {
+            (vtable.get_path)(
+                object.0,
+                target.as_mut_ptr(),
+                target.len() as i32,
+                ptr::null_mut(),
+                4,
+            )
+        };
+        assert!(
+            result >= 0,
+            "IShellLinkW::GetPath(SLGP_RAWPATH): {result:#x}"
+        );
+        let mut arguments = [0_u16; 32768];
+        let result = unsafe {
+            (vtable.get_arguments)(object.0, arguments.as_mut_ptr(), arguments.len() as i32)
+        };
+        assert!(result >= 0, "IShellLinkW::GetArguments: {result:#x}");
+        let properties = object.query(&IID_PROPERTY_STORE).unwrap();
+        (
+            string(&target),
+            string(&arguments),
+            property_string(&properties, "System.Link.TargetParsingPath")
+                .unwrap_or_else(|error| format!("ERROR: {error}")),
+            property_string(&properties, "System.Link.Arguments")
+                .unwrap_or_else(|error| format!("ERROR: {error}")),
+        )
+    }
+
     #[test]
     fn instance_arguments_keep_empty_portable_and_unicode_names_distinct() {
         assert_eq!(
@@ -1155,7 +1208,18 @@ mod tests {
             r#"--instance "Skyrim Unicode 特別版""#,
         );
         let before = fs::read(&shortcut).unwrap();
-        let result = read_shortcut(&shortcut).unwrap().unwrap();
+        let observed = observe_saved_shortcut(&shortcut);
+        eprintln!(
+            "Saved shortcut (raw path, raw arguments, target property, arguments property): {observed:?}"
+        );
+        assert_eq!(Path::new(&observed.0), executable, "{observed:?}");
+        assert_eq!(
+            observed.1, r#"--instance "Skyrim Unicode 特別版""#,
+            "{observed:?}"
+        );
+        let result = read_shortcut(&shortcut)
+            .unwrap()
+            .unwrap_or_else(|| panic!("Production reader omitted saved shortcut: {observed:?}"));
         assert_eq!(result.executable, executable);
         assert_eq!(
             result.instance_name.as_deref(),

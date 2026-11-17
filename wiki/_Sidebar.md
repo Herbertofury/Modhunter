@@ -14,6 +14,7 @@
 
 **Get Started**
 * [🚀 Installation](Getting-Started)
+* [Daily use and updates](Daily-Use)
 * [🖥️ Desktop App](Desktop-App)
 * [Rust Desktop 0.12](Rust-Desktop)
 * [Watchtower pages and sign-ins](Watchtower)

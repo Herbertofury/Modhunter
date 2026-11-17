@@ -39,27 +39,58 @@ function Is-X64([string]$Path) {
     } catch { return $false }
     finally { if ($Reader) { $Reader.Dispose() } elseif ($Stream) { $Stream.Dispose() } }
 }
-function Verify-Package {
+function Read-PluginVersion([string]$Path) {
+    if (!(Test-Path -LiteralPath $Path -PathType Leaf)) { return '' }
+    $File = Get-Item -LiteralPath $Path -Force
+    if ($File.Length -gt 65536 -or ($File.Attributes -band [IO.FileAttributes]::ReparsePoint)) { return '' }
+    $Versions = [regex]::Matches([IO.File]::ReadAllText($Path), '(?m)^\s*VERSION\s*=\s*["'']([0-9]+\.[0-9]+\.[0-9]+)["'']\s*$')
+    if ($Versions.Count -ne 1) { return '' }
+    return $Versions[0].Groups[1].Value
+}
+function File-SHA256([string]$Path) {
+    # Match the installer: Windows PowerShell may inherit a module path that
+    # omits Get-FileHash when launched from another host.
+    $Stream = [IO.File]::OpenRead($Path)
+    try {
+        $SHA256 = [Security.Cryptography.SHA256]::Create()
+        try { return [BitConverter]::ToString($SHA256.ComputeHash($Stream)).Replace('-', '') }
+        finally { $SHA256.Dispose() }
+    } finally { $Stream.Dispose() }
+}
+function Get-VerifiedPackageVersion {
     $Manifest = Join-Path $PSScriptRoot 'SHA256SUMS.txt'
-    if (!(Test-Path -LiteralPath $Manifest -PathType Leaf)) { return $false }
-    if ((Get-Item -LiteralPath $Manifest).Length -gt 4194304) { return $false }
+    if (!(Test-Path -LiteralPath $Manifest -PathType Leaf)) { return '' }
+    $ManifestFile = Get-Item -LiteralPath $Manifest -Force
+    if ($ManifestFile.Length -gt 4194304 -or ($ManifestFile.Attributes -band [IO.FileAttributes]::ReparsePoint)) { return '' }
     $Expected = @{}
     foreach ($Line in [IO.File]::ReadAllLines($Manifest)) {
-        if ($Line -notmatch '^([0-9a-fA-F]{64})  (.+)$') { return $false }
+        if ($Line -notmatch '^([0-9a-fA-F]{64})  (.+)$') { return '' }
+        $Digest = $Matches[1]
         $Relative = $Matches[2].Replace('\', '/')
-        if ($Expected.ContainsKey($Relative)) { return $false }
-        $Expected[$Relative] = $Matches[1]
+        if ([IO.Path]::IsPathRooted($Relative) -or $Relative.Contains(':') -or $Relative -match '(^|/)(\.|\.\.|)(/|$)' -or $Expected.ContainsKey($Relative)) { return '' }
+        $Expected[$Relative] = $Digest
     }
     foreach ($Relative in @('Modhunter.exe', 'modhunter-cli.exe', 'BUILD_INFO.json',
-        'MO2/mo2_update_arsenal/qt_bridge.py', 'MO2/mo2_update_arsenal/version_evidence.py',
+        'MO2/mo2_update_arsenal/version.py', 'MO2/mo2_update_arsenal/qt_bridge.py', 'MO2/mo2_update_arsenal/version_evidence.py',
         'MO2/mo2_update_arsenal/bin/modhunter-cli.exe', 'MO2/mo2_update_arsenal/bin/modhunter-qt-bridge.dll')) {
         $Path = Join-Path $PSScriptRoot $Relative
-        if (!$Expected.ContainsKey($Relative) -or !(Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
+        if (!$Expected.ContainsKey($Relative) -or !(Test-Path -LiteralPath $Path -PathType Leaf)) { return '' }
         $File = Get-Item -LiteralPath $Path -Force
-        if ($File.Length -gt 268435456 -or ($File.Attributes -band [IO.FileAttributes]::ReparsePoint)) { return $false }
-        if ((Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash -ne $Expected[$Relative]) { return $false }
+        if ($File.Length -gt 268435456 -or ($File.Attributes -band [IO.FileAttributes]::ReparsePoint)) { return '' }
+        if ((File-SHA256 $Path) -ne $Expected[$Relative]) { return '' }
     }
-    return $true
+    # A matching checksum alone does not make a mixed package valid. Use the
+    # same build/plugin version contract as Install_MO2_Plugin.ps1, after both
+    # sources have been checked against this archive's manifest.
+    $BuildPath = Join-Path $PSScriptRoot 'BUILD_INFO.json'
+    if ((Get-Item -LiteralPath $BuildPath).Length -gt 65536) { return '' }
+    $PluginVersion = Read-PluginVersion (Join-Path $PSScriptRoot 'MO2/mo2_update_arsenal/version.py')
+    try {
+        $Build = [IO.File]::ReadAllText($BuildPath) | ConvertFrom-Json
+        if (!$PluginVersion -or $Build.version -isnot [string] -or $Build.version -cne $PluginVersion -or
+            $Build.commit -isnot [string] -or $Build.commit -notmatch '^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$') { return '' }
+    } catch { return '' }
+    return $PluginVersion
 }
 try {
     if (!$MO2Directory) {
@@ -86,21 +117,19 @@ try {
         $QtGood = ([version]$Matches[1] -ge [version]'6.7.1') -and (Is-X64 (Join-Path $MO2Directory $QtFiles[0]))
     }
     Add-Check 'qt_runtime_files' $QtGood ('Observed Qt: ' + ($QtVersions -join ', ') + '. Exactly one root or dlls/ Qt6Core.dll is required for an unambiguous static check.')
-    $PackageGood = Verify-Package
-    Add-Check 'package_checksums' $PackageGood 'Checks the packaged desktop, diagnostic helper, version logic and native Qt binding against SHA256SUMS.txt.'
+    $PackageVersion = Get-VerifiedPackageVersion
+    $PackageGood = ![string]::IsNullOrEmpty($PackageVersion)
+    Add-Check 'package_checksums' $PackageGood 'Checks the packaged desktop, diagnostic helper, version logic and native Qt binding against SHA256SUMS.txt; BUILD_INFO.json and the plugin must identify the same release.'
     $Installed = Join-Path $MO2Directory 'plugins/mo2_update_arsenal/version.py'
-    $InstalledVersion = ''
-    if ((Test-Path -LiteralPath $Installed -PathType Leaf) -and (Get-Item -LiteralPath $Installed).Length -lt 65536) {
-        $Source = [IO.File]::ReadAllText($Installed)
-        if ($Source -match 'VERSION\s*=\s*["'']([0-9]+\.[0-9]+\.[0-9]+)["'']') { $InstalledVersion = $Matches[1] }
-    }
-    $InstalledGood = $InstalledVersion -eq '0.10.2'
-    Add-Check 'plugin_installed' $InstalledGood ('Installed plugin version: ' + $InstalledVersion + '. Use Install_MO2_Plugin.bat with MO2 closed when missing or older.')
+    $InstalledVersion = Read-PluginVersion $Installed
+    $InstalledGood = $PackageGood -and ($InstalledVersion -eq $PackageVersion)
+    $ExpectedVersion = if ($PackageGood) { $PackageVersion } else { 'unverified package' }
+    Add-Check 'plugin_installed' $InstalledGood ('Installed plugin version: ' + $InstalledVersion + '; expected: ' + $ExpectedVersion + '. Use Install_MO2_Plugin.bat with MO2 closed when missing or from another release.')
     $Ready = $MO2Family -and $X64 -and $QtGood -and $PackageGood
     $Report = [ordered]@{
         schemaVersion = 1; requestedTarget = 'MO2 2.5.3b12 / Skyrim Special Edition';
         observedMO2Version = $MO2Version; exactBetaSuffixObserved = [bool]$ExactTarget;
-        observedQtVersions = $QtVersions; modhunterVersion = '0.10.2';
+        observedQtVersions = $QtVersions; modhunterVersion = $PackageVersion;
         readyToInstall = [bool]$Ready; readyForConnectionTest = [bool]($Ready -and $InstalledGood);
         scope = 'Static file/version/package checks only. The plugin separately verifies the actually loaded Qt runtime and a live owned signal. No game, mod, save, load order or sign-in data was read or modified.';
         checks = @($Checks.ToArray());
@@ -116,7 +145,7 @@ try {
     }
     if ($Json) { Write-Output $ReportJson }
     else {
-        Write-Host 'Modhunter 0.10.2 - MO2 readiness check'
+        Write-Host ('Modhunter ' + $ExpectedVersion + ' - MO2 readiness check')
         foreach ($Check in $Checks) { $Prefix = if ($Check.passed) { 'PASS' } else { 'REVIEW' }; Write-Host ($Prefix + ' ' + $Check.name + ': ' + $Check.detail) }
         Write-Host 'After installation: start MO2 and let the profile load, then launch Modhunter. The bridge starts automatically; Find MO2 reconnects on demand. Check the active Skyrim profile before reviewing updates.'
         Write-Host 'Exact beta-12 execution and your real account/mod setup still require your connection test. No mod updates were executed.'

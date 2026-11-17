@@ -462,6 +462,9 @@ def validate_native_report(report: dict) -> None:
     require(report.get("nativeWebView2") is True and report.get("shellIpc") is True, "Windows report does not prove native WebView2 and toolbar IPC")
     require(report.get("exportDownloadVerified") is True, "Windows exported-backup verification did not pass")
     require(report.get("gameViewNativeIpcDenied") in ("1", True), "Game-view native IPC isolation was not verified")
+    proof = report.get("proof")
+    require(isinstance(proof, dict) and proof.get("chapterColors") == "1" and proof.get("chapterProgress") == "1",
+            "Packaged offline chapter colors and zero-progress rendering were not verified")
 
 
 def native_sources():
@@ -1101,6 +1104,9 @@ This release continues the Rust desktop introduced in earlier versions. WebView2
 
 - **True black workspace:** neutral near-black surfaces replace the green/gold utility palette across the Rust shell, shared dashboard, Watchtower, settings, dialogs and preserved companion chrome. Light mode uses neutral whites and grays. Optional game worlds retain their own art direction.
 - **Colored chapters restored:** authored chapter bands, colored diamonds, collapse arrows, manual cleared/total counts and progress bars make collection structure immediately visible again. Keyboard focus stays on the chapter when it expands or collapses.
+- **Correct packaged progress:** chapter colors and empty, partial and complete checklist bars render under the desktop's existing style policy. The installed Windows app must prove that an untouched offline chapter has an empty bar before release.
+- **Lighter full-library rendering:** removes eight formatting-only text nodes per compact mod row while retaining every mod, field, control and metadata space. At 11,207 mods, this eliminates 89,656 unnecessary DOM nodes; the existing native performance limits remain enforced.
+- **Current MO2 setup checks:** the readiness tool derives its expected plugin version from checksum-verified package metadata, so a current plugin is no longer incorrectly compared with 0.10.2. Mixed, incomplete or changed packages remain blocked.
 - **Clear interaction states:** visible hover, keyboard focus, pressed/current tabs, selected mods, bookmarks, manual completion/review and error feedback. Manual checklist labels remain distinct from detected updates and verified installation.
 - **Truthful scan feedback:** a real starting state, busy control, actual checked/total progress and distinct complete, partial, failed, cancelled and unavailable states. Request or polling failures no longer leave a reassuring idle connection dot.
 - **Same complete collection:** no result limits, virtualization or hidden records. The release retains exact-file approval, backups, native MO2 installation, verification, recovery, all game modes and FX Studio.
@@ -1369,7 +1375,8 @@ def self_test() -> None:
             self.visual = self.artifacts / "Modhunter-Visual-Release-Proof" / "visual-release"
             for path in (self.windows / "release/bundle/nsis", self.windows / "native-smoke", self.windows / "watchtower-smoke", self.windows / "qt-bridge/Release", self.windows / "qt-forward", self.windows / "live-mo2-smoke", self.windows / "installer-smoke/native-launch", self.windows / "native-library-performance", self.mo2, self.browser, self.visual):
                 path.mkdir(parents=True)
-            self.native = {"ok": True, "nativeWebView2": True, "shellIpc": True, "exportDownloadVerified": True, "gameViewNativeIpcDenied": "1"}
+            self.native = {"ok": True, "nativeWebView2": True, "shellIpc": True, "exportDownloadVerified": True, "gameViewNativeIpcDenied": "1",
+                           "proof": {"chapterColors": "1", "chapterProgress": "1"}}
             self.watchtower = {"ok": True, "nativeWebView2": True, "watchtowerSchema": 1,
                                "scope": "Synthetic release-validator fixture; no native execution",
                                "checks": [{"name": name, "passed": True} for name in sorted(REQUIRED_WATCHTOWER_CHECKS)]}
@@ -2289,6 +2296,18 @@ def self_test() -> None:
                     with self.assertRaisesRegex(ReleaseError, message):
                         prepare(self.artifacts, self.output, self.commit, self.run)
                     self.assertFalse(self.output.exists())
+
+        def test_missing_or_failed_chapter_rendering_blocks_release(self):
+            for key in ("chapterColors", "chapterProgress"):
+                for value in (None, "0"):
+                    with self.subTest(key=key, value=value):
+                        report = json.loads(public_json(self.native))
+                        if value is None:
+                            report["proof"].pop(key)
+                        else:
+                            report["proof"][key] = value
+                        with self.assertRaisesRegex(ReleaseError, "chapter colors and zero-progress"):
+                            validate_native_report(report)
 
         def test_missing_or_failed_proof_never_creates_output(self):
             (self.browser / "watchtower-pages.png").unlink()

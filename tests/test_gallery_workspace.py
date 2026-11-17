@@ -243,6 +243,37 @@ class GalleryWorkspaceTests(unittest.TestCase):
         for action in ('POST install','POST download','POST update-queue','POST quick-update'):
             self.assertEqual(self.page.evaluate('key=>__RESP__.counts[key]||0', action), 0)
 
+    def test_row_template_preserves_metadata_without_formatting_nodes(self):
+        self.open(count=3)
+        fixture = harness.catalog(count=3)
+        first = fixture['items'][0]
+        first.update(name='Alpha  & <Beta>\nGamma', author='Studio  Two\nWorks',
+                     installedVersion='Build  2\nextra', screenshotNote='  Keep  two\nspaces & <xml>  ')
+        for layout in ('compact', 'legacy'):
+            self.page.evaluate("""async ({fixture,layout})=>{
+              document.body.dataset.layout=layout;
+              await __ARSENAL_QA__.setCatalog(fixture);
+            }""", {'fixture':fixture,'layout':layout})
+            state = self.page.locator('#modList > .mod-row').evaluate_all("""rows=>({
+              ids:rows.map(row=>row.dataset.id),
+              formattingNodes:rows.flatMap(row=>[...row.childNodes])
+                .filter(node=>node.nodeType===Node.TEXT_NODE).length,
+              fields:Object.fromEntries(['.mod-title','.mod-author','.mod-note','.mod-version']
+                .map(selector=>{const element=rows[0].querySelector(selector);
+                  return [selector,[...element.childNodes].filter(node=>node.nodeType===Node.TEXT_NODE)
+                    .map(node=>node.textContent).join('')]})),
+              actions:rows.map(row=>[...row.querySelectorAll('[data-act]')].map(node=>node.dataset.act))
+            })""")
+            self.assertEqual(state['ids'], ['item-0','item-1','item-2'])
+            self.assertEqual(state['formattingNodes'], 0, state)
+            self.assertEqual(state['fields'], {
+                '.mod-title':first['name'], '.mod-author':first['author'],
+                '.mod-note':first['screenshotNote'], '.mod-version':first['installedVersion']})
+            for actions in state['actions']:
+                for action in ('source','locate','files','favorite','inspect'):
+                    self.assertIn(action, actions)
+                self.assertEqual('complete' in actions, layout=='legacy')
+
     def test_presentation_controls_preserve_rows_and_saved_preferences(self):
         self.open()
         self.page.locator('#libraryGallery').click()
@@ -810,6 +841,49 @@ class GalleryWorkspaceTests(unittest.TestCase):
         self.assertTrue(self.page.evaluate("document.getElementById('row-item-0')!==__SPANISH_CACHED_ROW__"))
         self.assertEqual(self.page.locator('#row-item-0 .inspect-btn').text_content(),'Details')
         self.assertTrue(self.page.locator('#row-item-0 .inspect-btn').get_attribute('aria-label').startswith('Inspect '))
+
+    def test_chapter_colors_and_progress_survive_packaged_style_policy_and_offline_import(self):
+        nonce = 'b2ZmbGluZS1jaGFwdGVycy1xYQ'
+        html = re.sub(r'<style\b', '<style nonce="'+nonce+'"', self.html)
+        headers = {'Content-Security-Policy': "style-src 'nonce-"+nonce+"'"}
+        self.context.route('http://chapter-offline.fixture.test/', lambda route: route.fulfill(
+            content_type='text/html', body=html, headers=headers))
+        self.page.goto('http://chapter-offline.fixture.test/', wait_until='load')
+        self.page.wait_for_function('!!window.__ARSENAL_QA__')
+        fixture = harness.catalog(profile='chapter-offline', count=6)
+        fixture['offline'] = True
+        fixture['groups'] = [dict(id='chapter-'+str(i), name='Chapter '+str(i),
+                                  count=3, startPriority=i*3, color=color)
+                             for i, color in enumerate(('purple', 'sky'))]
+        for i, item in enumerate(fixture['items']):
+            group = fixture['groups'][i // 3]
+            item.update(groupId=group['id'], group=group['name'])
+        self.assertEqual(self.page.evaluate('catalog=>window.modhunterImportCatalog(catalog)', fixture),
+                         {'ok': True, 'count': 6, 'profileId': 'chapter-offline'})
+        self.assertFalse(self.page.evaluate('__ARSENAL_QA__.live'))
+        initial = self.chapter_feedback()
+        self.assertEqual(len({tuple(chapter['color']) for chapter in initial}), 2)
+        for chapter in initial:
+            self.assertEqual(chapter['count'], '0/3')
+            self.assertEqual(chapter['fill'], 0, chapter)
+            self.assertTrue(chapter['trackVisible'], chapter)
+        self.page.locator('#workspaceTitle').click()
+        self.page.keyboard.press('j'); self.page.keyboard.press('Space')
+        partial = self.chapter_feedback()[0]
+        self.assertEqual(partial['count'], '1/3')
+        self.assertGreater(partial['fill'], 0)
+        self.assertAlmostEqual(partial['fill']/partial['trackWidth'], .33, delta=.02)
+        for _ in range(2):
+            self.page.keyboard.press('j'); self.page.keyboard.press('Space')
+        complete = self.chapter_feedback()[0]
+        self.assertEqual(complete['count'], '3/3')
+        self.assertAlmostEqual(complete['fill'], complete['trackWidth'], delta=1)
+        self.page.locator('#libraryGallery').click()
+        self.page.locator('#galleryGrouping').select_option('chapters')
+        grouped = self.chapter_feedback()
+        self.assertEqual([chapter['color'] for chapter in grouped], [chapter['color'] for chapter in initial])
+        self.assertEqual(grouped[1]['fill'], 0)
+        self.feedback_capture('offline-chapter-progress-csp.png')
 
     def test_oled_chapters_keep_color_progress_and_keyboard_collapse_in_both_layouts(self):
         self.open(count=12, group_count=3, feedback=True)

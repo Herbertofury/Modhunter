@@ -194,6 +194,28 @@ test('cosmetic settings leave catalog DOM intact; large searches keep all record
  assert.equal(h.nodes.get('modList').writes,writes+1);
 });
 
+test('row markup retains metadata whitespace while omitting formatting-only boundaries',async()=>{
+ for(const live of [false,true]){
+  const h=harness({live,count:1});await h.settle();
+  const mod={...h.qa.getCatalog().items[0],name:'Alpha  & <Beta>\nGamma',author:'Studio  Two\nWorks',
+   installedVersion:'Build  2\nextra',screenshotNote:'  Keep  two\nspaces & <xml>  '};
+  for(const layout of ['compact','legacy']){
+   h.context.document.body.dataset.layout=layout;
+   const html=h.api.modHTML(mod);
+   assert.match(html,/>Alpha  &amp; &lt;Beta&gt;\nGamma<span/);
+   assert.match(html,/>Studio  Two\nWorks<\/div>/);
+   assert.match(html,/>  Keep  two\nspaces &amp; &lt;xml&gt;  <\/div>/);
+   assert.match(html,/>Build  2\nextra</);
+   assert.doesNotMatch(html,/>[\t\r\n ]+</,'No formatting-only text nodes belong between row cells');
+   assert.match(html,/data-act="favorite"/);assert.match(html,/data-act="inspect"/);
+   assert.equal(html.includes('data-act="locate"'),live);
+   assert.equal(html.includes('data-act="files"'),live);
+   assert.equal(html.includes('data-act="complete"'),layout==='legacy');
+   assert.equal(html.includes('legacy-assessment'),layout==='legacy');
+  }
+ }
+});
+
 test('gallery geometry reuses one card rule without inherited subtree writes',async()=>{
  const h=harness({live:false,count:3});await h.settle();
  const list=h.nodes.get('modList'),sheets=[],values=[];

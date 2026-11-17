@@ -1,6 +1,8 @@
 # ✦ Getting Started
 [Home](Home.md) / Installation
 
+For the complete Windows setup and everyday update workflow, start with [Daily use](Daily-Use.md).
+
 ## Standalone HTML
 
 Download the [current compiled dashboard](https://github.com/Herbertofury/Modhunter/raw/refs/heads/main/mo2_update_arsenal/web/index.html), save it as `Modhunter.html`, then open the local file in Chromium, Firefox or another modern browser. The independent [Modhunter-0.12.0-Standalone.zip](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter-0.12.0-Standalone.zip) provides the tested release HTML with its build identity and checksums. This mode does not need MO2, Node or a server. Offline game progression is practice progression and never fabricates official verified-update currency. See [Standalone HTML](Standalone-HTML.md).

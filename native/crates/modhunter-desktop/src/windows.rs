@@ -631,11 +631,24 @@ fn inject_catalog(app: &tauri::AppHandle, label: &str) -> Result<()> {
             catch { denied=true; }
             const qa=window.__ARSENAL_QA__;
             const c=qa?.getCatalog();
+            const chapters=[...document.querySelectorAll('#modList > .chapterbar')];
+            const chapterColors=chapters.length>0 && chapters.every(bar=>{
+                const authored=bar.style.getPropertyValue('--chapter-color');
+                if(!/^#[0-9a-f]{6}$/i.test(authored))return false;
+                const rgb=[1,3,5].map(index=>parseInt(authored.slice(index,index+2),16));
+                return getComputedStyle(bar).borderLeftColor==='rgb('+rgb.join(', ')+')';
+            });
+            const chapterProgress=chapters.length>0 && chapters.every(bar=>{
+                const track=bar.querySelector('.chapter-mini-progress'),fill=track?.firstElementChild;
+                return bar.dataset.completion==='empty' && bar.querySelector('.chapter-count')?.textContent.startsWith('0/')
+                    && track.getBoundingClientRect().width>0 && fill?.getBoundingClientRect().width===0;
+            });
             const ok=!!(c?.offline && c.items?.length>=3 && document.getElementById('unifiedCommand')
-                && typeof window.modhunterImportCatalog==='function');
+                && typeof window.modhunterImportCatalog==='function' && chapterColors && chapterProgress);
             window.__modhunterNativeSmokeProof=()=>{
                 delete window.__modhunterNativeSmokeProof;
                 window.location.href='modhunter-proof://result?ok='+(ok?'1':'0')+'&denied='+(denied?'1':'0')
+                    +'&chapterColors='+(chapterColors?'1':'0')+'&chapterProgress='+(chapterProgress?'1':'0')
                     +'&items='+(c?.items?.length||0)+'&profile='+encodeURIComponent(c?.profileName||'');
             };
             window.__modhunterNativeSmokeDiagnostics={

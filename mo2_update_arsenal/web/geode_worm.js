@@ -1,0 +1,11 @@
+/* Original roaming mining encounter. JSON-only state; never accesses native economy. */
+(()=>{'use strict';
+const count=6,reach=1.8;
+function create(x,y,serial=1){return {v:1,serial,x,y,age:0,cooldown:0,depleted:0,nodes:Array(count).fill(3)}}
+function points(w){return w.nodes.map((hp,i)=>{const phase=w.age*.32-i*.3;return {x:w.x+Math.sin(phase)*4,y:w.y+Math.sin(phase*.7)*2,hp,index:i}})}
+function advance(holder,dt,player){let w=holder.geodeWorm;if(!w||w.v!==1||!Array.isArray(w.nodes)||w.nodes.length!==count)w=holder.geodeWorm=create(player.x+5,player.y);dt=Math.max(0,Math.min(.045,dt));w.age+=dt;w.cooldown=Math.max(0,w.cooldown-dt);if(w.nodes.every(h=>h<=0)){w.depleted+=dt;if(w.depleted>=90)holder.geodeWorm=create(player.x+5,player.y,w.serial+1)}return holder.geodeWorm}
+function nearest(w,player){if(!w)return null;let best=null,distance=reach;for(const n of points(w)){const d=Math.hypot(n.x-player.x,n.y-player.y);if(n.hp>0&&d<=distance){best=n;distance=d}}return best}
+function mine(holder,player){const w=holder.geodeWorm,n=nearest(w,player);if(!n)return null;if(w.cooldown>0)return {waiting:true};w.cooldown=.25;w.nodes[n.index]--;return {node:n.index,remaining:w.nodes[n.index],reward:w.nodes[n.index]===0?{xp:6,resource:1}:null,serial:w.serial}}
+function draw(ctx,w,project,scale,player){if(!w)return;const nodes=points(w),near=nearest(w,player);ctx.save();ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='#263b40';ctx.lineWidth=scale*.7;ctx.beginPath();for(let i=0;i<nodes.length;i++){const p=project(nodes[i].x,nodes[i].y);i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y)}ctx.stroke();for(const n of nodes){const p=project(n.x,n.y),r=scale*.25;ctx.fillStyle=n.hp>0?'#8fdacb':'#182a30';ctx.strokeStyle=n.hp>0?'#e7fff4':'#52676b';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(p.x,p.y-r);ctx.lineTo(p.x+r,p.y);ctx.lineTo(p.x,p.y+r);ctx.lineTo(p.x-r,p.y);ctx.closePath();ctx.fill();ctx.stroke();if(n.hp>0){ctx.fillStyle='#061316';ctx.font='bold 10px system-ui';ctx.textAlign='center';ctx.fillText(String(n.hp),p.x,p.y+3)}}const head=project(nodes[0].x,nodes[0].y);ctx.fillStyle='#e7fff4';ctx.font='12px system-ui';ctx.textAlign='center';ctx.fillText(near?'E · MINE GEODE':'ROAMING GEODE WORM',head.x,head.y-scale*.7);ctx.restore()}
+window.ModhunterGeodeWorm=Object.freeze({create,points,advance,nearest,mine,draw});
+})();

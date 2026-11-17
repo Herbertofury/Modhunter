@@ -1,0 +1,9 @@
+{
+  "scope": "Source and VM gameplay-adapter validation; not native or visual acceptance",
+  "javascriptTestsPassed": 169,
+  "pythonTests": {"total": 501, "passed": 472, "environmentSkips": 29},
+  "generatedInlineJavaScriptSyntaxChecks": 6,
+  "bundledHtmlSha256": "bc76fcf68eaf0a6880dbc481d32a86aa58371dfaea7147fd1b3178710e4da0f9",
+  "reviewFixes": ["Realm pause/loading/modal interaction guard", "Siege stale-menu mining guard"],
+  "pending": ["Windows WebView2 visual/controller acceptance", "terrain-path usability", "loot-carrier encounters", "nested portals", "shared cross-mode rewards", "deep endgame progression"]
+}

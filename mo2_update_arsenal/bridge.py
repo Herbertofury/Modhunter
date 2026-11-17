@@ -1591,6 +1591,10 @@ class ArsenalService:
         try:
             if self.content.native_enabled:
                 result = self.content.install_native_download(download_id, ticket, execution_epoch, cancel=cancel)
+            elif ticket.get("provider") in PUBLIC_API_PROVIDERS:
+                # Never fall back to an unverified GUI-thread install for source archives.
+                result = {"ok": False, "state": "failed", "needsReview": True,
+                          "error": "Provider archive verification requires the native content worker; reconnect MO2 and review again"}
             else:
                 request = UIRequest("install", {"downloadId": download_id,
                                 "executionEpoch": execution_epoch,

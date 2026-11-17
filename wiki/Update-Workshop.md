@@ -85,3 +85,12 @@ The repository contains unit and simulated MO2-signal tests for exact Nexus ID m
 For architecture, see [Architecture](Architecture.md). For onboarding, see [Getting Started](Getting-Started.md). For launch troubleshooting, see [Troubleshooting](Troubleshooting.md).
 
 **[Full provider support and updater behavior](Updater-Source-Coverage.md)** includes an explicit source-by-source support matrix, verification levels, manual fallbacks and limitations.
+
+### Exact Nexus file identity
+
+The live Files list must contain one unambiguous positive-integer identity for the
+selected file. Duplicate IDs, including integer/string aliases, cannot be queued
+or recommended automatically. Malformed unrelated rows do not hide valid files.
+A batch checks every selected file before starting any download and rechecks each
+file immediately before its native dispatch. Files from the same project share
+one batch-preflight index; final per-download freshness checks remain separate.

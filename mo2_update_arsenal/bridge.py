@@ -22,7 +22,7 @@ from html import unescape
 import re
 from .source_registry import SourceScanner, canonical_source_url, source_record
 from .update_plan import PlanError, plan_updates, validate_batch_selection, validate_release_asset, risk_reasons
-from .file_advisor import advise_nexus_files
+from .file_advisor import advise_nexus_files, index_nexus_files
 from .install_brief import build_install_brief
 from .quick_update import choose_nexus_file, choose_release_asset
 from .operation_journal import OperationJournal
@@ -882,7 +882,7 @@ class ArsenalService:
             if expected_execution_epoch is not None and expected_execution_epoch != execution_epoch:
                 return {"ok": False, "error": "MO2 context changed; refresh before downloading"}
         files = self.fetch_files(mod_id)
-        if not files.get("ok") or file_id not in {int(f["fileId"]) for f in files["files"]}:
+        if not files.get("ok") or index_nexus_files(files.get("files")).get(file_id) is None:
             return {"ok": False, "error": "The selected file must be verified in the Nexus Files list first"}
         with self._guard:
             if self._snapshot.get("profileId") != profile or self._execution_epoch != execution_epoch:
@@ -1423,16 +1423,18 @@ class ArsenalService:
         # Preflight ALL Nexus file identities. Public assets were validated
         # against server-owned release results above, never client URLs.
         exact_files: dict[tuple[int, int], dict] = {}
+        files_by_project: dict[int, dict[int, dict | None]] = {}
         for item in approved:
-            available = self.fetch_files(item["modId"])
-            if not available.get("ok"):
+            if item["modId"] not in files_by_project:
+                available = self.fetch_files(item["modId"])
+                if not available.get("ok"):
+                    return {"ok": False, "queued": [], "failed": [{"itemId": item["itemId"],
+                            "error": available.get("error", "Nexus file list unavailable")}]}
+                files_by_project[item["modId"]] = index_nexus_files(available.get("files"))
+            matched = files_by_project[item["modId"]].get(item["fileId"])
+            if matched is None:
                 return {"ok": False, "queued": [], "failed": [{"itemId": item["itemId"],
-                        "error": available.get("error", "Nexus file list unavailable")}]}
-            matched = next((f for f in available.get("files", [])
-                            if int(f.get("fileId") or 0) == item["fileId"]), None)
-            if not matched:
-                return {"ok": False, "queued": [], "failed": [{"itemId": item["itemId"],
-                        "error": "Exact Nexus file is no longer in the live Files list"}]}
+                        "error": "Exact Nexus file is missing, invalid, or ambiguous in the live Files list"}]}
             exact_files[(item["modId"], item["fileId"])] = matched
         queued, failed = [], []
         for item in approved + sources:

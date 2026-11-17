@@ -203,6 +203,28 @@ class NativeFactsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "profile changed"):
             build_audit_request(org, self.snapshot, deep=True)
 
+    def test_display_state_skips_vfs_resolution_but_audit_retains_exact_paths(self):
+        org = self.organizer()
+        with patch.object(org, "resolvePath", wraps=org.resolvePath) as resolve:
+            _, expected_rows, expected_warnings = native_plugin_facts(org, self.snapshot)
+            self.assertEqual(resolve.call_count, 4)
+            resolve.reset_mock()
+            actual = attach_native_plugin_state(org, copy.deepcopy(self.snapshot))
+            resolve.assert_not_called()
+            for item in actual["items"]:
+                expected = expected_rows.get(item["id"])
+                if expected is not None:
+                    observed = dict(item["localAnalysis"])
+                    observed.pop("checkedAt")
+                    expected = dict(expected)
+                    expected.pop("checkedAt")
+                    self.assertEqual(observed, expected)
+            self.assertEqual(actual["pluginAnalysis"]["warnings"], expected_warnings)
+            request = build_audit_request(org, self.snapshot)
+            self.assertEqual(resolve.call_count, 4)
+            for state in request["pluginStates"]:
+                self.assertEqual(state["path"], org.resolvePath(state["name"]))
+
     def test_native_state_hash_changes_for_winner_activation_and_is_time_independent(self):
         org = self.organizer()
         first = attach_native_plugin_state(org, copy.deepcopy(self.snapshot))

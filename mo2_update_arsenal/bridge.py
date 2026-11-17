@@ -32,6 +32,7 @@ from .content_recovery import ContentRecovery
 from .duplicate_report import DuplicateReports
 from .source_adapters import compact_source_update, PUBLIC_API_PROVIDERS
 from .version import VERSION
+from .shared_cards import inspect_shared_cards
 
 MAX_REQUEST = 16_384
 MAX_PROGRESS_REQUEST = 8_000_000
@@ -1755,6 +1756,8 @@ class ArsenalService:
                     return self.wfile.write(output)
                 if not self._authorize():
                     return
+                if uri.path == "/api/shared-cards/status":
+                    return self._reply(inspect_shared_cards())
                 if uri.path == "/api/content-context":
                     query = urllib.parse.parse_qs(uri.query)
                     return self._reply(service.content.capture(query.get("itemId", [""])[0], query.get("targetName", [""])[0], native=self._native_client(), backup_id=query.get("backupId", [""])[0]))

@@ -38,7 +38,9 @@ jobs:
           [IO.File]::WriteAllText((Join-Path $PWD 'native/resources/mo2-installer/SHA256SUMS.txt'), "DIAGNOSTIC_ONLY_NOT_AN_INSTALLABLE_BUNDLE`n", [Text.UTF8Encoding]::new($false))
           New-Item -ItemType Directory -Force native/target/discovery-diagnostic | Out-Null
           git rev-parse HEAD | Set-Content -Encoding utf8 native/target/discovery-diagnostic/source-commit.txt
-          git status --porcelain | Set-Content -Encoding utf8 native/target/discovery-diagnostic/source-status.txt
+          $DiscoverySourceStatus = @(git status --porcelain)
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          [IO.File]::WriteAllText((Join-Path $PWD 'native/target/discovery-diagnostic/source-status.txt'), ($DiscoverySourceStatus -join "`n"), [Text.UTF8Encoding]::new($false))
       - name: Exercise actual Windows discovery fixtures with native observations
         shell: pwsh
         run: |

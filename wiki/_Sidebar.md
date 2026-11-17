@@ -24,7 +24,7 @@
 * [⚒ Update Workshop](Update-Workshop)
 
 **Design & quality**
-* [OLED 0.12.1 / Daily-use release](OLED-0.12.1)
+* [OLED 0.12.1 / Historical release](OLED-0.12.1)
 * [Atelier 0.12 / The Mod Vault](Atelier-0.12)
 * [✦ AAA Visual Quality Standard](Design-System-and-Quality-Bar)
 

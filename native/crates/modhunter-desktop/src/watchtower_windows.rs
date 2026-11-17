@@ -417,6 +417,8 @@ pub fn open(app: &tauri::AppHandle, prefill: Option<Value>) -> Result<()> {
             .title("Modhunter · Watchtower")
             .inner_size(1280.0, 880.0)
             .min_inner_size(760.0, 560.0)
+            .prevent_overflow()
+            .center()
             .on_navigation(|url| crate::policy::local_asset(url, "/watchtower.html"))
             .on_new_window(|_, _| NewWindowResponse::Deny)
             .build()
@@ -874,6 +876,7 @@ fn site_window(
         })
         .inner_size(1050.0, 790.0)
         .min_inner_size(500.0, 500.0)
+        .prevent_overflow()
         .visible(false)
         .focused(false)
         .data_directory(directory.clone())
@@ -950,6 +953,8 @@ fn site_window(
         });
     if let Some(features) = features {
         builder = builder.window_features(features);
+    } else {
+        builder = builder.center();
     }
     let window = builder.visible(false).focused(false).build().map_err(err)?;
     let native = app.get_window(&label).ok_or("The website window closed.")?;

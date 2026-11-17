@@ -6,7 +6,7 @@ Open **MO2 Instances** in the desktop toolbar to find MO2 and install the matchi
 
 ## Discover your installations
 
-Opening the manager checks known locations automatically: saved folders, imported profile/configuration hints, registered applications, running MO2 executables, Windows shortcuts and global instance configurations. Use **Add folder** for a modding folder, secondary disk, portable collection or explicitly selected network location. **Search drives** lets you choose native drives and remembered folders for a complete recursive search.
+Opening the manager checks known locations automatically: saved folders, imported profile/configuration hints, registered applications, running MO2 executables, Windows shortcuts and global instance configurations. Use **Add folder** for a modding folder, secondary disk, portable collection or explicitly selected network location. **Search drives & folders** lets you choose native drives and remembered folders for a complete recursive search.
 
 A completed scan describes the scope it actually checked. Known-location discovery does not claim to search every folder on every drive. Deep discovery has no installation-count or directory-depth cap. Unreadable locations, malformed configurations and linked directories appear as explicit issues. Links are not followed into loops or unrelated locations.
 
@@ -30,9 +30,9 @@ Shared global relationships are labeled as available choices, not exclusive owne
 ## Install or update selected applications
 
 1. Select the application checkboxes you want. You can select more than one.
-2. Choose **Review selected**. Read the exact destination, current and bundled versions, affected instances, backup root and any blocker for every selected application.
-3. Close MO2 for the selected application if requested. An independently identified MO2 process at another application path may remain running. An unreadable process identity requires you to resolve the ambiguity.
-4. Confirm the reviewed targets. The app installs them sequentially and shows a separate result for each one.
+2. Choose **Review selected installations**. Read the exact destination, current and bundled versions, affected instances, backup root and any blocker for every selected application.
+3. If a target is blocked, resolve the listed issue and choose **Check targets again**. Close MO2 for the selected application if requested. An independently identified MO2 process at another application path may remain running. An unreadable process identity requires you to resolve the ambiguity.
+4. Choose **Install plugin** to confirm the reviewed targets. The app installs them sequentially and shows a separate result for each one.
 5. Open MO2, choose the desired instance/profile, and let it load. Use the manager's verified live-session **Connect** action, or **Find MO2** in the desktop toolbar.
 
 Every selected target must pass the preview before confirmation is enabled. A review expires after two minutes. A new review or scan replaces it, and a consumed review cannot be replayed. The installer rechecks the complete installed-plugin fingerprint and MO2 executable before mutation; a changed target requires another review.

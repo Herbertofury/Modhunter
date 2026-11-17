@@ -7,10 +7,10 @@
 Use the Windows installer or **Modhunter-Rust-Windows.zip** from the current release. Both desktop packages include the complete matching MO2 plugin for the in-app **MO2 Instances** manager. Extract the complete portable archive into its own folder and keep its files together.
 
 1. If upgrading, export a progress backup from the existing app before changing versions. Keep the old portable folder until the new version opens your collection correctly. MO2 plugin upgrades preserve existing Chronicle progress and retain the previous plugin outside MO2's plugin search folder.
-2. Open **MO2 Instances** in the desktop toolbar. Let known-location discovery finish. Use **Add folder** or **Search drives** for portable installs and secondary modding locations.
-3. Select the applications you want, then **Review selected**. Read the exact destinations and shared-instance relationships. Close the selected MO2 application if the preview requests it, then confirm the installation. Existing plugin data and the previous plugin backup are retained.
+2. Open Modhunter, then choose **MO2 Instances** in the desktop toolbar. Let known-location discovery finish. Use **Add folder** or **Search drives & folders** for portable installs and secondary modding locations.
+3. Select the applications you want, then **Review selected installations**. Read the exact destinations and shared-instance relationships. If the preview asks you to close a selected MO2 application, close it and choose **Check targets again**. Choose **Install plugin** once the reviewed targets are ready. Existing plugin data and the previous plugin backup are retained.
 4. Check each result. The app verifies the installed plugin files before showing success. The portable package's read-only **Check_MO2_Readiness.bat** remains available for a detailed runtime report, and its manual installer remains supported. [MO2 Instances](MO2-Instances) explains selection, backup, cancellation and recovery.
-5. Start MO2, select the intended game and profile, and wait for it to finish loading. The bridge starts automatically; opening **Tools → Update Arsenal - Quest Board** is optional. Launch **Modhunter.exe**. If automatic discovery has not connected, select **Find MO2**; choose the intended session when more than one is running.
+5. Start MO2, select the intended game and profile, and wait for it to finish loading. The bridge starts automatically; opening **Tools → Update Arsenal - Quest Board** is optional. Return to the already-open Modhunter window. If automatic discovery has not connected, select **Find MO2**; choose the intended session when more than one is running.
 6. Confirm the profile name and mod count. Keep Nexus signed in through MO2. Open **Updates** and run **Check for updates** to inspect the actual source results.
 
 For the exact MO2 2.5.3b12 setup notes, see [MO2 testing and readiness](MO2-253-Testing). The release's actual MO2 fixture uses official 2.5.2, with a separate Qt 6.11 forward-runtime check; those checks do not claim execution of every beta build or a personal mod collection.
@@ -37,7 +37,7 @@ The recovery workflow retains actual mod-file backups. Use the exact recovery pr
 
 ## Pages outside the automatic adapters
 
-Use **Watchtower** to track an exact release page, creator page or changelog. Choose a named site session when access needs sign-in. The first successful read establishes a baseline; later page changes stay available for review. Optional due checks run while the app is open. A changed page remains a page observation until its exact archive and compatibility have been reviewed.
+Open **Watch Pages** in the desktop toolbar to use Watchtower for an exact release page, creator page or changelog. Choose a named site session when access needs sign-in. The first successful read establishes a baseline; later page changes stay available for review. Optional due checks run while the app is open. A changed page remains a page observation until its exact archive and compatibility have been reviewed.
 
 The draft Creator Hub/source-continuity work is tracked separately in [PR #27](https://github.com/Herbertofury/Modhunter/pull/27). Automatic creator follows and cross-site migration management are separate work.
 

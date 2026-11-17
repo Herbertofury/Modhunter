@@ -308,6 +308,8 @@ pub(crate) fn open(app: &tauri::AppHandle) -> Result<()> {
                 .title("Modhunter · MO2 Instances")
                 .inner_size(1280.0, 880.0)
                 .min_inner_size(760.0, 560.0)
+                .prevent_overflow()
+                .center()
                 .on_navigation(|url| crate::policy::local_asset(url, "/instances.html"))
                 .on_new_window(|_, _| NewWindowResponse::Deny)
                 .on_page_load(move |_, payload| {
@@ -369,6 +371,7 @@ pub(crate) fn guard_close(app: &tauri::AppHandle) -> bool {
 
 struct LockedBundle {
     verified: VerifiedBundle,
+    script_argument: PathBuf,
     _files: Vec<File>,
 }
 fn lock_bundle(resource: &Path) -> Result<LockedBundle> {
@@ -394,8 +397,10 @@ fn lock_bundle(resource: &Path) -> Result<LockedBundle> {
         );
     }
     let verified = installer_bundle::verify(resource, PINNED_MANIFEST, VERSION)?;
+    let script_argument = crate::installer_script_windows::argument(&verified)?;
     Ok(LockedBundle {
         verified,
+        script_argument,
         _files: files,
     })
 }
@@ -647,7 +652,7 @@ fn run_installer(
             "Bypass",
             "-File",
         ])
-        .arg(bundle.verified.root.join("Install_MO2_Plugin.ps1"))
+        .arg(&bundle.script_argument)
         .arg("-MO2Directory")
         .arg(&installation.directory)
         .arg("-Json")
@@ -1218,6 +1223,87 @@ pub(crate) async fn instances_command(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn installer_script_preview_uses_the_verified_ordinary_path_with_actual_powershell() {
+        let root = fs::canonicalize(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../resources/mo2-installer"),
+        )
+        .unwrap();
+        // The full Windows gate prepares its genuine release resource before
+        // native tests. Focused diagnostics bind their resource provenance
+        // separately; an invalid placeholder must never skip this regression.
+        let mut bundle =
+            lock_bundle(&root).expect("A complete matching installer resource is required");
+        let compatible_script = bundle.script_argument.clone();
+        let original_script = root.join("Install_MO2_Plugin.ps1");
+        let temporary = tempfile::tempdir().unwrap();
+        let directory = temporary.path().join("MO2 日本語 [preview-only]");
+        fs::create_dir(&directory).unwrap();
+        let executable = directory.join("ModOrganizer.exe");
+        let mut marker = vec![0_u8; 512];
+        marker[..2].copy_from_slice(b"MZ");
+        marker[60..64].copy_from_slice(&128_u32.to_le_bytes());
+        marker[128..132].copy_from_slice(b"PE\0\0");
+        marker[132..134].copy_from_slice(&0x8664_u16.to_le_bytes());
+        fs::write(&executable, &marker).unwrap();
+        let target = Installation {
+            id: "owned-installer-script-preview-fixture".into(),
+            directory: fs::canonicalize(&directory).unwrap(),
+            executable: fs::canonicalize(&executable).unwrap(),
+            version: None,
+            architecture: Some("x64".into()),
+            portable_locked: false,
+            plugin: mo2_discovery::PluginObservation {
+                version: None,
+                status: "missing".into(),
+            },
+            running_pids: Vec::new(),
+            sources: vec!["owned-native-preview-regression".into()],
+        };
+        let unchanged_target = || {
+            fs::read_dir(&directory).unwrap().count() == 1
+                && fs::read(&executable).unwrap() == marker
+        };
+        // Recreate only the old -File spelling with the same resource locks,
+        // target, mandatory Preview mode and identity. This override exists
+        // solely inside the native test; the production host never accepts it.
+        bundle.script_argument = original_script.clone();
+        let baseline = run_installer(&bundle, &target, None).unwrap();
+        assert_eq!(baseline["ok"], false, "{baseline}");
+        assert_eq!(baseline["code"], "unsafe_path", "{baseline}");
+        assert!(unchanged_target());
+        bundle.script_argument = compatible_script.clone();
+        let preview = run_installer(&bundle, &target, None).unwrap();
+        assert_eq!(preview["ok"], true, "{preview}");
+        assert_eq!(preview["status"], "preview", "{preview}");
+        assert_eq!(preview["code"], "ready", "{preview}");
+        assert_eq!(preview["version"], VERSION);
+        assert_eq!(preview["commit"], bundle.verified.identity.commit);
+        assert_eq!(
+            fs::canonicalize(preview["targetDirectory"].as_str().unwrap()).unwrap(),
+            target.directory
+        );
+        assert!(
+            preview["installedFingerprint"]
+                .as_str()
+                .is_some_and(|value| {
+                    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+                })
+        );
+        assert!(unchanged_target());
+        let after = installer_bundle::verify(&root, PINNED_MANIFEST, VERSION).unwrap();
+        assert_eq!(after.files, bundle.verified.files);
+        assert_eq!(after.manifest_sha256, bundle.verified.manifest_sha256);
+        println!(
+            "MODHUNTER_INSTALLER_SCRIPT_PREVIEW={}",
+            json!({"schemaVersion":1,"ok":true,"scope":"Actual hidden Windows PowerShell preview against a verified resource and an inert owned MO2 marker; no installation or MO2 execution",
+                "canonicalResourceRoot":root,"validatedScriptArgument":compatible_script,
+                "baselineScriptArgument":original_script,"targetDirectory":target.directory,
+                "baselineReceipt":baseline,"previewReceipt":preview,
+                "bundleManifestSha256":bundle.verified.manifest_sha256,
+                "targetsUnchanged":true,"packageUnchanged":true,"actualInstallExecuted":false})
+        );
+    }
     #[test]
     fn late_stop_during_terminal_journal_save_cannot_restore_a_running_ui() {
         for status in ["complete", "failed", "cancelled"] {

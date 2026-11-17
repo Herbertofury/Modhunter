@@ -1787,6 +1787,8 @@ pub fn run() {
                 .focused(false)
                 .inner_size(1480.0, 960.0)
                 .min_inner_size(760.0, 550.0)
+                .prevent_overflow()
+                .center()
                 .build()?;
             crate::watchtower_windows::privacy::apply_window(app.handle(), &window)
                 .map_err(std::io::Error::other)?;

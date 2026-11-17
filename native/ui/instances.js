@@ -236,8 +236,9 @@
   const row=el('article','preview-target');row.dataset.installationId=target.installationId;row.dataset.ready=String(target.canInstall===true);
   const top=el('div','result-top'),actionLabels={install:'Install plugin',update:'Update plugin',repair:'Repair plugin',replace:'Replace plugin'};top.append(raw('strong','',leaf(target.directory)),chip(target.canInstall?(actionLabels[target.action]||'Ready to install'):'Needs attention',target.canInstall?'positive':'error'));row.append(top);
   const fields=[['Application folder',target.directory],['Plugin destination',target.pluginDirectory],['Backup location',target.backupRoot]];const facts=el('dl');for(const [label,value] of fields){facts.append(el('dt','',label));const dd=el('dd');dd.append(path(value));facts.append(dd)}facts.append(el('dt','','Plugin version'));const version=el('dd');version.append(raw('span','',(target.previousVersion||'—')+' → '+target.version));facts.append(version);row.append(facts);
-  if(target.message)row.append(el('p','',target.message));
-  if(list(target.blockers).length){const blockers=el('ul','blockers');for(const message of target.blockers)blockers.append(el('li','',message));row.append(blockers)}
+  const blockedBy=list(target.blockers);
+  if(target.message&&!blockedBy.includes(target.message))row.append(el('p','',target.message));
+  if(blockedBy.length){const blockers=el('ul','blockers');for(const message of blockedBy)blockers.append(el('li','',message));row.append(blockers)}
   if(list(target.affectedInstances).length){const details=el('details');details.append(el('summary','',count(target.affectedInstances.length)+' affected instance choices'));const entries=el('ul');for(const instance of target.affectedInstances){const entry=el('li');entry.append(raw('span','',instance.name),el('span','',' · '+(RELATION_LABELS[instance.relation]||instance.kind||'Instance')));entries.append(entry)}details.append(entries);row.append(details)}
   return row;
  }

@@ -17,6 +17,39 @@ class NativeBossBountyTests(unittest.TestCase):
  def setUp(self):
   self.dir=tempfile.TemporaryDirectory();self.addCleanup(self.dir.cleanup)
   self.store=Chronicle(Path(self.dir.name)/'chronicle.json')
+ def test_rival_chronicle_persists_per_profile_without_currency(self):
+  state={"v":1,"rivals":{"fixture":{"losses":2,"lastLossRun":"run-fixture"}}}
+  saved=self.store.save_siege_state('p',state,0)
+  self.assertTrue(saved['ok'])
+  self.assertEqual(self.store.siege_state('p')['state'],state)
+  self.assertEqual(self.store.siege_state('other')['state'],{})
+  self.assertFalse(self.store.save_siege_state('p',state,0)['ok'])
+  self.assertEqual(self.store.overview('p')['score'],0)
+  self.assertEqual(self.store.realm_wallet('p')['earned'],0)
+ def test_large_rival_history_round_trips_with_live_run_without_pruning(self):
+  rivals={json.dumps(["mod",str(mod),str(version),str(version+1)]):{"losses":2,"victories":1,"observedAt":1929000000000,"lastObservedAt":1929600000000,"lastLossRun":"fixture_abcdefghijk"} for mod in range(2000) for version in range(4)}
+  state={"v":1,"rivals":rivals,"run":{"entities":[{"id":n,"hp":100,"maxHp":100,"x":5,"y":6,"enemyLore":{"name":"Fixture champion","sourceMod":"Fixture"}} for n in range(256)]}}
+  self.assertGreater(len(json.dumps(state)),800000)
+  result=self.store.save_siege_state('p',state,0)
+  self.assertTrue(result['ok'],result)
+  restored=Chronicle(self.store.path)
+  self.assertEqual(restored.siege_state('p')['state'],state)
+  self.assertLess(self.store.path.stat().st_size,750000)
+  self.assertEqual(restored.realm_wallet('p')['earned'],0)
+ def test_rival_archive_corruption_and_limits_preserve_last_good_save(self):
+  state={"v":1,"rivals":{"fixture":{"losses":1}}}
+  self.assertTrue(self.store.save_siege_state('p',state,0)['ok'])
+  old=self.store.path.read_bytes()
+  self.assertFalse(self.store.save_siege_state('p',{"v":1,"rivals":{"too-large":"x"*(8*1024*1024)}},1)['ok'])
+  self.assertEqual(self.store.path.read_bytes(),old)
+  self.store.data['profiles']['p']['siegeRivalsPacked']='not base64'
+  self.assertFalse(self.store.siege_state('p')['ok'])
+ def test_legacy_unpacked_rival_save_remains_readable(self):
+  state={"v":1,"rivals":{"fixture":{"losses":1}}}
+  self.store.data['profiles']['p']={"siegeState":state,"siegeRevision":1}
+  self.assertEqual(self.store.siege_state('p')['state'],state)
+  self.assertTrue(self.store.save_siege_state('p',state,1)['ok'])
+  self.assertEqual(self.store.siege_state('p')['state'],state)
  def test_claim_creates_no_currency_or_ranked_xp(self):
   granted=self.store.claim_mod_boss('p',MOD,'run_abcdefghijk');self.assertTrue(granted['ok'])
   self.assertFalse(granted['awarded']);self.assertEqual(granted['bounty']['status'],'defeated')
@@ -77,6 +110,14 @@ class BridgeSiegeTests(unittest.TestCase):
    if origin:h['Origin']=f'http://127.0.0.1:{self.port}'
   c.request(method,path,body=json.dumps(body) if body is not None else None,headers=h)
   response=c.getresponse();status=response.status;data=json.loads(response.read());c.close();return status,data
+ def test_large_rival_state_crosses_bridge_and_preserves_every_record(self):
+  rivals={str(i):{"losses":2,"observedAt":1929000000000,"lastObservedAt":1929600000000,"lastLossRun":"fixture_abcdefghijk"} for i in range(8000)}
+  state={"v":1,"rivals":rivals}
+  self.assertGreater(len(json.dumps(state)),800000)
+  status,result=self.call('POST','/api/siege/state',{'profileId':'modhunter-demo','revision':0,'state':state})
+  self.assertEqual(status,200);self.assertTrue(result['ok'],result)
+  restored=self.call('GET','/api/siege/state')[1]
+  self.assertEqual(restored['state'],state)
  def test_exact_target_and_native_mo2_focus(self):
   status,data=self.call('GET','/api/siege/targets');self.assertEqual(status,200)
   self.assertEqual(data['targets'][0]['id'],'live-77')

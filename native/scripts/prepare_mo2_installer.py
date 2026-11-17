@@ -65,6 +65,25 @@ def tracked_plugin_files(root: Path) -> list[str]:
     return sorted(name for name in names if name)
 
 
+def runtime_sources(root: Path, source_files: list[str] | None = None) -> list[str]:
+    selected = []
+    for relative in source_files if source_files is not None else tracked_plugin_files(root):
+        path = PurePosixPath(relative)
+        if (len(path.parts) < 2 or path.parts[0] != "mo2_update_arsenal"
+                or any(part in (".", "..", "__pycache__", "data", "bin") for part in path.parts)
+                or path.suffix == ".pyc"):
+            raise ValueError(f"Unexpected tracked plugin payload: {relative}")
+        # The compiled index contains its web sources. Include precisely the
+        # runtime files that the installer owns, so the host can verify every
+        # declared MO2 payload file after installation.
+        if (len(path.parts) == 2 and path.suffix == ".py") or relative == "mo2_update_arsenal/web/index.html":
+            selected.append(relative)
+    for required in ("__init__.py", "plugin.py", "version.py", "web/index.html"):
+        if "mo2_update_arsenal/" + required not in selected:
+            raise ValueError(f"The complete tracked MO2 payload is missing {required}")
+    return sorted(selected)
+
+
 def manifest_bytes(bodies: dict[str, bytes]) -> bytes:
     seen: set[str] = set()
     lines = []
@@ -89,21 +108,8 @@ def assemble(root: Path, cli: Path, qt_bridge: Path, commit: str, run_url: str,
     if not re.fullmatch(r"https://github\.com/[^/\s]+/[^/\s]+/actions/runs/[0-9]+", run_url):
         raise ValueError("Installer resources require the exact GitHub Actions run URL")
     bodies = {name: regular_bytes(root / source) for name, source in ROOT_FILES.items()}
-    for relative in source_files if source_files is not None else tracked_plugin_files(root):
-        path = PurePosixPath(relative)
-        if (len(path.parts) < 2 or path.parts[0] != "mo2_update_arsenal"
-                or any(part in (".", "..", "__pycache__", "data", "bin") for part in path.parts)
-                or path.suffix == ".pyc"):
-            raise ValueError(f"Unexpected tracked plugin payload: {relative}")
-        # The compiled index contains its web sources. Include precisely the
-        # runtime files that the installer owns, so the host can verify every
-        # declared MO2 payload file after installation.
-        if not (len(path.parts) == 2 and path.suffix == ".py") and relative != "mo2_update_arsenal/web/index.html":
-            continue
+    for relative in runtime_sources(root, source_files):
         bodies["MO2/" + relative] = regular_bytes(root / relative)
-    for required in ("__init__.py", "plugin.py", "version.py", "web/index.html"):
-        if PLUGIN_PREFIX + required not in bodies:
-            raise ValueError(f"The complete tracked MO2 payload is missing {required}")
     bodies[PLUGIN_PREFIX + "bin/modhunter-cli.exe"] = regular_bytes(cli)
     bodies[PLUGIN_PREFIX + "bin/modhunter-qt-bridge.dll"] = regular_bytes(qt_bridge)
     for name in ARCHIVE_FILES:
@@ -203,6 +209,16 @@ class BundleTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "exact lowercase source commit"):
             self.bundle()
 
+    def test_tracked_bytecode_and_mutable_plugin_state_are_rejected(self):
+        for relative in ("mo2_update_arsenal/__pycache__/__init__.cpython-314.pyc",
+                         "mo2_update_arsenal/legacy.pyc",
+                         "mo2_update_arsenal/data/chronicle.json",
+                         "mo2_update_arsenal/bin/unreviewed.exe"):
+            with self.subTest(relative=relative), self.assertRaisesRegex(
+                    ValueError, "Unexpected tracked plugin payload"):
+                assemble(self.root, self.root / "cli.exe", self.root / "qt.dll",
+                         self.commit, self.run, [*self.sources, relative])
+
     def test_linked_source_and_output_are_rejected(self):
         source = self.root / "mo2_update_arsenal/plugin.py"
         source.unlink()
@@ -232,10 +248,18 @@ def main():
     parser.add_argument("--run-url")
     parser.add_argument("--output", type=Path, default=RESOURCE)
     parser.add_argument("--self-test", action="store_true")
+    parser.add_argument("--source-preflight", action="store_true",
+                        help="Check actual tracked runtime source files without creating installer resources")
     args = parser.parse_args()
     if args.self_test:
         result = unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(BundleTests))
         raise SystemExit(0 if result.wasSuccessful() else 1)
+    if args.source_preflight:
+        hashes = {name: hashlib.sha256(regular_bytes(ROOT / name)).hexdigest()
+                  for name in runtime_sources(ROOT)}
+        print(json.dumps({"ok": True, "sourcePreflight": True, "version": source_version(ROOT),
+                          "files": len(hashes), "sourceSha256": hashes}, indent=2))
+        return
     if not all((args.cli, args.qt_bridge, args.commit, args.run_url)):
         parser.error("--cli, --qt-bridge, --commit and --run-url are required")
     bodies = assemble(ROOT, args.cli, args.qt_bridge, args.commit, args.run_url)

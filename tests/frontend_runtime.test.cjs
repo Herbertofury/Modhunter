@@ -18,10 +18,10 @@ function catalog(profile='a',count=3){
   items:Array.from({length:count},(_,i)=>({id:'item-'+i,name:'Fixture '+i,groupId:'group',group:'Fixtures',priority:i,author:'Test Author',installedVersion:'1.0',screenshotNote:'',flags:[],audit:{},nexusId:i+1,source:{type:'nexus',verified:true,url:'https://www.nexusmods.com/skyrimspecialedition/mods/'+(i+1)},update:{verdict:'candidate',latestVersion:'2.0'}}))};
 }
 function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={},progressReadFailures=0,nativeWatch=false}={}){
- const nodes=new Map(),timers=new Map(),pending=new Map(),calls=[],active=new Map(),maximum=new Map(),nativeNavigations=[],windowListeners=new Map();
+ const nodes=new Map(),timers=new Map(),pending=new Map(),calls=[],active=new Map(),maximum=new Map(),nativeNavigations=[],windowListeners=new Map(),documentListeners=new Map();
  let timerId=0;
  const state={catalog:catalog('a',count),generation:1,failSnapshots,progressRows,progressReadFailures,score:0,scan:{state:'idle'},defer:new Set()};
- const document={hidden:false,activeElement:null,addEventListener(){},querySelectorAll(){return[]},createElement:name=>element(name),getElementById:id=>node(id),querySelector:selector=>node(selector)};
+ const document={hidden:false,activeElement:null,addEventListener(type,listener){if(!documentListeners.has(type))documentListeners.set(type,[]);documentListeners.get(type).push(listener)},dispatchEvent(event){for(const listener of documentListeners.get(event.type)||[])listener(event)},querySelectorAll(){return[]},createElement:name=>element(name),getElementById:id=>node(id),querySelector:selector=>node(selector)};
  function element(id){
   const classes=new Set(),listeners=new Map();let html='';
   return{id,textContent:'',value:'',checked:false,disabled:false,hidden:true,dataset:{},writes:0,
@@ -217,6 +217,19 @@ test('cosmetic settings leave catalog DOM intact; large searches keep all record
  assert.equal([...h.timers.values()].filter(t=>t.ms==='frame').length,1);await h.tick('frame');
  assert.equal(h.api.filtered().length,1);assert.equal(h.qa.getCatalog().items.length,2500);
  assert.equal(h.nodes.get('modList').writes,writes+1);
+});
+
+test('Escape owns search dismissal and preserves the exact active query',async()=>{
+ const h=harness();await h.settle();const input=h.nodes.get('search'),query='"Fixture 1"';
+ input.value=query;input.matches=selector=>selector.includes('input');
+ input.blur=()=>{h.context.document.activeElement=h.context.document.body};input.focus();
+ h.api.setQuery(query);assert.equal(h.api.filtered().length,1);
+ const event={type:'keydown',key:'Escape',target:input,defaultPrevented:false,preventDefault(){this.defaultPrevented=true}};
+ h.context.document.dispatchEvent(event);
+ // Chromium clears a type=search input on Escape unless the app owns it.
+ if(!event.defaultPrevented)input.value='';
+ assert.equal(event.defaultPrevented,true);assert.equal(input.value,query);
+ assert.notEqual(h.context.document.activeElement,input);assert.equal(h.api.filtered().length,1);
 });
 
 test('row markup retains metadata whitespace while omitting formatting-only boundaries',async()=>{

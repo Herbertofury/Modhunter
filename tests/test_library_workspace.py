@@ -159,7 +159,8 @@ class LibraryWorkspaceTests(unittest.TestCase):
         self.assertEqual(color(),"#3873d4cc")
         self.page.locator("#railCollections").click()
         self.assertEqual(self.page.locator(".chapter-link").first.evaluate("node=>node.style.getPropertyValue('--group-clr')"),"#3873d4cc")
-        self.page.keyboard.press("Escape");self.page.locator("#workspaceAppearance").click();self.assertEqual(color(),"#3873d4cc")
+        self.page.keyboard.press("Escape");self.page.locator("#railTheme").click();self.assertEqual(color(),"#3873d4cc")
+        self.assertEqual(self.page.locator("body").get_attribute("data-theme"),"snow")
         self.page.locator("#search").fill("Unique Fixture 7");self.page.wait_for_function("document.querySelectorAll('#modList>.mod-row').length===1");self.assertEqual(color(),"#3873d4cc")
         self.page.locator("#clearSearch").click();self.page.locator("#libraryGallery").click();self.page.locator("#galleryGrouping").select_option("chapters");self.assertEqual(color(),"#3873d4cc")
         catalog["groups"][0]["separatorColor"]="red;position:fixed";awaitable="async catalog=>{__RESP__.catalog=catalog;await __ARSENAL_QA__.setCatalog(catalog)}"
@@ -186,7 +187,7 @@ class LibraryWorkspaceTests(unittest.TestCase):
             self.capture("library-workspace-"+workspace+".png")
         self.page.locator("#libraryGallery").click();self.assertEqual(self.page.locator("#modList>.mod-row").count(),30)
         self.capture("library-gallery-details.png")
-        self.page.locator("#workspaceAppearance").click();self.capture("library-gallery-light.png")
+        self.page.locator("#railTheme").click();self.assertEqual(self.page.locator("body").get_attribute("data-theme"),"snow");self.capture("library-gallery-light.png")
         self.page.set_viewport_size({"width":390,"height":844})
         source=self.page.locator("#row-item-0 .mod-source").bounding_box()
         actions=self.page.locator("#row-item-0 .inspect-col").bounding_box()

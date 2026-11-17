@@ -1,0 +1,15 @@
+# Realm side-run portals
+
+Source implementation on the Siege portal stack; not native gameplay or visual acceptance.
+
+Random Astral Detours now appear in Realm overworld, Rift and expedition simulation time. Interact nearby with E, controller X or the existing touch interaction, then choose 10/20/30 minutes. The entire parent world and runtime are frozen: position, health, clocks, cooldowns, active enemies/projectiles, buffs, waypoint and encounter state. No nested portals. Main contracts retain their20-minute floor.
+
+The side run is an independent Rift using the adventurer's build but an **empty resource pack**. Parent inventory is never copied as spendable ingredients. Temporary build/story changes stay in the detour; earned adventurer XP and remaining gathered/crafted resources transfer once on extraction, timer completion or defeat. No native Forge Sigils, verified update credit or ranked rewards are minted. The Rift panel shows remaining time and a Return to Frozen Parent action. Purchases and wallet receipt reconciliation wait until return, including requests already in flight at entry.
+
+Save/reload retains runtime entities, their actual health and cooldowns, rather than restarting the wave. A separate bounded native parent archive (750KB compressed payload,8MB decoded codec ceiling) and independent750KB child budget prevent a large parent from silently consuming the child's budget. The authenticated Realm HTTP route accepts the bounded aggregate. Both offline and native transitions require a successful durable write before activating a child or discarding it on return. Failed writes retain the last good save. Native disk-write/replace failures roll back in-memory state, archive and revision before any GET can falsely confirm a commit; this repair covers Siege saves too. Lost acknowledgements reconcile only against the exact saved world and profile. Corrupt parents remain available for recovery, never replaced by a reset.
+
+## Verification and remaining acceptance
+
+Regression tests cover all three side lengths, parent runtime equality, reload, once-only rewards, death/time completion, quota/corrupt snapshot failures, delayed native acknowledgements, lost return acknowledgement, chooser cancellation, crafting ingredient isolation and chooser/in-flight-wallet receipt race. A real local HTTP test sends a parent archive plus512 entity child exceeding800KB and checks roundtrip, stale revision, oversize rejection, archive cleanup and unchanged native currency. Injected disk-replace failures on entry and return in both adapters verify same-process GET matches a fresh on-disk reopen, and retry safely.
+
+Windows WebView2 rendering, controller navigation and full ten-to-thirty-minute combat/pacing remain pending. VM canvas stubs do not establish those. Resource availability and survival pacing need native playtesting before release. Integration must preserve Nemesis rival archives as well as both portal archives; do not replace its gameplay.py wholesale.

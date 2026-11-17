@@ -1,0 +1,18 @@
+{
+  "scope": "Realm side-run portal adapter source tests, not native acceptance",
+  "javascript": {
+    "passed": 208
+  },
+  "python": {
+    "total": 505,
+    "passed": 476,
+    "skipped": 29
+  },
+  "bundled_script_syntax_checks": 6,
+  "html_sha256": "45511e5f44694ca5226988e5167d793c47feb6d5aa1f3d58f8d85712ca99b71e",
+  "pending": [
+    "Windows WebView2 visual/controller",
+    "Full side-run pacing",
+    "Combined source integration with Nemesis and other independent branches"
+  ]
+}

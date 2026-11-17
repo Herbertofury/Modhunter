@@ -48,9 +48,9 @@ def compile_variants(released_ref, unchanged_ref):
     return compiled, identities, runtime
 
 
-def capture_interaction_geometry(browser, html, output, name):
+def capture_interaction_geometry(browser, html, output, name, *, fixture=None, observe=None, require_shared_tracks=True):
     """Exercise transitions that invalidate shared widths, beyond static cases."""
-    fixture = engine.dashboard.catalog(count=307)
+    fixture = fixture or engine.dashboard.catalog(count=307)
     fixture["offline"] = True
     context = browser.new_context(viewport={"width": 1440, "height": 900}, reduced_motion="reduce")
     page = context.new_page()
@@ -90,7 +90,7 @@ def capture_interaction_geometry(browser, html, output, name):
             image = page.screenshot(path=str(output / f"interaction-{name}-{key}.png"))
             state["screenshotSha256"] = hashlib.sha256(image).hexdigest()
             states[key] = state
-            diagnostics[key] = page.evaluate("window.__MODHUNTER_GRID_DIAGNOSTIC__?.()||null")
+            diagnostics[key] = observe(page) if observe else page.evaluate("window.__MODHUNTER_GRID_DIAGNOSTIC__?.()||null")
 
         capture("initial-1440")
         page.set_viewport_size({"width": 1920, "height": 1080})
@@ -126,7 +126,7 @@ def capture_interaction_geometry(browser, html, output, name):
         page.locator('.workspace-tabs [data-workspace="mods"]').click()
         capture("workspace-round-trip")
         assert not errors, errors
-        if name == "after":
+        if name == "after" and require_shared_tracks:
             assert all(value and value["writes"] > 0 for value in diagnostics.values()), diagnostics
             assert all(value["fallbacks"] == 0 for value in diagnostics.values()), diagnostics
         return states, diagnostics

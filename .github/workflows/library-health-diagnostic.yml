@@ -1,0 +1,39 @@
+name: Library health layout diagnosis
+on:
+  push:
+    branches: ['diagnostics/health-0.13.0']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: modhunter-library-health-diagnostic-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Prepare the same Chromium runtime and fonts
+        run: |
+          python3 -m venv /tmp/modhunter-health
+          /tmp/modhunter-health/bin/pip install -q playwright==1.57.0
+          /tmp/modhunter-health/bin/python tests/prepare_ci_fonts.py --output /tmp/modhunter-health-proof/ci-fonts.json
+          if ! command -v chromium >/dev/null && ! command -v chromium-browser >/dev/null; then
+            /tmp/modhunter-health/bin/python -m playwright install --with-deps chromium
+          fi
+      - name: Compare the complete library and equal health geometry
+        env:
+          MODHUNTER_REQUIRE_BROWSER: '1'
+        run: |
+          PYTHONPATH=. /tmp/modhunter-health/bin/python tests/library_health_diagnostic.py --output /tmp/modhunter-health-proof
+      - name: Preserve complete and interrupted diagnostic measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Modhunter-Library-Health-Diagnostic
+          path: /tmp/modhunter-health-proof/
+          if-no-files-found: error
+          retention-days: 90

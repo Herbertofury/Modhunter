@@ -3,6 +3,9 @@ from __future__ import annotations
 import copy
 import http.client
 import json
+import base64
+import gzip
+import random
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,6 +20,23 @@ class NativeBossBountyTests(unittest.TestCase):
  def setUp(self):
   self.dir=tempfile.TemporaryDirectory();self.addCleanup(self.dir.cleanup)
   self.store=Chronicle(Path(self.dir.name)/'chronicle.json')
+ def test_portal_parent_separate_budget_roundtrip_and_revision_atomicity(self):
+  parent={"id":"parent", "payload":base64.b64encode(random.Random(42).randbytes(430000)).decode()}
+  raw=json.dumps(parent,separators=(',',':')).encode()
+  snapshot={"v":1,"codec":"gzip","bytes":len(raw),"data":base64.b64encode(gzip.compress(raw)).decode()}
+  state={"v":1,"run":{"id":"child","portalSession":{"v":1,"parentId":"parent","parent":snapshot},"entities":[{"id":n,"name":"x"*1000} for n in range(512)]}}
+  self.assertGreater(len(json.dumps(state)),800000)
+  self.assertTrue(self.store.save_siege_state('p',state,0)['ok'])
+  self.assertEqual(Chronicle(self.store.path).siege_state('p')['state'],state)
+  before=self.store.path.read_bytes()
+  self.assertFalse(self.store.save_siege_state('p',{"v":1,"run":{"id":"wrong"}},0)['ok'])
+  self.assertEqual(self.store.path.read_bytes(),before)
+  self.assertFalse(self.store.save_siege_state('p',{"v":1,"run":{"id":"child","portalSession":{"v":1,"parentId":"parent","parent":{**snapshot,"data":"x"*750001}}}},1)['ok'])
+  self.assertEqual(self.store.path.read_bytes(),before)
+  self.assertTrue(self.store.save_siege_state('p',{"v":1,"run":{"id":"parent"}},1)['ok'])
+  self.assertNotIn('siegePortalParent',self.store.data['profiles']['p'])
+  self.assertEqual(self.store.realm_wallet('p')['earned'],0)
+
  def test_claim_creates_no_currency_or_ranked_xp(self):
   granted=self.store.claim_mod_boss('p',MOD,'run_abcdefghijk');self.assertTrue(granted['ok'])
   self.assertFalse(granted['awarded']);self.assertEqual(granted['bounty']['status'],'defeated')
@@ -77,6 +97,15 @@ class BridgeSiegeTests(unittest.TestCase):
    if origin:h['Origin']=f'http://127.0.0.1:{self.port}'
   c.request(method,path,body=json.dumps(body) if body is not None else None,headers=h)
   response=c.getresponse();status=response.status;data=json.loads(response.read());c.close();return status,data
+ def test_portal_parent_and_512_entity_child_cross_native_bridge_together(self):
+  raw=json.dumps({"id":"parent","payload":base64.b64encode(random.Random(17).randbytes(430000)).decode()}).encode()
+  snapshot={"v":1,"codec":"gzip","bytes":len(raw),"data":base64.b64encode(gzip.compress(raw)).decode()}
+  state={"v":1,"run":{"id":"child","portalSession":{"v":1,"parentId":"parent","parent":snapshot},"entities":[{"id":n,"name":"x"*1000} for n in range(512)]}}
+  self.assertGreater(len(json.dumps(state)),800000)
+  status,result=self.call('POST','/api/siege/state',{'profileId':'modhunter-demo','revision':0,'state':state})
+  self.assertEqual(status,200);self.assertTrue(result['ok'],result)
+  self.assertEqual(self.call('GET','/api/siege/state')[1]['state'],state)
+
  def test_exact_target_and_native_mo2_focus(self):
   status,data=self.call('GET','/api/siege/targets');self.assertEqual(status,200)
   self.assertEqual(data['targets'][0]['id'],'live-77')

@@ -18,7 +18,7 @@ These are JavaScript simulation adapters in the existing web engines, not a new 
 ## Unresolved-active, not delivered by this slice
 
 1. Geode-worm source implementation now exists in both engines: see [Roaming-Geode-Worm.md](Roaming-Geode-Worm.md). Native visual/terrain usability remains pending. Loot-carrier source combat and visuals now exist in both engines: see [Treasure-Goblin.md](Treasure-Goblin.md); native visual/pacing acceptance remains open.
-2. Nested portal gameplay and durable parent/child snapshots; no placeholder portal button has been added.
+2. Siege side-run portal implementation now exists: [Side-Run-Portals.md](Side-Run-Portals.md). Realm adapter, native Windows visual/playtesting and combined source integration remain open; do not call this both-mode portal completion.
 3. Long-run pacing, itemization, build diversity, uncapped progression, mastery balancing and measured 2-hour/endless session performance. Repeating wave cycles alone are not claimed as deep endgame.
 4. Full-engine long-session gameplay/FPS acceptance remains required. Independent review exposed unrestricted live Siege population; the implemented reinforcement director now bounds concurrent combatants at a user-selected128/256/512 while preserving every pending reinforcement in the existing numeric reserve. Bosses have a reserved slot and admission priority. Existing enemies are never culled; no fake kills/drops occur. UI explicitly shows deferred reinforcements. This intentionally changes arrival timing under saturation; it is not claimed as a zero-loss timing optimization.
 5. Windows WebView2/MO2 runtime and visual acceptance, controller selection, save/reload interrupted mid-combat and long-session playtesting.

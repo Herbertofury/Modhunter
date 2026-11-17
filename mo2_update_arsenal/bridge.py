@@ -37,6 +37,7 @@ from .version import VERSION
 MAX_REQUEST = 16_384
 MAX_PROGRESS_REQUEST = 8_000_000
 MAX_REALM_REQUEST = 800_000
+MAX_SIEGE_REQUEST = 9 * 1024 * 1024  # bounded game state and separate packed portal parent
 MAX_CACHED_SNAPSHOT = 32 * 1024 * 1024
 MAX_CONTENT_REQUEST = 1024 * 1024
 
@@ -1873,7 +1874,7 @@ class ArsenalService:
                     return
                 try:
                     length = int(self.headers.get("Content-Length", "0"))
-                    if length <= 0 or length > (MAX_CONTENT_REQUEST if self.path.split("?", 1)[0].startswith("/api/content-") and self._native_client() else MAX_PROGRESS_REQUEST if self.path.split("?", 1)[0] in ("/api/progress", "/api/update-queue") else MAX_REALM_REQUEST if self.path.split("?", 1)[0] in ("/api/realm/world", "/api/siege/state") else MAX_REQUEST):
+                    if length <= 0 or length > (MAX_CONTENT_REQUEST if self.path.split("?", 1)[0].startswith("/api/content-") and self._native_client() else MAX_PROGRESS_REQUEST if self.path.split("?", 1)[0] in ("/api/progress", "/api/update-queue") else MAX_SIEGE_REQUEST if self.path.split("?", 1)[0] == "/api/siege/state" else MAX_REALM_REQUEST if self.path.split("?", 1)[0] == "/api/realm/world" else MAX_REQUEST):
                         return self._reply({"ok": False, "error": "Request size rejected"}, 413)
                     data = json.loads(self.rfile.read(length))
                     if not isinstance(data, dict):

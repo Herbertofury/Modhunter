@@ -6,6 +6,7 @@ can claim XP or a victory. All mod identity keys are profile-scoped and stable.
 from __future__ import annotations
 
 import json
+import base64
 import os
 import threading
 from copy import deepcopy
@@ -354,8 +355,20 @@ class Chronicle:
     def siege_state(self, profile_id: str) -> dict:
         with self.lock:
             p = self._profile(profile_id)
+            state = deepcopy(p.get("siegeState") or {})
+            archive = p.get("siegePortalParent")
+            if archive is not None:
+                run = state.get("run") or {}
+                if not isinstance(run, dict):
+                    return {"ok": False, "error": "Portal run mismatch; prior save retained"}
+                session = run.get("portalSession") or {}
+                if (not isinstance(session, dict) or not isinstance(archive, dict) or archive.get("childId") != run.get("id")
+                        or archive.get("parentId") != session.get("parentId")
+                        or not isinstance(archive.get("snapshot"), dict)):
+                    return {"ok": False, "error": "Portal parent archive mismatch; retained unchanged for recovery"}
+                session["parent"] = deepcopy(archive["snapshot"])
             return {"ok": True, "profileId": profile_id, "revision": int(p.get("siegeRevision", 0)),
-                    "state": deepcopy(p.get("siegeState") or {})}
+                    "state": state}
 
     def save_siege_state(self, profile_id: str, state: dict, revision: int) -> dict:
         """Game-only save. Not a trusted source of MO2 currency or bounty score."""
@@ -364,8 +377,28 @@ class Chronicle:
         permitted = {"v", "mode", "run", "records", "options", "atlas"}
         if set(state) - permitted:
             return {"ok": False, "error": "Unexpected siege fields"}
+        stored = deepcopy(state)
+        archive = None
         try:
-            length = len(json.dumps(state, ensure_ascii=False, separators=(",", ":")))
+            run = stored.get("run") or {}
+            if not isinstance(run, dict):
+                return {"ok": False, "error": "Invalid Siege run"}
+            session = run.get("portalSession")
+            if session is not None:
+                if not isinstance(session, dict) or session.get("v") != 1 or not isinstance(run.get("id"), str) or not isinstance(session.get("parentId"), str):
+                    return {"ok": False, "error": "Invalid portal session"}
+                snapshot = session.pop("parent", None)
+                if (not isinstance(snapshot, dict) or snapshot.get("v") != 1 or snapshot.get("codec") != "gzip"
+                        or not isinstance(snapshot.get("bytes"), int) or isinstance(snapshot.get("bytes"), bool)
+                        or not 0 < snapshot["bytes"] <= 8000000 or not isinstance(snapshot.get("data"), str)):
+                    return {"ok": False, "error": "Invalid portal parent snapshot; prior save retained"}
+                if len(json.dumps(snapshot, separators=(",", ":")).encode("utf-8")) > 750000:
+                    return {"ok": False, "error": "Portal parent exceeds its separate 750 KB packed budget; prior save retained"}
+                raw = base64.b64decode(snapshot["data"], validate=True)
+                if not raw.startswith(b"\x1f\x8b"):
+                    return {"ok": False, "error": "Invalid gzip parent snapshot; prior save retained"}
+                archive = {"childId": run["id"], "parentId": session["parentId"], "snapshot": snapshot}
+            length = len(json.dumps(stored, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8"))
         except (TypeError, ValueError):
             return {"ok": False, "error": "Siege state cannot be encoded"}
         if length > 750000:
@@ -375,7 +408,11 @@ class Chronicle:
             current = int(p.get("siegeRevision", 0))
             if revision != current:
                 return {"ok": False, "error": "A newer Siege save exists; reload", "conflict": True, "revision": current}
-            p["siegeState"] = deepcopy(state)
+            p["siegeState"] = stored
+            if archive is None:
+                p.pop("siegePortalParent", None)
+            else:
+                p["siegePortalParent"] = archive
             p["siegeRevision"] = current + 1
             self._write()
             return {"ok": True, "profileId": profile_id, "revision": current + 1}

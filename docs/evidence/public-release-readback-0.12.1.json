@@ -1,0 +1,1256 @@
+{
+  "schema": 1,
+  "release": "https://github.com/Herbertofury/Modhunter/releases/tag/v0.12.1",
+  "version": "v0.12.1",
+  "commit": "f96b86969ec9f9c7ba6928284f16223b673d33c0",
+  "publishedAt": "2026-11-17T01:16:50Z",
+  "assets": [
+    {
+      "name": "Modhunter-0.12.1-MO2-Plugin.zip",
+      "bytes": 4331150,
+      "sha256": "fe3552411af9d3dbcc218e5146030417be0adf417b22bccf700b473adc07bfd1",
+      "status": 200,
+      "url": "https://github.com/Herbertofury/Modhunter/releases/download/v0.12.1/Modhunter-0.12.1-MO2-Plugin.zip"
+    },
+    {
+      "name": "Modhunter-0.12.1-Standalone.zip",
+      "bytes": 239125,
+      "sha256": "3ede1d504b6f607a477655b90b833d9f8df88d95f011cbc878d5b32a50eff634",
+      "status": 200,
+      "url": "https://github.com/Herbertofury/Modhunter/releases/download/v0.12.1/Modhunter-0.12.1-Standalone.zip"
+    },
+    {
+      "name": "Modhunter-0.12.1-Verification.zip",
+      "bytes": 26581752,
+      "sha256": "17e2000ccc2fbf44c578427e6dacdfff4cd4169b5bb0eac20533cc2cc6fa320f",
+      "status": 200,
+      "url": "https://github.com/Herbertofury/Modhunter/releases/download/v0.12.1/Modhunter-0.12.1-Verification.zip"
+    },
+    {
+      "name": "Modhunter-Rust-Windows.zip",
+      "bytes": 16775430,
+      "sha256": "b24fd6dba11a3fa96f09ed661ae333e9d56e46e3421f36d5498893feee8bd761",
+      "status": 200,
+      "url": "https://github.com/Herbertofury/Modhunter/releases/download/v0.12.1/Modhunter-Rust-Windows.zip"
+    },
+    {
+      "name": "Modhunter_0.12.1_x64-setup.exe",
+      "bytes": 6558562,
+      "sha256": "b776ea36a8174bd4a6369527dff2f3abd6f3efdd975bc4933b6984a188ea22e8",
+      "status": 200,
+      "url": "https://github.com/Herbertofury/Modhunter/releases/download/v0.12.1/Modhunter_0.12.1_x64-setup.exe"
+    },
+    {
+      "name": "SHA256SUMS.txt",
+      "bytes": 486,
+      "sha256": "904eed7319cba99aa3b3de6837918ccb47ffe0c176dc3c73b378816a238e0335",
+      "status": 200,
+      "url": "https://github.com/Herbertofury/Modhunter/releases/download/v0.12.1/SHA256SUMS.txt"
+    }
+  ],
+  "archives": [
+    {
+      "name": "Modhunter-Rust-Windows.zip",
+      "build": {
+        "version": "0.12.1",
+        "commit": "f96b86969ec9f9c7ba6928284f16223b673d33c0",
+        "workflow": "https://github.com/Herbertofury/Modhunter/actions/runs/43992734962"
+      },
+      "filesVerified": 78
+    },
+    {
+      "name": "Modhunter-0.12.1-MO2-Plugin.zip",
+      "build": {
+        "version": "0.12.1",
+        "commit": "f96b86969ec9f9c7ba6928284f16223b673d33c0",
+        "workflow": "https://github.com/Herbertofury/Modhunter/actions/runs/43992734962"
+      },
+      "filesVerified": 60
+    },
+    {
+      "name": "Modhunter-0.12.1-Standalone.zip",
+      "build": {
+        "version": "0.12.1",
+        "commit": "f96b86969ec9f9c7ba6928284f16223b673d33c0",
+        "workflow": "https://github.com/Herbertofury/Modhunter/actions/runs/43992734962"
+      },
+      "filesVerified": 2
+    }
+  ],
+  "desktopSha256": "25b9bc48e558c50b79bc843ce241e244e0fa758a1e47549f57243479939f2091",
+  "dashboardSha256": "2742135183c9b68ad650a4b9fbf9dbda9ae1b79292dae40b9b81330669025422",
+  "offlineChapterColorsVerified": true,
+  "offlineZeroProgressVerified": true,
+  "workflow": "https://github.com/Herbertofury/Modhunter/actions/runs/43992734962",
+  "verificationBuild": {
+    "version": "0.12.1",
+    "commit": "f96b86969ec9f9c7ba6928284f16223b673d33c0",
+    "workflow": "https://github.com/Herbertofury/Modhunter/actions/runs/43992734962"
+  },
+  "mo2ComponentMatchesPortable": true,
+  "nativeLibraryPerformance": {
+    "schemaVersion": 1,
+    "ok": true,
+    "nativeWebView2": true,
+    "nativeProcessId": 10092,
+    "executableSha256": "25b9bc48e558c50b79bc843ce241e244e0fa758a1e47549f57243479939f2091",
+    "fixtureSha256": "afd855e4ac76f284630ffb4ed6d9dc37280113c9559aef4402516795b7fef0a0",
+    "fixtureBytes": 4696493,
+    "records": 11207,
+    "scriptSha256": "3eb7df125e5ae7c63f9587ac0c2e3008c94a1e8157be8a7a49f0be983e948787",
+    "phase": "complete",
+    "checks": [
+      {
+        "name": "packaged_offline_dashboard",
+        "passed": true
+      },
+      {
+        "name": "owned_webview_profile",
+        "passed": true
+      },
+      {
+        "name": "owned_native_foreground",
+        "passed": true
+      },
+      {
+        "name": "visible_native_document",
+        "passed": true
+      },
+      {
+        "name": "fresh_list_compact",
+        "passed": true
+      },
+      {
+        "name": "import_complete",
+        "passed": true
+      },
+      {
+        "name": "exact_last_item_search",
+        "passed": true
+      },
+      {
+        "name": "search_restore_survivor",
+        "passed": true
+      },
+      {
+        "name": "listDensity_complete",
+        "passed": true
+      },
+      {
+        "name": "listDensityReset_complete",
+        "passed": true
+      },
+      {
+        "name": "gallery_complete",
+        "passed": true
+      },
+      {
+        "name": "galleryDensity_complete",
+        "passed": true
+      },
+      {
+        "name": "list_complete",
+        "passed": true
+      },
+      {
+        "name": "finalDensityReset_complete",
+        "passed": true
+      },
+      {
+        "name": "no_renderer_errors",
+        "passed": true
+      },
+      {
+        "name": "unchanged_executable",
+        "passed": true
+      }
+    ],
+    "timingsMs": {
+      "render": 3225.3000000000466,
+      "lastItemSearch": 517.2075999999997,
+      "searchRestore": 2032.1607999999997,
+      "listDensity": 1267.3469000000005,
+      "listDensityReset": 1182.7915999999987,
+      "gallery": 3708.437899999999,
+      "galleryDensity": 1935.7662999999993,
+      "list": 2500.931700000001,
+      "finalDensityReset": 1318.0305000000008
+    },
+    "interactions": {
+      "listDensity": {
+        "wallMs": 1267.3469000000005,
+        "metricsBefore": {
+          "Nodes": 604878,
+          "LayoutCount": 8,
+          "RecalcStyleCount": 10,
+          "LayoutDuration": 1.579931,
+          "RecalcStyleDuration": 1.020414,
+          "ScriptDuration": 0.33705,
+          "TaskDuration": 6.515336,
+          "JSHeapUsedSize": 224362568
+        },
+        "metricsAfter": {
+          "Nodes": 604889,
+          "LayoutCount": 9,
+          "RecalcStyleCount": 15,
+          "LayoutDuration": 1.811981,
+          "RecalcStyleDuration": 1.224197,
+          "ScriptDuration": 0.380578,
+          "TaskDuration": 7.757557,
+          "JSHeapUsedSize": 204948332
+        },
+        "metricDeltas": {
+          "ScriptDuration": 0.04352800000000001,
+          "LayoutDuration": 0.2320500000000001,
+          "RecalcStyleDuration": 0.20378300000000005,
+          "TaskDuration": 1.2422210000000007,
+          "LayoutCount": 1,
+          "RecalcStyleCount": 5,
+          "Nodes": 11,
+          "JSHeapUsedSize": -19414236
+        },
+        "frameEndpoint": {
+          "structuralBatchActive": false,
+          "transitionProperty": "background",
+          "transitionDuration": "0.12s"
+        },
+        "geometryBefore": {
+          "scrollX": 0,
+          "scrollY": 0,
+          "viewport": {
+            "width": 1028,
+            "height": 633
+          },
+          "control": {
+            "x": 687.953125,
+            "y": 191.1875,
+            "width": 36,
+            "height": 36,
+            "top": 191.1875,
+            "right": 723.953125,
+            "bottom": 227.1875,
+            "left": 687.953125
+          }
+        },
+        "geometryAfter": {
+          "scrollX": 0,
+          "scrollY": 0,
+          "viewport": {
+            "width": 1028,
+            "height": 633
+          },
+          "control": {
+            "x": 687.953125,
+            "y": 191.1875,
+            "width": 36,
+            "height": 36,
+            "top": 191.1875,
+            "right": 723.953125,
+            "bottom": 227.1875,
+            "left": 687.953125
+          }
+        },
+        "completeLibrary": {
+          "rows": 11207,
+          "completeOrderedIds": true,
+          "lastId": "item-11206",
+          "allLaidOut": true,
+          "noContentVisibility": true,
+          "viewport": {
+            "width": 1028,
+            "height": 633,
+            "devicePixelRatio": 1
+          },
+          "view": "list",
+          "density": "comfy",
+          "firstRect": {
+            "x": 88,
+            "y": 297.6875,
+            "width": 911,
+            "height": 82,
+            "top": 297.6875,
+            "right": 999,
+            "bottom": 379.6875,
+            "left": 88
+          },
+          "lastRect": {
+            "x": 88,
+            "y": 919189.6875,
+            "width": 911,
+            "height": 82,
+            "top": 919189.6875,
+            "right": 999,
+            "bottom": 919271.6875,
+            "left": 88
+          },
+          "documentNodes": 348732
+        }
+      },
+      "listDensityReset": {
+        "wallMs": 1182.7915999999987,
+        "metricsBefore": {
+          "Nodes": 604889,
+          "LayoutCount": 9,
+          "RecalcStyleCount": 15,
+          "LayoutDuration": 1.811981,
+          "RecalcStyleDuration": 1.224197,
+          "ScriptDuration": 0.380578,
+          "TaskDuration": 7.800186,
+          "JSHeapUsedSize": 206943796
+        },
+        "metricsAfter": {
+          "Nodes": 604895,
+          "LayoutCount": 10,
+          "RecalcStyleCount": 17,
+          "LayoutDuration": 2.0425,
+          "RecalcStyleDuration": 1.424423,
+          "ScriptDuration": 0.422577,
+          "TaskDuration": 8.950449,
+          "JSHeapUsedSize": 219570516
+        },
+        "metricDeltas": {
+          "ScriptDuration": 0.04199899999999995,
+          "LayoutDuration": 0.23051899999999992,
+          "RecalcStyleDuration": 0.20022600000000002,
+          "TaskDuration": 1.1502630000000007,
+          "LayoutCount": 1,
+          "RecalcStyleCount": 2,
+          "Nodes": 6,
+          "JSHeapUsedSize": 12626720
+        },
+        "frameEndpoint": {
+          "structuralBatchActive": false,
+          "transitionProperty": "background",
+          "transitionDuration": "0.12s"
+        },
+        "geometryBefore": {
+          "scrollX": 0,
+          "scrollY": 0,
+          "viewport": {
+            "width": 1028,
+            "height": 633
+          },
+          "control": {
+            "x": 687.953125,
+            "y": 191.1875,
+            "width": 36,
+            "height": 36,
+            "top": 191.1875,
+            "right": 723.953125,
+            "bottom": 227.1875,
+            "left": 687.953125
+          }
+        },
+        "geometryAfter": {
+          "scrollX": 0,
+          "scrollY": 0,
+          "viewport": {
+            "width": 1028,
+            "height": 633
+          },
+          "control": {
+            "x": 687.953125,
+            "y": 191.1875,
+            "width": 36,
+            "height": 36,
+            "top": 191.1875,
+            "right": 723.953125,
+            "bottom": 227.1875,
+            "left": 687.953125
+          }
+        },
+        "completeLibrary": {
+          "rows": 11207,
+          "completeOrderedIds": true,
+          "lastId": "item-11206",
+          "allLaidOut": true,
+          "noContentVisibility": true,
+          "viewport": {
+            "width": 1028,
+            "height": 633,
+            "devicePixelRatio": 1
+          },
+          "view": "list",
+          "density": "compact",
+          "firstRect": {
+            "x": 88,
+            "y": 297.6875,
+            "width": 911,
+            "height": 48,
+            "top": 297.6875,
+            "right": 999,
+            "bottom": 345.6875,
+            "left": 88
+          },
+          "lastRect": {
+            "x": 88,
+            "y": 538185.6875,
+            "width": 911,
+            "height": 48,
+            "top": 538185.6875,
+            "right": 999,
+            "bottom": 538233.6875,
+            "left": 88
+          },
+          "documentNodes": 348732
+        }
+      },
+      "gallery": {
+        "wallMs": 3708.437899999999,
+        "metricsBefore": {
+          "Nodes": 604895,
+          "LayoutCount": 10,
+          "RecalcStyleCount": 17,
+          "LayoutDuration": 2.0425,
+          "RecalcStyleDuration": 1.424423,
+          "ScriptDuration": 0.422577,
+          "TaskDuration": 8.990456,
+          "JSHeapUsedSize": 221351180
+        },
+        "metricsAfter": {
+          "Nodes": 649740,
+          "LayoutCount": 11,
+          "RecalcStyleCount": 23,
+          "LayoutDuration": 3.212899,
+          "RecalcStyleDuration": 2.606681,
+          "ScriptDuration": 0.496126,
+          "TaskDuration": 12.731326,
+          "JSHeapUsedSize": 150030200
+        },
+        "metricDeltas": {
+          "ScriptDuration": 0.07354900000000003,
+          "LayoutDuration": 1.1703990000000002,
+          "RecalcStyleDuration": 1.182258,
+          "TaskDuration": 3.7408699999999993,
+          "LayoutCount": 1,
+          "RecalcStyleCount": 6,
+          "Nodes": 44845,
+          "JSHeapUsedSize": -71320980
+        },
+        "frameEndpoint": {
+          "structuralBatchActive": false,
+          "transitionProperty": "background",
+          "transitionDuration": "0.12s"
+        },
+        "geometryBefore": {
+          "scrollX": 0,
+          "scrollY": 0,
+          "viewport": {
+            "width": 1028,
+            "height": 633
+          },
+          "control": {
+            "x": 502.953125,
+            "y": 195.1875,
+            "width": 31,
+            "height": 28,
+            "top": 195.1875,
+            "right": 533.953125,
+            "bottom": 223.1875,
+            "left": 502.953125
+          }
+        },
+        "geometryAfter": {
+          "scrollX": 0,
+          "scrollY": 0,
+          "viewport": {
+            "width": 1028,
+            "height": 633
+          },
+          "control": {
+            "x": 502.953125,
+            "y": 206.1875,
+            "width": 31,
+            "height": 28,
+            "top": 206.1875,
+            "right": 533.953125,
+            "bottom": 234.1875,
+            "left": 502.953125
+          }
+        },
+        "completeLibrary": {
+          "rows": 11207,
+          "completeOrderedIds": true,
+          "lastId": "item-11206",
+          "allLaidOut": true,
+          "noContentVisibility": true,
+          "viewport": {
+            "width": 1028,
+            "height": 633,
+            "devicePixelRatio": 1
+          },
+          "view": "gallery",
+          "density": "compact",
+          "firstRect": {
+            "x": 88,
+            "y": 245.6875,
+            "width": 217.25,
+            "height": 308.5,
+            "top": 245.6875,
+            "right": 305.25,
+            "bottom": 554.1875,
+            "left": 88
+          },
+          "lastRect": {
+            "x": 550.5,
+            "y": 903568.1875,
+            "width": 217.25,
+            "height": 308.5,
+            "top": 903568.1875,
+            "right": 767.75,
+            "bottom": 903876.6875,
+            "left": 550.5
+          },
+          "documentNodes": 348726
+        }
+      },
+      "galleryDensity": {
+        "wallMs": 1935.7662999999993,
+        "metricsBefore": {
+          "Nodes": 646719,
+          "LayoutCount": 11,
+          "RecalcStyleCount": 23,
+          "LayoutDuration": 3.212899,
+          "RecalcStyleDuration": 2.606681,
+          "ScriptDuration": 0.496126,
+          "TaskDuration": 12.794213,
+          "JSHeapUsedSize": 152568556
+        },
+        "metricsAfter": {
+          "Nodes": 646725,
+          "LayoutCount": 12,
+          "RecalcStyleCount": 28,
+          "LayoutDuration": 3.712189,
+          "RecalcStyleDuration": 2.875967,
+          "ScriptDuration": 0.559877,
+          "TaskDuration": 14.740604,
+          "JSHeapUsedSize": 165211188
+        },
+        "metricDeltas": {
+          "ScriptDuration": 0.06375099999999995,
+          "LayoutDuration": 0.4992899999999998,
+          "RecalcStyleDuration": 0.26928600000000014,
+          "TaskDuration": 1.9463910000000002,
+          "LayoutCount": 1,
+          "RecalcStyleCount": 5,
+          "Nodes": 6,
+          "JSHeapUsedSize": 12642632
+        },
+        "frameEndpoint": {
+          "structuralBatchActive": false,
+          "transitionProperty": "background",
+          "transitionDuration": "0.12s"
+        },
+        "geometryBefore": {
+          "scrollX": 0,
+          "scrollY": 0,
+          "viewport": {
+            "width": 1028,
+            "height": 633
+          },
+          "control": {
+            "x": 687.953125,
+            "y": 202.1875,
+            "width": 36,
+            "height": 36,
+            "top": 202.1875,
+            "right": 723.953125,
+            "bottom": 238.1875,
+            "left": 687.953125
+          }
+        },
+        "geometryAfter": {
+          "scrollX": 0,
+          "scrollY": 0,
+          "viewport": {
+            "width": 1028,
+            "height": 633
+          },
+          "control": {
+            "x": 687.953125,
+            "y": 202.1875,
+            "width": 36,
+            "height": 36,
+            "top": 202.1875,
+            "right": 723.953125,
+            "bottom": 238.1875,
+            "left": 687.953125
+          }
+        },
+        "completeLibrary": {
+          "rows": 11207,
+          "completeOrderedIds": true,
+          "lastId": "item-11206",
+          "allLaidOut": true,
+          "noContentVisibility": true,
+          "viewport": {
+            "width": 1028,
+            "height": 633,
+            "devicePixelRatio": 1
+          },
+          "view": "gallery",
+          "density": "comfy",
+          "firstRect": {
+            "x": 88,
+            "y": 245.6875,
+            "width": 291.65625,
+            "height": 352.5,
+            "top": 245.6875,
+            "right": 379.65625,
+            "bottom": 598.1875,
+            "left": 88
+          },
+          "lastRect": {
+            "x": 397.65625,
+            "y": 1384063.25,
+            "width": 291.65625,
+            "height": 352.5,
+            "top": 1384063.25,
+            "right": 689.3125,
+            "bottom": 1384415.75,
+            "left": 397.65625
+          },
+          "documentNodes": 348726
+        }
+      },
+      "list": {
+        "wallMs": 2500.931700000001,
+        "metricsBefore": {
+          "Nodes": 645260,
+          "LayoutCount": 12,
+          "RecalcStyleCount": 28,
+          "LayoutDuration": 3.712189,
+          "RecalcStyleDuration": 2.875967,
+          "ScriptDuration": 0.559877,
+          "TaskDuration": 14.794112,
+          "JSHeapUsedSize": 167226540
+        },
+        "metricsAfter": {
+          "Nodes": 623034,
+          "LayoutCount": 13,
+          "RecalcStyleCount": 33,
+          "LayoutDuration": 4.261668,
+          "RecalcStyleDuration": 3.803517,
+          "ScriptDuration": 0.639957,
+          "TaskDuration": 17.305311,
+          "JSHeapUsedSize": 152257436
+        },
+        "metricDeltas": {
+          "ScriptDuration": 0.08008000000000004,
+          "LayoutDuration": 0.5494790000000003,
+          "RecalcStyleDuration": 0.9275499999999997,
+          "TaskDuration": 2.5111989999999995,
+          "LayoutCount": 1,
+          "RecalcStyleCount": 5,
+          "Nodes": -22226,
+          "JSHeapUsedSize": -14969104
+        },
+        "frameEndpoint": {
+          "structuralBatchActive": false,
+          "transitionProperty": "background",
+          "transitionDuration": "0.12s"
+        },
+        "geometryBefore": {
+          "scrollX": 0,
+          "scrollY": 0,
+          "viewport": {
+            "width": 1028,
+            "height": 633
+          },
+          "control": {
+            "x": 469.953125,
+            "y": 206.1875,
+            "width": 31,
+            "height": 28,
+            "top": 206.1875,
+            "right": 500.953125,
+            "bottom": 234.1875,
+            "left": 469.953125
+          }
+        },
+        "geometryAfter": {
+          "scrollX": 0,
+          "scrollY": 0,
+          "viewport": {
+            "width": 1028,
+            "height": 633
+          },
+          "control": {
+            "x": 469.953125,
+            "y": 195.1875,
+            "width": 31,
+            "height": 28,
+            "top": 195.1875,
+            "right": 500.953125,
+            "bottom": 223.1875,
+            "left": 469.953125
+          }
+        },
+        "completeLibrary": {
+          "rows": 11207,
+          "completeOrderedIds": true,
+          "lastId": "item-11206",
+          "allLaidOut": true,
+          "noContentVisibility": true,
+          "viewport": {
+            "width": 1028,
+            "height": 633,
+            "devicePixelRatio": 1
+          },
+          "view": "list",
+          "density": "comfy",
+          "firstRect": {
+            "x": 88,
+            "y": 297.6875,
+            "width": 911,
+            "height": 82,
+            "top": 297.6875,
+            "right": 999,
+            "bottom": 379.6875,
+            "left": 88
+          },
+          "lastRect": {
+            "x": 88,
+            "y": 919189.6875,
+            "width": 911,
+            "height": 82,
+            "top": 919189.6875,
+            "right": 999,
+            "bottom": 919271.6875,
+            "left": 88
+          },
+          "documentNodes": 348733
+        }
+      },
+      "finalDensityReset": {
+        "wallMs": 1318.0305000000008,
+        "metricsBefore": {
+          "Nodes": 623034,
+          "LayoutCount": 13,
+          "RecalcStyleCount": 33,
+          "LayoutDuration": 4.261668,
+          "RecalcStyleDuration": 3.803517,
+          "ScriptDuration": 0.639957,
+          "TaskDuration": 17.358002,
+          "JSHeapUsedSize": 154189268
+        },
+        "metricsAfter": {
+          "Nodes": 619288,
+          "LayoutCount": 14,
+          "RecalcStyleCount": 37,
+          "LayoutDuration": 4.474691,
+          "RecalcStyleDuration": 4.008149,
+          "ScriptDuration": 0.686147,
+          "TaskDuration": 18.673582,
+          "JSHeapUsedSize": 166802308
+        },
+        "metricDeltas": {
+          "ScriptDuration": 0.04618999999999995,
+          "LayoutDuration": 0.21302299999999974,
+          "RecalcStyleDuration": 0.2046320000000006,
+          "TaskDuration": 1.3155800000000006,
+          "LayoutCount": 1,
+          "RecalcStyleCount": 4,
+          "Nodes": -3746,
+          "JSHeapUsedSize": 12613040
+        },
+        "frameEndpoint": {
+          "structuralBatchActive": false,
+          "transitionProperty": "background",
+          "transitionDuration": "0.12s"
+        },
+        "geometryBefore": {
+          "scrollX": 0,
+          "scrollY": 0,
+          "viewport": {
+            "width": 1028,
+            "height": 633
+          },
+          "control": {
+            "x": 687.953125,
+            "y": 191.1875,
+            "width": 36,
+            "height": 36,
+            "top": 191.1875,
+            "right": 723.953125,
+            "bottom": 227.1875,
+            "left": 687.953125
+          }
+        },
+        "geometryAfter": {
+          "scrollX": 0,
+          "scrollY": 0,
+          "viewport": {
+            "width": 1028,
+            "height": 633
+          },
+          "control": {
+            "x": 687.953125,
+            "y": 191.1875,
+            "width": 36,
+            "height": 36,
+            "top": 191.1875,
+            "right": 723.953125,
+            "bottom": 227.1875,
+            "left": 687.953125
+          }
+        },
+        "completeLibrary": {
+          "rows": 11207,
+          "completeOrderedIds": true,
+          "lastId": "item-11206",
+          "allLaidOut": true,
+          "noContentVisibility": true,
+          "viewport": {
+            "width": 1028,
+            "height": 633,
+            "devicePixelRatio": 1
+          },
+          "view": "list",
+          "density": "compact",
+          "firstRect": {
+            "x": 88,
+            "y": 297.6875,
+            "width": 911,
+            "height": 48,
+            "top": 297.6875,
+            "right": 999,
+            "bottom": 345.6875,
+            "left": 88
+          },
+          "lastRect": {
+            "x": 88,
+            "y": 538185.6875,
+            "width": 911,
+            "height": 48,
+            "top": 538185.6875,
+            "right": 999,
+            "bottom": 538233.6875,
+            "left": 88
+          },
+          "documentNodes": 348733
+        }
+      }
+    },
+    "errors": [],
+    "method": "One raw native sample. Import: performance.now \u2192 shipped modhunterImportCatalog \u2192 two animation frames. Search: actual input fill \u2192 exact last record. View/density: real click \u2192 two frames, with CDP metrics outside timed interval. Complete all-row geometry is checked outside timing. No viewport emulation, CSS replacement, result limit or virtualization.",
+    "scope": "Actual compiled Windows WebView2 renderer with the same synthetic 11,207-record offline snapshot as Linux acceptance. Excludes Rust filesystem import, live MO2, accounts, provider I/O and installation.",
+    "engine": {
+      "protocolVersion": "1.3",
+      "product": "Edg/156.0.4314.58",
+      "revision": "@7806b68d20d1c1273d5b07b4f4de18e8f5852581",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
+      "jsVersion": "15.6.12.10",
+      "executable": "C:\\Program Files (x86)\\Microsoft\\EdgeWebView\\Application\\156.0.4314.58\\msedgewebview2.exe"
+    },
+    "initial": {
+      "url": "http://tauri.localhost/Modhunter.html",
+      "width": 1028,
+      "height": 633,
+      "devicePixelRatio": 1,
+      "view": "list",
+      "density": "compact",
+      "theme": "snow",
+      "nativeTheme": "light",
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
+      "prefersReducedMotion": false,
+      "visibilityState": "visible",
+      "documentHasFocus": true
+    },
+    "importGeometry": {
+      "rows": 11207,
+      "completeOrderedIds": true,
+      "lastId": "item-11206",
+      "allLaidOut": true,
+      "noContentVisibility": true,
+      "viewport": {
+        "width": 1028,
+        "height": 633,
+        "devicePixelRatio": 1
+      },
+      "view": "list",
+      "density": "compact",
+      "firstRect": {
+        "x": 88,
+        "y": 297.6875,
+        "width": 911,
+        "height": 48,
+        "top": 297.6875,
+        "right": 999,
+        "bottom": 345.6875,
+        "left": 88
+      },
+      "lastRect": {
+        "x": 88,
+        "y": 538185.6875,
+        "width": 911,
+        "height": 48,
+        "top": 538185.6875,
+        "right": 999,
+        "bottom": 538233.6875,
+        "left": 88
+      },
+      "documentNodes": 348732
+    },
+    "restoreGeometry": {
+      "rows": 11207,
+      "completeOrderedIds": true,
+      "lastId": "item-11206",
+      "allLaidOut": true,
+      "noContentVisibility": true,
+      "viewport": {
+        "width": 1028,
+        "height": 633,
+        "devicePixelRatio": 1
+      },
+      "view": "list",
+      "density": "compact",
+      "firstRect": {
+        "x": 88,
+        "y": 297.6875,
+        "width": 911,
+        "height": 48,
+        "top": 297.6875,
+        "right": 999,
+        "bottom": 345.6875,
+        "left": 88
+      },
+      "lastRect": {
+        "x": 88,
+        "y": 538185.6875,
+        "width": 911,
+        "height": 48,
+        "top": 538185.6875,
+        "right": 999,
+        "bottom": 538233.6875,
+        "left": 88
+      },
+      "documentNodes": 348732
+    },
+    "nativeBindingSchema": 1,
+    "candidateCommit": "f96b86969ec9f9c7ba6928284f16223b673d33c0",
+    "sourceDirty": false,
+    "sourceFiles": {
+      "native/Cargo.lock": "90a860d3616af402df75587cbb61d83bf111230a695eeaa72b14104c004b3035",
+      "native/Cargo.toml": "54845f93d3f95919de46797d1e5961af36b9ba902211174f1bd104090602cc8b",
+      "native/crates/modhunter-core/Cargo.toml": "1e9c4b9652cbb876576503fc1e5ad4cbe64c51141e6008625ed281a3ae55eb65",
+      "native/crates/modhunter-core/src/acquisition/mod.rs": "68ab1add78273cd9686ac1e0895cbc63446a35056ffd168781daa024444b0328",
+      "native/crates/modhunter-core/src/acquisition/tests.rs": "4ee03c8dc7c1b916f3f50e0c45f4af23b1130674661a1932737600c1c75d1070",
+      "native/crates/modhunter-core/src/app_maintenance.rs": "c79e16b7f9185a1b6e8b4f70b8b167c27932184df169b9331a890af6c58e1a6a",
+      "native/crates/modhunter-core/src/app_reset.rs": "1df48606be850ebe7e67c67cbf6193d5b524d9a05d55aea2a8662987bd45eb99",
+      "native/crates/modhunter-core/src/archive_review.rs": "65636915a1d4154ddb51e1508db06c9c4bf0ed1a8aa1d904cb8033842ad6263b",
+      "native/crates/modhunter-core/src/bin/modhunter-cli.rs": "6ec9249d10aafa46c65e851f735f3c68eafcac3aa5c9de65a21288f3feddfb15",
+      "native/crates/modhunter-core/src/bridge.rs": "65352389d16f46948824e29305682fee4d0e2b6216679f7a2ce6caa5f53a81bd",
+      "native/crates/modhunter-core/src/content_inventory.rs": "afed0b3f45dceefa0315b020b15acf541c83e49d25af3100dc4082dc398e6790",
+      "native/crates/modhunter-core/src/content_vault/mod.rs": "1ba207186e84b6d538e09c96a3fc15542455b45b24cbde63773889d5e0396210",
+      "native/crates/modhunter-core/src/content_vault/tests.rs": "50c1f767260f3f261ed7e95d1b54517226f718f644cb1d89b19720e3b6a667c9",
+      "native/crates/modhunter-core/src/duplicate_report.rs": "7595e9695581b70395f42b290e3e279e93e782a2aaa5601b7d85aa5e1bf68ff2",
+      "native/crates/modhunter-core/src/importer.rs": "8b3db98f7d253b5f99dca5959870d91ea6dbc390e72467e6e5ea42f4cb48a914",
+      "native/crates/modhunter-core/src/ini.rs": "3917a18a70f9013aaade03667d8d3b593c256e2924a21c682d5ac19c998c6319",
+      "native/crates/modhunter-core/src/lib.rs": "2bd6d90098888a47261b8f6d3a69bdd5fede1a7116ca91cb31f1dccb74841f44",
+      "native/crates/modhunter-core/src/native_bridge.rs": "7c686a3faa5bcee3b36a76c8fe7bf6d94311c9b3a917cb036ae645577e125621",
+      "native/crates/modhunter-core/src/plugin_analysis/mod.rs": "6ad5e082bc59db4ba70ced421a5e04233f4df519deab20140090fcaada20b391",
+      "native/crates/modhunter-core/src/plugin_analysis/provenance.rs": "47b8c27632fc47c785858aff7f35b19ba367ef1241a366def4a03cb96f35b0e8",
+      "native/crates/modhunter-core/src/plugin_analysis/records.rs": "fc17b96b3f78ae663d92ceb68f2528c7f789a46cca6aa4bf9a8a064a244d7d01",
+      "native/crates/modhunter-core/src/source_adapters/http.rs": "8c3fb9ff90d9e6cbf13887beb620aa7fe469e7050a4e6852eb5f85ff1825ffa5",
+      "native/crates/modhunter-core/src/source_adapters/identity.rs": "22354ed8638d916cddeab3145a4f479355a6d617e38be6640e9f9800fa1caa94",
+      "native/crates/modhunter-core/src/source_adapters/mod.rs": "c781399b6674db58d2b13ffa2754788b661368f95066f66465ae3b1f3e4427b7",
+      "native/crates/modhunter-core/src/source_adapters/parsers.rs": "c688039fd3bfadd8451048570f9f7bfc844ab9158a450040bd008c7a44497bc3",
+      "native/crates/modhunter-core/src/watchtower/mod.rs": "ca5dac9b8f285c6b45bc1a2f9c3bd32c9bf2a929edf96793a8f9af1ada10005c",
+      "native/crates/modhunter-core/src/watchtower/source_choice.rs": "9384659f40261916307a7a1a20a684b78ec238c9959516cb8198b4b8159ebd57",
+      "native/crates/modhunter-core/src/watchtower/store.rs": "711cc52745aaa2f0f6558a2ec396a8654843d578614d38c78ec87987bf08c9b7",
+      "native/crates/modhunter-core/src/watchtower/store/commands.rs": "b07fabe418ea8cdb33c5bf13cb052e0575126e732503c1147d8ae5020379bb3a",
+      "native/crates/modhunter-core/src/watchtower/store/recovery_tests.rs": "702e9bc3d63ff69ba8ac2dd8bda25372512cc2757e8a1745970394bc98ce4d7f",
+      "native/crates/modhunter-core/src/watchtower/store/source_tests.rs": "6c03efec2815c9a53d9ef5b1e9e83d5338aef256e733eca0f63ce4cbf9ddcefe",
+      "native/crates/modhunter-core/src/watchtower/store/sources.rs": "e57a633444dd992e4ef2fd359a1455780564d5e4cf526068dc1652485c2ff035",
+      "native/crates/modhunter-core/src/watchtower/store/tests.rs": "35281bab8d383fc22be896ffd6836156c9b0444026f1d0663ca44fcfa7115bdb",
+      "native/crates/modhunter-core/src/watchtower/types.rs": "797e64a384cb116db8be1d2e9028854cf8d47344c726e50eace38f2203397fd1",
+      "native/crates/modhunter-core/src/watchtower/url_policy.rs": "f7c4efee98d4456bc93fe91e8844659bb6f1c2231b2a3d3cc11cbde2c17be2dc",
+      "native/crates/modhunter-core/tests/importer.rs": "0fa4b74c263150da1fa94eab6ae76d32a6484e408fd4304017575c86eacc44b7",
+      "native/crates/modhunter-core/tests/plugin_analysis.rs": "9205c9b26d1fa535644e7a21c1f675d6a0966b5e4d97786306d0ad33c4700ec2",
+      "native/crates/modhunter-core/tests/source_adapters.rs": "e938683b4a0ea6a3c4edc5831e244b57a1666b984795a0478a54051c083296fb",
+      "native/crates/modhunter-desktop/Cargo.toml": "ba165a633362402cfabb1a7b4f7ce82bfcb4ef5074fc6d7c3e8e871eaafd8281",
+      "native/crates/modhunter-desktop/build.rs": "de7d7cbf27708af1aac85e4bc4a26d290e48a706ccb4d39e6f39178edbe2c147",
+      "native/crates/modhunter-desktop/capabilities/shell.json": "d7d6d30f6d785f8434c520c82623882e5c36eac986f21f1c66e150c7e28bf6cc",
+      "native/crates/modhunter-desktop/capabilities/watchtower.json": "6ddc66a6a1520e654e6cba1c72e732277cacf8427b8e051c7cdd792623e37106",
+      "native/crates/modhunter-desktop/src/catalog.rs": "f69602f8bcd7ef36a8b7ed4b2d1d9e529c1b6ec9db85a8f3f834011f7efd1bb9",
+      "native/crates/modhunter-desktop/src/discovery.rs": "00bcb85efb4e19abbb0390c1684a2d4370147732e88ce95e8e5c12e6535d4c90",
+      "native/crates/modhunter-desktop/src/import_operation.rs": "68cc24aeef4e4c78e6654c49748850d9405ba2af48ac85f574428b8b973a759e",
+      "native/crates/modhunter-desktop/src/locale.rs": "28bed80db6b498aeec4ddbf0f7d659801d8c9216ffc74b0eea3ba746f7800cfa",
+      "native/crates/modhunter-desktop/src/main.rs": "464c9eb40546fa58b46397f6554384e39b0ecd2ace97ceed833292e4c403117c",
+      "native/crates/modhunter-desktop/src/policy.rs": "2b05c6f7bcfecaf211fde84808141e5b87318f94f2e801f3d39e94a7a2176761",
+      "native/crates/modhunter-desktop/src/watchtower_access.rs": "ae83b6ea727d3f5c57056e03ea18e27fb813dd22618de747463249ee69bfab68",
+      "native/crates/modhunter-desktop/src/watchtower_acquisition.rs": "77f38270bd843a6d5c4eaaca0aca204ed1f7ce07afa6a48d76a330ca2370d89e",
+      "native/crates/modhunter-desktop/src/watchtower_acquisition_smoke.rs": "d84ef88b505e2720e4141b0937e4a4217a85d92618f5b7e35e27a043bd3f0cf6",
+      "native/crates/modhunter-desktop/src/watchtower_browser_data.rs": "e4d90632fa30c288ee787373ffba3d24fb1834e1ed9a6e6ed37a04dc7d6297ce",
+      "native/crates/modhunter-desktop/src/watchtower_browser_data_smoke.rs": "6e03f6acdcb29feb656e93f047d237da7ebb7e6ea39d8dc480bf02effa02cb1b",
+      "native/crates/modhunter-desktop/src/watchtower_download_scope.rs": "200becadeb3709b97cd0dc9c8ef664a595401cb363eb6f28e199b885f087f3b2",
+      "native/crates/modhunter-desktop/src/watchtower_inventory.rs": "77d5e5b1a48968a8adb86997e0d8310b8ce3bbaac8e1c4fec6e81c5c58fe51fd",
+      "native/crates/modhunter-desktop/src/watchtower_maintenance.rs": "74c09ab9705db1497e3b6a3e33e62adaff921f87ddeb55f9ef3c627fa3df03d6",
+      "native/crates/modhunter-desktop/src/watchtower_mega.rs": "45e85bc7b5213060f779b78c7430f2d3f167808573532f394fea76640ef7ec56",
+      "native/crates/modhunter-desktop/src/watchtower_mega_smoke.rs": "1dc1bae2863c5491c18244c5e63ef250399f3cd5e4ad57179f1dafe7d0b01454",
+      "native/crates/modhunter-desktop/src/watchtower_notice_smoke.rs": "d7091e025b5a86d34cbafce4e2775a0974d98b50d1c6f29660ca129f80dbe585",
+      "native/crates/modhunter-desktop/src/watchtower_notices.rs": "3ed4d32890b4dc11a36b6568d68bacdf50dd1f64b24150e47fec77630350fd9e",
+      "native/crates/modhunter-desktop/src/watchtower_offers.rs": "4542e6da158e9e3d4025231ce3ceb74bd233e55f0ae3d931de8851c9bca2c5a2",
+      "native/crates/modhunter-desktop/src/watchtower_policy.rs": "ed7303fa3f6c7debcbcc00bb85496bcdb3872481dbac35060159e060db33e77c",
+      "native/crates/modhunter-desktop/src/watchtower_preparation.rs": "9c2e2b92e3501b7013518f9abd1ead14b937746286a1a0edb653d9904e5905c3",
+      "native/crates/modhunter-desktop/src/watchtower_privacy.rs": "821a6d2965f680c20afd8bcf0b4cf1935f722d659798fbb1bc16204654e882a1",
+      "native/crates/modhunter-desktop/src/watchtower_privacy_smoke.rs": "dbb8d6454475d3b8a38041a1b4ade74e0ac4b61da1e5e18429e56b6c37142c74",
+      "native/crates/modhunter-desktop/src/watchtower_queue.rs": "098a71d2a1e1445a58f6c6d36f1e064902cc72b81b8533ac1d486fda78e52c89",
+      "native/crates/modhunter-desktop/src/watchtower_reset.rs": "09d5f32c2f2b3043e83dcc6d01979bdef399ad1b02a742b5707dbd54a00b36cd",
+      "native/crates/modhunter-desktop/src/watchtower_review.rs": "5d82ca65423bd69be2900a93e4858e06441fddd667e8a2bd9dcc003c08c1f17f",
+      "native/crates/modhunter-desktop/src/watchtower_smoke.rs": "9a2b14d23e819b47c59a92108aa82b23ef02dd1a1b235f7616ce3c3f339ec931",
+      "native/crates/modhunter-desktop/src/watchtower_windows.rs": "6b5c0e5d66736cbb0f0a89e7fe489b1269683fb8844a7e6438addb667454eb4c",
+      "native/crates/modhunter-desktop/src/windows.rs": "3b3b4229b75cbc2f1db08b6c088f1597a3fc3f868e04daab7157d3a4b256dde2",
+      "native/crates/modhunter-desktop/tauri.conf.json": "5312270c440d7477060f56441277f23cbb7eeb34a50660388646425038f7d793",
+      "native/scripts/bind_native_proof.py": "1ac9e84ca4ab00f55bea96f6b129f60e82ba207170e8cc7fc7f18d021e1858bc",
+      "native/scripts/watchtower_smoke.ps1": "f1e5bdbd2be62c49d15b21469abf0d0545d70e81c2329e8c48fc4b04ccfdbd88",
+      "native/scripts/windows_smoke.ps1": "91173b4a05034ee59eb5155d494948a51e7eee941ca075b06e7de304bd41c051",
+      "native/ui/catalog_injection.js": "ff850997b2aa696b080da17dd68ef9a840c366042cca70026e70c38e537d27fd",
+      "native/ui/locale-catalogs.js": "9b3d0f6e309ca077b1c6a4ba61b1c024c775c00546f057f564bbb4ebbe8180ba",
+      "native/ui/locales/atelier.json": "794f93f492747214456390dbe2413eaf0135769fbedb3b57f83443169a4d1ff9",
+      "native/ui/locales/dashboard.json": "afb13e77e2fc1c9e9bcddae6d578ced79dd6bf9169d2130f70a6d975af2f30fa",
+      "native/ui/locales/notices.json": "dc7c5f910f9e35b6090b2bdb4f82a3bacc5affab745627a990be5a2da07c7a5a",
+      "native/ui/locales/sources.json": "6c11b746025b2613cd5d93b05019a31ab9d49c73b9f97940f8a7c0eb2db824b4",
+      "native/ui/locales/watchtower.json": "1fa287236a3ae392274383ea6d40714e6d7e026b903a03a9eef8b97a341c7ae4",
+      "native/ui/mega-folder.js": "ae51d3fcf89fa86204bdc4d5b4b858cd3c6ab45af2dcff4f79ee67767c5fba7d",
+      "native/ui/native.css": "b54840d49075311cbec25ca05fbf13eaa3d2c17c98a59ae6eec540203e11cab8",
+      "native/ui/observe-access.js": "d923c24d5c91f392eb5396d2328b1bfa8e1125d9ab747355d0cb746e4c5d9971",
+      "native/ui/preferences.css": "1123593f89bbe20a372db507088532e3cfa38eb979d2bb7e0eeb1fddb055cdca",
+      "native/ui/preferences.js": "4ed2a7d7cb9dbfcda8c09253e69e6f1b003f2e7bcbfa4b64351d366b75dd9fe1",
+      "native/ui/resolve-offers.js": "ca1b4dfbcf61b967b877105cdb7db01afb87b024a53af5b784c51950f95ad44f",
+      "native/ui/shell.html": "8dbb8395de9af627dc5a0c885e7616e349af26d2c334e62e55952390b945b20b",
+      "native/ui/shell.js": "6a050ca5101f906b15cf1ebebbfc005386f68db693a89a48fedbb4a4347891d7",
+      "native/ui/watchtower-inventory.js": "c2cfc92e4db80091eead9a1818752e1c86aa93c324d5084beaf26b43911a98d5",
+      "native/ui/watchtower-maintenance.js": "0219e779cb450dfe753092a91f05b36c28d8208d34d370bf78fc6846ccf5bc5a",
+      "native/ui/watchtower-native.css": "32b0de40008d4ece3466f5cdc00809d02bbafbc16ad079179313bf9ef6b37b83",
+      "native/ui/watchtower-notices.js": "a08767c36a62c8b880c2da7d9ea08d8f1f9ce58b5e860877f3054a4f471ab77d",
+      "native/ui/watchtower-queue.js": "084ba0bf335967514073037e55c7bf0950dc78d359a22602bd9b26d2caad9172",
+      "native/ui/watchtower-review.js": "e84bf46e88a8972e690f95c114e3d5fae7fdee7a5d7d42862db8a52e39aee4b9",
+      "native/ui/watchtower.css": "d648b3d8444e94b3529d7504a61a94d892e69b0c99117bfc2873b9108eeae2d3",
+      "native/ui/watchtower.html": "29e967df938a5dee2b875fdb75c2a392cf653953c2bf133842df64517f83b630",
+      "native/ui/watchtower.js": "e71d9c0266f50d373704af4ecd9dcafa3ef39f8deca3672236671471ab723c9c"
+    },
+    "isolation": {
+      "schemaVersion": 1,
+      "ok": true,
+      "marker": "b9c50b7a3f454bca885abecf1c753a6a",
+      "ownedRoot": "D:\\a\\_temp\\modhunter-native-library-b9c50b7a3f454bca885abecf1c753a6a",
+      "restoredFolders": [
+        {
+          "manifestMatched": true,
+          "originalExisted": true,
+          "path": "C:\\Users\\runneradmin\\AppData\\Local\\com.modhunter.desktop"
+        },
+        {
+          "manifestMatched": true,
+          "originalExisted": true,
+          "path": "C:\\Users\\runneradmin\\AppData\\Roaming\\com.modhunter.desktop"
+        }
+      ],
+      "policyValuesRemoved": 2,
+      "cleanupErrors": [],
+      "elapsedMs": 23822
+    },
+    "launcherSha256": "e83d6e420117122e8ce0e809b4573f4e623bc974b13a38e933cd5fdd14c2bcb9"
+  },
+  "verificationFiles": [
+    "BUILD_INFO.json",
+    "benchmarks/dashboard-render-comparison.json",
+    "benchmarks/import-comparison.json",
+    "benchmarks/mo2-catalog-delivery-comparison-0.9.2.json",
+    "benchmarks/mo2-preflight-comparison.json",
+    "benchmarks/plugin-audit-comparison-0.9.1.json",
+    "benchmarks/plugin-audit-comparison-0.9.2.json",
+    "browser/batch-review.png",
+    "browser/blocked-install.png",
+    "browser/ci-font-expedition.png",
+    "browser/ci-font-library.png",
+    "browser/ci-font-rendering.json",
+    "browser/ci-fonts.json",
+    "browser/compact-workspace-mobile.png",
+    "browser/compact-workspace.png",
+    "browser/direct-mod-websites.png",
+    "browser/imported-profile-runtime.png",
+    "browser/install-brief.png",
+    "browser/mobile-install-brief.png",
+    "browser/mobile-source-inspector.png",
+    "browser/native-manager-ui.json",
+    "browser/offline-chapter-progress-csp.png",
+    "browser/oled-chapters-1440-dark.png",
+    "browser/oled-chapters-390-light.png",
+    "browser/oled-manual-feedback-1440-dark.png",
+    "browser/oled-scan-failed-1440-dark.png",
+    "browser/oled-scan-running-390-light.png",
+    "browser/oled-scan-starting-1440-dark.png",
+    "browser/one-click-bulk.png",
+    "browser/one-click-update.png",
+    "browser/queued-download.png",
+    "browser/recovery-cockpit.png",
+    "browser/review-exact-file.png",
+    "browser/source-adapter-inspector.png",
+    "browser/source-release-files.png",
+    "browser/thumbnail-alpha-inspector-1440-night.png",
+    "browser/thumbnail-alpha-inspector-390-snow.png",
+    "browser/thumbnail-alpha-library-1440-night.png",
+    "browser/thumbnail-alpha-library-390-snow.png",
+    "browser/thumbnail-failed-inspector-390-snow.png",
+    "browser/thumbnail-failed-library-390-snow.png",
+    "browser/update-history.png",
+    "browser/watchtower-browser.json",
+    "browser/watchtower-details.png",
+    "browser/watchtower-duplicates.png",
+    "browser/watchtower-exact-notice.png",
+    "browser/watchtower-file-inventory.png",
+    "browser/watchtower-file-review.png",
+    "browser/watchtower-mobile.png",
+    "browser/watchtower-pages.png",
+    "browser/watchtower-preferences-es.png",
+    "browser/watchtower-preferences-zh.png",
+    "browser/watchtower-sessions.png",
+    "browser/watchtower-support-preview.png",
+    "mo2/mo2-fixture.png",
+    "mo2/native-receipt.json",
+    "mo2/result.json",
+    "visual/after/desktop-chrome-1440-dark.png",
+    "visual/after/desktop-chrome-1440-light.png",
+    "visual/after/desktop-chrome-900-dark.png",
+    "visual/after/desktop-chrome-900-light.png",
+    "visual/after/extras-fx-studio-900-light.png",
+    "visual/after/extras-progression-1440-dark.png",
+    "visual/after/game-expedition-900.png",
+    "visual/after/game-rift-1440.png",
+    "visual/after/game-shiverfell-1440.png",
+    "visual/after/game-siege-arena-900.png",
+    "visual/after/game-siege-menu-1440.png",
+    "visual/after/inspector-1440-dark.png",
+    "visual/after/library-1440-dark.png",
+    "visual/after/library-1440-light.png",
+    "visual/after/library-390-dark.png",
+    "visual/after/library-390-light.png",
+    "visual/after/library-900-dark.png",
+    "visual/after/library-900-light.png",
+    "visual/after/library-context-menu-1440-dark.png",
+    "visual/after/library-context-menu-390-light.png",
+    "visual/after/library-focus-1440-dark.png",
+    "visual/after/library-gallery-1440-dark.png",
+    "visual/after/library-gallery-1440-light.png",
+    "visual/after/library-gallery-by-chapter-1440-dark.png",
+    "visual/after/library-gallery-comfortable.png",
+    "visual/after/library-gallery-flat-restored-1440-dark.png",
+    "visual/after/library-gallery-nexus-controls-1440-dark.png",
+    "visual/after/library-navigation-compact.png",
+    "visual/after/long-filename-1440.png",
+    "visual/after/long-filename-390.png",
+    "visual/after/long-filename-900.png",
+    "visual/after/operation-downloads-1440-dark.png",
+    "visual/after/operation-downloads-1440-light.png",
+    "visual/after/operation-exact-file-1440-dark.png",
+    "visual/after/operation-exact-file-1440-light.png",
+    "visual/after/operation-exact-file-390-dark.png",
+    "visual/after/operation-exact-file-390-light.png",
+    "visual/after/operation-exact-file-900-dark.png",
+    "visual/after/operation-exact-file-900-light.png",
+    "visual/after/operation-history-1440-dark.png",
+    "visual/after/operation-history-1440-light.png",
+    "visual/after/operation-install-brief-1440-dark.png",
+    "visual/after/operation-install-brief-1440-light.png",
+    "visual/after/operation-install-brief-390-dark.png",
+    "visual/after/operation-install-brief-390-light.png",
+    "visual/after/operation-install-brief-900-dark.png",
+    "visual/after/operation-install-brief-900-light.png",
+    "visual/after/operation-queue-review-1440-dark.png",
+    "visual/after/operation-queue-review-1440-light.png",
+    "visual/after/public-projects-gallery-1440-dark.png",
+    "visual/after/public-projects-gallery-1440-light.png",
+    "visual/after/public-projects-gallery-390-dark.png",
+    "visual/after/public-projects-gallery-390-light.png",
+    "visual/after/public-projects-gallery-900-dark.png",
+    "visual/after/public-projects-gallery-900-light.png",
+    "visual/after/public-projects-inspector-1440-dark.png",
+    "visual/after/public-projects-list-1440-dark.png",
+    "visual/after/public-projects-list-1440-light.png",
+    "visual/after/updates-1440-dark.png",
+    "visual/after/updates-390-dark.png",
+    "visual/after/updates-900-dark.png",
+    "visual/after/watchtower-1440-dark.png",
+    "visual/after/watchtower-1440-light.png",
+    "visual/after/watchtower-390-dark.png",
+    "visual/after/watchtower-390-light.png",
+    "visual/after/watchtower-900-dark.png",
+    "visual/after/watchtower-900-light.png",
+    "visual/after/watchtower-add-dialog-900-light.png",
+    "visual/after/watchtower-navigation-compact.png",
+    "visual/after/watchtower-settings-900-light.png",
+    "visual/before/desktop-chrome-1440-dark.png",
+    "visual/before/desktop-chrome-1440-light.png",
+    "visual/before/desktop-chrome-900-dark.png",
+    "visual/before/desktop-chrome-900-light.png",
+    "visual/before/extras-fx-studio-900-light.png",
+    "visual/before/extras-progression-1440-dark.png",
+    "visual/before/game-expedition-900.png",
+    "visual/before/game-rift-1440.png",
+    "visual/before/game-shiverfell-1440.png",
+    "visual/before/game-siege-arena-900.png",
+    "visual/before/game-siege-menu-1440.png",
+    "visual/before/inspector-1440-dark.png",
+    "visual/before/library-1440-dark.png",
+    "visual/before/library-1440-light.png",
+    "visual/before/library-390-dark.png",
+    "visual/before/library-390-light.png",
+    "visual/before/library-900-dark.png",
+    "visual/before/library-900-light.png",
+    "visual/before/library-focus-1440-dark.png",
+    "visual/before/operation-downloads-1440-dark.png",
+    "visual/before/operation-downloads-1440-light.png",
+    "visual/before/operation-exact-file-1440-dark.png",
+    "visual/before/operation-exact-file-1440-light.png",
+    "visual/before/operation-history-1440-dark.png",
+    "visual/before/operation-history-1440-light.png",
+    "visual/before/operation-install-brief-1440-dark.png",
+    "visual/before/operation-install-brief-1440-light.png",
+    "visual/before/operation-queue-review-1440-dark.png",
+    "visual/before/operation-queue-review-1440-light.png",
+    "visual/before/public-projects-list-1440-dark.png",
+    "visual/before/public-projects-list-1440-light.png",
+    "visual/before/updates-1440-dark.png",
+    "visual/before/updates-390-dark.png",
+    "visual/before/updates-900-dark.png",
+    "visual/before/watchtower-1440-dark.png",
+    "visual/before/watchtower-1440-light.png",
+    "visual/before/watchtower-390-dark.png",
+    "visual/before/watchtower-390-light.png",
+    "visual/before/watchtower-900-dark.png",
+    "visual/before/watchtower-900-light.png",
+    "visual/before/watchtower-add-dialog-900-light.png",
+    "visual/before/watchtower-settings-900-light.png",
+    "visual/visual-release.json",
+    "windows/archive-review-proof.json",
+    "windows/desktop-live.json",
+    "windows/desktop-live.png",
+    "windows/desktop-window-1440-dark.png",
+    "windows/desktop-window-900-light.png",
+    "windows/desktop-window-gallery-light.png",
+    "windows/desktop-window-inspector-light.png",
+    "windows/installed-desktop.png",
+    "windows/installed-native-smoke.json",
+    "windows/installer-smoke.json",
+    "windows/native-library-performance.json",
+    "windows/native-smoke.json",
+    "windows/qt-forward.json",
+    "windows/watchtower-smoke.json"
+  ],
+  "scope": "Public download readback and identity validation; no personal Windows installation or provider account was exercised.",
+  "packagedBinarySha256": {
+    "archive-tools/7z.dll": "500db9eb17f3c21b729ba41dd02ecfe1823da05028c7e4ba129084cc74cc364e",
+    "archive-tools/7z.exe": "dc0493429fe28136fcb177a0e77c9875cbb3b0bff5f2f8eeba4df302e98cef76",
+    "MO2/mo2_update_arsenal/version.py": "79c4c2c3ba464eb52cdc06d4024464626c52309fb70e2eec3f153e3d98d616c2",
+    "MO2/mo2_update_arsenal/bin/modhunter-cli.exe": "174f112dc0547ec737f9020bfe42797a4d6dc0b1168683d1fc9a6387a648d582",
+    "MO2/mo2_update_arsenal/bin/modhunter-qt-bridge.dll": "0bffe06ae52224b7f944307e49cf12a1851392aa96503ebae9f611131760b40c",
+    "MO2/mo2_update_arsenal/bin/archive-tools/7z.dll": "500db9eb17f3c21b729ba41dd02ecfe1823da05028c7e4ba129084cc74cc364e",
+    "MO2/mo2_update_arsenal/bin/archive-tools/7z.exe": "dc0493429fe28136fcb177a0e77c9875cbb3b0bff5f2f8eeba4df302e98cef76",
+    "modhunter-cli.exe": "174f112dc0547ec737f9020bfe42797a4d6dc0b1168683d1fc9a6387a648d582",
+    "Modhunter.exe": "25b9bc48e558c50b79bc843ce241e244e0fa758a1e47549f57243479939f2091"
+  },
+  "tagCommitVerified": "f96b86969ec9f9c7ba6928284f16223b673d33c0"
+}

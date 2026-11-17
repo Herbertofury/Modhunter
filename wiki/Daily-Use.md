@@ -7,10 +7,11 @@
 Use **Modhunter-Rust-Windows.zip** from the current release when you want the desktop app and live MO2 updating together. Extract the complete archive into its own folder; keep its files together. The Windows installer installs the desktop app, while the portable package also contains the MO2 installer and readiness tools.
 
 1. If upgrading, export a progress backup from the existing app before changing versions. Keep the old portable folder until the new version opens your collection correctly. MO2 plugin upgrades preserve existing Chronicle progress and retain the previous plugin outside MO2's plugin search folder.
-2. Close MO2. Run **Install_MO2_Plugin.bat** from the new package and select the folder containing **ModOrganizer.exe**. The installer verifies the package before replacing the plugin.
-3. Run **Check_MO2_Readiness.bat**, choose the same MO2 folder, and review the results. The expected plugin version comes from the verified package. A static pass establishes matching files and supported runtime observations; the next step establishes the live connection.
-4. Start MO2, select the intended game and profile, and wait for it to finish loading. Launch **Modhunter.exe**. If automatic discovery has not connected, select **Find MO2**; choose the intended session when more than one is running.
-5. Confirm the profile name and mod count. Keep Nexus signed in through MO2. Open **Updates** and run **Check for updates** to inspect the actual source results.
+2. Close MO2. Run **Check_MO2_Readiness.bat** from the new package and select the folder containing **ModOrganizer.exe**. Before installation, the saved report's `readyToInstall` should be `true`; `plugin_installed` can show **REVIEW** when the plugin is absent or from an older release.
+3. Run **Install_MO2_Plugin.bat** and select that same MO2 folder. The installer verifies the package before replacing the plugin.
+4. Run the readiness checker again. Expect `plugin_installed` to pass, its installed and expected versions to match the verified package, and the report's `readyForConnectionTest` to be `true`. These static checks establish matching files and supported runtime observations; the next step establishes the live connection.
+5. Start MO2, select the intended game and profile, and wait for it to finish loading. The bridge starts automatically; opening **Tools → Update Arsenal - Quest Board** is optional. Launch **Modhunter.exe**. If automatic discovery has not connected, select **Find MO2**; choose the intended session when more than one is running.
+6. Confirm the profile name and mod count. Keep Nexus signed in through MO2. Open **Updates** and run **Check for updates** to inspect the actual source results.
 
 For the exact MO2 2.5.3b12 setup notes, see [MO2 testing and readiness](MO2-253-Testing). The release's actual MO2 fixture uses official 2.5.2, with a separate Qt 6.11 forward-runtime check; those checks do not claim execution of every beta build or a personal mod collection.
 

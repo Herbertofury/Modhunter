@@ -1,5 +1,7 @@
 # Atelier 0.12 / The Mod Vault
 
+> Historical v0.12.0 design and verification record. For the current published build, use [OLED 0.12.1](OLED-0.12.1) and [Daily use](Daily-Use).
+
 [Home](Home) · [Design standard](Design-System-and-Quality-Bar) · [Rust desktop](Rust-Desktop) · [Update Workshop](Update-Workshop) · [Watchtower](Watchtower)
 
 **Atelier 0.12 brings a compact List and image-forward Gallery to Modhunter's complete library, with coordinated dark and light themes across the Rust desktop and shared dashboard.** Review exact update evidence, keep your source and version context, and manage the same collection through the view that suits it.

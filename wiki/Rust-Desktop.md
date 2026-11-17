@@ -1,10 +1,12 @@
-# Rust Desktop 0.12.0
+# Rust Desktop 0.12.1
 
 [Home](Home.md) / [Windows releases](https://github.com/Herbertofury/Modhunter/releases) / [Native build results](https://github.com/Herbertofury/Modhunter/actions/workflows/native-rust.yml)
 
 ## What changed
 
-The [Atelier 0.12 workspace](Atelier-0.12) brings a compact native shell, image-forward Gallery and List choices, adjustable density, source filters, custom vector navigation and coordinated charcoal/parchment themes. The guide records actual before/after screenshots and the published build's verification results. The complete library remains available without viewport virtualization or result caps.
+The [0.12.1 OLED release](OLED-0.12.1) restores colored separators and visible operation feedback, fixes packaged offline progress and version-aware MO2 readiness, and reduces full-library DOM work. [Daily use](Daily-Use) gives the complete setup and update workflow.
+
+The current workspace combines a compact native shell, image-forward Gallery and List choices, adjustable density, source filters, custom vector navigation and coordinated OLED-black/neutral-light themes. The [0.12.1 verification guide](OLED-0.12.1) records the current screenshots and runtime results; the [Atelier 0.12 guide](Atelier-0.12) preserves the original design comparison. The complete library remains available without viewport virtualization or result caps.
 
 Modhunter now has a compiled Rust Windows desktop. Rust owns the window and tab lifecycle, file dialogs, background profile import, cached metadata parsing, local preferences, MO2 discovery, connection health, export destinations and plugin record/hash analysis. WebView2 renders the shared updater and all existing game modes. The shipped app does not run Electron or require Node.
 
@@ -12,7 +14,7 @@ The presentation remains HTML/CSS/JavaScript. The Python/Qt plugin remains insid
 
 ## Install and connect
 
-1. Download the [Windows installer](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter_0.12.0_x64-setup.exe), or extract the [portable package](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter-Rust-Windows.zip) and run **Modhunter.exe**. The installer bootstraps Microsoft Edge WebView2 when needed. Version 0.12 also provides dedicated **MO2-Plugin** and **Standalone** archives derived from the same validated portable package.
+1. Download the [Windows installer](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.1/Modhunter_0.12.1_x64-setup.exe), or extract the [portable package](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.1/Modhunter-Rust-Windows.zip) and run **Modhunter.exe**. The installer bootstraps Microsoft Edge WebView2 when needed. Version 0.12 also provides dedicated **MO2-Plugin** and **Standalone** archives derived from the same validated portable package.
 2. For local inspection, click **Import MO2** and select the profile's `modlist.txt`. Portable instances are inferred. For separate configuration/data directories, first select **Instance INI**; **Mods path** provides an explicit override. **Auto paths** clears those overrides.
 3. Click **Refresh** after changing files. The toolbar reports measured import duration, metadata cache hits and warnings. **CANCEL** interrupts a native import/refresh or plugin audit; **CANCELING…** remains visible until its workers settle. The last complete catalog stays available and another refresh/audit can then run. Importing never changes the MO2 profile or installed mod files.
 4. To enable live updating, close MO2 and run **Install_MO2_Plugin.bat** from the portable package. Select the directory containing `ModOrganizer.exe`. The previous plugin is preserved in `ModhunterBackups`, outside MO2's plugin directory, and a failed replacement is rolled back.
@@ -92,7 +94,7 @@ The [Rust desktop and MO2 readiness workflow](https://github.com/Herbertofury/Mo
 | Rust format, tests and Clippy | Parser/cache correctness, explicit cancellation and retry, shared catalog encoding, split paths and encodings, bridge validation, discovery and navigation/export policies |
 | Python and Node regressions | MO2 command/download/install lifecycle, response-cache invalidation, scan/source epochs, delayed Chronicle hydration, frontend polling/rendering/focus and preserved legacy importer |
 | Actual Chromium | Built dashboard interactions, update actions, search responsiveness, profile changes, connection recovery and existing update workshop flows |
-| Before/after visual acceptance | v0.11.0 and current source rendered in Chromium at desktop and narrow sizes, dark/light themes, actual source-artwork fixtures, gallery/list and operational dialogs; complete 11,207-mod DOM and last-item search measurements |
+| Before/after visual acceptance | v0.12.0 and current source rendered in Chromium at desktop and narrow sizes, dark/light themes, actual source-artwork fixtures, gallery/list and operational dialogs; complete 11,207-mod DOM and last-item search measurements |
 | Actual Chromium Watchtower | Shipped manager forms, session/source choices, complete file selection, new targets, FOMOD scope, retained reviews, lost acknowledgement, exact retention/reset approvals, support export, preferences and responsive layout with a fixture native-command adapter |
 | Actual Windows archive CLI | ZIP/7z/RAR bytes, path/link/collision/encryption guards and exact selected-archive provenance with the pinned official helper |
 | Actual Windows WebView2 | Compiled application launch, native toolbar IPC, three-mod profile import into the real dashboard, actual JSON backup download and rejection of native IPC from game content |

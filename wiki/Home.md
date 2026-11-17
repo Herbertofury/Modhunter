@@ -5,13 +5,13 @@
 
 **Browse your mods · Review every update · Keep your world intact**
 
-![Version](https://img.shields.io/badge/Rust-v0.12-cfa76d?style=for-the-badge&labelColor=17272c)
-![Play](https://img.shields.io/badge/Play-Offline-70d6b0?style=for-the-badge&labelColor=17272c)
-![Integrations](https://img.shields.io/badge/MO2-Optional-9abcf5?style=for-the-badge&labelColor=17272c)
+![Version](https://img.shields.io/badge/Rust-v0.12.1-b9dcff?style=for-the-badge&labelColor=000000)
+![Play](https://img.shields.io/badge/Play-Offline-a8b8d0?style=for-the-badge&labelColor=000000)
+![Integrations](https://img.shields.io/badge/MO2-Optional-9abcf5?style=for-the-badge&labelColor=000000)
 
 </div>
 
-![Modhunter Gallery with authentic project artwork](https://raw.githubusercontent.com/Herbertofury/Modhunter/baa123997577cba697d3ac991ac6090a0ecb2159/screenshots/v0.12.0/gallery-dark.png)
+![Modhunter Gallery with authentic project artwork](https://raw.githubusercontent.com/Herbertofury/Modhunter/main/screenshots/v0.12.1/library-gallery-dark.png)
 
 *Actual shared-dashboard capture. Public project names and icons are authentic; installed versions and update states are test fixtures.*
 
@@ -27,11 +27,13 @@
 
 ## Library and updates
 
-**[Windows installer](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter_0.12.0_x64-setup.exe)** · **[Portable package](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter-Rust-Windows.zip)** · **[Release, components and checksums](https://github.com/Herbertofury/Modhunter/releases/tag/v0.12.0)** · **[Atelier guide](Atelier-0.12)**
+**[Daily use and setup](Daily-Use)** · **[OLED 0.12.1 verification](OLED-0.12.1)**
 
-The Atelier workspace adds an image-forward gallery, compact and comfortable list views, provider filtering, a collapsible navigation rail and coordinated dark and light themes. Real source artwork appears when the exact mod record supplies it. The complete library, reviewed update workflow, backup and recovery controls, and every existing adventure remain available. See the [Atelier guide](Atelier-0.12) for controls, actual before/after screenshots and the final release verification scope.
+**[Windows installer](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.1/Modhunter_0.12.1_x64-setup.exe)** · **[Portable package](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.1/Modhunter-Rust-Windows.zip)** · **[Release, components and checksums](https://github.com/Herbertofury/Modhunter/releases/tag/v0.12.1)** · **[Atelier guide](Atelier-0.12)**
 
-Release **v0.12.0** uses commit [`0f2d399244dbe0cc69e82521c497f006832678c3`](https://github.com/Herbertofury/Modhunter/tree/0f2d399244dbe0cc69e82521c497f006832678c3), tested in the [final main-branch workflow](https://github.com/Herbertofury/Modhunter/actions/runs/43947174658). [Get started](Getting-Started) with a read-only profile import, then connect MO2 when you want live update operations.
+The workspace offers an image-forward gallery, compact and comfortable list views, provider filtering, a collapsible navigation rail and coordinated OLED-black and neutral-light themes. Real source artwork appears when the exact mod record supplies it. The complete library, reviewed update workflow, backup and recovery controls, and every existing adventure remain available. See the [0.12.1 guide](OLED-0.12.1) for current screenshots, corrected chapter progress, readiness checks and release verification; the [Atelier guide](Atelier-0.12) records the original design comparison.
+
+Release **v0.12.1** uses commit [`f96b86969ec9f9c7ba6928284f16223b673d33c0`](https://github.com/Herbertofury/Modhunter/tree/f96b86969ec9f9c7ba6928284f16223b673d33c0), tested in the [final main-branch workflow](https://github.com/Herbertofury/Modhunter/actions/runs/43992734962). [Get started](Getting-Started) with a read-only profile import, then connect MO2 when you want live update operations.
 
 The current desktop uses Rust for the shell, parallel profile importer, metadata cache, native operations and MO2 discovery. The shared dashboard and complete games continue in WebView2; MO2's Python adapter retains its native Nexus/download/install integration. Earlier combined archives below preserve the previous Electron release series.
 
@@ -50,7 +52,7 @@ Keep the real MO2 load order updated first. The combined interface includes the 
 
 ## ✧ Craft standard
 
-**[Modhunter Design & Quality Standard](Design-System-and-Quality-Bar)** defines the updater-first information hierarchy, warm mineral visual language, restrained motion, accessible navigation, deliberate microcopy, and a strict no-clutter/no-feature-loss acceptance checklist. Shared UI changes must meet the same standard in portable HTML, desktop and MO2.
+**[Modhunter Design & Quality Standard](Design-System-and-Quality-Bar)** defines the updater-first information hierarchy, OLED-black utility palette and authored colored chapters, restrained motion, accessible navigation, deliberate microcopy, and a strict no-clutter/no-feature-loss acceptance checklist. Shared UI changes must meet the same standard in portable HTML, desktop and MO2.
 
 ## 📖 Field guide
 

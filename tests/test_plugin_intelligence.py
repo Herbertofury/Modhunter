@@ -429,6 +429,61 @@ class IntelligenceLifecycleTests(unittest.TestCase):
         entry["release"].set()
         wait_until(lambda: not self.coordinator._worker_active)
 
+    def test_superseded_queued_capture_is_cancelled_before_native_execution(self):
+        queued = queue.Queue()
+        self.service.ui_call = queued.put
+        self.coordinator.start_audit("A", deep=True)
+        old = queued.get(timeout=1)
+        self.assertEqual(old.state, "queued")
+        # The actual Qt dispatcher is deliberately busy; no native callback is
+        # delivered. Refresh must wake the worker, not wait for its 25s timeout.
+        self.service.set_snapshot(profile("B", count=3))
+        self.service.set_snapshot(profile("A", count=3))
+        current = queued.get(timeout=1)
+        self.assertEqual(old.state, "cancelled")
+        self.assertFalse(old.begin(), "Delayed Qt delivery must not walk an obsolete profile")
+        self.assertEqual(current.payload["profileId"], "A")
+        self.assertTrue(current.begin())
+        current.finish({"ok": True, "request": {"profileId": "A", "game": GAME,
+            "deep": current.payload["deep"], "mods": []}})
+        entry = self.runner.started.get(timeout=1)
+        self.assertEqual(len(self.runner.calls), 1)
+        self.finish_audit(entry)
+
+    def test_shutdown_releases_queued_audit_capture_without_timeout(self):
+        queued = queue.Queue()
+        self.service.ui_call = queued.put
+        self.coordinator.start_audit("A", deep=False)
+        old = queued.get(timeout=1)
+        self.service.stop()
+        wait_until(lambda: not self.coordinator._worker_active)
+        self.assertFalse(old.begin())
+        self.assertFalse(self.runner.calls)
+
+    def test_running_audit_timeout_ignores_late_result_without_nexus_error(self):
+        started = []
+        def native(request):
+            self.assertTrue(request.begin())
+            started.append(request)
+        self.service.ui_call = native
+        result = self.service.call_ui("plugin-audit-input", {"profileId": "A"}, timeout=0.01,
+                                      cancel_event=threading.Event())
+        self.assertTrue(result["cancelled"])
+        self.assertIn("plugin inventory", result["error"])
+        self.assertNotIn("Nexus", result["error"])
+        self.assertFalse(started[0].finish({"ok": True, "request": {}}))
+        self.assertEqual(started[0].result, result)
+
+    def test_already_cancelled_audit_read_never_enters_native_queue(self):
+        queued = queue.Queue()
+        self.service.ui_call = queued.put
+        cancel = threading.Event()
+        cancel.set()
+        result = self.service.call_ui("plugin-audit-input", {"profileId": "A"},
+                                      cancel_event=cancel)
+        self.assertTrue(result["cancelled"])
+        self.assertTrue(queued.empty())
+
     def test_profile_aba_discards_old_completion_before_new_job_can_finish(self):
         self.coordinator.start_audit("A", deep=True)
         old = self.runner.started.get(timeout=1)

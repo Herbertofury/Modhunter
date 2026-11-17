@@ -103,8 +103,10 @@ class UIRequest:
 
     def cancel(self) -> bool:
         """Abandon an asynchronous read; native mutations use pending-only."""
-        return self._complete({"ok": False, "cancelled": True,
-            "error": "MO2 Nexus request timed out. Check its connection and retry."}, cancel=True)
+        error = ("MO2 plugin inventory capture was cancelled or timed out. Retry when MO2 is ready."
+                 if self.cmd == "plugin-audit-input" else
+                 "MO2 Nexus request timed out. Check its connection and retry.")
+        return self._complete({"ok": False, "cancelled": True, "error": error}, cancel=True)
 
     def finish(self, data: dict) -> bool:
         return self._complete(data)
@@ -495,7 +497,7 @@ class ArsenalService:
     def call_ui(self, cmd: str, payload: dict, timeout: float = 20,
                 *, cancel_event: threading.Event | None = None) -> dict:
         req = UIRequest(cmd, payload, timeout=timeout)
-        cancellable_read = cmd in ("nexus-metadata", "nexus-files") and cancel_event is not None
+        cancellable_read = cmd in ("nexus-metadata", "nexus-files", "plugin-audit-input") and cancel_event is not None
         if cancellable_read and cancel_event.is_set():
             req.cancel()
             return req.result
@@ -515,7 +517,7 @@ class ArsenalService:
         if not completed:
             if req.cancel_if_pending():
                 return req.result
-            if cmd in ("nexus-metadata", "nexus-files"):
+            if cmd in ("nexus-metadata", "nexus-files", "plugin-audit-input"):
                 req.cancel()  # Its late callback cannot resurrect an old read.
             else:
                 # Native execution has already begun. Retain the operation's

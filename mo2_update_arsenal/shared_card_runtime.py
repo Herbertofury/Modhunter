@@ -17,7 +17,7 @@ REQUEST_BYTES = 64 * 1024 * 1024
 REPLY_BYTES = REQUEST_BYTES + 1024
 
 
-def _runtime() -> Path:
+def runtime_installation() -> tuple[Path, dict]:
     folder = shared_cards_path().parent / 'runtime-v1'
     executable = folder / ('gs-card-save.exe' if sys.platform == 'win32' else 'gs-card-save')
     manifest = folder / 'manifest.json'
@@ -34,7 +34,11 @@ def _runtime() -> Path:
         digest = hashlib.file_digest(source, 'sha256').hexdigest()
     if expected.get('sha256') != digest:
         raise ValueError('Runtime integrity check failed')
-    return executable
+    return executable, expected
+
+
+def _runtime() -> Path:
+    return runtime_installation()[0]
 
 
 def invoke_shared_card_runtime(data: dict) -> dict:

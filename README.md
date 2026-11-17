@@ -197,7 +197,7 @@ The canonical [`wiki/`](wiki/) pages are synchronized to the separate **[live Gi
 
 ### Fast MO2 updates: one click, no confirmation maze
 
-With the MO2 plugin connected, click **ϟ Update now** on a newer mod. A uniquely version-matched main Nexus file (or one eligible public release archive) goes directly to MO2 Downloads, then opens **MO2's interactive installer** when it finishes. The standard FOMOD prompts remain available; Modhunter skips its extra confirmations. For multiple editions or meaningful compatibility risks, **Choose file** opens immediately, with the release choices preserved. **Queue matched updates** downloads unambiguous matches in the background without flooding you with installers. Existing reviewed selections dispatch immediately, while the manifest and install briefing are optional. See [Update Workshop](wiki/Update-Workshop.md).
+With the MO2 plugin connected, click **ϟ Update now** on an update with one validated eligible file. Nexus recommendations follow the installed file's publisher-declared replacement history; an optional patch keeps its own history even when it shares a page with the main download. One eligible public release archive can follow the same direct workflow. MO2 handles the download and opens **its interactive installer** when it finishes, including the standard FOMOD prompts. For multiple editions, ambiguous file history or unresolved compatibility, **Choose file** opens with the complete release choices preserved. **Queue matched updates** downloads unambiguous matches in the background without flooding you with installers. Existing reviewed selections are revalidated before dispatch; the manifest and install briefing remain available. See [Update Workshop](wiki/Update-Workshop.md).
 
 
 

@@ -318,15 +318,18 @@ def main() -> int:
             basic = ["-MO2Directory", str(target), "-Json", "-Preview"]
             invalid_console = execute("unchanged-invalid-console", ROOT / INSTALLER, basic, False, owned)
             invalid_hidden = execute("unchanged-invalid-hidden", ROOT / INSTALLER, basic, True, owned)
-            assert invalid_console["exitCode"] == 2 and invalid_console["stderrBytes"] == 0
+            assert invalid_console["exitCode"] == 2 and invalid_console["stderrBytes"] == 0, "Console validation control failed"
             assert invalid_console["json"]["code"] == "invalid_request" and invalid_console["json"]["ok"] is False
-            assert invalid_hidden["exitCode"] != 0 and invalid_hidden["json"] is None
-            assert b"OutputEncoding" in base64.b64decode(invalid_hidden["stderrBase64"])
-            assert runtime[False]["setterSucceeded"] and not runtime[True]["setterSucceeded"]
-            assert runtime[True]["consoleHandle"] == "0" and runtime[True]["initialCodePage"] == 0
-            assert any(item["hresult"] == INVALID_HANDLE_HRESULT for item in runtime[True]["exceptions"])
-            assert tree(target) == before_target
-            proof["unchangedConsoleFailureConfirmed"] = True
+            setter_failure = (invalid_hidden["exitCode"] != 0 and invalid_hidden["json"] is None
+                and b"OutputEncoding" in base64.b64decode(invalid_hidden["stderrBase64"])
+                and runtime[False]["setterSucceeded"] and not runtime[True]["setterSucceeded"]
+                and any(item["hresult"] == INVALID_HANDLE_HRESULT for item in runtime[True]["exceptions"]))
+            matching_validation = (invalid_hidden["exitCode"] == 2 and invalid_hidden["stderrBytes"] == 0
+                and invalid_hidden["json"] == invalid_console["json"] and runtime[True]["setterSucceeded"])
+            assert tree(target) == before_target, "Validation changed the disposable target"
+            proof["unchangedConsoleFailureConfirmed"] = setter_failure
+            proof["unchangedValidationMatchesAcrossLaunchModes"] = matching_validation
+            proof["candidateExecuted"] = False
             write_json(receipt, proof)
 
             baseline, candidate, fixture, patch = build_fixture(owned, commit, run_url)
@@ -336,6 +339,14 @@ def main() -> int:
                     shutil.copyfile(package / name, output / f"{prefix}-{name}")
             valid = {}
             for package_name, package in (("unchanged", baseline), ("candidate", candidate)):
+                # Always complete the unchanged valid-preview comparison. A
+                # disproven hypothesis is a useful result, not a reason to
+                # skip the requested real script path. Never run the candidate
+                # unless the specific unchanged setter failure was observed.
+                if package_name == "candidate" and not setter_failure:
+                    continue
+                if package_name == "candidate":
+                    proof["candidateExecuted"] = True
                 package_before = tree(package)
                 identity = fixture["identity"]
                 arguments = basic + ["-ExpectedVersion", identity["version"], "-ExpectedCommit", identity["commit"],
@@ -347,24 +358,33 @@ def main() -> int:
                         valid[package_name, hidden] = execute(label, package / "Install_MO2_Plugin.ps1", arguments, hidden, owned)
                         assert tree(package) == package_before and tree(target) == before_target
             reference = valid["unchanged", False]
-            assert reference["exitCode"] == 0 and reference["stderrBytes"] == 0
+            assert reference["exitCode"] == 0 and reference["stderrBytes"] == 0, "Unchanged console preview failed"
             expected = reference["json"]
             assert (expected["schemaVersion"] == 1 and expected["ok"] is True and expected["status"] == "preview"
                     and expected["code"] == "ready" and expected["targetDirectory"] == str(target)
                     and re.fullmatch("[a-f0-9]{64}", expected["installedFingerprint"]))
-            failed = valid["unchanged", True]
-            assert failed["exitCode"] != 0 and failed["json"] is None
-            assert b"OutputEncoding" in base64.b64decode(failed["stderrBase64"])
-            for hidden in (False, True):
-                result = valid["candidate", hidden]
-                assert result["exitCode"] == 0 and result["stderrBytes"] == 0 and result["json"] == expected
-                stdout = base64.b64decode(result["stdoutBase64"])
-                assert stdout.startswith(b"{") and str(target).encode("utf-8").replace(b"\\", b"\\\\") in stdout
-                stdout.decode("utf-8", errors="strict")
-            proof["candidatePreservesCompleteReceipt"] = True
+            hidden_preview = valid["unchanged", True]
+            if setter_failure:
+                assert hidden_preview["exitCode"] != 0 and hidden_preview["json"] is None
+                assert b"OutputEncoding" in base64.b64decode(hidden_preview["stderrBase64"])
+                for hidden in (False, True):
+                    result = valid["candidate", hidden]
+                    assert result["exitCode"] == 0 and result["stderrBytes"] == 0 and result["json"] == expected
+                    stdout = base64.b64decode(result["stdoutBase64"])
+                    assert stdout.startswith(b"{") and stdout == base64.b64decode(reference["stdoutBase64"])
+                    stdout.decode("utf-8", errors="strict")
+                proof["candidatePreservesCompleteReceipt"] = True
+                proof["consoleIndependentUtf8PreviewConfirmed"] = True
+                proof["conclusion"] = "Setter failure reproduced; explicit UTF-8 candidate preserved the complete receipt"
+            else:
+                assert matching_validation, "Hidden validation failed for a different reason; inspect raw receipts"
+                assert (hidden_preview["exitCode"] == 0 and hidden_preview["stderrBytes"] == 0
+                        and hidden_preview["json"] == expected), "Unchanged hidden preview differs; inspect raw receipts"
+                assert hidden_preview["stdoutBase64"] == reference["stdoutBase64"], "Unchanged preview bytes differ by launch mode"
+                proof["unchangedValidPreviewMatchesAcrossLaunchModes"] = True
+                proof["conclusion"] = "Console setter hypothesis not reproduced; unchanged valid preview succeeds in both launch modes"
             proof["targetsUnchanged"] = True
             proof["packagesUnchangedDuringPreview"] = True
-            proof["consoleIndependentUtf8PreviewConfirmed"] = True
             proof["ok"] = True
     except BaseException as error:
         proof["errors"].append({"type": type(error).__name__, "message": str(error)})

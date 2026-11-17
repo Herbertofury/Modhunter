@@ -1,0 +1,46 @@
+name: Controlled parent and release library comparison
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['diagnostics/daily-driver-list-comparison']
+    paths: ['tests/compare_parent_library.py', '.github/workflows/parent-list-comparison.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: modhunter-parent-library-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare the same browser test dependencies
+        run: |
+          python3 -m venv /tmp/modhunter-paired
+          /tmp/modhunter-paired/bin/pip install -q playwright==1.57.0
+          /tmp/modhunter-paired/bin/python tests/prepare_ci_fonts.py --output /tmp/modhunter-parent-library-proof/ci-fonts.json
+          if ! command -v chromium >/dev/null && ! command -v chromium-browser >/dev/null; then
+            /tmp/modhunter-paired/bin/python -m playwright install --with-deps chromium
+          fi
+      - name: Compare exact parent and release with three ordinary measured pairs
+        env:
+          MODHUNTER_REQUIRE_BROWSER: '1'
+        run: >-
+          /tmp/modhunter-paired/bin/python tests/compare_parent_library.py
+          --rounds 3 --trace-warmup --output /tmp/modhunter-parent-library-proof
+      - name: Preserve complete measurements and excluded-warmup List traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Modhunter-Parent-Library-Comparison
+          path: /tmp/modhunter-parent-library-proof/
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,9 @@
+# Treasure goblin encounter slice
+
+Both actual game engines now schedule an original non-hostile treasure carrier. It appears after45simulation seconds when admission/terrain permits, flees with readable bursts, and escapes after25simulation seconds. Its original hood/sack silhouette, health bar and escape countdown are rendered in-world. Existing player/squad attacks, projectiles, slows and stuns affect it. Escape gives no kills or loot. Defeat grants simulation-only treasure: Siege gets two rerolls and a24XP gem in addition to its ordinary local enemy reward; Realm gets8scrap,1rune and24adventurerXP. It does not represent a mod author and cannot grant native Forge Sigils, ranked points or an update bounty.
+
+Each mode holder stores one compact active runner, spawn countdown and serial. Waiting for terrain or population capacity does not discard the encounter. Siege reserves a due treasure slot without consuming the boss reservation or culling existing combatants. Realm does not count this optional carrier as a required Rift wave enemy. Renewal waits120simulation seconds after defeat or escape.
+
+Saved health, countdown and identity are restored; Siege rebinds its serialized active pointer to the real combat-array entity. Claim/escape completion requires the current encounter object, not a reused cross-mode serial. Realm skips stale entity-array snapshots after a fatal transition clears the live map. This prevents an expired Rift runner from consuming an unrelated overworld runner with the same serial.
+
+Source-driven regressions cover real hit/death/escape adapters, duplicate hits, reload, population/boss fairness, walkable spawn deferral, movement, stun and the lethal Rift-to-overworld transition. Native visuals/controller/terrain-path behavior, complete long-run pacing and FPS remain unverified. The module uses no native/network/provider calls. No speedup claimed. Nested portals and shared deep endgame remain pending.

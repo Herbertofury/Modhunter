@@ -1,0 +1,9 @@
+{
+  "scope": "Source-level and VM combat/state validation, not native playtesting",
+  "javascriptTestsPassed": 180,
+  "pythonTests": {"total": 501, "passed": 472, "environmentSkips": 29},
+  "generatedInlineJavaScriptSyntaxChecks": 6,
+  "bundledHtmlSha256": "f8988abde9b9e403781e1c8b74c63a824897ffa20962855d80af248b6dd4ff18",
+  "reviewFixes": ["Reject stale Realm entities after lethal mode transition", "Require current active encounter object for kill/escape, not reused serial"],
+  "pending": ["Windows WebView2 visual/controller acceptance", "terrain usability", "full combat pacing and FPS", "nested portals", "shared cross-mode economy and deep endgame"]
+}

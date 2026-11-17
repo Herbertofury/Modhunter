@@ -1,0 +1,9 @@
+{
+  "scope": "Siege portal adapter only; Realm adapter remains pending",
+  "javascriptTestsPassed": 195,
+  "pythonTests": {"total": 503, "passed": 474, "environmentSkips": 29},
+  "generatedInlineJavaScriptSyntaxChecks": 6,
+  "bundledHtmlSha256": "203a96d54a425c5f41ee8d002be2228d9ff16845888be050ee965e6541f5264d",
+  "durability": ["Separate bounded native parent archive and child budget", "Actual HTTP near-budget parent plus 512-entity child above 800 KB", "Exact durable acknowledgement before activation/return", "Lost acknowledgements reconciled against exact saved snapshot", "Revision failure and invalid archive retain last good"],
+  "pending": ["Realm portal adapter", "Windows WebView2/controller/visual acceptance", "Actual long-session gameplay and FPS", "Source integration with Nemesis optional rival archive"]
+}

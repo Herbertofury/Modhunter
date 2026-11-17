@@ -179,6 +179,7 @@ def source_semantics(browser, html, output, name):
     page = context.new_page();page.set_default_timeout(15000)
     cdp = context.new_cdp_session(page)
     errors, results = [], []
+    action_context, last_state = {}, None
     page.on("pageerror", lambda error: errors.append(str(error)))
     try:
         page.set_content(html, wait_until="load")
@@ -189,6 +190,7 @@ def source_semantics(browser, html, output, name):
             page.set_viewport_size({"width": width, "height": 900})
             page.locator("#libraryGallery" if view == "gallery" else "#libraryList").click();engine.settle(page)
             for index in (0, 5, 6):
+                action_context = {"width": width, "view": view, "item": index};last_state = None
                 selector = f'#row-item-{index} .source-btn';anchor = page.locator(selector)
                 anchor.scroll_into_view_if_needed()
                 page.locator(f'#row-item-{index} .mod-bugs').focus()
@@ -196,15 +198,24 @@ def source_semantics(browser, html, output, name):
                 assert anchor.evaluate("element=>element===document.activeElement"), (width, view, index)
                 state = anchor.evaluate(r"""element=>{
                   const r=element.getBoundingClientRect(),rect=b=>({x:b.x,y:b.y,width:b.width,height:b.height});
-                  const hits=[[r.x+r.width/2,r.y+r.height/2],[r.x+1,r.y+1],[r.right-1,r.y+1],[r.x+1,r.bottom-1],[r.right-1,r.bottom-1]];
+                  const hits={center:[r.x+r.width/2,r.y+r.height/2],left:[r.x+1,r.y+r.height/2],right:[r.right-1,r.y+r.height/2],
+                    top:[r.x+r.width/2,r.y+1],bottom:[r.x+r.width/2,r.bottom-1],topLeft:[r.x+1,r.y+1],topRight:[r.right-1,r.y+1],
+                    bottomLeft:[r.x+1,r.bottom-1],bottomRight:[r.right-1,r.bottom-1]};
                   const ranges=[],walker=document.createTreeWalker(element,NodeFilter.SHOW_TEXT);let text;
                   while(text=walker.nextNode()){const range=document.createRange();range.selectNodeContents(text);ranges.push({text:text.textContent,boxes:[...range.getClientRects()].map(rect)})}
+                  const style=getComputedStyle(element);
                   return {box:rect(r),ranges,text:element.textContent,href:element.href,title:element.title,
                     target:element.target,rel:element.rel,tabIndex:element.tabIndex,
-                    hitResults:hits.map(([x,y])=>document.elementFromPoint(x,y)?.closest('.source-btn')===element),
+                    hitPoints:hits,hitResults:Object.fromEntries(Object.entries(hits).map(([name,[x,y]])=>[name,document.elementFromPoint(x,y)?.closest('.source-btn')===element])),
+                    cornerRadii:Object.fromEntries(['border-top-left-radius','border-top-right-radius','border-bottom-left-radius','border-bottom-right-radius'].map(key=>[key,style.getPropertyValue(key)])),
                     parentClass:element.parentElement.className,rows:document.querySelectorAll('#modList .mod-row').length};
                 }""")
-                assert all(state["hitResults"]) and state["rows"] == 7 and state["tabIndex"] == 0, state
+                last_state = state
+                # Rounded rectangular corners can legitimately miss the link.
+                # Keep their exact hit mask in the before/after comparison;
+                # require the center and four edge midpoints to remain active.
+                assert all(state["hitResults"][key] for key in ("center", "left", "right", "top", "bottom")), state
+                assert state["rows"] == 7 and state["tabIndex"] == 0, state
                 assert state["target"] == "_blank" and set(state["rel"].split()) == {"noopener", "noreferrer"}, state
                 root = cdp.send("DOM.getDocument")["root"]["nodeId"]
                 node_id = cdp.send("DOM.querySelector", {"nodeId": root, "selector": selector})["nodeId"]
@@ -232,6 +243,16 @@ def source_semantics(browser, html, output, name):
             results[-1]["screenshotSha256"] = hashlib.sha256(data).hexdigest()
         assert not errors, errors
         return {"cases": results, "pageErrors": errors, "fixtureSha256": sha(json.dumps(semantics_fixture(), sort_keys=True))}
+    except BaseException as error:
+        failure = {"error": str(error), "action": action_context, "lastState": last_state,
+                   "completedActions": results, "pageErrors": errors}
+        try:
+            data = page.screenshot(path=str(output / f"source-actions-{name}-failure.png"))
+            failure["screenshotSha256"] = hashlib.sha256(data).hexdigest()
+        except Exception as screenshot_error:
+            failure["screenshotError"] = str(screenshot_error)
+        (output / f"source-actions-{name}-partial.json").write_text(json.dumps(failure, indent=2), encoding="utf-8")
+        raise
     finally:
         context.close()
 

@@ -6,6 +6,8 @@ can claim XP or a victory. All mod identity keys are profile-scoped and stable.
 from __future__ import annotations
 
 import json
+import base64
+import zlib
 import os
 import threading
 from copy import deepcopy
@@ -354,28 +356,60 @@ class Chronicle:
     def siege_state(self, profile_id: str) -> dict:
         with self.lock:
             p = self._profile(profile_id)
+            state = deepcopy(p.get("siegeState") or {})
+            packed = p.get("siegeRivalsPacked")
+            if packed is not None:
+                try:
+                    if not isinstance(packed, str) or len(packed) > 750000:
+                        raise ValueError("Invalid rival archive")
+                    decoder = zlib.decompressobj()
+                    raw = decoder.decompress(base64.b64decode(packed, validate=True), 8 * 1024 * 1024 + 1)
+                    if len(raw) > 8 * 1024 * 1024 or not decoder.eof or decoder.unused_data:
+                        raise ValueError("Rival archive exceeds safe decode size or is incomplete")
+                    rivals = json.loads(raw)
+                    if not isinstance(rivals, dict):
+                        raise ValueError("Invalid rival archive shape")
+                    state["rivals"] = rivals
+                except (ValueError, TypeError, zlib.error):
+                    return {"ok": False, "error": "Rival archive cannot be read; retained unchanged for recovery"}
             return {"ok": True, "profileId": profile_id, "revision": int(p.get("siegeRevision", 0)),
-                    "state": deepcopy(p.get("siegeState") or {})}
+                    "state": state}
 
     def save_siege_state(self, profile_id: str, state: dict, revision: int) -> dict:
-        """Game-only save. Not a trusted source of MO2 currency or bounty score."""
+        """Game-only save. Native ledger alone grants MO2 currency/bounty score.
+
+        Rival history is losslessly packed, not pruned when target versions change.
+        Browser-facing state is unchanged. Explicit size limits bound hostile inputs.
+        """
         if not isinstance(state, dict) or state.get("v") != 1:
             return {"ok": False, "error": "Invalid siege state"}
-        permitted = {"v", "mode", "run", "records", "options", "atlas"}
+        permitted = {"v", "mode", "run", "records", "options", "atlas", "rivals"}
         if set(state) - permitted:
             return {"ok": False, "error": "Unexpected siege fields"}
+        stored = deepcopy(state)
+        packed = None
         try:
-            length = len(json.dumps(state, ensure_ascii=False, separators=(",", ":")))
+            if "rivals" in stored:
+                rivals = stored.pop("rivals")
+                if not isinstance(rivals, dict):
+                    return {"ok": False, "error": "Invalid rival chronicle"}
+                raw = json.dumps(rivals, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
+                if len(raw) > 8 * 1024 * 1024:
+                    return {"ok": False, "error": "Rival history exceeds 8 MiB safety limit; prior save retained. Export/archive history before continuing saves."}
+                packed = base64.b64encode(zlib.compress(raw)).decode("ascii")
+            length = len(json.dumps(stored, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")) + len(packed or "")
         except (TypeError, ValueError):
             return {"ok": False, "error": "Siege state cannot be encoded"}
         if length > 750000:
-            return {"ok": False, "error": "Siege state is too large"}
+            return {"ok": False, "error": "Siege state exceeds 750 KB packed budget; prior save retained"}
         with self.lock:
             p = self._profile(profile_id)
             current = int(p.get("siegeRevision", 0))
             if revision != current:
                 return {"ok": False, "error": "A newer Siege save exists; reload", "conflict": True, "revision": current}
-            p["siegeState"] = deepcopy(state)
+            p["siegeState"] = stored
+            if packed is not None:
+                p["siegeRivalsPacked"] = packed
             p["siegeRevision"] = current + 1
             self._write()
             return {"ok": True, "profileId": profile_id, "revision": current + 1}

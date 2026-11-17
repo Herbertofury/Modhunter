@@ -69,7 +69,8 @@ jobs:
           node native/scripts/verify_instances_manager.cjs --self-test
           python3 native/scripts/prepare_release.py --self-test
           python3 native/scripts/mo2_smoke_plugin/modhunter_native_smoke/audit_probe.py --self-test
-      - name: Exercise actual dashboard in Chromium
+      - name: Prepare actual Chromium proof tools
+        id: browser_tools
         env:
           MODHUNTER_REQUIRE_BROWSER: '1'
         run: |
@@ -81,18 +82,33 @@ jobs:
           if ! command -v chromium >/dev/null && ! command -v chromium-browser >/dev/null; then
             /tmp/modhunter-qa/bin/python -m playwright install --with-deps chromium
           fi
+      - name: Exercise actual dashboard in Chromium
+        if: ${{ !cancelled() && steps.browser_tools.outcome == 'success' }}
+        env:
+          MODHUNTER_REQUIRE_BROWSER: '1'
+        run: |
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/updater_sss_browser_qa.py
           PYTHONPATH=. /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_frontend_responsiveness.py' -v
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_compact_workspace.py' -v
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_gallery_workspace.py' -v
           PYTHONPATH=. /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_compact_completion.py' -v
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/test_watchtower_browser.py
-          PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/test_instances_browser.py
-          PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/test_library_workspace.py
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p test_watchtower_sources_ui.py -v
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/test_watchtower_native_ui.py
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/ci_font_rendering_qa.py
           PYTHONPATH=. /tmp/modhunter-qa/bin/python scripts/benchmark_dashboard_render.py --baseline-ref 63e5df3e3ef218ae72ce58b5e4502165c40ca604 --output /tmp/modhunter-proof/dashboard-render-comparison.json
+      - name: Exercise MO2 Instances in actual Chromium
+        if: ${{ !cancelled() && steps.browser_tools.outcome == 'success' }}
+        env:
+          MODHUNTER_REQUIRE_BROWSER: '1'
+        run: |
+          PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/test_instances_browser.py
+      - name: Exercise the full-window Library in actual Chromium
+        if: ${{ !cancelled() && steps.browser_tools.outcome == 'success' }}
+        env:
+          MODHUNTER_REQUIRE_BROWSER: '1'
+        run: |
+          PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/test_library_workspace.py
       - name: Upload browser proof
         if: always()
         uses: actions/upload-artifact@v4

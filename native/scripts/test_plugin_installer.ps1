@@ -191,7 +191,7 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $Installed 'data/empty-directory') | Out-Null
     $OldPluginHash = Hash (Join-Path $Installed '__init__.py')
     Invoke-FixtureInstaller $Upgrade
-    Require ($script:LastInstallerOutput.Contains("Installed Modhunter $FixtureVersion plugin")) 'Upgrade did not report the exact packaged plugin version.'
+    Require ($script:LastInstallerOutput.Contains("Installed Modhunter $FixtureVersion plugin")) "Upgrade did not report the exact packaged plugin version: $script:LastInstallerOutput"
     Require ((Hash (Join-Path $Installed '__init__.py')) -eq (Hash (Join-Path $Source '__init__.py'))) 'Upgrade did not replace the plugin implementation.'
     Require ((Hash (Join-Path $Installed 'web/index.html')) -eq (Hash (Join-Path $Source 'web/index.html'))) 'Upgrade did not replace the dashboard.'
     Require ((Hash (Join-Path $Installed 'bin/modhunter-cli.exe')) -eq (Hash (Join-Path $Source 'bin/modhunter-cli.exe'))) 'Upgrade did not install the packaged Rust audit helper.'

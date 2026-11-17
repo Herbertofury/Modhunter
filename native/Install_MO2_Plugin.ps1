@@ -459,7 +459,7 @@ try {
     $report.ok = $true
     $report.status = if ($hadPrevious) { 'updated' } else { 'installed' }
     $report.code = 'installed'
-    $report.message = "Installed Modhunter $pluginVersion. Start MO2 and let its profile load; the bridge starts automatically."
+    $report.message = "Installed Modhunter $pluginVersion plugin. Start MO2 and let its profile load; the bridge starts automatically."
 } finally {
     if (Test-Path -LiteralPath $staging) { Remove-Item -LiteralPath $staging -Recurse -Force }
 }

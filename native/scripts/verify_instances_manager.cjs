@@ -72,16 +72,15 @@ function bundle(root){
 }
 async function pointer(page,selector){
  await page.evaluate(selector=>{const item=document.querySelector(selector);if(!item)throw Error('Missing pointer target');item.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});},selector);
- await page.waitForFunction(selector=>{
-  const item=document.querySelector(selector);if(!item||item.disabled)return false;
-  const r=item.getBoundingClientRect(),s=getComputedStyle(item),x=r.x+r.width/2,y=r.y+r.height/2;
-  return r.width>0&&r.height>0&&s.visibility==='visible'&&s.display!=='none'&&x>=0&&y>=0&&x<innerWidth&&y<innerHeight&&item.contains(document.elementFromPoint(x,y));
- },selector);
+ // Locator actionability waits use Playwright's isolated utility world. Keep
+ // polling out of the application's strict CSP world; the actual event below
+ // remains a real mouse click after the independent geometry/hit-target check.
+ await page.locator(selector).click({trial:true});
  const point=await page.evaluate(async selector=>{
   const item=document.querySelector(selector),first=item.getBoundingClientRect();
   await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
-  const r=item.getBoundingClientRect(),x=r.x+r.width/2,y=r.y+r.height/2;
-  if(item.disabled||!item.isConnected||['x','y','width','height'].some(name=>Math.abs(first[name]-r[name])>.5)||!item.contains(document.elementFromPoint(x,y)))throw Error('Native pointer target is not stable');
+  const r=item.getBoundingClientRect(),s=getComputedStyle(item),x=r.x+r.width/2,y=r.y+r.height/2;
+  if(item.disabled||!item.isConnected||r.width<=0||r.height<=0||s.visibility!=='visible'||s.display==='none'||x<0||y<0||x>=innerWidth||y>=innerHeight||['x','y','width','height'].some(name=>Math.abs(first[name]-r[name])>.5)||!item.contains(document.elementFromPoint(x,y)))throw Error('Native pointer target is not stable');
   return {x,y};
  },selector);
  await page.mouse.click(point.x,point.y);
@@ -205,7 +204,7 @@ async function main(){
   const globals=state.inventory.instances.filter(instance=>instance.kind==='global');
   const shared=state.inventory.associations.filter(row=>row.kind==='availableGlobal');
   check('shared_global_associations',globals.length===1&&shared.length===2&&shared.every(row=>row.instanceId===globals[0].id&&[byRole.fresh.id,byRole.upgrade.id].includes(row.installationId))&&state.inventory.associations.filter(row=>row.kind==='portable').length===3);
-  await manager.waitForFunction(()=>document.getElementById('installationCount').textContent==='3'&&document.querySelectorAll('[data-installation-select]').length===3);
+  await until(async()=>await manager.locator('#installationCount').textContent()==='3'&&await manager.locator('[data-installation-select]').count()===3);
   report.timingsMs.discovery=Date.now()-began;
   const capture=name=>{const window=nativeWindow(pid,executable,true,path.join(path.dirname(output),name));report.captures.push({file:name,...window});};
   capture('instances-discovery.png');
@@ -215,7 +214,8 @@ async function main(){
   const selected=await manager.evaluate(()=>[...document.querySelectorAll('[data-installation-select]:checked')].map(item=>item.dataset.installationSelect).sort());
   check('real_pointer_target_selection',equal(selected,[byRole.fresh.id,byRole.upgrade.id].sort()));
   const previewStart=Date.now();await pointer(manager,'#reviewSelected');
-  await manager.waitForFunction(()=>document.getElementById('installPreview').open&&!document.getElementById('confirmInstall').disabled&&document.querySelectorAll('.preview-target').length===2);
+  await manager.locator('#installPreview[open]').waitFor({state:'visible'});
+  await until(async()=>await manager.locator('#confirmInstall').isEnabled()&&await manager.locator('.preview-target').count()===2);
   const reviewed=await manager.evaluate(()=>[...document.querySelectorAll('.preview-target')].map(item=>({id:item.dataset.installationId,ready:item.dataset.ready})).sort((a,b)=>a.id.localeCompare(b.id)));
   check('reviewed_exact_selected_targets',reviewed.length===2&&reviewed.every(row=>row.ready==='true')&&equal(reviewed.map(row=>row.id).sort(),selected));
   check('preview_leaves_all_targets_unchanged',Object.entries(applications).every(([role,root])=>equal(tree(root),before[role])));
@@ -237,7 +237,7 @@ async function main(){
    }
    report.targets.push(target);
   }
-  await manager.waitForFunction(()=>document.querySelectorAll('#installResults .result-row').length===2&&[...document.querySelectorAll('#installResults .result-row')].every(item=>['installed','updated'].includes(item.dataset.status)));
+  await until(async()=>await manager.locator('#installResults .result-row').count()===2&&await manager.locator('#installResults .result-row:not([data-status="installed"]):not([data-status="updated"])').count()===0);
   const inputs=await manager.evaluate(()=>window.__instancesEvidence);report.trustedPointerEvents=inputs.filter(item=>item.trusted).length;
   check('trusted_pointer_review_and_confirmation',inputs.some(item=>item.trusted&&item.id==='reviewSelected')&&inputs.some(item=>item.trusted&&item.id==='confirmInstall')&&selected.every(id=>inputs.some(item=>item.trusted&&item.selection===id)));
   check('unselected_application_unchanged',equal(tree(applications.unselected),before.unselected));
@@ -247,7 +247,7 @@ async function main(){
   checkpoint('reopen-completed-results');nativeWindow(pid,executable,true,null,true);await until(()=>manager.isClosed());
   nativeWindow(pid,executable,false);await pointer(shell,'#openInstances');
   manager=await until(()=>pages().find(page=>page.url().endsWith('/instances.html')));manager.setDefaultTimeout(30000);manager.on('pageerror',error=>report.errors.push(String(error)));
-  nativeWindow(pid,executable,true);await manager.waitForFunction(()=>document.querySelectorAll('#installResults .result-row').length===2);
+  nativeWindow(pid,executable,true);await until(async()=>await manager.locator('#installResults .result-row').count()===2);
   state=(await invoke('state')).state;
   check('reopened_manager_retains_results',equal(state.install,completed));capture('instances-reopened.png');
   checkpoint('authority-and-stale-review');

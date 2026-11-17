@@ -16,7 +16,7 @@ import unittest
 from browser_receipt import EvidenceResult, chromium_identity, screenshot_identity, source_identity
 
 try:
-    from playwright.sync_api import sync_playwright
+    from playwright.sync_api import expect, sync_playwright
 except ImportError:
     sync_playwright = None
 
@@ -116,9 +116,12 @@ class InstancesBrowserTests(unittest.TestCase):
         if native:
             self.context.add_init_script(BOOT.replace("__INSTANCES_INITIAL_STATE__", json.dumps(state or snapshot())))
         self.page.goto("http://instances.invalid/instances.html", wait_until="networkidle")
-        self.page.wait_for_function("Boolean(window.ModhunterInstances)")
         if native:
-            self.page.wait_for_function("ModhunterInstances.snapshot().revision >= 10")
+            expect(self.page.locator("#installationCount")).to_have_text(str(len((state or snapshot())["inventory"]["installations"])), timeout=6000)
+            self.assertGreaterEqual(self.page.evaluate("ModhunterInstances.snapshot().revision"), 10)
+        else:
+            expect(self.page.locator("#connectionBanner")).to_be_visible(timeout=6000)
+        self.assertTrue(self.page.evaluate("Boolean(window.ModhunterInstances)"))
 
     def choose(self, *ids):
         for installation_id in ids:
@@ -127,6 +130,11 @@ class InstancesBrowserTests(unittest.TestCase):
     def review(self):
         self.page.locator("#reviewSelected").click()
         self.page.wait_for_selector("#installPreview[open] .preview-target")
+
+    def deferred_review(self):
+        self.page.locator("#reviewSelected").click()
+        expect(self.page.locator("#previewLoading")).to_be_visible(timeout=6000)
+        self.assertEqual(self.page.evaluate("__INSTANCES_FIX__.pending.length"), 1)
 
     def calls(self, kind):
         return self.page.evaluate("kind => __INSTANCES_FIX__.calls.filter(call=>call.kind===kind)", kind)
@@ -145,21 +153,22 @@ class InstancesBrowserTests(unittest.TestCase):
         self.assertIn("<script>fixtureOnly()</script>", self.page.locator('[data-installation-id="app-a"]').inner_text())
         self.assertEqual(self.page.locator("#instanceCount").inner_text(), "3")
         self.page.locator("#instanceSearch").fill("Profile 1204")
-        self.page.wait_for_function("document.querySelectorAll('.installation-card').length===2")
+        expect(self.page.locator(".installation-card")).to_have_count(2, timeout=6000)
         self.assertEqual(self.page.locator('[data-installation-id="app-a"] .profile-list li').count(), 1207)
         self.assertFalse(self.page.locator("#unassociatedSection").is_visible())
 
     def test_exact_selection_review_and_terminal_receipts(self):
         self.open();self.choose("app-a", "app-b")
         self.page.locator("#instanceSearch").fill("旅程")
-        self.page.wait_for_function("document.querySelectorAll('.installation-card').length===1")
+        expect(self.page.locator(".installation-card")).to_have_count(1, timeout=6000)
         self.assertIn("outside the current filters", self.page.locator("#selectionHint").inner_text())
         self.review()
         self.assertEqual(self.page.locator(".preview-target").count(), 2)
         self.assertIn("D:/MO2/Aurora/plugins/mo2_update_arsenal", self.page.locator("#previewTargets").inner_text())
         self.screenshot("instances-exact-review.png")
         self.page.locator("#confirmInstall").click()
-        self.page.wait_for_function("__INSTANCES_FIX__.state.install.status==='running'")
+        expect(self.page.locator('#installResults [data-status="installing"]')).to_have_count(1, timeout=6000)
+        self.assertEqual(self.page.evaluate("__INSTANCES_FIX__.state.install.status"), "running")
         self.assertEqual(set(self.calls("install")[0]["value"]), {"token"})
         self.assertEqual(self.page.locator('#installResults [data-status="installed"]').count(), 0)
         self.assertEqual(self.page.locator('#installResults [data-status="installing"]').count(), 1)
@@ -184,13 +193,13 @@ class InstancesBrowserTests(unittest.TestCase):
         self.open();self.choose("app-a")
         self.page.evaluate("() => {const old=__INSTANCES_FIX__.snapshot();old.revision=9;old.inventory.installations=[];__INSTANCES_FIX__.publishRaw(old);__INSTANCES_FIX__.defer.previewInstall=true}")
         self.assertEqual(self.page.locator(".installation-card").count(), 3)
-        self.page.locator("#reviewSelected").click();self.page.wait_for_function("__INSTANCES_FIX__.pending.length===1")
+        self.deferred_review()
         self.page.locator("#cancelPreview").click();self.page.evaluate("__INSTANCES_FIX__.resolve('previewInstall')")
-        self.page.wait_for_function("__INSTANCES_FIX__.pending.length===0")
+        self.assertEqual(self.page.evaluate("__INSTANCES_FIX__.pending.length"), 0)
         self.assertFalse(self.page.locator("#installPreview").is_visible())
-        self.page.locator("#reviewSelected").click();self.page.wait_for_function("__INSTANCES_FIX__.pending.length===1")
+        self.deferred_review()
         self.page.evaluate("() => {__INSTANCES_FIX__.state.inventory.installations[0].executable='D:/Changed/ModOrganizer.exe';__INSTANCES_FIX__.publish();__INSTANCES_FIX__.resolve('previewInstall')}")
-        self.page.wait_for_function("document.getElementById('previewError').textContent.includes('changed')")
+        expect(self.page.locator("#previewError")).to_contain_text("changed", timeout=6000)
         self.assertTrue(self.page.locator("#confirmInstall").is_disabled())
         self.assertEqual(self.calls("install"), [])
 
@@ -206,7 +215,7 @@ class InstancesBrowserTests(unittest.TestCase):
         self.assertEqual(operation, self.page.evaluate("__INSTANCES_FIX__.state.scan.id"))
         self.assertIn("Canceling", self.page.locator("#scanHeading").inner_text())
         self.page.evaluate("() => {const f=__INSTANCES_FIX__;f.state.inventory.installations.push(...f.state.scan.partialInventory.installations);f.state.inventory.complete=false;f.state.scan.status='cancelled';f.publish()}")
-        self.page.wait_for_function("!document.querySelector('[data-installation-select=found]').disabled")
+        expect(self.page.locator('[data-installation-select="found"]')).to_be_enabled(timeout=6000)
         self.choose("found")
         self.assertEqual(self.page.evaluate("ModhunterInstances.selection().sort()"), ["app-a", "found"])
         self.assertIn("Partial inventory", self.page.locator("#inventoryScope").inner_text())
@@ -215,7 +224,7 @@ class InstancesBrowserTests(unittest.TestCase):
         state=snapshot();state["inventory"]["installations"][0]["runningPids"]=[3456]
         self.open(state);self.choose("app-a")
         self.page.evaluate("__INSTANCES_FIX__.defer.previewInstall=true")
-        self.page.locator("#reviewSelected").click();self.page.wait_for_function("__INSTANCES_FIX__.pending.length===1")
+        self.deferred_review()
         # Native preflight updates process observations and emits its snapshot
         # before resolving the fresh review (e.g. after the user closed MO2).
         self.page.evaluate("() => {const f=__INSTANCES_FIX__;f.state.inventory.installations[0].runningPids=[];f.publish();f.resolve('previewInstall')}")
@@ -226,7 +235,7 @@ class InstancesBrowserTests(unittest.TestCase):
         # An observation that changes after the review is displayed still
         # invalidates it; native pre-commit process checks remain independent.
         self.page.evaluate("() => {__INSTANCES_FIX__.state.inventory.installations[0].runningPids=[9876];__INSTANCES_FIX__.publish()}")
-        self.page.wait_for_function("document.getElementById('previewError').textContent.includes('changed')")
+        expect(self.page.locator("#previewError")).to_contain_text("changed", timeout=6000)
         self.assertTrue(self.page.locator("#confirmInstall").is_disabled())
         self.assertEqual(self.calls("install"),[])
 
@@ -264,7 +273,7 @@ class InstancesBrowserTests(unittest.TestCase):
         original=self.page.locator('[data-installation-id="app-b"] .installation-main > code').text_content()
         for locale,label in [("es","Instancias de MO2"),("it","Istanze MO2"),("zh-TW","MO2 執行個體"),("en","MO2 Instances")]:
             self.page.evaluate("locale => ModhunterI18n.apply({locale,theme:'light'})",locale)
-            self.page.wait_for_function("label => document.querySelector('h1').textContent===label",arg=label)
+            expect(self.page.locator("h1")).to_have_text(label, timeout=6000)
             self.assertEqual(self.page.locator('[data-installation-id="app-b"] .installation-main > code').text_content(),original)
             self.assertTrue(self.page.locator('[data-installation-select="app-a"]').is_checked())
         self.page.set_viewport_size({"width":1060,"height":850});self.screenshot("instances-light.png")
@@ -284,17 +293,17 @@ class InstancesBrowserTests(unittest.TestCase):
 
     def test_interrupted_install_acknowledgement_never_replays_token(self):
         self.open();self.page.evaluate("__INSTANCES_FIX__.failAfterInstall=true");self.choose("app-a");self.review();self.page.locator("#confirmInstall").click()
-        self.page.wait_for_function("document.getElementById('previewError').textContent.includes('interrupted')")
+        expect(self.page.locator("#previewError")).to_contain_text("interrupted", timeout=6000)
         self.assertTrue(self.page.locator("#confirmInstall").is_disabled());self.assertTrue(self.page.locator("#previewAgain").is_disabled())
         self.assertEqual(len(self.calls("install")),1);self.assertEqual(self.page.locator('#installResults [data-status="installing"]').count(),1)
         self.assertEqual(self.page.locator('#installResults [data-status="installed"]').count(),0)
 
     def test_expired_review_requires_fresh_preflight(self):
         self.open();self.page.evaluate("__INSTANCES_FIX__.previewLifetime=300");self.choose("app-a");self.review()
-        self.page.wait_for_function("document.getElementById('previewError').textContent.includes('expired')")
+        expect(self.page.locator("#previewError")).to_contain_text("expired", timeout=6000)
         self.assertTrue(self.page.locator("#confirmInstall").is_disabled());self.assertEqual(self.calls("install"),[])
         self.page.evaluate("__INSTANCES_FIX__.previewLifetime=60000");self.page.locator("#previewAgain").click()
-        self.page.wait_for_function("!document.getElementById('confirmInstall').disabled")
+        expect(self.page.locator("#confirmInstall")).to_be_enabled(timeout=6000)
         self.assertEqual(len(self.calls("previewInstall")),2)
 
 

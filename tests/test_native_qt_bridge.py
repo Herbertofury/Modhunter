@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import threading
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -355,7 +356,7 @@ class CompiledQtTests(unittest.TestCase):
         probe = next(node for node in module.body if isinstance(node, ast.FunctionDef)
                      and node.name == "exercise_native_nexus_binding")
         namespace = {"QtCore": QtCore, "sip": sip, "UIRequest": UIRequest,
-                     "hashlib": hashlib, "os": os}
+                     "hashlib": hashlib, "os": os, "time": time}
         exec(compile(ast.Module(body=[probe], type_ignores=[]), str(path), "exec", optimize=2), namespace)
         return namespace[probe.name]
 

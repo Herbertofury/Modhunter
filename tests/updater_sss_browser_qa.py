@@ -57,6 +57,7 @@ for ix, mid in enumerate((44, 45)):
     payload = review_payload(mid, files(mid), [(90 + mid, 100 + mid)])
     with_lineage(mods[ix], payload, 90 + mid)
     review[str(mid)] = {**payload, **advise_nexus_files(mods[ix], payload["files"]),
+                       "itemId": mods[ix]["id"],
                        "fileProof": nexus_file_proof(catalog, mods[ix]),
                        "installedVersion": mods[ix]["installedVersion"],
                        "targetVersion": mods[ix]["update"]["latestVersion"],
@@ -156,6 +157,17 @@ window.fetch=async(url,opts={})=>{
 raw_html=(ROOT/'mo2_update_arsenal/web/index.html').read_text('utf8')
 assert '<!--__MO2_BOOT__-->' in raw_html
 def fixture_html(data):
+    # Exercise the same exact-row identity contract as Bridge.review_files
+    # before Chromium starts, including when the visual suite reuses this fixture.
+    for row in data['catalog']['items']:
+        if row.get('nexusId', 0) <= 0 or row.get('update', {}).get('source') != 'nexus-api':
+            continue
+        response = data['review'].get(str(row['nexusId']), {})
+        expected = {'itemId': row['id'], 'fileProof': nexus_file_proof(data['catalog'], row),
+                    'installedVersion': row['installedVersion'],
+                    'targetVersion': row['update']['latestVersion'], 'update': row['update']}
+        assert all(response.get(key) == value for key, value in expected.items()), \
+            f"Exact file-review fixture drift for {row['id']}"
     bootstrap=bootstrap_template.replace('__DATA__',json.dumps(data).replace('</','<\\/'))
     return raw_html.replace('<!--__MO2_BOOT__-->',bootstrap)
 html=fixture_html(mock)
@@ -186,6 +198,22 @@ source_mock={"catalog":source_catalog,"plan":plan_updates(source_catalog),"revie
 def show(page, panel):
     if page.locator('body').get_attribute('data-workspace') != panel:
         page.locator('.workspace-tabs [data-workspace="'+panel+'"]').click()
+
+def wait_for_suggested_file(page, output, name, timeout=15000):
+    try:
+        page.locator('.picker-suggested').first.wait_for(timeout=timeout)
+    except Exception:
+        page.screenshot(path=str(output / (name + '-failure.png')), full_page=False)
+        details = page.evaluate("""() => {
+          const request=__SSS_MOCK__.reads.filter(value=>value.startsWith('files?')).at(-1)||'';
+          const id=new URLSearchParams(request.split('?')[1]||'').get('modId');
+          const response=__SSS_MOCK__.data.review[id]||{};
+          return {request, response, title:document.getElementById('filePickerTitle').textContent,
+            summary:document.getElementById('filePickerSummary').textContent,
+            errors:Array.from(document.querySelectorAll('.picker-error'),node=>node.textContent)};
+        }""")
+        (output / (name + '-failure.json')).write_text(json.dumps(details, indent=2), encoding='utf-8')
+        raise
 
 with sync_playwright() as pw:
     browser_args={'headless':True,'args':['--no-sandbox','--disable-gpu','--disable-dev-shm-usage']}
@@ -305,7 +333,7 @@ with sync_playwright() as pw:
     show(page, 'updates')
     page.locator('#workshopReviewNext').click()
     page.locator('#filePickerVeil').wait_for(state='visible')
-    page.locator('.picker-suggested').first.wait_for(timeout=10000)
+    wait_for_suggested_file(page, OUTPUT, 'review-exact-file', timeout=10000)
     assert page.locator('.picker-suggested').count()==1
     assert page.locator('#filePickerMatchCount').inner_text()=='3 / 3 files'
     page.locator('#filePickerSearch').fill('Optional textures')

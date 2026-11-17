@@ -455,7 +455,7 @@ def capture_operational_views(browser, html, output, candidate):
         page.locator("#workshopResults .workshop-item").first.wait_for()
         page.locator("#workshopReviewNext").click()
         page.locator("#filePickerVeil").wait_for(state="visible")
-        page.locator(".picker-suggested").first.wait_for()
+        fixture["wait_for_suggested_file"](page, output, "operation-exact-file-" + theme)
         assert page.locator("#filePickerMatchCount").inner_text()=="3 / 3 files"
         capture("exact-file")
         page.locator(".picker-suggested button").click()

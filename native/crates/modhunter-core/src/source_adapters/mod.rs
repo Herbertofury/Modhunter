@@ -219,7 +219,7 @@ fn manual_capability(provider: &str) -> (&'static str, &'static str) {
         ),
         "curseforge" => (
             "api-key-required",
-            "CurseForge API access requires an approved API key; use the original project until configured support is available.",
+            "CurseForge API access requires a provider-issued key and permits authors to opt out of third-party distribution. This build has no configured API session; browser login does not enable API access. Open the exact original project on CurseForge for its official download workflow, not a guessed CDN link.",
         ),
         "patreon" | "subscribestar" | "boosty" | "afdian" | "ko-fi" => (
             "account-or-page-required",

@@ -77,11 +77,27 @@ The exact packaged executable ran a complete **11,207-record generated fixture**
 
 The ceilings were unchanged. The raw report is `windows/native-library-performance.json` in the verification archive and is also included in the public download receipt.
 
-### Separate browser comparison
+### Controlled browser comparison
 
-The paired Linux Chromium release comparison uses three measured rounds with alternating order against v0.12.0. Gallery improved from 6,297.2 to 5,504.9 ms, while returning to List increased from 4,609.0 to 5,720.5 ms. The same browser version was used in the prior OLED comparison, which did not show the same List ratio. Aggregate engine counters show more cost within the same layout/style pass count and different garbage-collection timing; they do not prove a complete cause. This browser result is separate from the passing Windows ceilings and is not described as a universal or zero-loss speedup.
+The [controlled follow-up passed](https://github.com/Herbertofury/Modhunter/actions/runs/43994923820). It compared the direct parent `2f1dfddbd92732f83fc145defd194d4b286bf8ec` with the released source on one four-logical-CPU Linux runner in Chromium 157.0.8103.0. The unchanged benchmark retained one excluded warmup pair, three alternating measured pairs and fresh contexts. All six measured samples retained 11,207 complete, ordered, laid-out rows and preserved the surviving row through search, restoration and sorting.
 
-A [controlled follow-up](https://github.com/Herbertofury/Modhunter/actions/runs/43994923820) compares the direct parent `2f1dfddbd92732f83fc145defd194d4b286bf8ec` with the released source on one runner. It retains the complete existing benchmark, one excluded warmup pair and three alternating measured pairs. Its result will be recorded here after completion; the warmup-only traces are diagnostic and are excluded from timing medians.
+| Operation | Direct parent median | Released source median | Change |
+| --- | ---: | ---: | ---: |
+| Import and render | 5,010.5 ms | 4,654.9 ms | −7.1% |
+| Last-item search | 615.8 ms | 600.4 ms | −2.5% |
+| Sort | 3,503.9 ms | 3,473.4 ms | −0.9% |
+| Navigate to Updates | 1,804.5 ms | 1,785.8 ms | −1.0% |
+| Navigate to Library | 2,951.6 ms | 2,927.2 ms | −0.8% |
+| Change List density | 1,986.9 ms | 2,040.3 ms | +2.7% |
+| Open Gallery | 5,451.7 ms | 5,274.8 ms | −3.2% |
+| Change Gallery density | 3,247.4 ms | 3,289.2 ms | +1.3% |
+| Return to List | 5,240.8 ms | 4,385.1 ms | −16.3% |
+
+List was faster in every paired round, with candidate/parent ratios of 0.804, 0.837 and 0.939. The small density differences had mixed signs across individual pairs; this comparison does not indicate a material direct-parent regression. It supports the rendering change's acceptance on this workload without asserting that every operation improves on every machine. The Windows measurements above remain the separate native release gate.
+
+[Raw paired measurements](https://github.com/Herbertofury/Modhunter/blob/main/docs/evidence/daily-driver-parent-comparison-0.12.1.json) and the [complete diagnostic archive](https://github.com/Herbertofury/Modhunter/raw/refs/heads/main/docs/evidence/daily-driver-parent-comparison-0.12.1.zip) preserve the original evidence. The archive's SHA-256 is `921ea796facb58ee0164236ba7631924b4446ae50b01ad00a4dabb8cb6687a32`; its workflow source is [`857e2cc270ff0f211cbf6d9d9f140fcca24bb1eb`](https://github.com/Herbertofury/Modhunter/tree/857e2cc270ff0f211cbf6d9d9f140fcca24bb1eb). Warmup-only traces are excluded from medians. Their differing debug-category availability and natural GC timing do not establish a cause for measured timing differences or retained-memory behavior.
+
+The original release comparison against v0.12.0 is also retained in `visual/visual-release.json` in the release verification archive. Its Gallery median changed from 6,297.2 to 5,504.9 ms and its List median from 4,609.0 to 5,720.5 ms. That comparison prompted the direct-parent follow-up above. These different baselines and samples do not support a universal speedup claim against v0.12.0.
 
 ## Personal setup and feature scope
 

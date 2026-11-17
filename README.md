@@ -22,7 +22,7 @@
 
 *The actual shared dashboard. Project names and icons come from official Modrinth records; installed versions and update states in this capture are clearly labeled test fixtures.*
 
-The **[Mod Vault](wiki/Atelier-0.12.md)** gives your complete collection two useful views: image-forward Gallery cards and compact List rows. Search, provider and status filters stay close to the collection; version evidence, exact source links and update review stay close to each mod. Expand the navigation rail for labels, choose comfortable spacing when you need it, or keep the compact workspace for a dense library.
+The **[Mod Vault](wiki/OLED-0.12.1.md)** gives your complete collection two useful views: image-forward Gallery cards and compact List rows. Search, provider and status filters stay close to the collection; version evidence, exact source links and update review stay close to each mod. Expand the navigation rail for labels, choose comfortable spacing when you need it, or keep the compact workspace for a dense library.
 
 True OLED black, neutral surfaces and cool white/blue controls carry through the Rust shell, Library, Update Workshop, Watchtower, settings and dialogs. Colored chapter bands, diamonds, manual progress, focus, selection and operation feedback remain visible. The neutral light theme has the same controls and hierarchy. Real artwork appears only when an exact Nexus, Modrinth or Thunderstore record supplies it; missing or failed previews keep a readable fallback. Compact desktop rows retain their 48-pixel rhythm, and the shell uses 116 pixels instead of 144.
 

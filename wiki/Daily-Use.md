@@ -15,6 +15,8 @@ Use **Modhunter-Rust-Windows.zip** from the current release when you want the de
 
 For the exact MO2 2.5.3b12 setup notes, see [MO2 testing and readiness](MO2-253-Testing). The release's actual MO2 fixture uses official 2.5.2, with a separate Qt 6.11 forward-runtime check; those checks do not claim execution of every beta build or a personal mod collection.
 
+For OLED black regardless of the Windows theme, open **Watch Pages → Preferences**, scroll to **App preferences / Appearance, privacy & upkeep**, set **Theme** to **Dark**, and select **Save app preferences**. The default is **System**. The Library's moon/**Appearance** control also switches and saves the global light/dark choice.
+
 ## Everyday update workflow
 
 Browse the complete collection in **List** or **Gallery**, search by name, and narrow it with source and status filters. Colored chapter separators organize the collection; their counts and progress bars describe the manual checklist. Detected update status and verified installation remain separate.

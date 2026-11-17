@@ -18,7 +18,7 @@ base=importlib.util.module_from_spec(SPEC);SPEC.loader.exec_module(base)
 ROOT=base.ROOT
 SOURCES=("native/ui/watchtower.html","native/ui/watchtower.css","native/ui/watchtower.js","native/ui/watchtower-review.js",
          "native/ui/watchtower-maintenance.js","native/ui/watchtower-inventory.js","native/ui/watchtower-queue.js","native/ui/watchtower-notices.js","native/ui/watchtower-native.css","native/ui/locale-catalogs.js","native/ui/preferences.js","native/ui/preferences.css",
-         "tests/test_watchtower_native_ui.py","tests/test_watchtower_browser.py","tests/fixtures/watchtower_native_fixture.js")
+         "tests/test_watchtower_native_ui.py","tests/test_watchtower_browser.py","tests/fixtures/watchtower_native_fixture.js","tests/prepare_ci_fonts.py")
 REQUIRED=("test_review_preserves_complete_selection_and_exact_install_ids",
           "test_new_content_requires_an_explicit_new_target",
           "test_fomod_selection_is_explicitly_advisory",
@@ -96,7 +96,7 @@ OVERRIDE=r'''(() => {
   }
   if(kind==='contentJobs')return finish({operations:{jobs:f.native.jobs,nativeAvailable:true,helperAvailable:true}});
   if(kind==='discardReview'){if(f.native.review?.submitted&&['unknown','interrupted'].includes(f.native.review.state))throw Error('Unresolved operation retains this review.');f.state.reviews.rows=[];f.publish();return finish()}
-  if(kind==='diagnosticsPreview')return finish({reportId:'report-fixture-exact',text:'{"application":"Modhunter","version":"0.11.0","redacted":true}\n'});
+  if(kind==='diagnosticsPreview')return finish({reportId:'report-fixture-exact',text:JSON.stringify({application:'Modhunter',version:f.state.version,redacted:true})+'\n'});
   if(kind==='diagnosticsCopy'||kind==='diagnosticsSave'){if(v.reportId!=='report-fixture-exact')throw Error('Preview changed');f.native.savedReports.push({kind,...clone(v)});return finish({message:'Exact preview exported.'})}
   if(kind==='storage')return finish({storage:{groups:[{id:'downloads',label:'Verified downloads',complete:true,usage:{bytes:1000,files:1}}]}});
   if(kind==='previewDownloadCleanup')return finish({cleanup:{id:'cleanup-fixture-exact',count:1,bytes:1000,scope:'Owned idle downloads only.'}});
@@ -112,8 +112,94 @@ OVERRIDE=r'''(() => {
 })();'''
 
 class NativeUiTests(base.WatchtowerBrowserTests):
+    cjk_font_proof = None
+
+    def record_cjk_font_proof(self):
+        # Inspect a real visible heading, not a synthetic span or a canvas width.
+        # The pinned font receipt is mandatory and travels in the same artifact.
+        expected_text = '外觀、隱私與維護'
+        expected_font = {
+            'upstreamRepository': 'notofonts/noto-cjk',
+            'upstreamCommit': 'f8d157532fbfaeda587e826d4cd5b21a49186f7c',
+            'fileName': 'NotoSansCJKtc-Regular.otf',
+            'familyName': 'Noto Sans CJK TC',
+            'postScriptName': 'NotoSansCJKtc-Regular',
+            'bytes': 16435884,
+            'sha256': 'dce08bd4fd91aa8aa76ed8fea4b694c2dfb8550f67871e326843212ddbeb88b4',
+        }
+        proof = {'schema': 1, 'ok': False, 'locale': 'zh-TW',
+                 'scope': 'Actual Linux Chromium glyph rendering; Windows WebView2 has separate native evidence.',
+                 'selector': '#settingsView .native-workspace:has(> #globalPreferencesForm) > h2',
+                 'expectedFont': expected_font, 'expectedGlyphCount': len(expected_text),
+                 'browserVersion': self.browser.version}
+        type(self).cjk_font_proof = proof
+        receipt_bytes = (base.OUTPUT / 'ci-fonts.json').read_bytes()
+        receipt = json.loads(receipt_bytes)
+        proof['fontReceiptSha256'] = hashlib.sha256(receipt_bytes).hexdigest()
+        self.assertIs(receipt.get('ok'), True)
+        for key in ('upstreamRepository', 'upstreamCommit'):
+            self.assertEqual(receipt.get(key), expected_font[key])
+        self.assertEqual(receipt.get('fontFamily'), expected_font['familyName'])
+        self.assertEqual(receipt.get('registeredPostScriptName'), expected_font['postScriptName'])
+        self.assertIn(expected_font['familyName'], receipt.get('registeredFamily', '').split(','))
+        font_records = [row for row in receipt.get('files', [])
+                        if row.get('path') == 'Sans/OTF/TraditionalChinese/' + expected_font['fileName']]
+        self.assertEqual(len(font_records), 1)
+        for key in ('bytes', 'sha256'):
+            self.assertEqual(font_records[0].get(key), expected_font[key])
+        installed = Path(receipt['registeredFile'])
+        self.assertEqual(installed.name, expected_font['fileName'])
+        installed_bytes = installed.read_bytes()
+        self.assertEqual(len(installed_bytes), expected_font['bytes'])
+        self.assertEqual(hashlib.sha256(installed_bytes).hexdigest(), expected_font['sha256'])
+        coverage = receipt.get('glyphCoverage', {})
+        proof['glyphCoverage'] = coverage
+        self.assertEqual(coverage.get('text'), expected_text)
+        self.assertEqual(coverage.get('method'), 'fc-query FreeType/fontconfig charset')
+        self.assertEqual(coverage.get('glyphs'), [
+            {'character': char, 'codepoint': f'U+{ord(char):04X}', 'covered': True}
+            for char in dict.fromkeys(expected_text)
+        ])
+        heading = self.page.locator(proof['selector'])
+        self.assertEqual(heading.count(), 1)
+        self.assertEqual(heading.inner_text(), expected_text)
+        heading.scroll_into_view_if_needed()
+        self.page.evaluate('async() => {await document.fonts.ready; await new Promise(requestAnimationFrame)}')
+        proof.update(heading.evaluate("""el => {
+          const r=el.getBoundingClientRect(),s=getComputedStyle(el);
+          const target=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);
+          return {text:el.textContent.trim(),visible:r.width>0&&r.height>0&&s.visibility==='visible'&&s.display!=='none',
+            inViewport:r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight,
+            receivesPointer:target===el||el.contains(target),
+            rect:{x:r.x,y:r.y,width:r.width,height:r.height},computedFontFamily:s.fontFamily};
+        }"""))
+        self.assertEqual(proof['text'], expected_text)
+        self.assertIs(proof['visible'], True)
+        self.assertIs(proof['inViewport'], True)
+        self.assertIs(proof['receivesPointer'], True)
+        session = self.context.new_cdp_session(self.page)
+        try:
+            session.send('DOM.enable')
+            session.send('CSS.enable')
+            document = session.send('DOM.getDocument')
+            node = session.send('DOM.querySelector', {'nodeId': document['root']['nodeId'],
+                                                       'selector': proof['selector']})
+            self.assertGreater(node['nodeId'], 0)
+            proof['fonts'] = session.send('CSS.getPlatformFontsForNode', {'nodeId': node['nodeId']})['fonts']
+        finally:
+            session.detach()
+        proof['matchedGlyphCount'] = sum(font['glyphCount'] for font in proof['fonts']
+            if font.get('familyName') == expected_font['familyName']
+            and font.get('postScriptName') == expected_font['postScriptName']
+            and font.get('isCustomFont') is False)
+        # All eight distinct CJK characters must actually render with the verified
+        # face. A family declaration, fallback box or one supported glyph is insufficient.
+        self.assertEqual(proof['matchedGlyphCount'], len(expected_text), proof['fonts'])
+        self.assertEqual(sum(font['glyphCount'] for font in proof['fonts']), len(expected_text))
+        proof['ok'] = True
+
     def open_native(self,mode='plain',intent='update'):
-        state=base.snapshot(1);state['version']='0.11.0';state['acquisitions']={'revision':1,'jobs':[{'id':'download-fixture','filename':'Verified fixture.zip','state':'ready','bytes':1000,'sha256':'a'*64,'createdAt':1,'binding':{'watchId':'watch-0','watchGeneration':1,'sourceOrigin':'https://mods.example.com','contentIntent':intent,'association':({'profileId':'profile-1','itemId':'mod-1'} if intent=='update' else None)}}],'offers':[]};state['reviews']={'rows':[],'preparing':[]}
+        state=base.snapshot(1);state['acquisitions']={'revision':1,'jobs':[{'id':'download-fixture','filename':'Verified fixture.zip','state':'ready','bytes':1000,'sha256':'a'*64,'createdAt':1,'binding':{'watchId':'watch-0','watchGeneration':1,'sourceOrigin':'https://mods.example.com','contentIntent':intent,'association':({'profileId':'profile-1','itemId':'mod-1'} if intent=='update' else None)}}],'offers':[]};state['reviews']={'rows':[],'preparing':[]}
         self.context.add_init_script(base.BOOT.replace('__WATCHTOWER_INITIAL_STATE__',json.dumps(state))+OVERRIDE+f';__WATCH_FIX__.native.mode={json.dumps(mode)};')
         self.page.goto('http://watchtower.invalid/watchtower.html',wait_until='networkidle')
         self.page.wait_for_function('Boolean(window.ModhunterWatchtower && document.getElementById("nativeReviewQueue"))')
@@ -255,15 +341,39 @@ class NativeUiTests(base.WatchtowerBrowserTests):
         self.open_native();self.navigate('settings');self.page.get_by_text('Recovery snapshot retention',exact=True).click()
         self.assertTrue(self.page.locator('#globalBackupDays').is_visible());self.page.locator('#globalBackupDays').click()
         self.assertEqual(self.page.evaluate('document.activeElement.id'),'globalBackupDays')
-        for locale,label in [('es','Guardar preferencias de la app'),('it','Salva preferenze dell’app'),('zh-TW','儲存應用程式設定'),('en','Save app preferences')]:
+        self.page.evaluate('''() => {
+          const probe=document.createElement('div');probe.id='localeDisplayProbe';probe.hidden=true;
+          probe.innerHTML='<button id="localeProviderBadge" data-provider="lookup" data-source-id="opaque-source-fixture" data-provider-label="Source needed"></button><span id="localeAuthorName" data-no-translate>Source needed</span><span id="localeAuthorFallback">Source needed</span>';
+          document.body.append(probe);
+        }''')
+        for locale,label,provider in [('es','Guardar preferencias de la app','Se necesita una fuente'),('it','Salva preferenze dell’app','Fonte necessaria'),('zh-TW','儲存應用程式設定','需要來源'),('en','Save app preferences','Source needed')]:
             self.page.evaluate('(locale)=>ModhunterI18n.apply({locale,theme:"light"})',locale)
             self.page.wait_for_function('(label)=>document.getElementById("globalPreferencesSave").textContent===label',arg=label)
+            self.page.wait_for_function('(label)=>document.getElementById("localeProviderBadge").getAttribute("data-provider-label")===label && document.getElementById("localeAuthorFallback").textContent===label',arg=provider)
+            self.assertEqual(self.page.locator('#localeProviderBadge').get_attribute('data-provider'),'lookup')
+            self.assertEqual(self.page.locator('#localeProviderBadge').get_attribute('data-source-id'),'opaque-source-fixture')
+            self.assertEqual(self.page.locator('#localeAuthorName').text_content(),'Source needed')
             self.assertEqual(self.page.evaluate('document.activeElement.id'),'globalBackupDays')
             self.assertEqual(self.page.locator('html').get_attribute('data-theme'),'light')
             self.assertEqual(self.page.evaluate('ModhunterI18n.translate("{count} files",{count:1205}).includes("1205")'),True)
+        self.page.evaluate('ModhunterI18n.apply({locale:"es"})')
+        self.page.wait_for_function('document.getElementById("localeProviderBadge").getAttribute("data-provider-label")==="Se necesita una fuente"')
+        mutation=self.page.evaluate('''async() => {
+          const badge=document.getElementById('localeProviderBadge');let mutations=0;
+          const observer=new MutationObserver(records=>{mutations+=records.length});observer.observe(badge,{attributes:true,attributeFilter:['data-provider-label']});
+          badge.setAttribute('data-provider-label','Original provider');
+          const settle=async()=>{for(let i=0;i<3;i++)await new Promise(requestAnimationFrame)};
+          await settle();const settled=mutations;await settle();observer.disconnect();
+          return {settled,mutations,label:badge.getAttribute('data-provider-label')};
+        }''')
+        self.assertEqual(mutation,{'settled':2,'mutations':2,'label':'Proveedor original'})
+        for locale,label in [('it','Servizio originale'),('en','Original provider')]:
+            self.page.evaluate('(locale)=>ModhunterI18n.apply({locale})',locale)
+            self.page.wait_for_function('(label)=>document.getElementById("localeProviderBadge").getAttribute("data-provider-label")===label',arg=label)
+        self.page.evaluate('document.getElementById("localeDisplayProbe").remove()')
         self.page.evaluate('async()=>{await ModhunterWatchtower.command("globalSettings",{...ModhunterWatchtower.state().maintenance.settings,locale:"zh-TW",theme:"system"})}');self.page.emulate_media(color_scheme='dark',forced_colors='active')
         self.page.wait_for_function('document.documentElement.dataset.theme==="dark" && document.getElementById("globalPreferencesSave").textContent==="儲存應用程式設定"');self.assertEqual(self.page.locator('#globalBackupDays').input_value(),'30')
-        self.page.emulate_media(forced_colors='none');self.page.locator('#globalTheme').scroll_into_view_if_needed();self.screenshot('watchtower-preferences-zh.png')
+        self.page.emulate_media(forced_colors='none');self.record_cjk_font_proof();self.page.locator('#globalTheme').scroll_into_view_if_needed();self.screenshot('watchtower-preferences-zh.png')
         self.page.evaluate('__WATCH_FIX__.change(s=>{s.watches[0].title="Storage";s.watches[0].notes="Preferences"})');self.navigate('pages');self.assertEqual(self.page.locator('.page-name').first.inner_text(),'Storage');self.page.locator('.page-name').first.click();self.page.wait_for_function('document.getElementById("detailTitle").textContent==="Storage"');self.assertIn('Preferences',self.page.locator('#detailBody [data-no-translate]').all_text_contents())
         self.page.evaluate('ModhunterWatchtower.showToast("OS diagnostic 12345",null,"Undo",true)');self.page.wait_for_function('document.getElementById("toastText").textContent.includes("技術詳細資料")');self.assertIn('OS diagnostic 12345',self.page.locator('#toastText').inner_text())
 
@@ -294,7 +404,8 @@ def main():
     suite=unittest.TestSuite(NativeUiTests(name) for name in REQUIRED)
     result=unittest.TextTestRunner(verbosity=2).run(suite)
     checks=[{'name':name.removeprefix('test_'),'passed':result.testsRun>0 and not result.skipped and not any(getattr(test,'_testMethodName','')==name for test,_ in result.errors+result.failures)} for name in REQUIRED]
-    proof={'schema':1,'kind':'native-manager-ui','ok':result.wasSuccessful() and not result.skipped,'realChromium':not bool(result.skipped),'scope':'Deterministic native-command bridge fixture. Separate receipts prove Windows WebView2 and real MO2.',
+    proof={'schema':1,'kind':'native-manager-ui','ok':result.wasSuccessful() and not result.skipped and bool(NativeUiTests.cjk_font_proof and NativeUiTests.cjk_font_proof.get('ok')),'realChromium':not bool(result.skipped),'scope':'Deterministic native-command bridge fixture. Separate receipts prove Windows WebView2 and real MO2.',
+           'cjkFontProof':NativeUiTests.cjk_font_proof,
            'candidateCommit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),'sourceDirty':bool(subprocess.check_output(['git','status','--porcelain','--untracked-files=all'],cwd=ROOT)),
            'sourceFiles':{name:hashlib.sha256((ROOT/name).read_bytes()).hexdigest() for name in SOURCES},'checks':checks,'testsRun':result.testsRun,'skipped':len(result.skipped)}
     base.OUTPUT.mkdir(parents=True,exist_ok=True);(base.OUTPUT/'native-manager-ui.json').write_text(json.dumps(proof,indent=2)+'\n',encoding='utf-8')

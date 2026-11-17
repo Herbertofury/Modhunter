@@ -411,6 +411,11 @@ fn resize(app: &tauri::AppHandle) {
     };
     let logical = size.to_logical::<f64>(scale);
     for (label, view) in app.webviews() {
+        // Watchtower and source sign-in windows own their own client bounds.
+        // Only child views hosted by the main window share its chrome inset.
+        if view.window().label() != window.label() {
+            continue;
+        }
         let (y, height) = if label == "chrome" {
             (0.0, BAR_HEIGHT)
         } else {
@@ -626,11 +631,24 @@ fn inject_catalog(app: &tauri::AppHandle, label: &str) -> Result<()> {
             catch { denied=true; }
             const qa=window.__ARSENAL_QA__;
             const c=qa?.getCatalog();
+            const chapters=[...document.querySelectorAll('#modList > .chapterbar')];
+            const chapterColors=chapters.length>0 && chapters.every(bar=>{
+                const authored=bar.style.getPropertyValue('--chapter-color');
+                if(!/^#[0-9a-f]{6}$/i.test(authored))return false;
+                const rgb=[1,3,5].map(index=>parseInt(authored.slice(index,index+2),16));
+                return getComputedStyle(bar).borderLeftColor==='rgb('+rgb.join(', ')+')';
+            });
+            const chapterProgress=chapters.length>0 && chapters.every(bar=>{
+                const track=bar.querySelector('.chapter-mini-progress'),fill=track?.firstElementChild;
+                return bar.dataset.completion==='empty' && bar.querySelector('.chapter-count')?.textContent.startsWith('0/')
+                    && track.getBoundingClientRect().width>0 && fill?.getBoundingClientRect().width===0;
+            });
             const ok=!!(c?.offline && c.items?.length>=3 && document.getElementById('unifiedCommand')
-                && typeof window.modhunterImportCatalog==='function');
+                && typeof window.modhunterImportCatalog==='function' && chapterColors && chapterProgress);
             window.__modhunterNativeSmokeProof=()=>{
                 delete window.__modhunterNativeSmokeProof;
                 window.location.href='modhunter-proof://result?ok='+(ok?'1':'0')+'&denied='+(denied?'1':'0')
+                    +'&chapterColors='+(chapterColors?'1':'0')+'&chapterProgress='+(chapterProgress?'1':'0')
                     +'&items='+(c?.items?.length||0)+'&profile='+encodeURIComponent(c?.profileName||'');
             };
             window.__modhunterNativeSmokeDiagnostics={
@@ -686,7 +704,33 @@ fn inject_watchtower_capability(app: &tauri::AppHandle, view: &Webview) {
         })
     });
     if trusted {
-        let _ = view.eval("window.__MODHUNTER_NATIVE_WATCHTOWER__=true;window.dispatchEvent(new Event('modhunter-watchtower-ready'));");
+        let _ = view.eval("window.__MODHUNTER_NATIVE_WATCHTOWER__=true;window.modhunterRequestTheme=theme=>{if(!['light','dark'].includes(theme))return false;window.location.assign('modhunter-appearance://theme/'+theme);return true;};window.dispatchEvent(new Event('modhunter-watchtower-ready'));");
+    }
+}
+
+fn appearance_handoff(app: &tauri::AppHandle, label: &str, target: &Url) {
+    let theme = app
+        .get_webview(label)
+        .and_then(|view| view.url().ok())
+        .and_then(|source| {
+            let state = app.state::<Runtime>();
+            let model = state.model.lock().ok()?;
+            if !model
+                .tabs
+                .iter()
+                .any(|tab| tab.label == label && tab.mode == Mode::Dashboard)
+            {
+                return None;
+            }
+            policy::appearance_theme(target, &source, model.endpoint.as_deref())
+        });
+    if let Some(theme) = theme {
+        let handle = app.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            if let Err(error) = crate::watchtower_windows::set_global_theme(&handle, theme) {
+                alert(&handle, error);
+            }
+        });
     }
 }
 
@@ -815,6 +859,10 @@ fn open_tab(app: &tauri::AppHandle, mode: Mode) -> Result<u64> {
             }
             if url.scheme() == "modhunter-watch" {
                 watchtower_handoff(&nav_app, &nav_label, url);
+                return false;
+            }
+            if url.scheme() == "modhunter-appearance" {
+                appearance_handoff(&nav_app, &nav_label, url);
                 return false;
             }
             let allowed = {

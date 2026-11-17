@@ -268,9 +268,16 @@ class NativeNexusGateway:
         if ((data.get("mod_id") is not None and int(data["mod_id"]) != int(mod_id))
                 or (data.get("domain_name") is not None and str(data["domain_name"]) != str(game))):
             raise ValueError("MO2 Nexus metadata identity did not match the requested game and mod")
-        return {str(k): v for k, v in data.items() if k in
+        metadata = {str(k): v for k, v in data.items() if k in
                 {"version", "name", "status", "available", "mod_id", "domain_name",
                  "updated_timestamp", "updated_time", "latest_file_update"}}
+        from .source_adapters import preview_image_url
+        image = preview_image_url(data.get("picture_url"), "nexus")
+        if image:
+            metadata["picture_url"] = image
+        if isinstance(data.get("author"), str) and data["author"].strip():
+            metadata["author"] = data["author"].strip()[:180]
+        return metadata
 
     def _description(self, game, mod_id, ticket, data):
         request, token, bootstrap = self._lookup(game, mod_id, ticket)

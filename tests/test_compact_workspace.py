@@ -66,7 +66,8 @@ class CompactWorkspaceTests(unittest.TestCase):
         self.assertEqual(self.page.evaluate('__RESP__.startupBody'),{'profileId':'profile-a','executionEpoch':7})
         self.assertEqual(self.page.evaluate('__ARSENAL_QA__.verifyRow("item-1").state.note'),'Keep my install choices')
         self.assertEqual(self.page.evaluate('__ARSENAL_QA__.verifyRow("item-1").state.status'),'done')
-        self.assertFalse(self.page.locator('.mod-row[data-id="item-1"] .mod-title').evaluate("e=>getComputedStyle(e).textDecorationLine.includes('line-through')"))
+        self.assertTrue(self.page.locator('.mod-row[data-id="item-1"] .mod-title').evaluate("e=>getComputedStyle(e).textDecorationLine.includes('line-through')"))
+        self.assertTrue(self.page.locator('.mod-row[data-id="item-1"] .manual-status[data-manual="done"]').is_visible())
         for key in ('POST download','POST install','POST quick-update','POST update-queue'):
             self.assertEqual(self.page.evaluate('k=>__RESP__.counts[k]||0',key),0)
         self.assertEqual(self.page.locator('#detectedUpdates').inner_text(),'1')

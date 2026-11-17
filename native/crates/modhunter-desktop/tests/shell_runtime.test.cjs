@@ -19,7 +19,7 @@ function snapshot(overrides = {}) {
 }
 
 async function harness(initial = snapshot()) {
-  const nodes = new Map(), events = new Map(), calls = [], pending = new Map(), deferred = new Set();
+  const nodes = new Map(), events = new Map(), calls = [], pending = new Map(), deferred = new Set(), failures = new Map();
   const document = { activeElement: null, addEventListener() {}, createElement: element,
     getElementById: id => nodes.get(id) };
   function element() {
@@ -38,6 +38,7 @@ async function harness(initial = snapshot()) {
   const context = { document, console, setTimeout: () => ++timer, clearTimeout() {}, addEventListener() {},
     __TAURI__: { core: { invoke: async (name, args) => {
       assert.equal(name, 'shell_command'); calls.push(args);
+      if (failures.has(args.kind)) { const message = failures.get(args.kind); failures.delete(args.kind); throw new Error(message); }
       if (deferred.has(args.kind)) return new Promise(resolve => pending.set(args.kind, resolve));
       return { ok: true, state: current };
     } }, event: { listen: async (name, callback) => { events.set(name, callback); return () => {}; } } } };
@@ -45,10 +46,39 @@ async function harness(initial = snapshot()) {
   vm.runInNewContext(source, context, { filename: 'shell.js' });
   const settle = async () => { for (let i = 0; i < 4; i++) await new Promise(resolve => setImmediate(resolve)); };
   await settle();
-  return { nodes, calls, pending, deferred, settle,
+  return { nodes, calls, pending, deferred, failures, settle,
     emit(next) { current = next; events.get('modhunter-state')({ payload: next }); },
     resolve(kind, next, extra = {}) { pending.get(kind)({ ok: true, state: next, ...extra }); pending.delete(kind); deferred.delete(kind); } };
 }
+
+test('busy feedback follows the owned command and actual native audit until completion', async () => {
+  const h = await harness(snapshot({ revision: 1 }));
+  assert.equal(h.nodes.get('diagnostics').disabled, true);
+  assert.equal(h.nodes.get('diagnostics').attributes['aria-busy'], 'false');
+  h.deferred.add('pluginAudit');
+  const audit = h.nodes.get('pluginAudit').onclick();
+  assert.equal(h.nodes.get('pluginAudit').attributes['aria-busy'], 'true');
+  h.resolve('pluginAudit', snapshot({ revision: 2, auditing: true }));
+  await audit;
+  assert.equal(h.nodes.get('pluginAudit').attributes['aria-busy'], 'true');
+  h.emit(snapshot({ revision: 3, auditing: false }));
+  assert.equal(h.nodes.get('pluginAudit').attributes['aria-busy'], 'false');
+  assert.equal(h.nodes.get('pluginAudit').disabled, false);
+});
+
+test('caught command failure has error feedback and a later actual message clears that error', async () => {
+  const h = await harness();
+  h.failures.set('copy', 'Fixture copy failure');
+  await h.nodes.get('copy').onclick();
+  assert.equal(h.nodes.get('message').attributes['data-feedback'], 'error');
+  assert.match(h.nodes.get('message').textContent, /Fixture copy failure/);
+  h.deferred.add('copy');
+  const copy = h.nodes.get('copy').onclick();
+  h.resolve('copy', snapshot(), { message: 'Copied current address' });
+  await copy;
+  assert.equal(h.nodes.get('message').attributes['data-feedback'], 'info');
+  assert.equal(h.nodes.get('message').textContent, 'Copied current address');
+});
 
 test('plugin audit stays asynchronous, rejects duplicate clicks and leaves tab commands usable', async () => {
   const h = await harness();

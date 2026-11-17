@@ -58,8 +58,15 @@ def summary_from_metadata(item: dict, meta: dict, checked_at: float) -> dict[str
     latest = str(meta.get("version") or "")
     comparison = compare_versions(item.get("installedVersion", ""), latest)
     result = comparison["verdict"]
-    return {"versionComparison": comparison, "verdict": result, "checkedAt": checked_at,
+    summary = {"versionComparison": comparison, "verdict": result, "checkedAt": checked_at,
             "expiresAt": checked_at + STARTUP_CACHE_SECONDS, "freshness": "fresh", "latestVersion": latest, "latestFileUpdate": meta.get("updated_timestamp"), "reason": "Review exact FILE selection and installed option; project versions alone are not an install guarantee." if result == "candidate" else comparison["reason"], "source": "nexus-api"}
+    from .source_adapters import preview_image_url
+    image = preview_image_url(meta.get("picture_url"), "nexus")
+    if image:
+        summary.update(thumbnailUrl=image, thumbnailKind="image")
+    if isinstance(meta.get("author"), str) and meta["author"].strip():
+        summary["author"] = {"name": meta["author"].strip()[:180], "role": "mod author"}
+    return summary
 
 
 class NexusClient:

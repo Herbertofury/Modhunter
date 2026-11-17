@@ -1695,7 +1695,7 @@ class ArsenalService:
                 self.send_header("X-Content-Type-Options", "nosniff")
                 self.send_header("X-Frame-Options", "DENY")
                 self.send_header("Referrer-Policy", "no-referrer")
-                self.send_header("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'")
+                self.send_header("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: https://staticdelivery.nexusmods.com https://cdn.modrinth.com https://gcdn.thunderstore.io https://cdn.thunderstore.io https://thunderstore.io; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'")
                 self.end_headers()
 
             def _reply(self, obj, status=200):

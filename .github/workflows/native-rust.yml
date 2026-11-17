@@ -69,14 +69,22 @@ jobs:
           MODHUNTER_REQUIRE_BROWSER: '1'
         run: |
           python3 -m venv /tmp/modhunter-qa
-          /tmp/modhunter-qa/bin/pip install -q playwright==1.57.0
-          /tmp/modhunter-qa/bin/python -m playwright install --with-deps chromium
+          /tmp/modhunter-qa/bin/pip install -q playwright==1.57.0 Pillow==13.0.0
+          /tmp/modhunter-qa/bin/python tests/prepare_ci_fonts.py --output /tmp/modhunter-proof/ci-fonts.json
+          # Tests already prefer this runner's Chromium. Avoid an unrelated apt
+          # font installation when the actual required engine is available.
+          if ! command -v chromium >/dev/null && ! command -v chromium-browser >/dev/null; then
+            /tmp/modhunter-qa/bin/python -m playwright install --with-deps chromium
+          fi
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/updater_sss_browser_qa.py
           PYTHONPATH=. /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_frontend_responsiveness.py' -v
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_compact_workspace.py' -v
+          PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_gallery_workspace.py' -v
+          PYTHONPATH=. /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p 'test_compact_completion.py' -v
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/test_watchtower_browser.py
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p test_watchtower_sources_ui.py -v
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/test_watchtower_native_ui.py
+          PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/ci_font_rendering_qa.py
           PYTHONPATH=. /tmp/modhunter-qa/bin/python scripts/benchmark_dashboard_render.py --baseline-ref 63e5df3e3ef218ae72ce58b5e4502165c40ca604 --output /tmp/modhunter-proof/dashboard-render-comparison.json
       - name: Upload browser proof
         if: always()
@@ -85,6 +93,35 @@ jobs:
           name: Modhunter-Rust-Browser-Proof
           path: /tmp/modhunter-proof/
           if-no-files-found: warn
+  visual:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 64
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Compare the actual release UI against v0.12.0
+        env:
+          MODHUNTER_REQUIRE_BROWSER: '1'
+        run: |
+          python3 -m venv /tmp/modhunter-visual
+          /tmp/modhunter-visual/bin/pip install -q playwright==1.57.0
+          /tmp/modhunter-visual/bin/python tests/prepare_ci_fonts.py --output /tmp/modhunter-visual-proof/ci-fonts.json
+          if ! command -v chromium >/dev/null && ! command -v chromium-browser >/dev/null; then
+            /tmp/modhunter-visual/bin/python -m playwright install --with-deps chromium
+          fi
+          PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-visual-proof /tmp/modhunter-visual/bin/python tests/visual_release_qa.py
+      - name: Preserve before/after screenshots and complete-library measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Modhunter-Visual-Release-Proof
+          path: /tmp/modhunter-visual-proof/
+          if-no-files-found: error
+          retention-days: 90
   windows:
     runs-on: windows-2025
     timeout-minutes: 50
@@ -178,8 +215,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo clippy --manifest-path native/Cargo.toml --workspace --all-targets --locked -- -D warnings
       - name: Build Rust executable and Windows installer
+        id: build_windows
         working-directory: native/crates/modhunter-desktop
-        run: npx --yes @tauri-apps/cli@2 build
+        # Ship the same tested bytes in NSIS and portable. This single-format
+        # release does not use Tauri's per-bundle-type updater identification.
+        run: npx --yes @tauri-apps/cli@2.12.2 build --no-binary-patching
       - name: Build portable Rust diagnostic CLI
         run: cargo build --manifest-path native/Cargo.toml --release --locked -p modhunter-core
       - name: Verify the exact release CLI and packaged archive helper
@@ -198,6 +238,28 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $env:NODE_PATH = Join-Path $LiveTools 'node_modules'
           ./native/scripts/mo2_native_smoke.ps1 -RustCliPath "$PWD/native/target/release/modhunter-cli.exe" -QtBridgePath "$PWD/native/target/qt-bridge/Release/modhunter-qt-bridge.dll" -DesktopExecutable "$PWD/native/target/release/Modhunter.exe" -EvidenceDirectory "$PWD/native/target/live-mo2-smoke" -TimeoutSeconds 240
+      - name: Install, launch and uninstall the exact Windows installer
+        # Installer acceptance is independent of the live MO2 UI harness. Keep
+        # its evidence on a failed candidate; any failed gate still blocks the
+        # Windows job, packaging and release.
+        if: ${{ !cancelled() && steps.build_windows.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          $InstallerVersion = python native/scripts/prepare_release.py --print-version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./native/scripts/installer_smoke.ps1 -Installer "$PWD/native/target/release/bundle/nsis/Modhunter_${InstallerVersion}_x64-setup.exe" -Executable "$PWD/native/target/release/Modhunter.exe" -Output "$PWD/native/target/installer-smoke"
+      - name: Measure the complete library in actual Windows WebView2
+        if: ${{ !cancelled() && steps.build_windows.outcome == 'success' }}
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          $LiveTools = Join-Path $env:RUNNER_TEMP 'modhunter-live-tools'
+          if (!(Test-Path (Join-Path $LiveTools 'node_modules/playwright/package.json'))) {
+            npm install --prefix $LiveTools --no-audit --no-fund playwright@1.57.0
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          $env:NODE_PATH = Join-Path $LiveTools 'node_modules'
+          ./native/scripts/benchmark_native_library.ps1 -Executable "$PWD/native/target/release/Modhunter.exe" -Output "$PWD/native/target/native-library-performance"
       - name: Package tested Windows app, MO2 plugin, and diagnostics
         shell: pwsh
         run: |
@@ -260,10 +322,14 @@ jobs:
             native/target/watchtower-smoke/*.json
             native/target/watchtower-smoke/*.jsonl
             native/target/watchtower-smoke/*.log
+            native/target/installer-smoke/installer-smoke.json
+            native/target/installer-smoke/native-launch/native-smoke.json
+            native/target/installer-smoke/native-launch/fixture-desktop.png
             native/target/archive-review-proof.json
+            native/target/native-library-performance/
   release:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [contracts, windows, mo2]
+    needs: [contracts, windows, mo2, visual]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -297,7 +363,7 @@ jobs:
           fi
           gh release create "$tag" release-assets/*.zip release-assets/*.exe release-assets/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-            --title "Modhunter $version — Rust desktop" --notes-file release-assets/release-notes.md
+            --title "Modhunter $version — OLED desktop" --notes-file release-assets/release-notes.md
   mo2:
     runs-on: windows-2025
     timeout-minutes: 25

@@ -1,0 +1,233 @@
+{
+  "schemaVersion": 1,
+  "publishedReleaseReadback": {
+    "ok": true,
+    "release": "https://github.com/Herbertofury/Modhunter/releases/tag/v0.12.0",
+    "tag": "v0.12.0",
+    "commit": "0f2d399244dbe0cc69e82521c497f006832678c3",
+    "workflow": "https://github.com/Herbertofury/Modhunter/actions/runs/43947174658",
+    "downloads": {
+      "Modhunter-0.12.0-MO2-Plugin.zip": {
+        "url": "https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter-0.12.0-MO2-Plugin.zip",
+        "bytes": 4322926,
+        "sha256": "ebd29f2d72bc9fe5782d18bffc2b720635b923b1f3b36299f31359c9ea3d7743"
+      },
+      "Modhunter-0.12.0-Standalone.zip": {
+        "url": "https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter-0.12.0-Standalone.zip",
+        "bytes": 234873,
+        "sha256": "75e8186c83fbb5cdcca428086ae882e2d1261be3ac24d98f2faaa388b719d47a"
+      },
+      "Modhunter-0.12.0-Verification.zip": {
+        "url": "https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter-0.12.0-Verification.zip",
+        "bytes": 26243048,
+        "sha256": "2a7e90a28e025423cb814d4275b07f0d3163ac08fc11dd8faf3470827651803a"
+      },
+      "Modhunter-Rust-Windows.zip": {
+        "url": "https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter-Rust-Windows.zip",
+        "bytes": 16760837,
+        "sha256": "934e79622abe8e05213a86434ced5c8264b18eef769b49d81e7ef33c4bfe55a6"
+      },
+      "Modhunter_0.12.0_x64-setup.exe": {
+        "url": "https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/Modhunter_0.12.0_x64-setup.exe",
+        "bytes": 6555887,
+        "sha256": "6bdb6277d83f244e0bcf28fac44fbc4e040d6bbee2fb3ff501d42d9a7cfeff1b"
+      },
+      "SHA256SUMS.txt": {
+        "url": "https://github.com/Herbertofury/Modhunter/releases/download/v0.12.0/SHA256SUMS.txt",
+        "bytes": 486,
+        "sha256": "7d5865207d33376519b0b3eb03997c2d8a8b37736375cceee54b670dfa9254fc"
+      }
+    },
+    "executableSha256": "30e268fe61ab644e45ebc546afd5f897335d2a2f7d5841d21b14dd50e4ca99a4",
+    "archiveFileCounts": {
+      "Modhunter-0.12.0-MO2-Plugin.zip": 61,
+      "Modhunter-0.12.0-Verification.zip": 177,
+      "Modhunter-0.12.0-Standalone.zip": 3,
+      "Modhunter-Rust-Windows.zip": 79
+    },
+    "visualMedians": {
+      "before": {
+        "renderMs": 5194.099999999977,
+        "lastItemSearchMs": 586.1105419999717,
+        "sortMs": 4238.457623999977,
+        "navigationUpdatesMs": 2422.852067000008,
+        "navigationLibraryMs": 3222.474537000039,
+        "densityMs": 899.1710610000041
+      },
+      "after": {
+        "renderMs": 6278.100000000035,
+        "lastItemSearchMs": 740.8983939999985,
+        "sortMs": 4807.897652999998,
+        "navigationUpdatesMs": 2334.3537960000162,
+        "navigationLibraryMs": 4021.842581000044,
+        "densityMs": 2630.897200999982,
+        "galleryMs": 8454.05535499998,
+        "galleryDensityMs": 4695.628601999999,
+        "listMs": 5769.050274999983
+      }
+    },
+    "nativeScaleTimingsMs": {
+      "render": 3656.399999999907,
+      "lastItemSearch": 583.7943999999998,
+      "searchRestore": 2391.7906999999996,
+      "listDensity": 1838.0432,
+      "listDensityReset": 1682.2421999999988,
+      "gallery": 4464.5748,
+      "galleryDensity": 3527.584200000001,
+      "list": 3371.1834000000017,
+      "finalDensityReset": 1861.6505999999972
+    },
+    "nativeScaleEngine": "Edg/156.0.4314.58",
+    "fontReceiptSha256": "c0b6f8155526abe94dd02a44b76475654199f4e519aa739a31bcb25eb1dbec7b",
+    "actualCjkGlyphs": 8,
+    "actualSymbolChecks": 6
+  },
+  "screenshots": [
+    {
+      "target": "screenshots/v0.12.0/before-library.png",
+      "artifactRelativePath": "visual-release/before/library-1440-dark.png",
+      "finalArtifact": "visual",
+      "artifactId": 14265642826,
+      "artifactSha256": "26192accc822655a9b2f4da3e2600c8ac436764137a182dfb9a8a565b7523d5e",
+      "candidateCommit": "0f2d399244dbe0cc69e82521c497f006832678c3",
+      "baselineCommit": "1a99a66d346b1593273afc7c2b12e2d493c8d5e0",
+      "bytes": 150652,
+      "sha256": "fa0e7e91e96cdacf9e5b6e0492eb0aa1b3e48529f4f52b35c6e2d2f67781dfeb",
+      "dimensions": [
+        1440,
+        1000
+      ],
+      "captionScope": "Same 227-mod v0.11.0 comparison catalog."
+    },
+    {
+      "target": "screenshots/v0.12.0/after-library.png",
+      "artifactRelativePath": "visual-release/after/library-1440-dark.png",
+      "finalArtifact": "visual",
+      "artifactId": 14265642826,
+      "artifactSha256": "26192accc822655a9b2f4da3e2600c8ac436764137a182dfb9a8a565b7523d5e",
+      "candidateCommit": "0f2d399244dbe0cc69e82521c497f006832678c3",
+      "baselineCommit": null,
+      "bytes": 157455,
+      "sha256": "a8e5d8b9af5a21201e1b55b58188f152b3c1e32a48710ab80bfd3637d53d1992",
+      "dimensions": [
+        1440,
+        1000
+      ],
+      "captionScope": "Released compact Library; same catalog as before."
+    },
+    {
+      "target": "screenshots/v0.12.0/gallery-dark.png",
+      "artifactRelativePath": "visual-release/after/public-projects-gallery-1440-dark.png",
+      "finalArtifact": "visual",
+      "artifactId": 14265642826,
+      "artifactSha256": "26192accc822655a9b2f4da3e2600c8ac436764137a182dfb9a8a565b7523d5e",
+      "candidateCommit": "0f2d399244dbe0cc69e82521c497f006832678c3",
+      "baselineCommit": null,
+      "bytes": 191555,
+      "sha256": "74f5bb6cc0c21e8bc7b91888e408a42c54eaf6f5b16509dccc153057755b2ec9",
+      "dimensions": [
+        1440,
+        1000
+      ],
+      "captionScope": "Official project names and icons; synthetic installed versions/update states."
+    },
+    {
+      "target": "screenshots/v0.12.0/gallery-light.png",
+      "artifactRelativePath": "visual-release/after/public-projects-gallery-1440-light.png",
+      "finalArtifact": "visual",
+      "artifactId": 14265642826,
+      "artifactSha256": "26192accc822655a9b2f4da3e2600c8ac436764137a182dfb9a8a565b7523d5e",
+      "candidateCommit": "0f2d399244dbe0cc69e82521c497f006832678c3",
+      "baselineCommit": null,
+      "bytes": 191928,
+      "sha256": "05d9cdcceeac0e61bd82ad79bcfe73cfe680e1664322eccd63010b545daa2c98",
+      "dimensions": [
+        1440,
+        1000
+      ],
+      "captionScope": "Same public project fixture in light theme."
+    },
+    {
+      "target": "screenshots/v0.12.0/library-narrow-light.png",
+      "artifactRelativePath": "visual-release/after/library-390-light.png",
+      "finalArtifact": "visual",
+      "artifactId": 14265642826,
+      "artifactSha256": "26192accc822655a9b2f4da3e2600c8ac436764137a182dfb9a8a565b7523d5e",
+      "candidateCommit": "0f2d399244dbe0cc69e82521c497f006832678c3",
+      "baselineCommit": null,
+      "bytes": 70549,
+      "sha256": "d3590d76f1ca52cb3117a766a106ae5d371f1f25b9ce6ca30ca7ad8edac1798a",
+      "dimensions": [
+        390,
+        844
+      ],
+      "captionScope": "Complete real-name fixture, narrow light Library."
+    },
+    {
+      "target": "screenshots/v0.12.0/update-workshop.png",
+      "artifactRelativePath": "visual-release/after/updates-1440-dark.png",
+      "finalArtifact": "visual",
+      "artifactId": 14265642826,
+      "artifactSha256": "26192accc822655a9b2f4da3e2600c8ac436764137a182dfb9a8a565b7523d5e",
+      "candidateCommit": "0f2d399244dbe0cc69e82521c497f006832678c3",
+      "baselineCommit": null,
+      "bytes": 125309,
+      "sha256": "aa8d5584550bf6aee0e2670fa749013ade396eac129fe2afe11b542da1d3c43e",
+      "dimensions": [
+        1440,
+        1000
+      ],
+      "captionScope": "Actual browser Workshop controls using deterministic observations."
+    },
+    {
+      "target": "screenshots/v0.12.0/exact-file-narrow-light.png",
+      "artifactRelativePath": "visual-release/after/operation-exact-file-390-light.png",
+      "finalArtifact": "visual",
+      "artifactId": 14265642826,
+      "artifactSha256": "26192accc822655a9b2f4da3e2600c8ac436764137a182dfb9a8a565b7523d5e",
+      "candidateCommit": "0f2d399244dbe0cc69e82521c497f006832678c3",
+      "baselineCommit": null,
+      "bytes": 57813,
+      "sha256": "24eae1b81ea0fbbdef927289100ba88a5661b13829aca9f5fbf289eff5c2f2d3",
+      "dimensions": [
+        390,
+        844
+      ],
+      "captionScope": "Exact-file browser fixture; not an account download claim."
+    },
+    {
+      "target": "screenshots/v0.12.0/fx-studio.png",
+      "artifactRelativePath": "visual-release/after/extras-fx-studio-900-light.png",
+      "finalArtifact": "visual",
+      "artifactId": 14265642826,
+      "artifactSha256": "26192accc822655a9b2f4da3e2600c8ac436764137a182dfb9a8a565b7523d5e",
+      "candidateCommit": "0f2d399244dbe0cc69e82521c497f006832678c3",
+      "baselineCommit": null,
+      "bytes": 281408,
+      "sha256": "b710e265694b1a4be297176909ee0c02977d0f85fc578de063c91410c1994157",
+      "dimensions": [
+        900,
+        1000
+      ],
+      "captionScope": "Preserved FX Studio controls and Adventures entry."
+    },
+    {
+      "target": "screenshots/v0.12.0/native-desktop-dark.png",
+      "artifactRelativePath": "live-mo2-smoke/desktop-window-1440-dark.png",
+      "finalArtifact": "windows",
+      "artifactId": 14266381335,
+      "artifactSha256": "ffb594002b20a39ae16c5cada5c895da9302046ab79ee13a83c0d0aa053ea2c3",
+      "candidateCommit": "0f2d399244dbe0cc69e82521c497f006832678c3",
+      "baselineCommit": null,
+      "bytes": 74937,
+      "sha256": "89021241838591939dcc71ec332a91d254adb04f524d5ff87e0a5f88ca2d9cec",
+      "dimensions": [
+        1440,
+        960
+      ],
+      "captionScope": "Actual Windows app connected to owned MO2 fixture; must come from final main."
+    }
+  ],
+  "screenshotMappingSha256": "d0be7a26925dfa1fbacc6d2e06b239aab4e4ff60c2209769812f57ec747d3a3c",
+  "scope": "Unedited captures of running software. Mod names and source identities are retained; release/update states use controlled fixtures. The native screenshot uses an owned live MO2 fixture."
+}

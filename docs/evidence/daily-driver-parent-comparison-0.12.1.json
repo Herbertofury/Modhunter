@@ -1,0 +1,4113 @@
+{
+  "parentCommit": "2f1dfddbd92732f83fc145defd194d4b286bf8ec",
+  "candidateCommit": "f96b86969ec9f9c7ba6928284f16223b673d33c0",
+  "mods": 11207,
+  "rounds": 3,
+  "warmupPairs": 1,
+  "benchmarkFunctionSha256": "930294796754eb1c580258d07ec2f74b93100367b534984503fc49c6fb82cce5",
+  "sourceHashes": {
+    "before": {
+      "mo2_update_arsenal/web/app.template.html": "6550dce88c44b980abf29faae0f6d72e60486d6f88e7d24e5c48cfda8b80262a",
+      "mo2_update_arsenal/web/style.css": "c84ef2afe26d455d1264051f2a8096b52e98723b641c9d540af0076f24767f3b",
+      "mo2_update_arsenal/web/aether_fx.css": "bbf8afd935cd97420bef66ba70c0b42722e06c9e5d84886fe147b38568f86bfd",
+      "mo2_update_arsenal/web/realm.css": "3b55f9e69af9315d34b0aa10b6b88aa82575ece81c77242be33dd6d01e4b50e4",
+      "mo2_update_arsenal/web/siege.css": "ffd8cb942207607d814fb677e6b1520a70633151b6f5e506fc2f537d81bd834e",
+      "mo2_update_arsenal/web/atelier.css": "82ea1fe2712b3b834bd50381e301f86448efb22adf8a7747edfef42550625009",
+      "mo2_update_arsenal/web/mod_insights.css": "e3254e0496ac4c6864dfa332db7f188cb7af83504e34a243288e6a61e0de2f0f",
+      "mo2_update_arsenal/web/source_insights.css": "0802191e06dbc3e1bc3bc93afda937cea08869a5212aece7ae038be55dd4b63c",
+      "mo2_update_arsenal/web/source_insights.js": "6363b3daa2073435d520aec397ae4c472fd928b8bba22624251bf817509f3ff8",
+      "mo2_update_arsenal/web/mod_insights.js": "7384dc1efb26c12b6214ac31b1b793c6c9dba94c746721aa7610ffd0de0570e4",
+      "mo2_update_arsenal/web/app.js": "51920d83ef17605ffc4362c52e3877f7f19c7d3e3ebc67e7eb60bfb6d2573e05",
+      "mo2_update_arsenal/web/catalog.json": "7b63ff731bf4f66ff7c3ee6c2fa58732ca804ae2754d9a5d2b7ceade4375337e",
+      "mo2_update_arsenal/web/aether_fx.js": "37ed80d542dca7cce5d109b6fba9e38fec54ebb7d79ed99f2d81907e75940b42",
+      "mo2_update_arsenal/web/realm.js": "931c7c1b7967019a2c1d76b053561604761c30685b2d8d640cd7def74810177a",
+      "mo2_update_arsenal/web/siege.js": "aeb05c2faa41c08944699d76ff65a2d86574bf05bdd24b4d25bd8b34f088f271",
+      "mo2_update_arsenal/web/realm_layout.html": "5912401cfc190e1d7be3f59f662e9b20668e595fdc1f1ec7ed951c7ac9671053",
+      "mo2_update_arsenal/web/siege_layout.html": "c6fbf968c672c100869799ff6ba96fd99f30d9029d7f50a6e71841bee2fb1867",
+      "mo2_update_arsenal/web/MO2_Source_Exporter.ps1": "f1c29d121a7c140a098b66b93544813cf56cfc5557d18a9565524eae97bc4a8c"
+    },
+    "after": {
+      "mo2_update_arsenal/web/app.template.html": "6550dce88c44b980abf29faae0f6d72e60486d6f88e7d24e5c48cfda8b80262a",
+      "mo2_update_arsenal/web/style.css": "c84ef2afe26d455d1264051f2a8096b52e98723b641c9d540af0076f24767f3b",
+      "mo2_update_arsenal/web/aether_fx.css": "bbf8afd935cd97420bef66ba70c0b42722e06c9e5d84886fe147b38568f86bfd",
+      "mo2_update_arsenal/web/realm.css": "3b55f9e69af9315d34b0aa10b6b88aa82575ece81c77242be33dd6d01e4b50e4",
+      "mo2_update_arsenal/web/siege.css": "ffd8cb942207607d814fb677e6b1520a70633151b6f5e506fc2f537d81bd834e",
+      "mo2_update_arsenal/web/atelier.css": "82ea1fe2712b3b834bd50381e301f86448efb22adf8a7747edfef42550625009",
+      "mo2_update_arsenal/web/mod_insights.css": "e3254e0496ac4c6864dfa332db7f188cb7af83504e34a243288e6a61e0de2f0f",
+      "mo2_update_arsenal/web/source_insights.css": "0802191e06dbc3e1bc3bc93afda937cea08869a5212aece7ae038be55dd4b63c",
+      "mo2_update_arsenal/web/source_insights.js": "6363b3daa2073435d520aec397ae4c472fd928b8bba22624251bf817509f3ff8",
+      "mo2_update_arsenal/web/mod_insights.js": "7384dc1efb26c12b6214ac31b1b793c6c9dba94c746721aa7610ffd0de0570e4",
+      "mo2_update_arsenal/web/app.js": "da4d0bb2a715c361734ce5ff9f135a14b45a998004e4732ba93b46dd7494fdc1",
+      "mo2_update_arsenal/web/catalog.json": "7b63ff731bf4f66ff7c3ee6c2fa58732ca804ae2754d9a5d2b7ceade4375337e",
+      "mo2_update_arsenal/web/aether_fx.js": "37ed80d542dca7cce5d109b6fba9e38fec54ebb7d79ed99f2d81907e75940b42",
+      "mo2_update_arsenal/web/realm.js": "931c7c1b7967019a2c1d76b053561604761c30685b2d8d640cd7def74810177a",
+      "mo2_update_arsenal/web/siege.js": "aeb05c2faa41c08944699d76ff65a2d86574bf05bdd24b4d25bd8b34f088f271",
+      "mo2_update_arsenal/web/realm_layout.html": "5912401cfc190e1d7be3f59f662e9b20668e595fdc1f1ec7ed951c7ac9671053",
+      "mo2_update_arsenal/web/siege_layout.html": "c6fbf968c672c100869799ff6ba96fd99f30d9029d7f50a6e71841bee2fb1867",
+      "mo2_update_arsenal/web/MO2_Source_Exporter.ps1": "f1c29d121a7c140a098b66b93544813cf56cfc5557d18a9565524eae97bc4a8c"
+    }
+  },
+  "measurement": "Unchanged acceptance.benchmark(): full import, exact last-item search, restoration, sort, navigation, List density, Gallery, Gallery density, List, final density reset; fresh contexts and alternating order.",
+  "scope": "Controlled diagnostic only. ok means completed correct workload, not absence of performance regressions. No publication, ceiling changes, forced GC, or removal of records/features.",
+  "ok": true,
+  "diagnosticCommit": "857e2cc270ff0f211cbf6d9d9f140fcca24bb1eb",
+  "platform": "Linux-7.0.0-1017-azure-x86_64-with-glibc2.39",
+  "pythonVersion": "3.12.3",
+  "playwrightVersion": "1.57.0",
+  "logicalCpus": 4,
+  "traceWarmupOnly": true,
+  "traces": [
+    {
+      "file": "before-warmup-list.trace.json.gz",
+      "sha256": "0b9995e2b6f1afa987f8dbacfa87421aadfe7935086b583192621ebe53fb4a59",
+      "bytes": 5931,
+      "dataLossOccurred": false,
+      "filteredDiagnosticTrace": true,
+      "sourceEvents": 324,
+      "sourceEventCounts": {
+        "thread_name": 5,
+        "process_name": 1,
+        "process_uptime_seconds": 1,
+        "modhunter-style-profile-list-start": 1,
+        "v8.newInstance": 2,
+        "EventDispatch": 24,
+        "V8.GC_HEAP_EXTERNAL_PROLOGUE": 1,
+        "MinorGC": 1,
+        "V8.GC_HEAP_PROLOGUE": 1,
+        "V8.GCScavenger": 1,
+        "V8.GC_HEAP_ENSURE_SWEEPING_COMPLETED": 1,
+        "V8.GC_MC_COMPLETE_SWEEPING": 3,
+        "V8.GC_MC_SWEEP": 1,
+        "V8.GC_TIME_TO_SAFEPOINT": 1,
+        "V8.GC_SCAVENGER": 1,
+        "V8.GC_HEAP_PROLOGUE_SAFEPOINT": 1,
+        "V8.GC_SCAVENGER_SCAVENGE": 1,
+        "V8.GC_SCAVENGER_SCAVENGE_WEAK_GLOBAL_HANDLES_IDENTIFY": 1,
+        "ComputeWeaknessProcessor start": 3,
+        "V8.GC_SCAVENGER_TRACED_HANDLES_COMPUTE_WEAKNESS_PARALLEL": 1,
+        "V8.GC_SCAVENGER_SCAVENGE_COLLECT_OLD_TO_NEW_PAGES": 1,
+        "V8.GC_SCAVENGER_SCAVENGE_PARALLEL_PHASE": 1,
+        "Parallel scavenge started": 3,
+        "V8.GC_SCAVENGER_SCAVENGE_ROOTS": 1,
+        "V8.GC_SCAVENGER_SCAVENGE_PARALLEL": 1,
+        "V8.GC_SCAVENGER_BACKGROUND_SCAVENGE_PARALLEL": 5,
+        "V8.GC_SCAVENGER_SCAVENGE_WEAK_GLOBAL_HANDLES_PROCESS": 1,
+        "ClearWeaknessProcessor start": 3,
+        "V8.GC_SCAVENGER_TRACED_HANDLES_RESET_PARALLEL": 1,
+        "V8.GC_SCAVENGER_SCAVENGE_FINALIZE": 1,
+        "V8.GC_SCAVENGER_SCAVENGE_RESTORE_AND_QUARANTINE_PINNED": 1,
+        "V8.GC_SCAVENGER_FREE_REMEMBERED_SET": 1,
+        "V8.GC_SCAVENGER_RESIZE_NEW_SPACE": 1,
+        "V8.GC_HEAP_EPILOGUE_SAFEPOINT": 1,
+        "V8.GC_HEAP_EPILOGUE": 1,
+        "V8.GC_HEAP_EXTERNAL_EPILOGUE": 1,
+        "RequestAnimationFrame": 4,
+        "FireAnimationFrame": 4,
+        "v8.callFunction": 23,
+        "FunctionCall": 23,
+        "PrePaint": 75,
+        "Layerize": 5,
+        "HitTest": 11,
+        "UpdateLayoutTree": 4,
+        "TimerRemove": 1,
+        "ParseHTML": 2,
+        "Layout": 2,
+        "Paint": 1,
+        "largestContentfulPaint::CandidateForSoftNavigation": 1,
+        "Responsiveness.Renderer.UserInteraction": 1,
+        "modhunter-style-profile-list-end": 1,
+        "AnimationFrame": 20,
+        "AnimationFrame::FirstUIEvent": 3,
+        "AnimationFrame::Render": 10,
+        "AnimationFrame::StyleAndLayout": 10,
+        "AnimationFrame::Presentation": 5,
+        "EventTiming": 40,
+        "AnimationFrame::Script::Execute": 2
+      },
+      "retainedEvents": 220,
+      "retainedJsonBytes": 51507,
+      "variant": "before",
+      "warmup": true,
+      "includedInMeasuredMedians": false,
+      "categories": [
+        "devtools.timeline",
+        "blink.user_timing",
+        "v8"
+      ],
+      "summaryFile": "before-warmup-list.trace-summary.json",
+      "gcEventTotals": [
+        {
+          "pid": 2420,
+          "tid": 2420,
+          "name": "MinorGC",
+          "count": 1,
+          "inclusiveDurationUs": 1902,
+          "maximumDurationUs": 1902
+        },
+        {
+          "pid": 2420,
+          "tid": 2420,
+          "name": "V8.GCScavenger",
+          "count": 1,
+          "inclusiveDurationUs": 1859,
+          "maximumDurationUs": 1859
+        },
+        {
+          "pid": 2420,
+          "tid": 2420,
+          "name": "V8.GC_SCAVENGER",
+          "count": 1,
+          "inclusiveDurationUs": 1588,
+          "maximumDurationUs": 1588
+        },
+        {
+          "pid": 2420,
+          "tid": 2420,
+          "name": "V8.GC_SCAVENGER_SCAVENGE",
+          "count": 1,
+          "inclusiveDurationUs": 1569,
+          "maximumDurationUs": 1569
+        },
+        {
+          "pid": 2420,
+          "tid": 2420,
+          "name": "V8.GC_SCAVENGER_SCAVENGE_PARALLEL_PHASE",
+          "count": 1,
+          "inclusiveDurationUs": 1278,
+          "maximumDurationUs": 1278
+        },
+        {
+          "pid": 2420,
+          "tid": 2436,
+          "name": "V8.GC_SCAVENGER_BACKGROUND_SCAVENGE_PARALLEL",
+          "count": 1,
+          "inclusiveDurationUs": 1206,
+          "maximumDurationUs": 1206
+        },
+        {
+          "pid": 2420,
+          "tid": 2420,
+          "name": "V8.GC_SCAVENGER_SCAVENGE_PARALLEL",
+          "count": 1,
+          "inclusiveDurationUs": 1183,
+          "maximumDurationUs": 1183
+        },
+        {
+          "pid": 2420,
+          "tid": 2432,
+          "name": "V8.GC_SCAVENGER_BACKGROUND_SCAVENGE_PARALLEL",
+          "count": 2,
+          "inclusiveDurationUs": 1140,
+          "maximumDurationUs": 1059
+        },
+        {
+          "pid": 2420,
+          "tid": 2448,
+          "name": "V8.GC_SCAVENGER_BACKGROUND_SCAVENGE_PARALLEL",
+          "count": 2,
+          "inclusiveDurationUs": 1079,
+          "maximumDurationUs": 1027
+        },
+        {
+          "pid": 2420,
+          "tid": 2420,
+          "name": "V8.GC_HEAP_ENSURE_SWEEPING_COMPLETED",
+          "count": 1,
+          "inclusiveDurationUs": 246,
+          "maximumDurationUs": 246
+        },
+        {
+          "pid": 2420,
+          "tid": 2420,
+          "name": "V8.GC_SCAVENGER_SCAVENGE_COLLECT_OLD_TO_NEW_PAGES",
+          "count": 1,
+          "inclusiveDurationUs": 68,
+          "maximumDurationUs": 68
+        },
+        {
+          "pid": 2420,
+          "tid": 2420,
+          "name": "V8.GC_SCAVENGER_SCAVENGE_WEAK_GLOBAL_HANDLES_IDENTIFY",
+          "count": 1,
+          "inclusiveDurationUs": 29,
+          "maximumDurationUs": 29
+        },
+        {
+          "pid": 2420,
+          "tid": 2420,
+          "name": "V8.GC_SCAVENGER_SCAVENGE_WEAK_GLOBAL_HANDLES_PROCESS",
+          "count": 1,
+          "inclusiveDurationUs": 29,
+          "maximumDurationUs": 29
+        },
+        {
+          "pid": 2420,
+          "tid": 2420,
+          "name": "V8.GC_SCAVENGER_RESIZE_NEW_SPACE",
+          "count": 1,
+          "inclusiveDurationUs": 24,
+          "maximumDurationUs": 24
+        },
+        {
+          "pid": 2420,
+          "tid": 2420,
+          "name": "V8.GC_SCAVENGER_SCAVENGE_ROOTS",
+          "count": 1,
+          "inclusiveDurationUs": 22,
+          "maximumDurationUs": 22
+        },
+        {
+          "pid": 2420,
+          "tid": 2420,
+          "name": "V8.GC_SCAVENGER_SCAVENGE_FINALIZE",
+          "count": 1,
+          "inclusiveDurationUs": 20,
+          "maximumDurationUs": 20
+        },
+        {
+          "pid": 2420,
+          "tid": 2420,
+          "name": "V8.GC_SCAVENGER_SCAVENGE_RESTORE_AND_QUARANTINE_PINNED",
+          "count": 1,
+          "inclusiveDurationUs": 20,
+          "maximumDurationUs": 20
+        },
+        {
+          "pid": 2420,
+          "tid": 2420,
+          "name": "V8.GC_SCAVENGER_TRACED_HANDLES_RESET_PARALLEL",
+          "count": 1,
+          "inclusiveDurationUs": 10,
+          "maximumDurationUs": 10
+        },
+        {
+          "pid": 2420,
+          "tid": 2420,
+          "name": "V8.GC_HEAP_EXTERNAL_PROLOGUE",
+          "count": 1,
+          "inclusiveDurationUs": 9,
+          "maximumDurationUs": 9
+        },
+        {
+          "pid": 2420,
+          "tid": 2420,
+          "name": "V8.GC_MC_COMPLETE_SWEEPING",
+          "count": 1,
+          "inclusiveDurationUs": 9,
+          "maximumDurationUs": 9
+        },
+        {
+          "pid": 2420,
+          "tid": 2420,
+          "name": "V8.GC_SCAVENGER_TRACED_HANDLES_COMPUTE_WEAKNESS_PARALLEL",
+          "count": 1,
+          "inclusiveDurationUs": 7,
+          "maximumDurationUs": 7
+        },
+        {
+          "pid": 2420,
+          "tid": 2420,
+          "name": "V8.GC_TIME_TO_SAFEPOINT",
+          "count": 1,
+          "inclusiveDurationUs": 4,
+          "maximumDurationUs": 4
+        },
+        {
+          "pid": 2420,
+          "tid": 2420,
+          "name": "V8.GC_HEAP_EPILOGUE_SAFEPOINT",
+          "count": 1,
+          "inclusiveDurationUs": 4,
+          "maximumDurationUs": 4
+        },
+        {
+          "pid": 2420,
+          "tid": 2420,
+          "name": "V8.GC_HEAP_EPILOGUE",
+          "count": 1,
+          "inclusiveDurationUs": 4,
+          "maximumDurationUs": 4
+        },
+        {
+          "pid": 2420,
+          "tid": 2420,
+          "name": "V8.GC_SCAVENGER_FREE_REMEMBERED_SET",
+          "count": 1,
+          "inclusiveDurationUs": 3,
+          "maximumDurationUs": 3
+        },
+        {
+          "pid": 2420,
+          "tid": 2420,
+          "name": "V8.GC_HEAP_PROLOGUE",
+          "count": 1,
+          "inclusiveDurationUs": 2,
+          "maximumDurationUs": 2
+        },
+        {
+          "pid": 2420,
+          "tid": 2420,
+          "name": "V8.GC_HEAP_PROLOGUE_SAFEPOINT",
+          "count": 1,
+          "inclusiveDurationUs": 2,
+          "maximumDurationUs": 2
+        },
+        {
+          "pid": 2420,
+          "tid": 2420,
+          "name": "V8.GC_MC_SWEEP",
+          "count": 1,
+          "inclusiveDurationUs": 1,
+          "maximumDurationUs": 1
+        },
+        {
+          "pid": 2420,
+          "tid": 2420,
+          "name": "Parallel scavenge started",
+          "count": 1,
+          "inclusiveDurationUs": 1,
+          "maximumDurationUs": 1
+        },
+        {
+          "pid": 2420,
+          "tid": 2420,
+          "name": "V8.GC_HEAP_EXTERNAL_EPILOGUE",
+          "count": 1,
+          "inclusiveDurationUs": 1,
+          "maximumDurationUs": 1
+        }
+      ],
+      "styleLayoutEvents": [
+        {
+          "name": "UpdateLayoutTree",
+          "durationUs": 605,
+          "ts": 100620693,
+          "pid": 2420,
+          "tid": 2420,
+          "args": {
+            "beginData": {
+              "frame": "97B968980FB977BB7877FE88D930A6A3"
+            },
+            "elementCount": 14
+          }
+        },
+        {
+          "name": "UpdateLayoutTree",
+          "durationUs": 261,
+          "ts": 100813307,
+          "pid": 2420,
+          "tid": 2420,
+          "args": {
+            "beginData": {
+              "frame": "97B968980FB977BB7877FE88D930A6A3"
+            },
+            "elementCount": 1
+          }
+        },
+        {
+          "name": "UpdateLayoutTree",
+          "durationUs": 156,
+          "ts": 101061560,
+          "pid": 2420,
+          "tid": 2420,
+          "args": {
+            "beginData": {
+              "frame": "97B968980FB977BB7877FE88D930A6A3"
+            },
+            "elementCount": 2
+          }
+        },
+        {
+          "name": "UpdateLayoutTree",
+          "durationUs": 1739795,
+          "ts": 101155072,
+          "pid": 2420,
+          "tid": 2420,
+          "args": {
+            "beginData": {
+              "frame": "97B968980FB977BB7877FE88D930A6A3"
+            },
+            "elementCount": 224183
+          }
+        },
+        {
+          "name": "Layout",
+          "durationUs": 918408,
+          "ts": 102894947,
+          "pid": 2420,
+          "tid": 2420,
+          "args": {
+            "beginData": {
+              "dirtyObjects": 392303,
+              "frame": "97B968980FB977BB7877FE88D930A6A3",
+              "partialLayout": false,
+              "totalObjects": 392518
+            },
+            "endData": {
+              "layoutRoots": [
+                {
+                  "depth": 1,
+                  "nodeId": 1,
+                  "nodeName": "#document",
+                  "quads": [
+                    [
+                      0,
+                      0,
+                      1440,
+                      0,
+                      1440,
+                      900,
+                      0,
+                      900
+                    ]
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Layout",
+          "durationUs": 86,
+          "ts": 104460016,
+          "pid": 2420,
+          "tid": 2420,
+          "args": {
+            "beginData": {
+              "dirtyObjects": 2,
+              "frame": "F82EEC7E0CBCBBD53635976FB5959C2F",
+              "partialLayout": false,
+              "totalObjects": 5
+            },
+            "endData": {
+              "layoutRoots": [
+                {
+                  "depth": 1,
+                  "nodeId": 11,
+                  "nodeName": "#document",
+                  "quads": [
+                    [
+                      0,
+                      0,
+                      18,
+                      0,
+                      18,
+                      18,
+                      0,
+                      18
+                    ]
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "file": "after-warmup-list.trace.json.gz",
+      "sha256": "dd7afe43603ef377571344a5e6a022a326d124e97a2376cf99a6f84168d7fe14",
+      "bytes": 6059,
+      "dataLossOccurred": false,
+      "filteredDiagnosticTrace": true,
+      "sourceEvents": 341,
+      "sourceEventCounts": {
+        "thread_name": 5,
+        "process_name": 1,
+        "process_uptime_seconds": 1,
+        "modhunter-style-profile-list-start": 1,
+        "v8.newInstance": 2,
+        "EventDispatch": 24,
+        "V8.GC_HEAP_EXTERNAL_PROLOGUE": 1,
+        "MinorGC": 1,
+        "V8.GC_HEAP_PROLOGUE": 1,
+        "V8.GCScavenger": 1,
+        "V8.GC_HEAP_ENSURE_SWEEPING_COMPLETED": 1,
+        "V8.GC_MC_COMPLETE_SWEEPING": 3,
+        "V8.GC_MC_SWEEP": 1,
+        "V8.GCUpdateAllocationLimits": 1,
+        "V8.GC_TIME_TO_SAFEPOINT": 1,
+        "V8.GC_SCAVENGER": 1,
+        "V8.GC_HEAP_PROLOGUE_SAFEPOINT": 1,
+        "V8.GC_SCAVENGER_SCAVENGE": 1,
+        "V8.GC_SCAVENGER_SCAVENGE_WEAK_GLOBAL_HANDLES_IDENTIFY": 1,
+        "ComputeWeaknessProcessor start": 3,
+        "V8.GC_SCAVENGER_TRACED_HANDLES_COMPUTE_WEAKNESS_PARALLEL": 1,
+        "V8.GC_SCAVENGER_SCAVENGE_COLLECT_OLD_TO_NEW_PAGES": 1,
+        "V8.GC_SCAVENGER_SCAVENGE_PARALLEL_PHASE": 1,
+        "Parallel scavenge started": 3,
+        "V8.GC_SCAVENGER_SCAVENGE_ROOTS": 1,
+        "V8.GC_SCAVENGER_BACKGROUND_SCAVENGE_PARALLEL": 3,
+        "V8.GC_SCAVENGER_SCAVENGE_PARALLEL": 1,
+        "V8.GC_SCAVENGER_SCAVENGE_WEAK_GLOBAL_HANDLES_PROCESS": 1,
+        "ClearWeaknessProcessor start": 3,
+        "V8.GC_SCAVENGER_TRACED_HANDLES_RESET_PARALLEL": 1,
+        "V8.GC_SCAVENGER_SCAVENGE_FINALIZE": 1,
+        "V8.GC_SCAVENGER_SCAVENGE_RESTORE_AND_QUARANTINE_PINNED": 1,
+        "V8.GC_SCAVENGER_FREE_REMEMBERED_SET": 1,
+        "V8.GC_SCAVENGER_RESIZE_NEW_SPACE": 1,
+        "V8.GC_HEAP_EPILOGUE_SAFEPOINT": 1,
+        "V8.GC_HEAP_EPILOGUE": 1,
+        "V8.GCTraceGCNVP": 1,
+        "V8.GC_HEAP_DUMP_STATISTICS": 1,
+        "V8.GC_Heap_Stats": 1,
+        "V8.GC_HEAP_EXTERNAL_EPILOGUE": 1,
+        "RequestAnimationFrame": 4,
+        "FireAnimationFrame": 4,
+        "v8.callFunction": 23,
+        "FunctionCall": 23,
+        "PrePaint": 75,
+        "Layerize": 5,
+        "HitTest": 11,
+        "UpdateLayoutTree": 4,
+        "TimerRemove": 1,
+        "ParseHTML": 2,
+        "Layout": 2,
+        "Paint": 1,
+        "largestContentfulPaint::CandidateForSoftNavigation": 1,
+        "Responsiveness.Renderer.UserInteraction": 1,
+        "modhunter-style-profile-list-end": 1,
+        "AnimationFrame": 20,
+        "AnimationFrame::FirstUIEvent": 3,
+        "allocation failure": 1,
+        "ObservablePause": 2,
+        "Scavenge": 2,
+        "Marking": 2,
+        "Atomic": 2,
+        "Sweeping": 2,
+        "AnimationFrame::Render": 10,
+        "AnimationFrame::StyleAndLayout": 10,
+        "AnimationFrame::Presentation": 5,
+        "EventTiming": 40,
+        "IsInputHandling": 4,
+        "AnimationFrame::Script::Execute": 2
+      },
+      "retainedEvents": 219,
+      "retainedJsonBytes": 51294,
+      "variant": "after",
+      "warmup": true,
+      "includedInMeasuredMedians": false,
+      "categories": [
+        "devtools.timeline",
+        "blink.user_timing",
+        "v8",
+        "disabled-by-default-v8.gc"
+      ],
+      "summaryFile": "after-warmup-list.trace-summary.json",
+      "gcEventTotals": [
+        {
+          "pid": 2481,
+          "tid": 2481,
+          "name": "MinorGC",
+          "count": 1,
+          "inclusiveDurationUs": 2027,
+          "maximumDurationUs": 2027
+        },
+        {
+          "pid": 2481,
+          "tid": 2481,
+          "name": "V8.GCScavenger",
+          "count": 1,
+          "inclusiveDurationUs": 1887,
+          "maximumDurationUs": 1887
+        },
+        {
+          "pid": 2481,
+          "tid": 2481,
+          "name": "V8.GC_SCAVENGER",
+          "count": 1,
+          "inclusiveDurationUs": 1605,
+          "maximumDurationUs": 1605
+        },
+        {
+          "pid": 2481,
+          "tid": 2481,
+          "name": "V8.GC_SCAVENGER_SCAVENGE",
+          "count": 1,
+          "inclusiveDurationUs": 1576,
+          "maximumDurationUs": 1576
+        },
+        {
+          "pid": 2481,
+          "tid": 2481,
+          "name": "V8.GC_SCAVENGER_SCAVENGE_PARALLEL_PHASE",
+          "count": 1,
+          "inclusiveDurationUs": 1278,
+          "maximumDurationUs": 1278
+        },
+        {
+          "pid": 2481,
+          "tid": 2496,
+          "name": "V8.GC_SCAVENGER_BACKGROUND_SCAVENGE_PARALLEL",
+          "count": 1,
+          "inclusiveDurationUs": 1183,
+          "maximumDurationUs": 1183
+        },
+        {
+          "pid": 2481,
+          "tid": 2481,
+          "name": "V8.GC_SCAVENGER_SCAVENGE_PARALLEL",
+          "count": 1,
+          "inclusiveDurationUs": 1159,
+          "maximumDurationUs": 1159
+        },
+        {
+          "pid": 2481,
+          "tid": 2486,
+          "name": "V8.GC_SCAVENGER_BACKGROUND_SCAVENGE_PARALLEL",
+          "count": 1,
+          "inclusiveDurationUs": 1148,
+          "maximumDurationUs": 1148
+        },
+        {
+          "pid": 2481,
+          "tid": 2506,
+          "name": "V8.GC_SCAVENGER_BACKGROUND_SCAVENGE_PARALLEL",
+          "count": 1,
+          "inclusiveDurationUs": 1065,
+          "maximumDurationUs": 1065
+        },
+        {
+          "pid": 2481,
+          "tid": 2481,
+          "name": "V8.GC_HEAP_ENSURE_SWEEPING_COMPLETED",
+          "count": 1,
+          "inclusiveDurationUs": 219,
+          "maximumDurationUs": 219
+        },
+        {
+          "pid": 2481,
+          "tid": 2481,
+          "name": "V8.GC_SCAVENGER_SCAVENGE_COLLECT_OLD_TO_NEW_PAGES",
+          "count": 1,
+          "inclusiveDurationUs": 69,
+          "maximumDurationUs": 69
+        },
+        {
+          "pid": 2481,
+          "tid": 2481,
+          "name": "V8.GC_SCAVENGER_SCAVENGE_WEAK_GLOBAL_HANDLES_IDENTIFY",
+          "count": 1,
+          "inclusiveDurationUs": 53,
+          "maximumDurationUs": 53
+        },
+        {
+          "pid": 2481,
+          "tid": 2481,
+          "name": "V8.GC_SCAVENGER_SCAVENGE_WEAK_GLOBAL_HANDLES_PROCESS",
+          "count": 1,
+          "inclusiveDurationUs": 34,
+          "maximumDurationUs": 34
+        },
+        {
+          "pid": 2481,
+          "tid": 2481,
+          "name": "V8.GC_SCAVENGER_SCAVENGE_RESTORE_AND_QUARANTINE_PINNED",
+          "count": 1,
+          "inclusiveDurationUs": 22,
+          "maximumDurationUs": 22
+        },
+        {
+          "pid": 2481,
+          "tid": 2481,
+          "name": "V8.GC_SCAVENGER_SCAVENGE_ROOTS",
+          "count": 1,
+          "inclusiveDurationUs": 21,
+          "maximumDurationUs": 21
+        },
+        {
+          "pid": 2481,
+          "tid": 2481,
+          "name": "V8.GC_SCAVENGER_SCAVENGE_FINALIZE",
+          "count": 1,
+          "inclusiveDurationUs": 19,
+          "maximumDurationUs": 19
+        },
+        {
+          "pid": 2481,
+          "tid": 2481,
+          "name": "V8.GC_MC_COMPLETE_SWEEPING",
+          "count": 1,
+          "inclusiveDurationUs": 14,
+          "maximumDurationUs": 14
+        },
+        {
+          "pid": 2481,
+          "tid": 2481,
+          "name": "V8.GC_SCAVENGER_TRACED_HANDLES_RESET_PARALLEL",
+          "count": 1,
+          "inclusiveDurationUs": 12,
+          "maximumDurationUs": 12
+        },
+        {
+          "pid": 2481,
+          "tid": 2481,
+          "name": "V8.GC_HEAP_EXTERNAL_PROLOGUE",
+          "count": 1,
+          "inclusiveDurationUs": 9,
+          "maximumDurationUs": 9
+        },
+        {
+          "pid": 2481,
+          "tid": 2481,
+          "name": "V8.GC_SCAVENGER_TRACED_HANDLES_COMPUTE_WEAKNESS_PARALLEL",
+          "count": 1,
+          "inclusiveDurationUs": 7,
+          "maximumDurationUs": 7
+        },
+        {
+          "pid": 2481,
+          "tid": 2481,
+          "name": "V8.GC_HEAP_EPILOGUE_SAFEPOINT",
+          "count": 1,
+          "inclusiveDurationUs": 4,
+          "maximumDurationUs": 4
+        },
+        {
+          "pid": 2481,
+          "tid": 2481,
+          "name": "V8.GC_HEAP_EPILOGUE",
+          "count": 1,
+          "inclusiveDurationUs": 4,
+          "maximumDurationUs": 4
+        },
+        {
+          "pid": 2481,
+          "tid": 2481,
+          "name": "V8.GC_HEAP_PROLOGUE",
+          "count": 1,
+          "inclusiveDurationUs": 2,
+          "maximumDurationUs": 2
+        },
+        {
+          "pid": 2481,
+          "tid": 2481,
+          "name": "V8.GC_MC_SWEEP",
+          "count": 1,
+          "inclusiveDurationUs": 2,
+          "maximumDurationUs": 2
+        },
+        {
+          "pid": 2481,
+          "tid": 2481,
+          "name": "V8.GC_SCAVENGER_FREE_REMEMBERED_SET",
+          "count": 1,
+          "inclusiveDurationUs": 2,
+          "maximumDurationUs": 2
+        },
+        {
+          "pid": 2481,
+          "tid": 2481,
+          "name": "V8.GC_SCAVENGER_RESIZE_NEW_SPACE",
+          "count": 1,
+          "inclusiveDurationUs": 2,
+          "maximumDurationUs": 2
+        },
+        {
+          "pid": 2481,
+          "tid": 2481,
+          "name": "V8.GC_HEAP_EXTERNAL_EPILOGUE",
+          "count": 1,
+          "inclusiveDurationUs": 2,
+          "maximumDurationUs": 2
+        },
+        {
+          "pid": 2481,
+          "tid": 2481,
+          "name": "V8.GC_TIME_TO_SAFEPOINT",
+          "count": 1,
+          "inclusiveDurationUs": 1,
+          "maximumDurationUs": 1
+        },
+        {
+          "pid": 2481,
+          "tid": 2481,
+          "name": "V8.GC_HEAP_PROLOGUE_SAFEPOINT",
+          "count": 1,
+          "inclusiveDurationUs": 1,
+          "maximumDurationUs": 1
+        },
+        {
+          "pid": 2481,
+          "tid": 2481,
+          "name": "Parallel scavenge started",
+          "count": 1,
+          "inclusiveDurationUs": 1,
+          "maximumDurationUs": 1
+        },
+        {
+          "pid": 2481,
+          "tid": 2481,
+          "name": "V8.GC_HEAP_DUMP_STATISTICS",
+          "count": 1,
+          "inclusiveDurationUs": 1,
+          "maximumDurationUs": 1
+        }
+      ],
+      "styleLayoutEvents": [
+        {
+          "name": "UpdateLayoutTree",
+          "durationUs": 604,
+          "ts": 144946804,
+          "pid": 2481,
+          "tid": 2481,
+          "args": {
+            "beginData": {
+              "frame": "C9F30A4D89ECD37907A771AC8B8CA5EE"
+            },
+            "elementCount": 14
+          }
+        },
+        {
+          "name": "UpdateLayoutTree",
+          "durationUs": 304,
+          "ts": 145143252,
+          "pid": 2481,
+          "tid": 2481,
+          "args": {
+            "beginData": {
+              "frame": "C9F30A4D89ECD37907A771AC8B8CA5EE"
+            },
+            "elementCount": 1
+          }
+        },
+        {
+          "name": "UpdateLayoutTree",
+          "durationUs": 194,
+          "ts": 145442028,
+          "pid": 2481,
+          "tid": 2481,
+          "args": {
+            "beginData": {
+              "frame": "C9F30A4D89ECD37907A771AC8B8CA5EE"
+            },
+            "elementCount": 2
+          }
+        },
+        {
+          "name": "UpdateLayoutTree",
+          "durationUs": 1871311,
+          "ts": 145565927,
+          "pid": 2481,
+          "tid": 2481,
+          "args": {
+            "beginData": {
+              "frame": "C9F30A4D89ECD37907A771AC8B8CA5EE"
+            },
+            "elementCount": 224183
+          }
+        },
+        {
+          "name": "Layout",
+          "durationUs": 970788,
+          "ts": 147437317,
+          "pid": 2481,
+          "tid": 2481,
+          "args": {
+            "beginData": {
+              "dirtyObjects": 392303,
+              "frame": "C9F30A4D89ECD37907A771AC8B8CA5EE",
+              "partialLayout": false,
+              "totalObjects": 392518
+            },
+            "endData": {
+              "layoutRoots": [
+                {
+                  "depth": 1,
+                  "nodeId": 1,
+                  "nodeName": "#document",
+                  "quads": [
+                    [
+                      0,
+                      0,
+                      1440,
+                      0,
+                      1440,
+                      900,
+                      0,
+                      900
+                    ]
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Layout",
+          "durationUs": 78,
+          "ts": 149047285,
+          "pid": 2481,
+          "tid": 2481,
+          "args": {
+            "beginData": {
+              "dirtyObjects": 2,
+              "frame": "4A88220FC2AECCE6908970CF5A89C7BC",
+              "partialLayout": false,
+              "totalObjects": 5
+            },
+            "endData": {
+              "layoutRoots": [
+                {
+                  "depth": 1,
+                  "nodeId": 11,
+                  "nodeName": "#document",
+                  "quads": [
+                    [
+                      0,
+                      0,
+                      18,
+                      0,
+                      18,
+                      18,
+                      0,
+                      18
+                    ]
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "browserVersion": "157.0.8103.0",
+  "executablePath": "/usr/bin/chromium",
+  "completeLibrary": {
+    "mods": 11207,
+    "rounds": 3,
+    "fixtureSha256": "afd855e4ac76f284630ffb4ed6d9dc37280113c9559aef4402516795b7fef0a0",
+    "method": "Complete baseline and candidate source variants; one warmup then alternating variant order, new contexts, complete import + frame/layout, exact last-item search, all DOM results preserved. Search/import timing method is unchanged from candidate1. Additional view/navigation timings use real clicks through frame/layout, after search completes. Browser fixture only; excludes native import and provider I/O.",
+    "variants": {
+      "before": [
+        {
+          "renderMs": 4651.299999999988,
+          "rows": 11207,
+          "complete": true,
+          "allLaidOut": true,
+          "noContentVisibility": true,
+          "lastItemSearchMs": 613.5583349999933,
+          "survivingRowReusedDuringSearch": true,
+          "survivingRowReusedAfterRestore": true,
+          "nodes": {
+            "document": 348732,
+            "library": 212940,
+            "row": 18,
+            "previewImages": 0
+          },
+          "sortMs": 3423.520475000004,
+          "survivingRowReusedAfterSort": true,
+          "interactionDiagnostics": {
+            "navigationUpdates": {
+              "wallMs": 1898.749457000008,
+              "metricsBefore": {
+                "Nodes": 734372,
+                "LayoutCount": 11,
+                "RecalcStyleCount": 12,
+                "LayoutDuration": 4.515363,
+                "RecalcStyleDuration": 4.572543,
+                "ScriptDuration": 1.211556,
+                "TaskDuration": 16.499052,
+                "JSHeapUsedSize": 159802404
+              },
+              "metricsAfter": {
+                "Nodes": 734386,
+                "LayoutCount": 13,
+                "RecalcStyleCount": 17,
+                "LayoutDuration": 4.979739,
+                "RecalcStyleDuration": 5.502657,
+                "ScriptDuration": 1.290331,
+                "TaskDuration": 18.403173,
+                "JSHeapUsedSize": 170055988
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.07877499999999982,
+                "LayoutDuration": 0.46437600000000057,
+                "RecalcStyleDuration": 0.9301140000000006,
+                "TaskDuration": 1.904121,
+                "LayoutCount": 2,
+                "RecalcStyleCount": 5,
+                "Nodes": 14,
+                "JSHeapUsedSize": 10253584
+              },
+              "geometryBefore": {
+                "scrollY": 0,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 10,
+                  "y": 126,
+                  "width": 47,
+                  "height": 44,
+                  "top": 126,
+                  "right": 57,
+                  "bottom": 170,
+                  "left": 10
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 10,
+                  "y": 126,
+                  "width": 47,
+                  "height": 44,
+                  "top": 126,
+                  "right": 57,
+                  "bottom": 170,
+                  "left": 10
+                },
+                "workspace": "updates",
+                "view": "list",
+                "density": "compact"
+              }
+            },
+            "navigationLibrary": {
+              "wallMs": 2936.2258779999875,
+              "metricsBefore": {
+                "Nodes": 695929,
+                "LayoutCount": 13,
+                "RecalcStyleCount": 17,
+                "LayoutDuration": 4.979739,
+                "RecalcStyleDuration": 5.502657,
+                "ScriptDuration": 1.290331,
+                "TaskDuration": 18.712573,
+                "JSHeapUsedSize": 157602208
+              },
+              "metricsAfter": {
+                "Nodes": 718348,
+                "LayoutCount": 14,
+                "RecalcStyleCount": 22,
+                "LayoutDuration": 5.839743,
+                "RecalcStyleDuration": 6.708934,
+                "ScriptDuration": 1.29807,
+                "TaskDuration": 21.65419,
+                "JSHeapUsedSize": 164635068
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.007739000000000162,
+                "LayoutDuration": 0.860004,
+                "RecalcStyleDuration": 1.206277,
+                "TaskDuration": 2.941617000000001,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 5,
+                "Nodes": 22419,
+                "JSHeapUsedSize": 7032860
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 10,
+                  "y": 76,
+                  "width": 47,
+                  "height": 44,
+                  "top": 76,
+                  "right": 57,
+                  "bottom": 120,
+                  "left": 10
+                },
+                "workspace": "updates",
+                "view": "list",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 10,
+                  "y": 76,
+                  "width": 47,
+                  "height": 44,
+                  "top": 76,
+                  "right": 57,
+                  "bottom": 120,
+                  "left": 10
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "compact"
+              }
+            },
+            "density": {
+              "wallMs": 1909.0023739999822,
+              "metricsBefore": {
+                "Nodes": 709496,
+                "LayoutCount": 14,
+                "RecalcStyleCount": 22,
+                "LayoutDuration": 5.839743,
+                "RecalcStyleDuration": 6.708934,
+                "ScriptDuration": 1.29807,
+                "TaskDuration": 21.977334,
+                "JSHeapUsedSize": 165823616
+              },
+              "metricsAfter": {
+                "Nodes": 709502,
+                "LayoutCount": 15,
+                "RecalcStyleCount": 26,
+                "LayoutDuration": 6.176621,
+                "RecalcStyleDuration": 7.091482,
+                "ScriptDuration": 1.369451,
+                "TaskDuration": 23.865754,
+                "JSHeapUsedSize": 172858736
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.07138099999999992,
+                "LayoutDuration": 0.33687799999999957,
+                "RecalcStyleDuration": 0.3825479999999999,
+                "TaskDuration": 1.88842,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 4,
+                "Nodes": 6,
+                "JSHeapUsedSize": 7035120
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 1033.296875,
+                  "y": 184.6875,
+                  "width": 83.75,
+                  "height": 36,
+                  "top": 184.6875,
+                  "right": 1117.046875,
+                  "bottom": 220.6875,
+                  "left": 1033.296875
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 1016.125,
+                  "y": 184.6875,
+                  "width": 100.921875,
+                  "height": 36,
+                  "top": 184.6875,
+                  "right": 1117.046875,
+                  "bottom": 220.6875,
+                  "left": 1016.125
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "comfy"
+              }
+            },
+            "gallery": {
+              "wallMs": 5592.8421369999905,
+              "metricsBefore": {
+                "Nodes": 709513,
+                "LayoutCount": 16,
+                "RecalcStyleCount": 28,
+                "LayoutDuration": 6.530194,
+                "RecalcStyleDuration": 7.503689,
+                "ScriptDuration": 1.459249,
+                "TaskDuration": 26.195318,
+                "JSHeapUsedSize": 182528164
+              },
+              "metricsAfter": {
+                "Nodes": 754353,
+                "LayoutCount": 17,
+                "RecalcStyleCount": 33,
+                "LayoutDuration": 8.196544,
+                "RecalcStyleDuration": 9.666094,
+                "ScriptDuration": 1.598458,
+                "TaskDuration": 31.763851,
+                "JSHeapUsedSize": 167822384
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.13920899999999992,
+                "LayoutDuration": 1.6663499999999996,
+                "RecalcStyleDuration": 2.1624049999999997,
+                "TaskDuration": 5.568532999999999,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 5,
+                "Nodes": 44840,
+                "JSHeapUsedSize": -14705780
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 792.109375,
+                  "y": 188.6875,
+                  "width": 75.1875,
+                  "height": 28,
+                  "top": 188.6875,
+                  "right": 867.296875,
+                  "bottom": 216.6875,
+                  "left": 792.109375
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 792.109375,
+                  "y": 199.6875,
+                  "width": 75.1875,
+                  "height": 28,
+                  "top": 199.6875,
+                  "right": 867.296875,
+                  "bottom": 227.6875,
+                  "left": 792.109375
+                },
+                "workspace": "mods",
+                "view": "gallery",
+                "density": "compact"
+              }
+            },
+            "galleryDensity": {
+              "wallMs": 3128.0568839999887,
+              "metricsBefore": {
+                "Nodes": 754353,
+                "LayoutCount": 17,
+                "RecalcStyleCount": 33,
+                "LayoutDuration": 8.196544,
+                "RecalcStyleDuration": 9.666094,
+                "ScriptDuration": 1.598458,
+                "TaskDuration": 31.985887,
+                "JSHeapUsedSize": 163557588
+              },
+              "metricsAfter": {
+                "Nodes": 754359,
+                "LayoutCount": 18,
+                "RecalcStyleCount": 38,
+                "LayoutDuration": 9.039393,
+                "RecalcStyleDuration": 10.210972,
+                "ScriptDuration": 1.740896,
+                "TaskDuration": 35.090554,
+                "JSHeapUsedSize": 170578168
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.14243800000000006,
+                "LayoutDuration": 0.8428490000000011,
+                "RecalcStyleDuration": 0.5448780000000006,
+                "TaskDuration": 3.1046669999999956,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 5,
+                "Nodes": 6,
+                "JSHeapUsedSize": 7020580
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 1033.296875,
+                  "y": 195.6875,
+                  "width": 83.75,
+                  "height": 36,
+                  "top": 195.6875,
+                  "right": 1117.046875,
+                  "bottom": 231.6875,
+                  "left": 1033.296875
+                },
+                "workspace": "mods",
+                "view": "gallery",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 1016.125,
+                  "y": 195.6875,
+                  "width": 100.921875,
+                  "height": 36,
+                  "top": 195.6875,
+                  "right": 1117.046875,
+                  "bottom": 231.6875,
+                  "left": 1016.125
+                },
+                "workspace": "mods",
+                "view": "gallery",
+                "density": "comfy"
+              }
+            },
+            "list": {
+              "wallMs": 5405.423992999999,
+              "metricsBefore": {
+                "Nodes": 754364,
+                "LayoutCount": 18,
+                "RecalcStyleCount": 38,
+                "LayoutDuration": 9.039393,
+                "RecalcStyleDuration": 10.210972,
+                "ScriptDuration": 1.740896,
+                "TaskDuration": 35.30613,
+                "JSHeapUsedSize": 172638376
+              },
+              "metricsAfter": {
+                "Nodes": 749786,
+                "LayoutCount": 19,
+                "RecalcStyleCount": 42,
+                "LayoutDuration": 10.379065,
+                "RecalcStyleDuration": 12.350193,
+                "ScriptDuration": 2.0495,
+                "TaskDuration": 40.709998,
+                "JSHeapUsedSize": 152831636
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.3086040000000001,
+                "LayoutDuration": 1.3396720000000002,
+                "RecalcStyleDuration": 2.139221000000001,
+                "TaskDuration": 5.403867999999996,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 4,
+                "Nodes": -4578,
+                "JSHeapUsedSize": -19806740
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 717.703125,
+                  "y": 199.6875,
+                  "width": 55.234375,
+                  "height": 28,
+                  "top": 199.6875,
+                  "right": 772.9375,
+                  "bottom": 227.6875,
+                  "left": 717.703125
+                },
+                "workspace": "mods",
+                "view": "gallery",
+                "density": "comfy"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 717.703125,
+                  "y": 188.6875,
+                  "width": 55.234375,
+                  "height": 28,
+                  "top": 188.6875,
+                  "right": 772.9375,
+                  "bottom": 216.6875,
+                  "left": 717.703125
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "comfy"
+              }
+            }
+          },
+          "navigationUpdatesMs": 1898.749457000008,
+          "navigationLibraryMs": 2936.2258779999875,
+          "densityMs": 1909.0023739999822,
+          "galleryMs": 5592.8421369999905,
+          "galleryDensityMs": 3128.0568839999887,
+          "listMs": 5405.423992999999
+        },
+        {
+          "renderMs": 5112.899999999994,
+          "rows": 11207,
+          "complete": true,
+          "allLaidOut": true,
+          "noContentVisibility": true,
+          "lastItemSearchMs": 638.4069659999909,
+          "survivingRowReusedDuringSearch": true,
+          "survivingRowReusedAfterRestore": true,
+          "nodes": {
+            "document": 348732,
+            "library": 212940,
+            "row": 18,
+            "previewImages": 0
+          },
+          "sortMs": 3503.936091000014,
+          "survivingRowReusedAfterSort": true,
+          "interactionDiagnostics": {
+            "navigationUpdates": {
+              "wallMs": 1804.5123219999937,
+              "metricsBefore": {
+                "Nodes": 735523,
+                "LayoutCount": 11,
+                "RecalcStyleCount": 12,
+                "LayoutDuration": 4.66081,
+                "RecalcStyleDuration": 4.860106,
+                "ScriptDuration": 1.221597,
+                "TaskDuration": 17.072559,
+                "JSHeapUsedSize": 159792676
+              },
+              "metricsAfter": {
+                "Nodes": 735537,
+                "LayoutCount": 13,
+                "RecalcStyleCount": 17,
+                "LayoutDuration": 5.125892,
+                "RecalcStyleDuration": 5.689248,
+                "ScriptDuration": 1.310376,
+                "TaskDuration": 18.882841,
+                "JSHeapUsedSize": 170046260
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.08877899999999994,
+                "LayoutDuration": 0.46508200000000066,
+                "RecalcStyleDuration": 0.829142,
+                "TaskDuration": 1.8102820000000008,
+                "LayoutCount": 2,
+                "RecalcStyleCount": 5,
+                "Nodes": 14,
+                "JSHeapUsedSize": 10253584
+              },
+              "geometryBefore": {
+                "scrollY": 0,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 10,
+                  "y": 126,
+                  "width": 47,
+                  "height": 44,
+                  "top": 126,
+                  "right": 57,
+                  "bottom": 170,
+                  "left": 10
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 10,
+                  "y": 126,
+                  "width": 47,
+                  "height": 44,
+                  "top": 126,
+                  "right": 57,
+                  "bottom": 170,
+                  "left": 10
+                },
+                "workspace": "updates",
+                "view": "list",
+                "density": "compact"
+              }
+            },
+            "navigationLibrary": {
+              "wallMs": 2951.5875449999953,
+              "metricsBefore": {
+                "Nodes": 694742,
+                "LayoutCount": 13,
+                "RecalcStyleCount": 17,
+                "LayoutDuration": 5.125892,
+                "RecalcStyleDuration": 5.689248,
+                "ScriptDuration": 1.310376,
+                "TaskDuration": 19.188878,
+                "JSHeapUsedSize": 157624220
+              },
+              "metricsAfter": {
+                "Nodes": 717161,
+                "LayoutCount": 14,
+                "RecalcStyleCount": 22,
+                "LayoutDuration": 5.984638,
+                "RecalcStyleDuration": 6.911299,
+                "ScriptDuration": 1.318744,
+                "TaskDuration": 22.145822,
+                "JSHeapUsedSize": 164657080
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.008367999999999931,
+                "LayoutDuration": 0.858746,
+                "RecalcStyleDuration": 1.2220509999999996,
+                "TaskDuration": 2.956944,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 5,
+                "Nodes": 22419,
+                "JSHeapUsedSize": 7032860
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 10,
+                  "y": 76,
+                  "width": 47,
+                  "height": 44,
+                  "top": 76,
+                  "right": 57,
+                  "bottom": 120,
+                  "left": 10
+                },
+                "workspace": "updates",
+                "view": "list",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 10,
+                  "y": 76,
+                  "width": 47,
+                  "height": 44,
+                  "top": 76,
+                  "right": 57,
+                  "bottom": 120,
+                  "left": 10
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "compact"
+              }
+            },
+            "density": {
+              "wallMs": 1986.865095999974,
+              "metricsBefore": {
+                "Nodes": 709457,
+                "LayoutCount": 14,
+                "RecalcStyleCount": 22,
+                "LayoutDuration": 5.984638,
+                "RecalcStyleDuration": 6.911299,
+                "ScriptDuration": 1.318744,
+                "TaskDuration": 22.471604,
+                "JSHeapUsedSize": 165819368
+              },
+              "metricsAfter": {
+                "Nodes": 709463,
+                "LayoutCount": 15,
+                "RecalcStyleCount": 26,
+                "LayoutDuration": 6.341887,
+                "RecalcStyleDuration": 7.293341,
+                "ScriptDuration": 1.394893,
+                "TaskDuration": 24.417924,
+                "JSHeapUsedSize": 172854488
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.07614900000000002,
+                "LayoutDuration": 0.3572489999999995,
+                "RecalcStyleDuration": 0.3820420000000002,
+                "TaskDuration": 1.94632,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 4,
+                "Nodes": 6,
+                "JSHeapUsedSize": 7035120
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 1033.296875,
+                  "y": 184.6875,
+                  "width": 83.75,
+                  "height": 36,
+                  "top": 184.6875,
+                  "right": 1117.046875,
+                  "bottom": 220.6875,
+                  "left": 1033.296875
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 1016.125,
+                  "y": 184.6875,
+                  "width": 100.921875,
+                  "height": 36,
+                  "top": 184.6875,
+                  "right": 1117.046875,
+                  "bottom": 220.6875,
+                  "left": 1016.125
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "comfy"
+              }
+            },
+            "gallery": {
+              "wallMs": 5375.2684549999685,
+              "metricsBefore": {
+                "Nodes": 709474,
+                "LayoutCount": 16,
+                "RecalcStyleCount": 28,
+                "LayoutDuration": 6.697759,
+                "RecalcStyleDuration": 7.705749,
+                "ScriptDuration": 1.532101,
+                "TaskDuration": 26.921969,
+                "JSHeapUsedSize": 182264512
+              },
+              "metricsAfter": {
+                "Nodes": 754314,
+                "LayoutCount": 17,
+                "RecalcStyleCount": 33,
+                "LayoutDuration": 8.288378,
+                "RecalcStyleDuration": 9.751293,
+                "ScriptDuration": 1.670632,
+                "TaskDuration": 32.276951,
+                "JSHeapUsedSize": 167834840
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.13853099999999996,
+                "LayoutDuration": 1.5906190000000002,
+                "RecalcStyleDuration": 2.0455440000000005,
+                "TaskDuration": 5.354981999999996,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 5,
+                "Nodes": 44840,
+                "JSHeapUsedSize": -14429672
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 792.109375,
+                  "y": 188.6875,
+                  "width": 75.1875,
+                  "height": 28,
+                  "top": 188.6875,
+                  "right": 867.296875,
+                  "bottom": 216.6875,
+                  "left": 792.109375
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 792.109375,
+                  "y": 199.6875,
+                  "width": 75.1875,
+                  "height": 28,
+                  "top": 199.6875,
+                  "right": 867.296875,
+                  "bottom": 227.6875,
+                  "left": 792.109375
+                },
+                "workspace": "mods",
+                "view": "gallery",
+                "density": "compact"
+              }
+            },
+            "galleryDensity": {
+              "wallMs": 3247.4170840000056,
+              "metricsBefore": {
+                "Nodes": 754314,
+                "LayoutCount": 17,
+                "RecalcStyleCount": 33,
+                "LayoutDuration": 8.288378,
+                "RecalcStyleDuration": 9.751293,
+                "ScriptDuration": 1.670632,
+                "TaskDuration": 32.513742,
+                "JSHeapUsedSize": 163256256
+              },
+              "metricsAfter": {
+                "Nodes": 754320,
+                "LayoutCount": 18,
+                "RecalcStyleCount": 38,
+                "LayoutDuration": 9.125394,
+                "RecalcStyleDuration": 10.334749,
+                "ScriptDuration": 1.846344,
+                "TaskDuration": 35.732158,
+                "JSHeapUsedSize": 170276720
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.1757120000000001,
+                "LayoutDuration": 0.8370160000000002,
+                "RecalcStyleDuration": 0.583456,
+                "TaskDuration": 3.2184159999999977,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 5,
+                "Nodes": 6,
+                "JSHeapUsedSize": 7020464
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 1033.296875,
+                  "y": 195.6875,
+                  "width": 83.75,
+                  "height": 36,
+                  "top": 195.6875,
+                  "right": 1117.046875,
+                  "bottom": 231.6875,
+                  "left": 1033.296875
+                },
+                "workspace": "mods",
+                "view": "gallery",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 1016.125,
+                  "y": 195.6875,
+                  "width": 100.921875,
+                  "height": 36,
+                  "top": 195.6875,
+                  "right": 1117.046875,
+                  "bottom": 231.6875,
+                  "left": 1016.125
+                },
+                "workspace": "mods",
+                "view": "gallery",
+                "density": "comfy"
+              }
+            },
+            "list": {
+              "wallMs": 5240.78210700003,
+              "metricsBefore": {
+                "Nodes": 754325,
+                "LayoutCount": 18,
+                "RecalcStyleCount": 38,
+                "LayoutDuration": 9.125394,
+                "RecalcStyleDuration": 10.334749,
+                "ScriptDuration": 1.846344,
+                "TaskDuration": 35.946686,
+                "JSHeapUsedSize": 172619524
+              },
+              "metricsAfter": {
+                "Nodes": 749747,
+                "LayoutCount": 19,
+                "RecalcStyleCount": 42,
+                "LayoutDuration": 10.461697,
+                "RecalcStyleDuration": 12.491223,
+                "ScriptDuration": 2.089235,
+                "TaskDuration": 41.179317,
+                "JSHeapUsedSize": 152836844
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.24289099999999997,
+                "LayoutDuration": 1.3363029999999991,
+                "RecalcStyleDuration": 2.1564739999999993,
+                "TaskDuration": 5.232630999999998,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 4,
+                "Nodes": -4578,
+                "JSHeapUsedSize": -19782680
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 717.703125,
+                  "y": 199.6875,
+                  "width": 55.234375,
+                  "height": 28,
+                  "top": 199.6875,
+                  "right": 772.9375,
+                  "bottom": 227.6875,
+                  "left": 717.703125
+                },
+                "workspace": "mods",
+                "view": "gallery",
+                "density": "comfy"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 717.703125,
+                  "y": 188.6875,
+                  "width": 55.234375,
+                  "height": 28,
+                  "top": 188.6875,
+                  "right": 772.9375,
+                  "bottom": 216.6875,
+                  "left": 717.703125
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "comfy"
+              }
+            }
+          },
+          "navigationUpdatesMs": 1804.5123219999937,
+          "navigationLibraryMs": 2951.5875449999953,
+          "densityMs": 1986.865095999974,
+          "galleryMs": 5375.2684549999685,
+          "galleryDensityMs": 3247.4170840000056,
+          "listMs": 5240.78210700003
+        },
+        {
+          "renderMs": 5010.5,
+          "rows": 11207,
+          "complete": true,
+          "allLaidOut": true,
+          "noContentVisibility": true,
+          "lastItemSearchMs": 615.8177299999466,
+          "survivingRowReusedDuringSearch": true,
+          "survivingRowReusedAfterRestore": true,
+          "nodes": {
+            "document": 348732,
+            "library": 212940,
+            "row": 18,
+            "previewImages": 0
+          },
+          "sortMs": 3796.280743000011,
+          "survivingRowReusedAfterSort": true,
+          "interactionDiagnostics": {
+            "navigationUpdates": {
+              "wallMs": 1797.2990729999765,
+              "metricsBefore": {
+                "Nodes": 732040,
+                "LayoutCount": 11,
+                "RecalcStyleCount": 12,
+                "LayoutDuration": 4.657004,
+                "RecalcStyleDuration": 4.970355,
+                "ScriptDuration": 1.295843,
+                "TaskDuration": 17.5612,
+                "JSHeapUsedSize": 159798860
+              },
+              "metricsAfter": {
+                "Nodes": 732054,
+                "LayoutCount": 13,
+                "RecalcStyleCount": 17,
+                "LayoutDuration": 5.10391,
+                "RecalcStyleDuration": 5.788608,
+                "ScriptDuration": 1.365534,
+                "TaskDuration": 19.364119,
+                "JSHeapUsedSize": 170052668
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.06969099999999995,
+                "LayoutDuration": 0.44690600000000025,
+                "RecalcStyleDuration": 0.8182530000000003,
+                "TaskDuration": 1.8029189999999993,
+                "LayoutCount": 2,
+                "RecalcStyleCount": 5,
+                "Nodes": 14,
+                "JSHeapUsedSize": 10253808
+              },
+              "geometryBefore": {
+                "scrollY": 0,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 10,
+                  "y": 126,
+                  "width": 47,
+                  "height": 44,
+                  "top": 126,
+                  "right": 57,
+                  "bottom": 170,
+                  "left": 10
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 10,
+                  "y": 126,
+                  "width": 47,
+                  "height": 44,
+                  "top": 126,
+                  "right": 57,
+                  "bottom": 170,
+                  "left": 10
+                },
+                "workspace": "updates",
+                "view": "list",
+                "density": "compact"
+              }
+            },
+            "navigationLibrary": {
+              "wallMs": 2984.7268569999983,
+              "metricsBefore": {
+                "Nodes": 695893,
+                "LayoutCount": 13,
+                "RecalcStyleCount": 17,
+                "LayoutDuration": 5.10391,
+                "RecalcStyleDuration": 5.788608,
+                "ScriptDuration": 1.365534,
+                "TaskDuration": 19.692087,
+                "JSHeapUsedSize": 157630568
+              },
+              "metricsAfter": {
+                "Nodes": 718312,
+                "LayoutCount": 14,
+                "RecalcStyleCount": 22,
+                "LayoutDuration": 5.964354,
+                "RecalcStyleDuration": 7.002539,
+                "ScriptDuration": 1.374759,
+                "TaskDuration": 22.68213,
+                "JSHeapUsedSize": 164663456
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.009225000000000039,
+                "LayoutDuration": 0.8604440000000002,
+                "RecalcStyleDuration": 1.2139309999999996,
+                "TaskDuration": 2.990043,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 5,
+                "Nodes": 22419,
+                "JSHeapUsedSize": 7032888
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 10,
+                  "y": 76,
+                  "width": 47,
+                  "height": 44,
+                  "top": 76,
+                  "right": 57,
+                  "bottom": 120,
+                  "left": 10
+                },
+                "workspace": "updates",
+                "view": "list",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 10,
+                  "y": 76,
+                  "width": 47,
+                  "height": 44,
+                  "top": 76,
+                  "right": 57,
+                  "bottom": 120,
+                  "left": 10
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "compact"
+              }
+            },
+            "density": {
+              "wallMs": 2168.9408419999836,
+              "metricsBefore": {
+                "Nodes": 709497,
+                "LayoutCount": 14,
+                "RecalcStyleCount": 22,
+                "LayoutDuration": 5.964354,
+                "RecalcStyleDuration": 7.002539,
+                "ScriptDuration": 1.374759,
+                "TaskDuration": 23.046305,
+                "JSHeapUsedSize": 165825544
+              },
+              "metricsAfter": {
+                "Nodes": 709503,
+                "LayoutCount": 15,
+                "RecalcStyleCount": 26,
+                "LayoutDuration": 6.323029,
+                "RecalcStyleDuration": 7.395065,
+                "ScriptDuration": 1.511971,
+                "TaskDuration": 25.196694,
+                "JSHeapUsedSize": 172860664
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.1372119999999999,
+                "LayoutDuration": 0.35867499999999986,
+                "RecalcStyleDuration": 0.39252600000000015,
+                "TaskDuration": 2.1503890000000006,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 4,
+                "Nodes": 6,
+                "JSHeapUsedSize": 7035120
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 1033.296875,
+                  "y": 184.6875,
+                  "width": 83.75,
+                  "height": 36,
+                  "top": 184.6875,
+                  "right": 1117.046875,
+                  "bottom": 220.6875,
+                  "left": 1033.296875
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 1016.125,
+                  "y": 184.6875,
+                  "width": 100.921875,
+                  "height": 36,
+                  "top": 184.6875,
+                  "right": 1117.046875,
+                  "bottom": 220.6875,
+                  "left": 1016.125
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "comfy"
+              }
+            },
+            "gallery": {
+              "wallMs": 5451.721727000006,
+              "metricsBefore": {
+                "Nodes": 709514,
+                "LayoutCount": 16,
+                "RecalcStyleCount": 28,
+                "LayoutDuration": 6.681361,
+                "RecalcStyleDuration": 7.81804,
+                "ScriptDuration": 1.665945,
+                "TaskDuration": 27.718555,
+                "JSHeapUsedSize": 182270752
+              },
+              "metricsAfter": {
+                "Nodes": 754354,
+                "LayoutCount": 17,
+                "RecalcStyleCount": 33,
+                "LayoutDuration": 8.265361,
+                "RecalcStyleDuration": 9.760365,
+                "ScriptDuration": 1.851183,
+                "TaskDuration": 33.151921,
+                "JSHeapUsedSize": 167839124
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.185238,
+                "LayoutDuration": 1.5840000000000005,
+                "RecalcStyleDuration": 1.9423250000000003,
+                "TaskDuration": 5.433366000000003,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 5,
+                "Nodes": 44840,
+                "JSHeapUsedSize": -14431628
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 792.109375,
+                  "y": 188.6875,
+                  "width": 75.1875,
+                  "height": 28,
+                  "top": 188.6875,
+                  "right": 867.296875,
+                  "bottom": 216.6875,
+                  "left": 792.109375
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 792.109375,
+                  "y": 199.6875,
+                  "width": 75.1875,
+                  "height": 28,
+                  "top": 199.6875,
+                  "right": 867.296875,
+                  "bottom": 227.6875,
+                  "left": 792.109375
+                },
+                "workspace": "mods",
+                "view": "gallery",
+                "density": "compact"
+              }
+            },
+            "galleryDensity": {
+              "wallMs": 3390.5265330000134,
+              "metricsBefore": {
+                "Nodes": 754354,
+                "LayoutCount": 17,
+                "RecalcStyleCount": 33,
+                "LayoutDuration": 8.265361,
+                "RecalcStyleDuration": 9.760365,
+                "ScriptDuration": 1.851183,
+                "TaskDuration": 33.378764,
+                "JSHeapUsedSize": 163294408
+              },
+              "metricsAfter": {
+                "Nodes": 754360,
+                "LayoutCount": 18,
+                "RecalcStyleCount": 38,
+                "LayoutDuration": 9.1184,
+                "RecalcStyleDuration": 10.314558,
+                "ScriptDuration": 2.086845,
+                "TaskDuration": 36.751406,
+                "JSHeapUsedSize": 170314888
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.23566199999999982,
+                "LayoutDuration": 0.853038999999999,
+                "RecalcStyleDuration": 0.5541929999999997,
+                "TaskDuration": 3.372642000000006,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 5,
+                "Nodes": 6,
+                "JSHeapUsedSize": 7020480
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 1033.296875,
+                  "y": 195.6875,
+                  "width": 83.75,
+                  "height": 36,
+                  "top": 195.6875,
+                  "right": 1117.046875,
+                  "bottom": 231.6875,
+                  "left": 1033.296875
+                },
+                "workspace": "mods",
+                "view": "gallery",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 1016.125,
+                  "y": 195.6875,
+                  "width": 100.921875,
+                  "height": 36,
+                  "top": 195.6875,
+                  "right": 1117.046875,
+                  "bottom": 231.6875,
+                  "left": 1016.125
+                },
+                "workspace": "mods",
+                "view": "gallery",
+                "density": "comfy"
+              }
+            },
+            "list": {
+              "wallMs": 4884.896964000007,
+              "metricsBefore": {
+                "Nodes": 754365,
+                "LayoutCount": 18,
+                "RecalcStyleCount": 38,
+                "LayoutDuration": 9.1184,
+                "RecalcStyleDuration": 10.314558,
+                "ScriptDuration": 2.086845,
+                "TaskDuration": 36.970011,
+                "JSHeapUsedSize": 172632832
+              },
+              "metricsAfter": {
+                "Nodes": 754391,
+                "LayoutCount": 19,
+                "RecalcStyleCount": 42,
+                "LayoutDuration": 10.047624,
+                "RecalcStyleDuration": 12.219976,
+                "ScriptDuration": 2.444383,
+                "TaskDuration": 41.858777,
+                "JSHeapUsedSize": 161030168
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.35753800000000036,
+                "LayoutDuration": 0.9292240000000014,
+                "RecalcStyleDuration": 1.905418000000001,
+                "TaskDuration": 4.888766000000004,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 4,
+                "Nodes": 26,
+                "JSHeapUsedSize": -11602664
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 717.703125,
+                  "y": 199.6875,
+                  "width": 55.234375,
+                  "height": 28,
+                  "top": 199.6875,
+                  "right": 772.9375,
+                  "bottom": 227.6875,
+                  "left": 717.703125
+                },
+                "workspace": "mods",
+                "view": "gallery",
+                "density": "comfy"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 717.703125,
+                  "y": 188.6875,
+                  "width": 55.234375,
+                  "height": 28,
+                  "top": 188.6875,
+                  "right": 772.9375,
+                  "bottom": 216.6875,
+                  "left": 717.703125
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "comfy"
+              }
+            }
+          },
+          "navigationUpdatesMs": 1797.2990729999765,
+          "navigationLibraryMs": 2984.7268569999983,
+          "densityMs": 2168.9408419999836,
+          "galleryMs": 5451.721727000006,
+          "galleryDensityMs": 3390.5265330000134,
+          "listMs": 4884.896964000007
+        }
+      ],
+      "after": [
+        {
+          "renderMs": 4606.6999999999825,
+          "rows": 11207,
+          "complete": true,
+          "allLaidOut": true,
+          "noContentVisibility": true,
+          "lastItemSearchMs": 596.1620200000084,
+          "survivingRowReusedDuringSearch": true,
+          "survivingRowReusedAfterRestore": true,
+          "nodes": {
+            "document": 348732,
+            "library": 212940,
+            "row": 18,
+            "previewImages": 0
+          },
+          "sortMs": 3425.8037900000036,
+          "survivingRowReusedAfterSort": true,
+          "interactionDiagnostics": {
+            "navigationUpdates": {
+              "wallMs": 1785.7539889999998,
+              "metricsBefore": {
+                "Nodes": 640568,
+                "LayoutCount": 11,
+                "RecalcStyleCount": 12,
+                "LayoutDuration": 4.422195,
+                "RecalcStyleDuration": 4.537119,
+                "ScriptDuration": 1.199386,
+                "TaskDuration": 16.327891,
+                "JSHeapUsedSize": 160719608
+              },
+              "metricsAfter": {
+                "Nodes": 640582,
+                "LayoutCount": 13,
+                "RecalcStyleCount": 17,
+                "LayoutDuration": 4.869876,
+                "RecalcStyleDuration": 5.363867,
+                "ScriptDuration": 1.276566,
+                "TaskDuration": 18.119045,
+                "JSHeapUsedSize": 170973128
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.07718000000000003,
+                "LayoutDuration": 0.44768099999999933,
+                "RecalcStyleDuration": 0.8267480000000003,
+                "TaskDuration": 1.7911539999999988,
+                "LayoutCount": 2,
+                "RecalcStyleCount": 5,
+                "Nodes": 14,
+                "JSHeapUsedSize": 10253520
+              },
+              "geometryBefore": {
+                "scrollY": 0,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 10,
+                  "y": 126,
+                  "width": 47,
+                  "height": 44,
+                  "top": 126,
+                  "right": 57,
+                  "bottom": 170,
+                  "left": 10
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 10,
+                  "y": 126,
+                  "width": 47,
+                  "height": 44,
+                  "top": 126,
+                  "right": 57,
+                  "bottom": 170,
+                  "left": 10
+                },
+                "workspace": "updates",
+                "view": "list",
+                "density": "compact"
+              }
+            },
+            "navigationLibrary": {
+              "wallMs": 2915.252582999983,
+              "metricsBefore": {
+                "Nodes": 604881,
+                "LayoutCount": 13,
+                "RecalcStyleCount": 17,
+                "LayoutDuration": 4.869876,
+                "RecalcStyleDuration": 5.363867,
+                "ScriptDuration": 1.276566,
+                "TaskDuration": 18.415262,
+                "JSHeapUsedSize": 158540208
+              },
+              "metricsAfter": {
+                "Nodes": 627300,
+                "LayoutCount": 14,
+                "RecalcStyleCount": 22,
+                "LayoutDuration": 5.728705,
+                "RecalcStyleDuration": 6.557977,
+                "ScriptDuration": 1.283035,
+                "TaskDuration": 21.336027,
+                "JSHeapUsedSize": 165573088
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.006468999999999836,
+                "LayoutDuration": 0.8588290000000001,
+                "RecalcStyleDuration": 1.1941100000000002,
+                "TaskDuration": 2.920765000000003,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 5,
+                "Nodes": 22419,
+                "JSHeapUsedSize": 7032880
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 10,
+                  "y": 76,
+                  "width": 47,
+                  "height": 44,
+                  "top": 76,
+                  "right": 57,
+                  "bottom": 120,
+                  "left": 10
+                },
+                "workspace": "updates",
+                "view": "list",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 10,
+                  "y": 76,
+                  "width": 47,
+                  "height": 44,
+                  "top": 76,
+                  "right": 57,
+                  "bottom": 120,
+                  "left": 10
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "compact"
+              }
+            },
+            "density": {
+              "wallMs": 1944.586944000008,
+              "metricsBefore": {
+                "Nodes": 619289,
+                "LayoutCount": 14,
+                "RecalcStyleCount": 22,
+                "LayoutDuration": 5.728705,
+                "RecalcStyleDuration": 6.557977,
+                "ScriptDuration": 1.283035,
+                "TaskDuration": 21.637012,
+                "JSHeapUsedSize": 166746052
+              },
+              "metricsAfter": {
+                "Nodes": 619295,
+                "LayoutCount": 15,
+                "RecalcStyleCount": 26,
+                "LayoutDuration": 6.069368,
+                "RecalcStyleDuration": 6.940793,
+                "ScriptDuration": 1.352275,
+                "TaskDuration": 23.552404,
+                "JSHeapUsedSize": 173781160
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.06923999999999997,
+                "LayoutDuration": 0.34066300000000016,
+                "RecalcStyleDuration": 0.38281600000000005,
+                "TaskDuration": 1.9153920000000006,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 4,
+                "Nodes": 6,
+                "JSHeapUsedSize": 7035108
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 1033.296875,
+                  "y": 184.6875,
+                  "width": 83.75,
+                  "height": 36,
+                  "top": 184.6875,
+                  "right": 1117.046875,
+                  "bottom": 220.6875,
+                  "left": 1033.296875
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 1016.125,
+                  "y": 184.6875,
+                  "width": 100.921875,
+                  "height": 36,
+                  "top": 184.6875,
+                  "right": 1117.046875,
+                  "bottom": 220.6875,
+                  "left": 1016.125
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "comfy"
+              }
+            },
+            "gallery": {
+              "wallMs": 5450.840325000001,
+              "metricsBefore": {
+                "Nodes": 619306,
+                "LayoutCount": 16,
+                "RecalcStyleCount": 28,
+                "LayoutDuration": 6.419882,
+                "RecalcStyleDuration": 7.352926,
+                "ScriptDuration": 1.463889,
+                "TaskDuration": 25.853969,
+                "JSHeapUsedSize": 183196172
+              },
+              "metricsAfter": {
+                "Nodes": 664146,
+                "LayoutCount": 17,
+                "RecalcStyleCount": 33,
+                "LayoutDuration": 8.122417,
+                "RecalcStyleDuration": 9.450784,
+                "ScriptDuration": 1.567092,
+                "TaskDuration": 31.287964,
+                "JSHeapUsedSize": 168772120
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.10320299999999993,
+                "LayoutDuration": 1.7025350000000001,
+                "RecalcStyleDuration": 2.0978580000000004,
+                "TaskDuration": 5.4339949999999995,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 5,
+                "Nodes": 44840,
+                "JSHeapUsedSize": -14424052
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 792.109375,
+                  "y": 188.6875,
+                  "width": 75.1875,
+                  "height": 28,
+                  "top": 188.6875,
+                  "right": 867.296875,
+                  "bottom": 216.6875,
+                  "left": 792.109375
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 792.109375,
+                  "y": 199.6875,
+                  "width": 75.1875,
+                  "height": 28,
+                  "top": 199.6875,
+                  "right": 867.296875,
+                  "bottom": 227.6875,
+                  "left": 792.109375
+                },
+                "workspace": "mods",
+                "view": "gallery",
+                "density": "compact"
+              }
+            },
+            "galleryDensity": {
+              "wallMs": 3175.9966529999983,
+              "metricsBefore": {
+                "Nodes": 664146,
+                "LayoutCount": 17,
+                "RecalcStyleCount": 33,
+                "LayoutDuration": 8.122417,
+                "RecalcStyleDuration": 9.450784,
+                "ScriptDuration": 1.567092,
+                "TaskDuration": 31.500368,
+                "JSHeapUsedSize": 164245068
+              },
+              "metricsAfter": {
+                "Nodes": 664152,
+                "LayoutCount": 18,
+                "RecalcStyleCount": 38,
+                "LayoutDuration": 8.949029,
+                "RecalcStyleDuration": 10.00567,
+                "ScriptDuration": 1.729843,
+                "TaskDuration": 34.663891,
+                "JSHeapUsedSize": 171265532
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.1627510000000001,
+                "LayoutDuration": 0.826611999999999,
+                "RecalcStyleDuration": 0.5548859999999998,
+                "TaskDuration": 3.163522999999998,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 5,
+                "Nodes": 6,
+                "JSHeapUsedSize": 7020464
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 1033.296875,
+                  "y": 195.6875,
+                  "width": 83.75,
+                  "height": 36,
+                  "top": 195.6875,
+                  "right": 1117.046875,
+                  "bottom": 231.6875,
+                  "left": 1033.296875
+                },
+                "workspace": "mods",
+                "view": "gallery",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 1016.125,
+                  "y": 195.6875,
+                  "width": 100.921875,
+                  "height": 36,
+                  "top": 195.6875,
+                  "right": 1117.046875,
+                  "bottom": 231.6875,
+                  "left": 1016.125
+                },
+                "workspace": "mods",
+                "view": "gallery",
+                "density": "comfy"
+              }
+            },
+            "list": {
+              "wallMs": 4344.486380999996,
+              "metricsBefore": {
+                "Nodes": 663475,
+                "LayoutCount": 18,
+                "RecalcStyleCount": 38,
+                "LayoutDuration": 8.949029,
+                "RecalcStyleDuration": 10.00567,
+                "ScriptDuration": 1.729843,
+                "TaskDuration": 35.200668,
+                "JSHeapUsedSize": 179284192
+              },
+              "metricsAfter": {
+                "Nodes": 663501,
+                "LayoutCount": 19,
+                "RecalcStyleCount": 42,
+                "LayoutDuration": 9.893271,
+                "RecalcStyleDuration": 11.745987,
+                "ScriptDuration": 1.90143,
+                "TaskDuration": 39.55068,
+                "JSHeapUsedSize": 164832508
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.17158699999999993,
+                "LayoutDuration": 0.9442420000000009,
+                "RecalcStyleDuration": 1.7403169999999992,
+                "TaskDuration": 4.3500119999999995,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 4,
+                "Nodes": 26,
+                "JSHeapUsedSize": -14451684
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 717.703125,
+                  "y": 199.6875,
+                  "width": 55.234375,
+                  "height": 28,
+                  "top": 199.6875,
+                  "right": 772.9375,
+                  "bottom": 227.6875,
+                  "left": 717.703125
+                },
+                "workspace": "mods",
+                "view": "gallery",
+                "density": "comfy"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 717.703125,
+                  "y": 188.6875,
+                  "width": 55.234375,
+                  "height": 28,
+                  "top": 188.6875,
+                  "right": 772.9375,
+                  "bottom": 216.6875,
+                  "left": 717.703125
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "comfy"
+              }
+            }
+          },
+          "navigationUpdatesMs": 1785.7539889999998,
+          "navigationLibraryMs": 2915.252582999983,
+          "densityMs": 1944.586944000008,
+          "galleryMs": 5450.840325000001,
+          "galleryDensityMs": 3175.9966529999983,
+          "listMs": 4344.486380999996
+        },
+        {
+          "renderMs": 4903.799999999988,
+          "rows": 11207,
+          "complete": true,
+          "allLaidOut": true,
+          "noContentVisibility": true,
+          "lastItemSearchMs": 606.856533000041,
+          "survivingRowReusedDuringSearch": true,
+          "survivingRowReusedAfterRestore": true,
+          "nodes": {
+            "document": 348732,
+            "library": 212940,
+            "row": 18,
+            "previewImages": 0
+          },
+          "sortMs": 3473.4091159999707,
+          "survivingRowReusedAfterSort": true,
+          "interactionDiagnostics": {
+            "navigationUpdates": {
+              "wallMs": 1775.6555899999853,
+              "metricsBefore": {
+                "Nodes": 604851,
+                "LayoutCount": 11,
+                "RecalcStyleCount": 12,
+                "LayoutDuration": 4.51726,
+                "RecalcStyleDuration": 4.601464,
+                "ScriptDuration": 1.196766,
+                "TaskDuration": 16.792781,
+                "JSHeapUsedSize": 160716848
+              },
+              "metricsAfter": {
+                "Nodes": 604865,
+                "LayoutCount": 13,
+                "RecalcStyleCount": 17,
+                "LayoutDuration": 4.962078,
+                "RecalcStyleDuration": 5.446354,
+                "ScriptDuration": 1.258856,
+                "TaskDuration": 18.57417,
+                "JSHeapUsedSize": 170970536
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.06208999999999998,
+                "LayoutDuration": 0.4448179999999997,
+                "RecalcStyleDuration": 0.8448900000000004,
+                "TaskDuration": 1.7813889999999972,
+                "LayoutCount": 2,
+                "RecalcStyleCount": 5,
+                "Nodes": 14,
+                "JSHeapUsedSize": 10253688
+              },
+              "geometryBefore": {
+                "scrollY": 0,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 10,
+                  "y": 126,
+                  "width": 47,
+                  "height": 44,
+                  "top": 126,
+                  "right": 57,
+                  "bottom": 170,
+                  "left": 10
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 10,
+                  "y": 126,
+                  "width": 47,
+                  "height": 44,
+                  "top": 126,
+                  "right": 57,
+                  "bottom": 170,
+                  "left": 10
+                },
+                "workspace": "updates",
+                "view": "list",
+                "density": "compact"
+              }
+            },
+            "navigationLibrary": {
+              "wallMs": 2948.7464749999504,
+              "metricsBefore": {
+                "Nodes": 604881,
+                "LayoutCount": 13,
+                "RecalcStyleCount": 17,
+                "LayoutDuration": 4.962078,
+                "RecalcStyleDuration": 5.446354,
+                "ScriptDuration": 1.258856,
+                "TaskDuration": 18.887947,
+                "JSHeapUsedSize": 158548136
+              },
+              "metricsAfter": {
+                "Nodes": 627300,
+                "LayoutCount": 14,
+                "RecalcStyleCount": 22,
+                "LayoutDuration": 5.844967,
+                "RecalcStyleDuration": 6.637387,
+                "ScriptDuration": 1.265451,
+                "TaskDuration": 21.842053,
+                "JSHeapUsedSize": 165580984
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.0065950000000001285,
+                "LayoutDuration": 0.8828889999999996,
+                "RecalcStyleDuration": 1.191033,
+                "TaskDuration": 2.9541059999999995,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 5,
+                "Nodes": 22419,
+                "JSHeapUsedSize": 7032848
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 10,
+                  "y": 76,
+                  "width": 47,
+                  "height": 44,
+                  "top": 76,
+                  "right": 57,
+                  "bottom": 120,
+                  "left": 10
+                },
+                "workspace": "updates",
+                "view": "list",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 10,
+                  "y": 76,
+                  "width": 47,
+                  "height": 44,
+                  "top": 76,
+                  "right": 57,
+                  "bottom": 120,
+                  "left": 10
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "compact"
+              }
+            },
+            "density": {
+              "wallMs": 2040.276781999978,
+              "metricsBefore": {
+                "Nodes": 619289,
+                "LayoutCount": 14,
+                "RecalcStyleCount": 22,
+                "LayoutDuration": 5.844967,
+                "RecalcStyleDuration": 6.637387,
+                "ScriptDuration": 1.265451,
+                "TaskDuration": 22.192728,
+                "JSHeapUsedSize": 166743188
+              },
+              "metricsAfter": {
+                "Nodes": 619295,
+                "LayoutCount": 15,
+                "RecalcStyleCount": 26,
+                "LayoutDuration": 6.216075,
+                "RecalcStyleDuration": 7.066535,
+                "ScriptDuration": 1.330051,
+                "TaskDuration": 24.196882,
+                "JSHeapUsedSize": 173778308
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.06459999999999999,
+                "LayoutDuration": 0.37110800000000044,
+                "RecalcStyleDuration": 0.42914799999999964,
+                "TaskDuration": 2.0041539999999998,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 4,
+                "Nodes": 6,
+                "JSHeapUsedSize": 7035120
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 1033.296875,
+                  "y": 184.6875,
+                  "width": 83.75,
+                  "height": 36,
+                  "top": 184.6875,
+                  "right": 1117.046875,
+                  "bottom": 220.6875,
+                  "left": 1033.296875
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 1016.125,
+                  "y": 184.6875,
+                  "width": 100.921875,
+                  "height": 36,
+                  "top": 184.6875,
+                  "right": 1117.046875,
+                  "bottom": 220.6875,
+                  "left": 1016.125
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "comfy"
+              }
+            },
+            "gallery": {
+              "wallMs": 5274.827437999988,
+              "metricsBefore": {
+                "Nodes": 619306,
+                "LayoutCount": 16,
+                "RecalcStyleCount": 28,
+                "LayoutDuration": 6.571972,
+                "RecalcStyleDuration": 7.501794,
+                "ScriptDuration": 1.420091,
+                "TaskDuration": 26.605541,
+                "JSHeapUsedSize": 183232708
+              },
+              "metricsAfter": {
+                "Nodes": 664146,
+                "LayoutCount": 17,
+                "RecalcStyleCount": 33,
+                "LayoutDuration": 8.129793,
+                "RecalcStyleDuration": 9.386698,
+                "ScriptDuration": 1.557334,
+                "TaskDuration": 31.856855,
+                "JSHeapUsedSize": 168753444
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.137243,
+                "LayoutDuration": 1.5578209999999997,
+                "RecalcStyleDuration": 1.8849040000000006,
+                "TaskDuration": 5.251314000000001,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 5,
+                "Nodes": 44840,
+                "JSHeapUsedSize": -14479264
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 792.109375,
+                  "y": 188.6875,
+                  "width": 75.1875,
+                  "height": 28,
+                  "top": 188.6875,
+                  "right": 867.296875,
+                  "bottom": 216.6875,
+                  "left": 792.109375
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 792.109375,
+                  "y": 199.6875,
+                  "width": 75.1875,
+                  "height": 28,
+                  "top": 199.6875,
+                  "right": 867.296875,
+                  "bottom": 227.6875,
+                  "left": 792.109375
+                },
+                "workspace": "mods",
+                "view": "gallery",
+                "density": "compact"
+              }
+            },
+            "galleryDensity": {
+              "wallMs": 3289.173457000004,
+              "metricsBefore": {
+                "Nodes": 664146,
+                "LayoutCount": 17,
+                "RecalcStyleCount": 33,
+                "LayoutDuration": 8.129793,
+                "RecalcStyleDuration": 9.386698,
+                "ScriptDuration": 1.557334,
+                "TaskDuration": 32.086508,
+                "JSHeapUsedSize": 164276284
+              },
+              "metricsAfter": {
+                "Nodes": 664152,
+                "LayoutCount": 18,
+                "RecalcStyleCount": 38,
+                "LayoutDuration": 8.976876,
+                "RecalcStyleDuration": 10.010646,
+                "ScriptDuration": 1.715346,
+                "TaskDuration": 35.35603,
+                "JSHeapUsedSize": 171296772
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.15801200000000004,
+                "LayoutDuration": 0.8470830000000014,
+                "RecalcStyleDuration": 0.6239479999999986,
+                "TaskDuration": 3.269521999999995,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 5,
+                "Nodes": 6,
+                "JSHeapUsedSize": 7020488
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 1033.296875,
+                  "y": 195.6875,
+                  "width": 83.75,
+                  "height": 36,
+                  "top": 195.6875,
+                  "right": 1117.046875,
+                  "bottom": 231.6875,
+                  "left": 1033.296875
+                },
+                "workspace": "mods",
+                "view": "gallery",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 1016.125,
+                  "y": 195.6875,
+                  "width": 100.921875,
+                  "height": 36,
+                  "top": 195.6875,
+                  "right": 1117.046875,
+                  "bottom": 231.6875,
+                  "left": 1016.125
+                },
+                "workspace": "mods",
+                "view": "gallery",
+                "density": "comfy"
+              }
+            },
+            "list": {
+              "wallMs": 4385.118487,
+              "metricsBefore": {
+                "Nodes": 663475,
+                "LayoutCount": 18,
+                "RecalcStyleCount": 38,
+                "LayoutDuration": 8.976876,
+                "RecalcStyleDuration": 10.010646,
+                "ScriptDuration": 1.715346,
+                "TaskDuration": 35.936241,
+                "JSHeapUsedSize": 179019400
+              },
+              "metricsAfter": {
+                "Nodes": 663501,
+                "LayoutCount": 19,
+                "RecalcStyleCount": 42,
+                "LayoutDuration": 9.945358,
+                "RecalcStyleDuration": 11.763309,
+                "ScriptDuration": 1.88165,
+                "TaskDuration": 40.327311,
+                "JSHeapUsedSize": 164829844
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.166304,
+                "LayoutDuration": 0.9684819999999998,
+                "RecalcStyleDuration": 1.752663,
+                "TaskDuration": 4.391069999999999,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 4,
+                "Nodes": 26,
+                "JSHeapUsedSize": -14189556
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 717.703125,
+                  "y": 199.6875,
+                  "width": 55.234375,
+                  "height": 28,
+                  "top": 199.6875,
+                  "right": 772.9375,
+                  "bottom": 227.6875,
+                  "left": 717.703125
+                },
+                "workspace": "mods",
+                "view": "gallery",
+                "density": "comfy"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 717.703125,
+                  "y": 188.6875,
+                  "width": 55.234375,
+                  "height": 28,
+                  "top": 188.6875,
+                  "right": 772.9375,
+                  "bottom": 216.6875,
+                  "left": 717.703125
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "comfy"
+              }
+            }
+          },
+          "navigationUpdatesMs": 1775.6555899999853,
+          "navigationLibraryMs": 2948.7464749999504,
+          "densityMs": 2040.276781999978,
+          "galleryMs": 5274.827437999988,
+          "galleryDensityMs": 3289.173457000004,
+          "listMs": 4385.118487
+        },
+        {
+          "renderMs": 4654.900000000023,
+          "rows": 11207,
+          "complete": true,
+          "allLaidOut": true,
+          "noContentVisibility": true,
+          "lastItemSearchMs": 600.3799209999556,
+          "survivingRowReusedDuringSearch": true,
+          "survivingRowReusedAfterRestore": true,
+          "nodes": {
+            "document": 348732,
+            "library": 212940,
+            "row": 18,
+            "previewImages": 0
+          },
+          "sortMs": 3660.815241000023,
+          "survivingRowReusedAfterSort": true,
+          "interactionDiagnostics": {
+            "navigationUpdates": {
+              "wallMs": 1799.2183000000068,
+              "metricsBefore": {
+                "Nodes": 642900,
+                "LayoutCount": 11,
+                "RecalcStyleCount": 12,
+                "LayoutDuration": 4.639372,
+                "RecalcStyleDuration": 4.590579,
+                "ScriptDuration": 1.215779,
+                "TaskDuration": 16.664816,
+                "JSHeapUsedSize": 160713812
+              },
+              "metricsAfter": {
+                "Nodes": 642914,
+                "LayoutCount": 13,
+                "RecalcStyleCount": 17,
+                "LayoutDuration": 5.114947,
+                "RecalcStyleDuration": 5.416757,
+                "ScriptDuration": 1.287453,
+                "TaskDuration": 18.469514,
+                "JSHeapUsedSize": 170967336
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.07167400000000002,
+                "LayoutDuration": 0.4755750000000001,
+                "RecalcStyleDuration": 0.8261779999999996,
+                "TaskDuration": 1.804698000000002,
+                "LayoutCount": 2,
+                "RecalcStyleCount": 5,
+                "Nodes": 14,
+                "JSHeapUsedSize": 10253524
+              },
+              "geometryBefore": {
+                "scrollY": 0,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 10,
+                  "y": 126,
+                  "width": 47,
+                  "height": 44,
+                  "top": 126,
+                  "right": 57,
+                  "bottom": 170,
+                  "left": 10
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 10,
+                  "y": 126,
+                  "width": 47,
+                  "height": 44,
+                  "top": 126,
+                  "right": 57,
+                  "bottom": 170,
+                  "left": 10
+                },
+                "workspace": "updates",
+                "view": "list",
+                "density": "compact"
+              }
+            },
+            "navigationLibrary": {
+              "wallMs": 2927.231684999981,
+              "metricsBefore": {
+                "Nodes": 604881,
+                "LayoutCount": 13,
+                "RecalcStyleCount": 17,
+                "LayoutDuration": 5.114947,
+                "RecalcStyleDuration": 5.416757,
+                "ScriptDuration": 1.287453,
+                "TaskDuration": 18.771214,
+                "JSHeapUsedSize": 158544888
+              },
+              "metricsAfter": {
+                "Nodes": 627300,
+                "LayoutCount": 14,
+                "RecalcStyleCount": 22,
+                "LayoutDuration": 5.976392,
+                "RecalcStyleDuration": 6.613407,
+                "ScriptDuration": 1.294044,
+                "TaskDuration": 21.703904,
+                "JSHeapUsedSize": 165577788
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.0065910000000000135,
+                "LayoutDuration": 0.8614449999999998,
+                "RecalcStyleDuration": 1.19665,
+                "TaskDuration": 2.932690000000001,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 5,
+                "Nodes": 22419,
+                "JSHeapUsedSize": 7032900
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 10,
+                  "y": 76,
+                  "width": 47,
+                  "height": 44,
+                  "top": 76,
+                  "right": 57,
+                  "bottom": 120,
+                  "left": 10
+                },
+                "workspace": "updates",
+                "view": "list",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 10,
+                  "y": 76,
+                  "width": 47,
+                  "height": 44,
+                  "top": 76,
+                  "right": 57,
+                  "bottom": 120,
+                  "left": 10
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "compact"
+              }
+            },
+            "density": {
+              "wallMs": 2124.615021000011,
+              "metricsBefore": {
+                "Nodes": 619289,
+                "LayoutCount": 14,
+                "RecalcStyleCount": 22,
+                "LayoutDuration": 5.976392,
+                "RecalcStyleDuration": 6.613407,
+                "ScriptDuration": 1.294044,
+                "TaskDuration": 22.028742,
+                "JSHeapUsedSize": 166784444
+              },
+              "metricsAfter": {
+                "Nodes": 619295,
+                "LayoutCount": 15,
+                "RecalcStyleCount": 26,
+                "LayoutDuration": 6.335182,
+                "RecalcStyleDuration": 7.001399,
+                "ScriptDuration": 1.409586,
+                "TaskDuration": 24.123844,
+                "JSHeapUsedSize": 173819540
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.11554200000000003,
+                "LayoutDuration": 0.35878999999999994,
+                "RecalcStyleDuration": 0.38799200000000056,
+                "TaskDuration": 2.095101999999997,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 4,
+                "Nodes": 6,
+                "JSHeapUsedSize": 7035096
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 1033.296875,
+                  "y": 184.6875,
+                  "width": 83.75,
+                  "height": 36,
+                  "top": 184.6875,
+                  "right": 1117.046875,
+                  "bottom": 220.6875,
+                  "left": 1033.296875
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 1016.125,
+                  "y": 184.6875,
+                  "width": 100.921875,
+                  "height": 36,
+                  "top": 184.6875,
+                  "right": 1117.046875,
+                  "bottom": 220.6875,
+                  "left": 1016.125
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "comfy"
+              }
+            },
+            "gallery": {
+              "wallMs": 5165.174715999967,
+              "metricsBefore": {
+                "Nodes": 619306,
+                "LayoutCount": 16,
+                "RecalcStyleCount": 28,
+                "LayoutDuration": 6.693992,
+                "RecalcStyleDuration": 7.416731,
+                "ScriptDuration": 1.533061,
+                "TaskDuration": 26.607069,
+                "JSHeapUsedSize": 183238212
+              },
+              "metricsAfter": {
+                "Nodes": 664146,
+                "LayoutCount": 17,
+                "RecalcStyleCount": 33,
+                "LayoutDuration": 8.282419,
+                "RecalcStyleDuration": 9.349883,
+                "ScriptDuration": 1.629379,
+                "TaskDuration": 31.741415,
+                "JSHeapUsedSize": 168748652
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.0963179999999999,
+                "LayoutDuration": 1.5884270000000011,
+                "RecalcStyleDuration": 1.9331519999999998,
+                "TaskDuration": 5.134346000000001,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 5,
+                "Nodes": 44840,
+                "JSHeapUsedSize": -14489560
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 792.109375,
+                  "y": 188.6875,
+                  "width": 75.1875,
+                  "height": 28,
+                  "top": 188.6875,
+                  "right": 867.296875,
+                  "bottom": 216.6875,
+                  "left": 792.109375
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 792.109375,
+                  "y": 199.6875,
+                  "width": 75.1875,
+                  "height": 28,
+                  "top": 199.6875,
+                  "right": 867.296875,
+                  "bottom": 227.6875,
+                  "left": 792.109375
+                },
+                "workspace": "mods",
+                "view": "gallery",
+                "density": "compact"
+              }
+            },
+            "galleryDensity": {
+              "wallMs": 3332.9424010000253,
+              "metricsBefore": {
+                "Nodes": 664146,
+                "LayoutCount": 17,
+                "RecalcStyleCount": 33,
+                "LayoutDuration": 8.282419,
+                "RecalcStyleDuration": 9.349883,
+                "ScriptDuration": 1.629379,
+                "TaskDuration": 31.953784,
+                "JSHeapUsedSize": 164260372
+              },
+              "metricsAfter": {
+                "Nodes": 664152,
+                "LayoutCount": 18,
+                "RecalcStyleCount": 38,
+                "LayoutDuration": 9.104675,
+                "RecalcStyleDuration": 9.925381,
+                "ScriptDuration": 1.833284,
+                "TaskDuration": 35.277887,
+                "JSHeapUsedSize": 171280836
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.203905,
+                "LayoutDuration": 0.8222559999999994,
+                "RecalcStyleDuration": 0.5754979999999996,
+                "TaskDuration": 3.324103000000001,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 5,
+                "Nodes": 6,
+                "JSHeapUsedSize": 7020464
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 1033.296875,
+                  "y": 195.6875,
+                  "width": 83.75,
+                  "height": 36,
+                  "top": 195.6875,
+                  "right": 1117.046875,
+                  "bottom": 231.6875,
+                  "left": 1033.296875
+                },
+                "workspace": "mods",
+                "view": "gallery",
+                "density": "compact"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 1016.125,
+                  "y": 195.6875,
+                  "width": 100.921875,
+                  "height": 36,
+                  "top": 195.6875,
+                  "right": 1117.046875,
+                  "bottom": 231.6875,
+                  "left": 1016.125
+                },
+                "workspace": "mods",
+                "view": "gallery",
+                "density": "comfy"
+              }
+            },
+            "list": {
+              "wallMs": 4584.8937200000255,
+              "metricsBefore": {
+                "Nodes": 664157,
+                "LayoutCount": 18,
+                "RecalcStyleCount": 38,
+                "LayoutDuration": 9.104675,
+                "RecalcStyleDuration": 9.925381,
+                "ScriptDuration": 1.833284,
+                "TaskDuration": 35.879506,
+                "JSHeapUsedSize": 179016428
+              },
+              "metricsAfter": {
+                "Nodes": 664183,
+                "LayoutCount": 19,
+                "RecalcStyleCount": 42,
+                "LayoutDuration": 10.051291,
+                "RecalcStyleDuration": 11.671712,
+                "ScriptDuration": 2.06933,
+                "TaskDuration": 40.469874,
+                "JSHeapUsedSize": 164826896
+              },
+              "metricDeltas": {
+                "ScriptDuration": 0.23604599999999998,
+                "LayoutDuration": 0.9466160000000006,
+                "RecalcStyleDuration": 1.7463309999999996,
+                "TaskDuration": 4.590367999999998,
+                "LayoutCount": 1,
+                "RecalcStyleCount": 4,
+                "Nodes": 26,
+                "JSHeapUsedSize": -14189532
+              },
+              "geometryBefore": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 717.703125,
+                  "y": 199.6875,
+                  "width": 55.234375,
+                  "height": 28,
+                  "top": 199.6875,
+                  "right": 772.9375,
+                  "bottom": 227.6875,
+                  "left": 717.703125
+                },
+                "workspace": "mods",
+                "view": "gallery",
+                "density": "comfy"
+              },
+              "geometryAfter": {
+                "scrollY": 18,
+                "scrollX": 0,
+                "viewport": {
+                  "width": 1440,
+                  "height": 900
+                },
+                "control": {
+                  "x": 717.703125,
+                  "y": 188.6875,
+                  "width": 55.234375,
+                  "height": 28,
+                  "top": 188.6875,
+                  "right": 772.9375,
+                  "bottom": 216.6875,
+                  "left": 717.703125
+                },
+                "workspace": "mods",
+                "view": "list",
+                "density": "comfy"
+              }
+            }
+          },
+          "navigationUpdatesMs": 1799.2183000000068,
+          "navigationLibraryMs": 2927.231684999981,
+          "densityMs": 2124.615021000011,
+          "galleryMs": 5165.174715999967,
+          "galleryDensityMs": 3332.9424010000253,
+          "listMs": 4584.8937200000255
+        }
+      ]
+    },
+    "medians": {
+      "before": {
+        "renderMs": 5010.5,
+        "lastItemSearchMs": 615.8177299999466,
+        "sortMs": 3503.936091000014,
+        "navigationUpdatesMs": 1804.5123219999937,
+        "navigationLibraryMs": 2951.5875449999953,
+        "densityMs": 1986.865095999974,
+        "galleryMs": 5451.721727000006,
+        "galleryDensityMs": 3247.4170840000056,
+        "listMs": 5240.78210700003
+      },
+      "after": {
+        "renderMs": 4654.900000000023,
+        "lastItemSearchMs": 600.3799209999556,
+        "sortMs": 3473.4091159999707,
+        "navigationUpdatesMs": 1785.7539889999998,
+        "navigationLibraryMs": 2927.231684999981,
+        "densityMs": 2040.276781999978,
+        "galleryMs": 5274.827437999988,
+        "galleryDensityMs": 3289.173457000004,
+        "listMs": 4385.118487
+      }
+    },
+    "completed": true
+  },
+  "comparison": {
+    "metrics": {
+      "renderMs": {
+        "beforeMedian": 5010.5,
+        "afterMedian": 4654.900000000023,
+        "medianRatio": 0.9290290390180668,
+        "pairedRounds": [
+          {
+            "round": 1,
+            "before": 4651.299999999988,
+            "after": 4606.6999999999825,
+            "ratio": 0.9904112828671542
+          },
+          {
+            "round": 2,
+            "before": 5112.899999999994,
+            "after": 4903.799999999988,
+            "ratio": 0.9591034442293012
+          },
+          {
+            "round": 3,
+            "before": 5010.5,
+            "after": 4654.900000000023,
+            "ratio": 0.9290290390180668
+          }
+        ]
+      },
+      "lastItemSearchMs": {
+        "beforeMedian": 615.8177299999466,
+        "afterMedian": 600.3799209999556,
+        "medianRatio": 0.9749312040756081,
+        "pairedRounds": [
+          {
+            "round": 1,
+            "before": 613.5583349999933,
+            "after": 596.1620200000084,
+            "ratio": 0.9716468443053827
+          },
+          {
+            "round": 2,
+            "before": 638.4069659999909,
+            "after": 606.856533000041,
+            "ratio": 0.9505794349368827
+          },
+          {
+            "round": 3,
+            "before": 615.8177299999466,
+            "after": 600.3799209999556,
+            "ratio": 0.9749312040756081
+          }
+        ]
+      },
+      "sortMs": {
+        "beforeMedian": 3503.936091000014,
+        "afterMedian": 3473.4091159999707,
+        "medianRatio": 0.9912878048551019,
+        "pairedRounds": [
+          {
+            "round": 1,
+            "before": 3423.520475000004,
+            "after": 3425.8037900000036,
+            "ratio": 1.0006669494214138
+          },
+          {
+            "round": 2,
+            "before": 3503.936091000014,
+            "after": 3473.4091159999707,
+            "ratio": 0.9912878048551019
+          },
+          {
+            "round": 3,
+            "before": 3796.280743000011,
+            "after": 3660.815241000023,
+            "ratio": 0.9643162581561509
+          }
+        ]
+      },
+      "navigationUpdatesMs": {
+        "beforeMedian": 1804.5123219999937,
+        "afterMedian": 1785.7539889999998,
+        "medianRatio": 0.9896047631422081,
+        "pairedRounds": [
+          {
+            "round": 1,
+            "before": 1898.749457000008,
+            "after": 1785.7539889999998,
+            "ratio": 0.9404895324217556
+          },
+          {
+            "round": 2,
+            "before": 1804.5123219999937,
+            "after": 1775.6555899999853,
+            "ratio": 0.9840085702667712
+          },
+          {
+            "round": 3,
+            "before": 1797.2990729999765,
+            "after": 1799.2183000000068,
+            "ratio": 1.0010678395314736
+          }
+        ]
+      },
+      "navigationLibraryMs": {
+        "beforeMedian": 2951.5875449999953,
+        "afterMedian": 2927.231684999981,
+        "medianRatio": 0.9917482169752094,
+        "pairedRounds": [
+          {
+            "round": 1,
+            "before": 2936.2258779999875,
+            "after": 2915.252582999983,
+            "ratio": 0.9928570566872429
+          },
+          {
+            "round": 2,
+            "before": 2951.5875449999953,
+            "after": 2948.7464749999504,
+            "ratio": 0.9990374434243505
+          },
+          {
+            "round": 3,
+            "before": 2984.7268569999983,
+            "after": 2927.231684999981,
+            "ratio": 0.9807368731697591
+          }
+        ]
+      },
+      "densityMs": {
+        "beforeMedian": 1986.865095999974,
+        "afterMedian": 2040.276781999978,
+        "medianRatio": 1.0268823918179117,
+        "pairedRounds": [
+          {
+            "round": 1,
+            "before": 1909.0023739999822,
+            "after": 1944.586944000008,
+            "ratio": 1.0186404011250465
+          },
+          {
+            "round": 2,
+            "before": 1986.865095999974,
+            "after": 2040.276781999978,
+            "ratio": 1.0268823918179117
+          },
+          {
+            "round": 3,
+            "before": 2168.9408419999836,
+            "after": 2124.615021000011,
+            "ratio": 0.9795633794423366
+          }
+        ]
+      },
+      "galleryMs": {
+        "beforeMedian": 5451.721727000006,
+        "afterMedian": 5274.827437999988,
+        "medianRatio": 0.9675525828613121,
+        "pairedRounds": [
+          {
+            "round": 1,
+            "before": 5592.8421369999905,
+            "after": 5450.840325000001,
+            "ratio": 0.9746100804346751
+          },
+          {
+            "round": 2,
+            "before": 5375.2684549999685,
+            "after": 5274.827437999988,
+            "ratio": 0.9813142324256285
+          },
+          {
+            "round": 3,
+            "before": 5451.721727000006,
+            "after": 5165.174715999967,
+            "ratio": 0.9474391714491046
+          }
+        ]
+      },
+      "galleryDensityMs": {
+        "beforeMedian": 3247.4170840000056,
+        "afterMedian": 3289.173457000004,
+        "medianRatio": 1.0128583338449908,
+        "pairedRounds": [
+          {
+            "round": 1,
+            "before": 3128.0568839999887,
+            "after": 3175.9966529999983,
+            "ratio": 1.0153257344024724
+          },
+          {
+            "round": 2,
+            "before": 3247.4170840000056,
+            "after": 3289.173457000004,
+            "ratio": 1.0128583338449908
+          },
+          {
+            "round": 3,
+            "before": 3390.5265330000134,
+            "after": 3332.9424010000253,
+            "ratio": 0.9830161683032056
+          }
+        ]
+      },
+      "listMs": {
+        "beforeMedian": 5240.78210700003,
+        "afterMedian": 4385.118487,
+        "medianRatio": 0.8367297852629412,
+        "pairedRounds": [
+          {
+            "round": 1,
+            "before": 5405.423992999999,
+            "after": 4344.486380999996,
+            "ratio": 0.8037272167042007
+          },
+          {
+            "round": 2,
+            "before": 5240.78210700003,
+            "after": 4385.118487,
+            "ratio": 0.8367297852629412
+          },
+          {
+            "round": 3,
+            "before": 4884.896964000007,
+            "after": 4584.8937200000255,
+            "ratio": 0.9385855533472045
+          }
+        ]
+      }
+    },
+    "threeActionMeasuredSumsMs": {
+      "before": [
+        14126.32301399998,
+        13863.467646000005,
+        13727.145224000025
+      ],
+      "after": [
+        12971.323358999995,
+        12949.119381999992,
+        13083.010837000018
+      ]
+    },
+    "threeActionMedianRatio": 0.9356478256536763,
+    "scope": "Three-action sums exclude harness work between intervals; not end-to-end clocks. No automatic no-loss assertion or modified release budget."
+  }
+}

@@ -1,16 +1,37 @@
 # 🛠 Development & Testing
 
-## Rust 0.10.0 release gates
+## Rust 0.12.0 release gates
 
 The [native workflow](https://github.com/Herbertofury/Modhunter/actions/workflows/native-rust.yml) compiles and launches the actual Windows app, tests the production plugin inside an official MO2 2.5.2 fixture instance, runs Rust tests and strict Clippy, and executes browser and lifecycle regressions. See [Rust Desktop](Rust-Desktop.md) for the evidence boundaries and [native/README.md](../native/README.md) for build commands. Downloadable receipts identify each passing check and the compiled commit. The older acceptance notes below describe their original checkpoints.
+
+These are required gates for each release. The [Atelier evidence guide](Atelier-0.12.md) records the published v0.12.0 build, its actual main-run measurements, public download verification and runtime limits. Source snapshots, diagnostic experiments and synthetic release-validator tests retain their own scope; they do not replace final native acceptance.
 
 `tests/test_scan_lifecycle.py` covers stale completions, errors and progress, including A→B→A; `tests/test_source_identity.py` covers source authority and route-preserving URL cleanup. `tests/frontend_runtime.test.cjs` checks polling, stale reads, cosmetic rendering and source identity. `tests/test_frontend_responsiveness.py` runs the compiled dashboard in actual Chromium. CI requires the browser with `MODHUNTER_REQUIRE_BROWSER=1`, so a missing browser cannot silently pass that gate.
 
 The 0.9.2 cases in `tests/test_catalog_delivery.py` cover concurrent full-response reuse, owned-copy isolation, cache/profile/source/audit invalidation, serialization outside the execution guard, health freshness and size bounds. `tests/test_source_cache_ownership.py` pauses older provider writes while a newer scan completes. The frontend runtime tests cover row/search cache dependencies, same-profile execution epochs, source synchronization and delayed/failed Chronicle reads. Chromium additionally checks actual download-control focus through ticket reordering, replacement and removal. Rust cancellation tests interrupt import and deep payload reads, reject partial success and reuse the same engine; the native shell tests cover ordered state replies and catalog injection guards.
 
-`native/scripts/windows_smoke.ps1` launches the compiled WebView2 app and reads its import/export/IPC receipt. `native/scripts/mo2_native_smoke.ps1` creates a disposable native MO2 instance with a synthetic BasicGame and test-only tool, never a user's instance; those harness plugins are excluded from user packages. Fixture tests do not authenticate to Nexus, install real mod archives or launch a commercial game.
+`native/scripts/windows_smoke.ps1` launches the compiled WebView2 app and reads its import/export/IPC receipt. `native/scripts/mo2_native_smoke.ps1` creates a disposable native MO2 instance with a synthetic BasicGame and test-only tool, never a user's instance; those harness plugins are excluded from user packages. The native fixture installs a generated archive, verifies its bytes and restores the original mod through the production recovery engine. It does not authenticate to Nexus, download a public mod or launch a commercial game.
 
-The 0.10.0 WatchStore Rust tests cover validated watch/session metadata, operation ownership, baseline/diff/seen history, cancellation/reset, pause/mute and bounded persistence/import. `tests/test_watchtower_browser.py` loads the actual Watchtower HTML/CSS/JavaScript in Chromium with a native-command fixture and records a separate renderer receipt. `native/scripts/watchtower_smoke.ps1` launches the compiled Windows app with its internally owned loopback server and requires actual WebView2 account isolation, remembered-profile close/reopen within one process, generation-selected fresh profiles, authenticated capture/change, selected text, incomplete/stale/canceled rejection, same-session popups and remote IPC denial. Its profile-reopen check does not restart the application. The thirteenth check, `public_https_end_to_end`, requires an anonymous `https://example.com/` request through production capture and durable WatchStore baseline completion. Every required check and a clean process exit must pass within 120 seconds. Release preparation rejects missing, failed, duplicate or mismatched native Watchtower receipts; real account sign-in is outside this fixture.
+The 0.12 browser checks in `tests/test_gallery_workspace.py` and `tests/test_compact_completion.py` exercise gallery/list switching, grouping, filters, keyboard completion, saved preferences, source artwork, CSP, theme behavior and restoration of hover transitions after structural changes. `tests/visual_release_qa.py` compares actual screenshots and complete 11,207-record libraries with the recorded baseline; every matching row must remain present and laid out. `native/scripts/benchmark_native_library.ps1` measures the same complete fixture in the actual packaged WebView2 app. Its fixed publication ceilings include 5,000 ms for Gallery and return-to-List; the endpoint must already have removed the structural transition guard and restored the normal hover transition. These are CI fixture limits, not performance promises for other computers.
+
+### Linux CI font evidence
+
+`tests/prepare_ci_fonts.py` installs checksum- and Git-blob-pinned Noto CJK, Runic and Symbols2 fallbacks for observed Linux CI glyph gaps. It requires Linux CI and fontconfig. These fonts are test prerequisites, not bundled application assets. After installing the pinned Playwright dependency and a usable Chromium, the browser job uses one evidence directory for the helper and both actual-font tests:
+
+```shell
+# Run inside Linux CI, where CI=true is already set.
+export MODHUNTER_REQUIRE_BROWSER=1
+export MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof
+python tests/prepare_ci_fonts.py --output "$MODHUNTER_QA_OUTPUT/ci-fonts.json"
+PYTHONPATH=. python tests/test_watchtower_native_ui.py
+PYTHONPATH=. python tests/ci_font_rendering_qa.py
+```
+
+The existing four-locale test must prove that Chromium actually used the pinned CJK face for the visible Chinese heading. The separate glyph report checks the MO2 locate symbol, three visible runes and the actual practice-game zoom controls, retaining screenshots and source identities. Release preparation requires both reports, the complete pinned font/license identities, and the screenshot dimensions and PNG checksums. It preserves the original `ci-fonts.json` bytes so both reports' receipt hashes remain verifiable. Linux font evidence does not replace Windows WebView2 or live MO2 acceptance.
+
+### Earlier engine and workflow coverage
+
+The 0.10.0 WatchStore Rust tests cover validated watch/session metadata, operation ownership, baseline/diff/seen history, cancellation/reset, pause/mute and bounded persistence/import. `tests/test_watchtower_browser.py` loads the actual Watchtower HTML/CSS/JavaScript in Chromium with a native-command fixture and records a separate renderer receipt. `native/scripts/watchtower_smoke.ps1` launches the compiled Windows app with its internally owned loopback server and requires actual WebView2 account isolation, remembered-profile close/reopen within one process, generation-selected fresh profiles, authenticated capture/change, selected text, incomplete/stale/canceled rejection, same-session popups and remote IPC denial. Its profile-reopen check does not restart the application. The `public_https_end_to_end` check requires an anonymous `https://example.com/` request through production capture and durable WatchStore baseline completion. The current wrapper includes the later exact-download, privacy and browser-data cases; its required checks and a clean process exit must pass within 240 seconds. Release preparation rejects missing, failed, duplicate or mismatched native Watchtower receipts; real account sign-in is outside this fixture.
 
 `scripts/benchmark_native_import.py` compares complete Rust and previous Node import calls over identical metadata fixtures; all samples and environment details are stored in `native/evidence/import-comparison.json`. Full GUI startup and internet download speeds are outside that benchmark.
 
@@ -29,6 +50,8 @@ cd desktop && npm run check
 
 The browser tests use Chromium/Playwright. See `tests/` for actual game flows and screenshot checks; they do not substitute for testing native MO2 on Windows.
 
+For the current Rust build and native packaging commands, use [native/README.md](../native/README.md). The `desktop` commands above check the retained legacy companion; Node/Electron is not required to run the Rust release. Run `node --test tests/frontend_runtime.test.cjs` and `python native/scripts/prepare_release.py --self-test` for the frontend ownership contracts and synthetic packaging-rejection tests.
+
 ## What the tests cover
 
 - Standalone boot and mobile layouts.
@@ -43,7 +66,7 @@ The browser tests use Chromium/Playwright. See `tests/` for actual game flows an
 ## Remaining environment-specific checks
 
 - The user's populated MO2 installation, installed-mod selection and account-specific native update workflow. The official MO2 2.5.2 disposable fixture covers native plugin installation, Qt dispatch and live focus separately.
-- Compiled Windows Electron portable `.exe` verification (source build is available).
+- Historical Electron portable `.exe` verification is separate from the current Rust Windows release.
 - Real Nexus auth/download workflows on a connected MO2 installation.
 - Long-form unique-content quality and 80-hour player study.
 
@@ -51,11 +74,13 @@ The browser tests use Chromium/Playwright. See `tests/` for actual game flows an
 
 The GitHub repository holds current source code as normal text files. The `Rust desktop and MO2 readiness` workflow owns current Windows/MO2 release packaging and publishes only after its native, browser and installer gates pass. Its portable package includes the matching Rust helper required by the plugin's deep audit and source adapters.
 
+The 0.12 packaging layout also derives independent MO2 and standalone ZIPs from the validated portable bytes, with build identity and internal checksums. The public Verification ZIP contains the accepted JSON/PNG evidence, including the font receipts. Check the release page for actual publication; a successful source build or a diagnostic artifact does not imply that the final downloadable release exists.
+
 The separate `Verify Modhunter dashboard and standalone HTML` workflow preserves dashboard, legacy-source and Chromium checks, then uploads a `Modhunter-Standalone-HTML` CI artifact containing the current HTML, commit identity and checksum. It has read-only repository permissions and does not publish legacy Electron/MO2 archives or commit generated packages back to `main`.
 
 Files already under `dist/` and `web/` preserve earlier release outputs. They are not refreshed as substitutes for the tested Rust release. The current compiled standalone dashboard is `mo2_update_arsenal/web/index.html`; see [Standalone HTML](Standalone-HTML.md). The `release_v08.py` script remains available for reproducing the historical package layout, but it does not produce the current Windows/MO2 release.
 
-The separate GitHub Wiki is sourced from `wiki/` and can be synchronized after its first Home page is initialized. The intended GitHub Wiki URL is [`Herbertofury/Modhunter/wiki`](https://github.com/Herbertofury/Modhunter/wiki).
+The separate GitHub Wiki is sourced from `wiki/`. The `sync-wiki.yml` workflow copies Markdown pages after changes merge to `main`; it does not copy screenshot directories. Use published absolute image URLs for the live pages and verify the resulting [GitHub Wiki](https://github.com/Herbertofury/Modhunter/wiki) after synchronization.
 
 [[Architecture]] · [[Frequently Asked Questions]]
 

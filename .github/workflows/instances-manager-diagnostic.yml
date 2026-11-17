@@ -1,0 +1,50 @@
+name: Native Instances manager diagnosis
+on:
+  push:
+    branches: ['diagnostics/instances-manager-0.13.0']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: modhunter-instances-manager-diagnostic-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  manager:
+    if: github.ref == 'refs/heads/diagnostics/instances-manager-0.13.0'
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Download the exact already-built b79 Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: '14296729097'
+          run-id: '44011920441'
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/modhunter-b79-artifact
+          merge-multiple: true
+      - name: Observe the native manager on the pinned installed executable
+        shell: pwsh
+        run: |
+          $Tools = Join-Path $env:RUNNER_TEMP 'modhunter-manager-diagnostic-tools'
+          npm install --prefix $Tools --no-audit --no-fund playwright@1.57.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $env:NODE_PATH = Join-Path $Tools 'node_modules'
+          ./native/scripts/diagnose_instances_manager.ps1 -ArtifactDirectory (Join-Path $env:RUNNER_TEMP 'modhunter-b79-artifact') -Output "$PWD/native/target/instances-manager-diagnostic"
+      - name: Preserve the diagnostic outcome and actual native captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Modhunter-Instances-Manager-Diagnostic
+          path: native/target/instances-manager-diagnostic/
+          if-no-files-found: error
+          retention-days: 30

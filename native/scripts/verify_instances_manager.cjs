@@ -208,14 +208,32 @@ async function main(){
   report.timingsMs.discovery=Date.now()-began;
   const capture=name=>{const window=nativeWindow(pid,executable,true,path.join(path.dirname(output),name));report.captures.push({file:name,...window});};
   capture('instances-discovery.png');
-  await manager.evaluate(()=>{window.__instancesEvidence=[];document.addEventListener('pointerdown',event=>{window.__instancesEvidence.push({trusted:event.isTrusted,id:event.target.id||'',selection:event.target.dataset?.installationSelect||''});},true);});
+  await manager.evaluate(()=>{
+   window.__instancesEvidence=[];window.__instancesPreviewEvidence=[];
+   document.addEventListener('pointerdown',event=>{window.__instancesEvidence.push({trusted:event.isTrusted,id:event.target.id||'',selection:event.target.dataset?.installationSelect||''});},true);
+   // Observe the UI's own preview request and reply without issuing another
+   // review, changing its arguments or altering any native permission check.
+   const invoke=window.__TAURI__.core.invoke,descriptor=Object.getOwnPropertyDescriptor(window.__TAURI__.core,'invoke');
+   if(descriptor?.writable===true){
+    window.__TAURI__.core.invoke=function(name,value){
+     const request=name==='instances_command'&&value?.kind==='previewInstall'?{sequence:window.__instancesPreviewEvidence.length+1,installationIds:value.value?.installationIds,settled:false}:null;
+     if(request)window.__instancesPreviewEvidence.push(request);
+     const result=invoke.apply(this,arguments);if(!request)return result;
+     return result.then(reply=>{request.settled=true;request.stateRevision=reply?.state?.revision;request.preview=reply?.preview;return reply;},error=>{request.settled=true;request.error=String(error);throw error;});
+    };
+   }else window.__instancesPreviewTraceUnavailable='Native API is immutable; no request observer was installed.';
+  });
   checkpoint('select-review-install');
   for(const role of ['fresh','upgrade'])await pointer(manager,'input[data-installation-select='+JSON.stringify(byRole[role].id)+']');
   const selected=await manager.evaluate(()=>[...document.querySelectorAll('[data-installation-select]:checked')].map(item=>item.dataset.installationSelect).sort());
   check('real_pointer_target_selection',equal(selected,[byRole.fresh.id,byRole.upgrade.id].sort()));
   const previewStart=Date.now();await pointer(manager,'#reviewSelected');
   await manager.locator('#installPreview[open]').waitFor({state:'visible'});
-  await until(async()=>await manager.locator('#confirmInstall').isEnabled()&&await manager.locator('.preview-target').count()===2);
+  await until(async()=>{
+   const error=(await manager.locator('#previewError').textContent())?.trim();
+   if(error){const targets=(await manager.locator('#previewTargets').textContent())?.trim();throw Error('Native preview refused selected targets: '+error+(targets?' '+targets:''));}
+   return await manager.locator('#confirmInstall').isEnabled()&&await manager.locator('.preview-target').count()===2;
+  });
   const reviewed=await manager.evaluate(()=>[...document.querySelectorAll('.preview-target')].map(item=>({id:item.dataset.installationId,ready:item.dataset.ready})).sort((a,b)=>a.id.localeCompare(b.id)));
   check('reviewed_exact_selected_targets',reviewed.length===2&&reviewed.every(row=>row.ready==='true')&&equal(reviewed.map(row=>row.id).sort(),selected));
   check('preview_leaves_all_targets_unchanged',Object.entries(applications).every(([role,root])=>equal(tree(root),before[role])));
@@ -264,7 +282,34 @@ async function main(){
   check('consumed_review_cannot_replay',rejected&&equal(tree(applications.fresh),afterChange));
   check('source_resources_unchanged',equal(bundle(resource).resourceHashes,packageInfo.resourceHashes));check('executable_unchanged',hash(executable)===report.executableSha256);
   check('no_renderer_errors',report.errors.length===0);report.ok=true;checkpoint('complete');
- }catch(error){report.errors.push(String(error.message));checkpoint('failed-'+report.phase);throw error;}
+ }catch(error){
+  report.errors.push(String(error.message));
+  // Preserve the actual visible refusal before the owned process is cleaned
+  // up. Do not run another preview or modify the failed transaction merely
+  // to obtain diagnostics; a failure remains a failed acceptance result.
+  if(manager&&!manager.isClosed()){
+   try{report.failureUi=await manager.evaluate(()=>({url:location.href,
+    previewOpen:!!document.querySelector('#installPreview')?.open,
+    previewLoading:!document.querySelector('#previewLoading')?.hidden,
+    confirmationDisabled:!!document.querySelector('#confirmInstall')?.disabled,
+    previewError:document.querySelector('#previewError')?.textContent?.slice(0,6000)||'',
+    previewTargets:document.querySelector('#previewTargets')?.textContent?.slice(0,12000)||'',
+    feedback:document.querySelector('#feedbackText')?.textContent?.slice(0,6000)||'',
+    previewTraceUnavailable:window.__instancesPreviewTraceUnavailable||''}));}
+   catch(detail){report.failureObservationError=String(detail.message);}
+   try{
+    const requests=await manager.evaluate(()=>window.__instancesPreviewEvidence||[]);
+    report.failurePreviewRequests=requests.slice(-4).map(({preview,...request})=>({...request,preview:preview?{canInstall:preview.canInstall,expiresAt:preview.expiresAt,
+     tokenSha256:typeof preview.token==='string'?digest(Buffer.from(preview.token)):null,
+     targets:(preview.targets||[]).map(target=>({installationId:target.installationId,canInstall:target.canInstall,message:target.message,blockers:target.blockers}))}:null}));
+    const current=await Promise.race([manager.evaluate(()=>window.__TAURI__.core.invoke('instances_command',{kind:'state',value:{}})),pause(3000).then(()=>{throw Error('Read-only diagnostic state did not return within three seconds');})]);
+    report.failureNativeState={revision:current?.state?.revision,scan:current?.state?.scan,install:current?.state?.install,package:current?.state?.package};
+   }catch(detail){report.failureStateError=String(detail.message);}
+   try{const file='instances-failed.png';report.failureCapture={file,...nativeWindow(pid,executable,true,path.join(path.dirname(output),file))};}
+   catch(detail){report.failureCaptureError=String(detail.message);}
+  }
+  checkpoint('failed-'+report.phase);throw error;
+ }
  finally{clearTimeout(hardDeadline);if(browser)try{await browser.close();}catch{}}
 }
 module.exports={marker,fixture,tree,bundle,key,nativeWindowScript};

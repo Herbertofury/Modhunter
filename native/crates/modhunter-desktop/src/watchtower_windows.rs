@@ -1477,6 +1477,16 @@ fn session_changed(app: &tauri::AppHandle, previous: Option<Session>) {
     }
 }
 
+/// An explicitly requested source page, without creating a watch or installing anything.
+pub(crate) fn open_siege_source(app: &tauri::AppHandle, url: Url) -> Result<()> {
+    if !crate::watchtower_policy::website_navigation(&url) {
+        return Err("Source page is not a public website.".into());
+    }
+    let context = SiteContext::production(None, &url)?;
+    site_window(app, context, url, true, None, Arc::new(Load::default()))?;
+    Ok(())
+}
+
 fn open_session(app: &tauri::AppHandle, session_id: &str, page: Option<&str>) -> Result<()> {
     let state = app.state::<WatchRuntime>();
     state.writable()?;

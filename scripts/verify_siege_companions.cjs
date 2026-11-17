@@ -1,0 +1,30 @@
+// Real Chromium gameplay smoke test. Set PLAYWRIGHT_MODULE/CHROME_PATH if needed.
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+const assert=require('node:assert/strict');
+const path=require('node:path');
+(async()=>{
+ const browser=await chromium.launch({headless:true,executablePath:process.env.CHROME_PATH||undefined,args:['--no-sandbox']});
+ const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
+ page.on('pageerror',e=>errors.push(e.message));
+ await page.addInitScript(()=>window.__SIEGE_TEST__=true);
+ await page.goto('file://'+path.resolve(__dirname,'../web/Modhunter.html')+'?realm=1&siege=1');
+ await page.waitForFunction(()=>window.__SIEGE_QA__);
+ await page.evaluate(async()=>{await __SIEGE_QA__.open();__SIEGE_QA__.setCompanions([{modId:'synthetic-a',name:'Lyra <Follower>',evidence:['name'],needsReview:false}]);__SIEGE_QA__.begin('warden','novice')});
+ assert.equal(await page.evaluate(()=>__SIEGE_QA__.camp()),false,'cannot recruit from spawn');
+ await page.evaluate(()=>{__SIEGE_QA__.move(9,5);__SIEGE_QA__.camp()});
+ assert.equal(await page.evaluate(()=>__SIEGE_QA__.dialog()),'camp');
+ await page.getByRole('button',{name:/Lyra <Follower>/}).click();
+ assert.equal(await page.evaluate(()=>__SIEGE_QA__.dialog()),'camp-role');
+ await page.getByRole('button',{name:/Stormcaller/}).click();
+ let s=await page.evaluate(()=>__SIEGE_QA__.state());
+ assert.equal(s.run.squad.length,2);assert.equal(s.run.squad[1].name,'Lyra <Follower>');assert.equal(s.run.squad[1].id,'mage');assert.equal(s.run.companionCamps[0].recruited,true);
+ assert.equal(await page.evaluate(()=>__SIEGE_QA__.camp()),false,'cannot reuse camp');
+ await page.evaluate(()=>{__SIEGE_QA__.move(-12,-8);__SIEGE_QA__.camp()});
+ await page.getByRole('button',{name:/Huntress/}).click();
+ assert.equal((await page.evaluate(()=>__SIEGE_QA__.state())).run.squad.length,3);
+ await page.evaluate(()=>__SIEGE_QA__.save());
+ await page.screenshot({path:process.env.SIEGE_SCREENSHOT||'/tmp/siege-companions.png'});
+ await page.reload();await page.waitForFunction(()=>window.__SIEGE_QA__);await page.evaluate(()=>__SIEGE_QA__.open());
+ s=await page.evaluate(()=>__SIEGE_QA__.state());assert.equal(s.run.squad.length,3);assert.equal(s.run.companionCamps.filter(c=>c.recruited).length,2);
+ assert.deepEqual(errors,[]);await browser.close();console.log('PASS: travel gate, mod identity, combat role, original fallback, camp reuse guard, squad limit, durable reload; no browser errors');
+})().catch(e=>{console.error(e);process.exit(1)});

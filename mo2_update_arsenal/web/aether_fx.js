@@ -19,13 +19,7 @@
  window.addEventListener('resize',syncCanvas,{passive:true});syncCanvas();
  const point=(rect)=>({x:rect.left+rect.width*.5,y:rect.top+rect.height*.5});
  function validRect(rect){return rect&&rect.width>2&&rect.height>2&&rect.bottom>0&&rect.top<h;}
- function play(kind){if(!options.sound||reduced())return;try{const Ctx=window.AudioContext||window.webkitAudioContext;if(!Ctx)return;
-  if(!audio||audio.state==='closed')audio=new Ctx();if(audio.state==='suspended')audio.resume().catch(()=>{});
-  const now=audio.currentTime,osc=audio.createOscillator(),amp=audio.createGain();osc.type=kind==='select'?'sine':kind==='burn'?'sawtooth':'triangle';
-  const start=kind==='select'?380:kind==='undo'?260:kind==='slash'?740:kind==='shot'?170:600;
-  osc.frequency.setValueAtTime(start,now);osc.frequency.exponentialRampToValueAtTime(kind==='select'?680:kind==='shot'?45:125,now+.22);
-  amp.gain.setValueAtTime(.0001,now);amp.gain.exponentialRampToValueAtTime(.035,now+.012);amp.gain.exponentialRampToValueAtTime(.0001,now+.25);osc.connect(amp);amp.connect(audio.destination);osc.start(now);osc.stop(now+.27);
- }catch(e){console.debug('AetherFX audio unavailable:',e)}}
+ function play(kind){window.ModhunterAudio?.play(kind==='select'?'select':kind==='undo'?'warning':'hit')}
  function burst(x,y,mode,count,spread=2){const p=PALETTE[mode]||PALETTE.select;
   for(let i=0;i<count;i++){const t=rnd(0,Math.PI*2),s=rnd(.7,4.2)*spread,ttl=rnd(.48,1.2);
    particles.push({x,y,ox:x,oy:y,vx:Math.cos(t)*s,vy:Math.sin(t)*s-rnd(0,2),gravity:mode==='burn'?-.065:rnd(.05,.16),

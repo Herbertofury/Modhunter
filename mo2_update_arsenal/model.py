@@ -79,6 +79,14 @@ def call_str(obj: Any, method: str, fallback: str = "") -> str:
         return fallback
 
 
+def mod_categories(mod: Any) -> list[str]:
+    """IModInterface.categories() returns category labels, not Nexus IDs."""
+    try:
+        return [str(value) for value in mod.categories()]
+    except (AttributeError, TypeError, ValueError, RuntimeError):
+        return []
+
+
 def source_url(game: str, mod_id: int) -> dict[str, Any]:
     if mod_id > 0 and game and game != "unknown" and game.replace("-", "").isalnum():
         return {"type": "nexus", "verified": True, "kind": "project", "label": "Nexus / Files", "url": f"https://www.nexusmods.com/{game}/mods/{mod_id}?tab=files"}
@@ -193,6 +201,7 @@ def take_snapshot(organizer: Any, target_runtime: str = "unknown", *,
             "mo2InternalName": name,
             "priority": priority,
             "name": label,
+            "categories": mod_categories(mod),
             "installedVersion": version,
             "latestKnownVersion": latest,
             "enabled": enabled,

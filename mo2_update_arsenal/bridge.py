@@ -4,6 +4,7 @@ The server never calls mobase itself; all privileged commands cross a Qt queued 
 """
 from __future__ import annotations
 
+import hashlib
 import hmac
 import json
 import secrets
@@ -441,6 +442,8 @@ class ArsenalService:
         must never be represented as a pending-update boss.
         """
         from .lore import describe_enemy_theme
+        from .companions import companion_candidates
+        from .enemy_art import enemy_art
         snapshot = self.snapshot()
         seen = set()
         targets = []
@@ -459,10 +462,11 @@ class ArsenalService:
                             "latestVersion": target, "priority": item.get("priority"),
                             "source": update.get("source", "MO2 cached metadata"),
                             "checkedAt": update.get("checkedAt"), "game": snapshot.get("game", "skyrimspecialedition"),
-                            "lore": describe_enemy_theme(item)})
+                            "lore": describe_enemy_theme(item), "artwork": enemy_art(item)})
         return {"ok": True, "profileId": snapshot.get("profileId", ""),
                 "scanState": self.scan_state().get("state", "idle"),
-                "targets": targets, "count": len(targets)}
+                "targets": targets, "count": len(targets),
+                "companions": companion_candidates(snapshot.get("items", []))}
 
     @staticmethod
     def _siege_candidate(item: dict) -> bool:
@@ -931,6 +935,14 @@ class ArsenalService:
         # installed version it must not permanently block the next release.
         if ticket.get("status") == "installed" and item is not None:
             return str(ticket.get("installedVersion") or "") == str(item.get("installedVersion") or "")
+        if ticket.get("status") == "complete" and item is not None:
+            update = item.get("update") or {}
+            if ticket.get("installedVersion") and str(ticket["installedVersion"]) != str(item.get("installedVersion") or ""):
+                return False
+            if ticket.get("targetVersion") and str(ticket["targetVersion"]) != str(update.get("latestVersion") or ""):
+                return False
+            if ticket.get("provider") == "nexus" and ticket.get("modId") and str(ticket["modId"]) != str(item.get("nexusId") or ""):
+                return False
         return True
 
     def quick_update(self, payload: dict) -> dict:
@@ -1544,18 +1556,26 @@ class ArsenalService:
         return self.journal.profile(profile_id)
 
     def preview_install(self, download_id: int) -> dict:
-        """The browser sees only an immutable, profile-scoped advisory briefing."""
+        """Immutable briefing fingerprint, bound to current native context."""
         with self._guard:
             ticket = deepcopy(self._downloads.get(download_id))
-        return build_install_brief(self.selection_snapshot([str((ticket or {}).get("itemId") or "")]), ticket, download_id,
-                                   content_backup_available=self.content.native_enabled and self.content.runner.available)
+            brief = build_install_brief(self.selection_snapshot([str((ticket or {}).get("itemId") or "")]), ticket, download_id,
+                                        content_backup_available=self.content.native_enabled and self.content.runner.available)
+            brief["profileId"] = self.profile_id()
+            brief["executionEpoch"] = self._execution_epoch
+            brief["reviewToken"] = hashlib.sha256(json.dumps(brief, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            return brief
 
-    def install_reviewed_download(self, download_id: int, *, queued_approval=False) -> dict:
+    def install_reviewed_download(self, download_id: int, *, queued_approval=False, review_token=None) -> dict:
         """Queue one exact approved native download beside reviewed page jobs."""
         if type(download_id) is not int or parse_download_id(download_id) is None:
             return {"ok": False, "error": "Invalid MO2 download ID"}
         try:
             with self._guard:
+                if review_token is not None:
+                    fresh = self.preview_install(download_id)
+                    if not isinstance(review_token, str) or not re.fullmatch(r"[0-9a-f]{64}", review_token) or not hmac.compare_digest(review_token, fresh["reviewToken"]):
+                        return {"ok": False, "error": "Installation review changed. Review the exact file and confirm again."}
                 ticket = self._downloads.get(download_id)
                 if not ticket or ticket.get("profileId") != self._snapshot.get("profileId"):
                     return {"ok": False, "error": "Download does not belong to this active MO2 profile"}
@@ -1693,7 +1713,7 @@ class ArsenalService:
                 self.send_header("X-Content-Type-Options", "nosniff")
                 self.send_header("X-Frame-Options", "DENY")
                 self.send_header("Referrer-Policy", "no-referrer")
-                self.send_header("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: https://staticdelivery.nexusmods.com https://cdn.modrinth.com https://gcdn.thunderstore.io https://cdn.thunderstore.io https://thunderstore.io; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'")
+                self.send_header("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: https://staticdelivery.nexusmods.com https://cdn.modrinth.com https://gcdn.thunderstore.io https://cdn.thunderstore.io https://thunderstore.io; connect-src 'self' https://staticdelivery.nexusmods.com https://cdn.modrinth.com https://gcdn.thunderstore.io https://cdn.thunderstore.io https://thunderstore.io; base-uri 'none'; frame-ancestors 'none'; form-action 'none'")
                 self.end_headers()
 
             def _reply(self, obj, status=200):
@@ -1951,7 +1971,7 @@ class ArsenalService:
                     download_id = parse_download_id(data.get("downloadId"))
                     if data.get("confirm") != "INSTALL" or not service.downloads().get(download_id, {}).get("status") == "complete":
                         return self._reply({"ok": False, "error": "Download is not complete or install was not confirmed"})
-                    return self._reply(service.install_reviewed_download(download_id))
+                    return self._reply(service.install_reviewed_download(download_id, review_token=data.get("reviewToken")))
                 if uri.path == "/api/backup":
                     return self._reply(service.call_ui("backup", {"confirm": data.get("confirm") == "BACKUP"}))
                 if uri.path == "/api/nexus-connect":

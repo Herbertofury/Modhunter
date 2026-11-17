@@ -1240,6 +1240,10 @@ mod tests {
             );
             let result = unsafe { (vtable.set_id_list)(object.0, target_id.0) };
             assert!(result >= 0, "IShellLinkW::SetIDList: {result:#x}");
+            eprintln!(
+                "Long target before save: requested={executable:?}, stored={:?}",
+                stored_shortcut_target(&object)
+            );
         } else {
             let result = unsafe { (vtable.set_path)(object.0, wide(executable).as_ptr()) };
             assert!(
@@ -1275,9 +1279,15 @@ mod tests {
         let persist_vtable = unsafe { &**(persist.0 as *const *const PersistFileVTable) };
         let result = unsafe { (persist_vtable.load)(persist.0, wide(path).as_ptr(), 0) };
         assert!(result >= 0, "IPersistFile::Load({path:?}): {result:#x}");
+        eprintln!(
+            "Saved target getters: raw={:?}, stored={:?}, selected={:?}",
+            raw_shortcut_target(&object),
+            stored_shortcut_target(&object),
+            shortcut_target(&object)
+        );
         let vtable = unsafe { &**(object.0 as *const *const ShellLinkWriterVTable) };
-        // This short, owned fixture fits both buffers. These direct getters are
-        // diagnostic only, never a production fallback with silent truncation.
+        // These bounded, owned fixtures fit both diagnostic buffers. These
+        // direct getters never become a production fallback with truncation.
         let mut target = [0_u16; 32768];
         let result = unsafe {
             (vtable.get_path)(
@@ -1450,6 +1460,15 @@ mod tests {
         let _apartment = ComApartment::initialize().unwrap();
         create_unicode_shortcut(&shortcut, &executable, &arguments);
         let before = fs::read(&shortcut).unwrap();
+        let observed = observe_saved_shortcut(&shortcut);
+        eprintln!(
+            "Saved long shortcut: rawPath={:?}, targetProperty={:?}, rawArgumentUnits={}, allocatedArgumentUnits={}, allocatedArgumentsMatch={}",
+            observed.0,
+            observed.2,
+            observed.1.encode_utf16().count(),
+            observed.3.encode_utf16().count(),
+            observed.3 == arguments
+        );
         let result = read_shortcut(&shortcut)
             .unwrap()
             .expect("Saved long Unicode filesystem target must remain discoverable");

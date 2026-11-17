@@ -20,7 +20,7 @@ use windows_sys::{
         },
         Storage::FileSystem::{
             GetDriveTypeW, GetFileVersionInfoSizeW, GetFileVersionInfoW, GetLogicalDriveStringsW,
-            VerQueryValueW,
+            GetLongPathNameW, VerQueryValueW,
         },
         System::{
             Com::{
@@ -820,6 +820,49 @@ fn expanded_shortcut_path(target: &str) -> Result<PathBuf, String> {
     Ok(target)
 }
 
+fn long_shortcut_path(target: &Path) -> Result<PathBuf, String> {
+    if !target.is_absolute() {
+        return Err("Shortcut filename expansion requires an absolute filesystem path.".into());
+    }
+    if is_network_path(target) {
+        return Err("Network shortcut filename expansion was deferred; select its network folder explicitly to inspect it.".into());
+    }
+    // The Shell can return a real target using its DOS short filename. Ask the
+    // filesystem for its full spelling; an alias is never itself proof of MO2.
+    // This does not resolve a Shell link, execute it, or canonicalize junctions.
+    let mut buffer = vec![0_u16; 32768];
+    let length = unsafe {
+        GetLongPathNameW(
+            wide(target).as_ptr(),
+            buffer.as_mut_ptr(),
+            buffer.len() as u32,
+        )
+    } as usize;
+    if length == 0 {
+        return Err(format!(
+            "Shortcut filename could not be expanded from its filesystem spelling ({}).",
+            unsafe { GetLastError() }
+        ));
+    }
+    if length >= buffer.len() || buffer[length] != 0 {
+        return Err("Expanded shortcut filename exceeded the Windows path bound.".into());
+    }
+    let value = String::from_utf16(&buffer[..length])
+        .map_err(|_| "Expanded shortcut filename contains invalid Unicode.".to_string())?;
+    let path = PathBuf::from(value);
+    if !path.is_absolute() {
+        return Err("Expanded shortcut filename is not an absolute filesystem path.".into());
+    }
+    Ok(path)
+}
+
+fn mo2_executable_name(path: &Path) -> bool {
+    path.file_name().is_some_and(|name| {
+        name.to_string_lossy()
+            .eq_ignore_ascii_case("ModOrganizer.exe")
+    })
+}
+
 fn read_shortcut(path: &Path) -> Result<Option<ShortcutSeed>, String> {
     let metadata = fs::symlink_metadata(path).map_err(|error| error.to_string())?;
     if linked(&metadata) || !metadata.is_file() || metadata.len() > 2 * METADATA_LIMIT as u64 {
@@ -851,11 +894,11 @@ fn read_shortcut(path: &Path) -> Result<Option<ShortcutSeed>, String> {
     let Some(target) = shortcut_target(&object)? else {
         return Ok(None);
     };
-    let target = expanded_shortcut_path(&target)?;
-    if !target.file_name().is_some_and(|name| {
-        name.to_string_lossy()
-            .eq_ignore_ascii_case("ModOrganizer.exe")
-    }) {
+    let mut target = expanded_shortcut_path(&target)?;
+    if !mo2_executable_name(&target) {
+        target = long_shortcut_path(&target)?;
+    }
+    if !mo2_executable_name(&target) {
         return Ok(None);
     }
     let properties = object.query(&IID_PROPERTY_STORE)?;
@@ -1362,6 +1405,33 @@ mod tests {
             expanded_shortcut_path(r"C:\MO2 Unicode 特別\ModOrganizer.exe").unwrap(),
             Path::new(r"C:\MO2 Unicode 特別\ModOrganizer.exe")
         );
+        for target in [
+            r"\\server\share\MODORG~1.EXE",
+            r"\\?\UNC\server\share\MODORG~1.EXE",
+        ] {
+            assert!(
+                long_shortcut_path(Path::new(target))
+                    .unwrap_err()
+                    .contains("Network shortcut filename expansion was deferred")
+            );
+        }
+    }
+
+    #[test]
+    fn an_alias_shaped_filename_is_not_guessed_to_be_mo2() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = fixture_shell_path(&fs::canonicalize(root.path()).unwrap());
+        let executable = directory.join("MODORG~1.EXE");
+        let bytes = b"a literal alias-shaped filename, not ModOrganizer.exe";
+        fs::write(&executable, bytes).unwrap();
+        let shortcut = directory.join("Unrelated alias-shaped target.lnk");
+        let _apartment = ComApartment::initialize().unwrap();
+        create_unicode_shortcut(&shortcut, &executable, "");
+        let before = fs::read(&shortcut).unwrap();
+        assert_eq!(long_shortcut_path(&executable).unwrap(), executable);
+        assert!(read_shortcut(&shortcut).unwrap().is_none());
+        assert_eq!(fs::read(&shortcut).unwrap(), before);
+        assert_eq!(fs::read(&executable).unwrap(), bytes);
     }
 
     #[test]

@@ -33,6 +33,7 @@ from .duplicate_report import DuplicateReports
 from .source_adapters import compact_source_update, PUBLIC_API_PROVIDERS
 from .version import VERSION
 from .shared_cards import inspect_shared_cards
+from .shared_card_runtime import invoke_shared_card_runtime, REQUEST_BYTES as CARD_REQUEST_BYTES
 
 MAX_REQUEST = 16_384
 MAX_PROGRESS_REQUEST = 8_000_000
@@ -1856,14 +1857,16 @@ class ArsenalService:
                     return
                 try:
                     length = int(self.headers.get("Content-Length", "0"))
-                    if length <= 0 or length > (MAX_CONTENT_REQUEST if self.path.split("?", 1)[0].startswith("/api/content-") and self._native_client() else MAX_PROGRESS_REQUEST if self.path.split("?", 1)[0] in ("/api/progress", "/api/update-queue") else MAX_REALM_REQUEST if self.path.split("?", 1)[0] in ("/api/realm/world", "/api/siege/state") else MAX_REQUEST):
+                    if length <= 0 or length > (CARD_REQUEST_BYTES if self.path.split("?", 1)[0] == "/api/shared-cards/invoke" else MAX_CONTENT_REQUEST if self.path.split("?", 1)[0].startswith("/api/content-") and self._native_client() else MAX_PROGRESS_REQUEST if self.path.split("?", 1)[0] in ("/api/progress", "/api/update-queue") else MAX_REALM_REQUEST if self.path.split("?", 1)[0] in ("/api/realm/world", "/api/siege/state") else MAX_REQUEST):
                         return self._reply({"ok": False, "error": "Request size rejected"}, 413)
                     data = json.loads(self.rfile.read(length))
                     if not isinstance(data, dict):
                         raise ValueError("Request must be an object")
-                except (ValueError, json.JSONDecodeError):
+                except (ValueError, json.JSONDecodeError, RecursionError):
                     return self._reply({"ok": False, "error": "Invalid JSON"}, 400)
                 uri = urllib.parse.urlsplit(self.path)
+                if uri.path == "/api/shared-cards/invoke":
+                    return self._reply(invoke_shared_card_runtime(data))
                 if uri.path == "/api/content-install":
                     if not self._native_client():
                         return self._reply({"ok": False, "error": "Archive installation requires the owned native review"}, 403)

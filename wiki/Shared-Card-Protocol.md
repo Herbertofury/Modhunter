@@ -19,3 +19,13 @@ Status reports `playable: false` even when a save is readable. Catalog snapshot 
 ## Still unresolved
 
 Native Rust desktop integration and visible UI, reviewed engine/asset distribution, compatible card rules, write/recovery adapter, update-reward receipts, large-profile storage, and real Windows/MO2 gameplay acceptance. Do not call this a playable shared game or full parity. Work is isolated from active release branches; merge/release requires the normal review and acceptance gates.
+
+## Optional native save transport (follow-on draft)
+
+`POST /api/shared-cards/invoke` uses the existing same-origin/session-token authorization. It accepts only load or commit protocol objects, fixes writer attribution to ModHunter, and exposes no executable/path/SQL choice. The full v3 profile remains opaque and goes through the same native transactional/CAS/idempotent receipt protocol. A client must durably journal the exact pending commit before sending. A timeout, lost response, or transport failure must replay the same operation, never silently rebase. This endpoint does not install mods, establish real update completion, or award verified maintenance rewards.
+
+The optional independently installed native helper lives in the same per-user SharedGames directory under `runtime-v1/gs-card-save` (`.exe` on Windows). `manifest.json` identifies protocol1, that exact filename, and its SHA256 digest. This checks installation consistency, **not publisher authentication** or containment against a process already controlling the trusted user directory. No helper binary or private engine is included in this public repository. A reviewed private runtime can be packaged independently for either host without requiring the other app.
+
+Runtime absence fails explicitly before execution. Input and in-memory reply sizes are bounded; replies spool to a temporary file. This is trusted installed code, not a disk-quota sandbox. The child process deadline can terminate it mid-operation; SQLite recovery and exact operation receipts handle uncertain completion. Pending data must stay journaled until readback, even when the child was killed. The existing full-profile adapter implements those client obligations.
+
+Local private integration tested the existing game engine's start, mulligan, card play, native save and exact reopen through actual authenticated ModHunter HTTP, then confirmed the same snapshot with an independent native reader process. That private test/source is not published here. The visible game host and Windows runtime packaging/real gameplay acceptance remain unresolved. This follow-on is a backend transport, not a claim that a rendered playable ModHunter game has shipped.

@@ -1138,6 +1138,17 @@ pub(super) fn fixture_shell_path(path: &Path) -> PathBuf {
 mod tests {
     use super::*;
 
+    #[link(name = "shell32")]
+    unsafe extern "system" {
+        fn SHParseDisplayName(
+            name: *const u16,
+            bind_context: *mut c_void,
+            id_list: *mut *mut c_void,
+            attributes: u32,
+            returned_attributes: *mut u32,
+        ) -> i32;
+    }
+
     #[test]
     fn shell_fixture_paths_preserve_unicode_and_only_convert_verbatim_disk_or_unc() {
         for (input, expected) in [
@@ -1166,7 +1177,7 @@ mod tests {
         unknown: UnknownVTable,
         get_path: unsafe extern "system" fn(*mut c_void, *mut u16, i32, *mut c_void, u32) -> i32,
         get_id_list: usize,
-        set_id_list: usize,
+        set_id_list: unsafe extern "system" fn(*mut c_void, *const c_void) -> i32,
         get_description: usize,
         set_description: usize,
         get_working_directory: usize,
@@ -1209,11 +1220,33 @@ mod tests {
         );
         let object = ComObject(object);
         let vtable = unsafe { &**(object.0 as *const *const ShellLinkWriterVTable) };
-        let result = unsafe { (vtable.set_path)(object.0, wide(executable).as_ptr()) };
-        assert!(
-            result >= 0,
-            "IShellLinkW::SetPath({executable:?}): {result:#x}"
-        );
+        let mut target_id = TaskMemory(ptr::null_mut());
+        if executable.as_os_str().encode_wide().count() >= 260 {
+            // SetPath rejects this real long target on Windows. Ask the Shell
+            // for its actual identifier and save that native identity instead;
+            // no synthetic property or hand-authored .lnk data is introduced.
+            let result = unsafe {
+                SHParseDisplayName(
+                    wide(executable).as_ptr(),
+                    ptr::null_mut(),
+                    &mut target_id.0,
+                    0,
+                    ptr::null_mut(),
+                )
+            };
+            assert!(
+                result >= 0 && !target_id.0.is_null(),
+                "SHParseDisplayName({executable:?}): {result:#x}"
+            );
+            let result = unsafe { (vtable.set_id_list)(object.0, target_id.0) };
+            assert!(result >= 0, "IShellLinkW::SetIDList: {result:#x}");
+        } else {
+            let result = unsafe { (vtable.set_path)(object.0, wide(executable).as_ptr()) };
+            assert!(
+                result >= 0,
+                "IShellLinkW::SetPath({executable:?}): {result:#x}"
+            );
+        }
         let result = unsafe { (vtable.set_arguments)(object.0, wide(arguments).as_ptr()) };
         assert!(result >= 0, "IShellLinkW::SetArguments: {result:#x}");
         let persist = object.query(&IID_PERSIST_FILE).unwrap();

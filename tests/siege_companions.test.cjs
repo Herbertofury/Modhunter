@@ -4,7 +4,7 @@ function harness(saved=new Map(),live=false,transport=null){
  const gradient={addColorStop(){}},ctx=new Proxy({createRadialGradient:()=>gradient,createLinearGradient:()=>gradient,measureText:()=>({width:10})},{get:(o,k)=>o[k]||(()=>{})}),nodes=new Map();
  function node(id){if(!nodes.has(id))nodes.set(id,{children:[],hidden:false,value:'novice',innerHTML:'',textContent:'',style:{},classList:{add(){},remove(){}},addEventListener(){},focus(){},getContext:()=>ctx,getBoundingClientRect:()=>({width:900,height:620}),remove(){},appendChild(){},append(){},setAttribute(){},parentElement:{getBoundingClientRect:()=>({width:900,height:620})}});return nodes.get(id)}
  const c={console,Math,Date,JSON,URL,URLSearchParams,location:{search:''},performance:{now:()=>0},localStorage:{getItem:k=>saved.get(k),setItem:(k,v)=>saved.set(k,v)},navigator:{},setTimeout(fn){timers.push(fn)},__MO2_BRIDGE_BOOT__:{active:live,token:'fixture'},fetch:async(url,opts)=>{if(opts.method==='POST'){const body=JSON.parse(opts.body);writes.push(body);await new Promise(resolve=>pending.push(resolve));return {ok:true,json:async()=>({revision:writes.length})}}return {ok:true,json:async()=>url.endsWith('/realm')?{profileId:'a',available:0}:url.endsWith('/state')?{revision:0}:url.endsWith('/targets')?{profileId:'a',targets:[],companions:[]}:{bounties:[]}}},requestAnimationFrame:()=>1,cancelAnimationFrame(){},document:{getElementById:node,createElement:node,body:{style:{}},addEventListener(){}},__ARSENAL_REALM_ROUTE__:true,__SIEGE_TEST__:true,addEventListener(){},matchMedia:()=>({matches:true}),devicePixelRatio:1};
- if(transport)c.fetch=transport;c.window=c;vm.createContext(c);vm.runInContext(fs.readFileSync(path.join(__dirname,'../mo2_update_arsenal/web/siege_art.js'),'utf8'),c);vm.runInContext(fs.readFileSync(path.join(__dirname,'../mo2_update_arsenal/web/siege.js'),'utf8'),c);return {q:c.__SIEGE_QA__,nodes,saved,timers,pending,writes};
+ node('siegePopulation');node('siegeDuration');if(transport)c.fetch=transport;c.window=c;vm.createContext(c);vm.runInContext(fs.readFileSync(path.join(__dirname,'../mo2_update_arsenal/web/run_contract.js'),'utf8'),c);vm.runInContext(fs.readFileSync(path.join(__dirname,'../mo2_update_arsenal/web/siege_art.js'),'utf8'),c);vm.runInContext(fs.readFileSync(path.join(__dirname,'../mo2_update_arsenal/web/siege.js'),'utf8').replace('if(window.__SIEGE_TEST__){', 'window.__RUN_TEST__={setTime:t=>{state.run.elapsed=t;state.run.bossesKilled=1},director:spawnClock,remove:n=>{const r=state.run;let removed=0;r.entities=r.entities.filter(e=>e.elite||removed++>=n)},budget:()=>state.run.spawnBudget,unpause:()=>{pausing=false;closeDialog()}};if(window.__SIEGE_TEST__){'),c);return {q:c.__SIEGE_QA__,runs:c.__RUN_TEST__,nodes,saved,timers,pending,writes};
 }
 test('travel, confirm, roles, duplicate camp, fallback, capacity, persistence',async()=>{
  const {q,saved}=harness();await q.open();q.setCompanions([{modId:'a',name:'Lyra <Follower>',evidence:['name'],needsReview:false}]);q.begin('warden','novice');
@@ -64,3 +64,37 @@ test('manual override revokes pending installer consent',async()=>{
  const f=updateFixture();let hold=false,release;const transport=async(url,opts)=>{if(hold&&url.endsWith('/snapshot')){hold=false;await new Promise(resolve=>release=resolve);}return f.fetch(url,opts)};
  const h=harness(new Map(),true,transport);await h.q.open();h.q.begin('warden','novice');await h.q.autoUpdate({modId:'m',profileId:'a'});hold=true;const pending=h.q.dialogAction(0);h.q.dialogAction(1);assert.equal(h.q.dialog(),'boss-update-manual');hold=false;release();await pending;assert.equal(f.calls.filter(c=>c.url.endsWith('/install')).length,0);
 });
+
+for(const length of ['20','30','60','120','endless'])test(`Siege actual tick honors ${length} contract instead of six-minute auto-win`,async()=>{
+ const h=harness();await h.q.open();h.nodes.get('siegeDuration').value=length;h.q.begin('warden','novice');
+ assert.equal(h.q.state().run.duration,length==='endless'?null:Number(length)*60);
+ h.runs.setTime(360);h.q.tick(0);assert.equal(h.q.state().run.finished,false);
+ h.runs.setTime(length==='endless'?100000:Number(length)*60-1);h.q.tick(0);assert.equal(h.q.state().run.finished,false);
+ if(length!=='endless'){h.runs.setTime(Number(length)*60);h.q.tick(0);assert.equal(h.q.state().run.finished,true);}
+ await h.q.save();const reopened=harness(h.saved);await reopened.q.open();assert.equal(reopened.q.state().run.duration,length==='endless'?null:Number(length)*60);
+});
+test('Atlas contracts use same twenty-minute floor and endless never auto-completes',async()=>{
+ const h=harness();await h.q.open();h.nodes.get('siegeDuration').value='endless';h.q.startAtlas();assert.equal(h.q.state().run.atlas.duration,null);h.runs.setTime(100000);h.q.tick(0);assert.equal(h.q.state().run.finished,false);
+ assert.ok(h.q.atlas().patterns.every(p=>p.minutes>=20));
+});
+
+test('endless director bounds active population and preserves every deferred reinforcement',async()=>{
+ const h=harness();await h.q.open();h.nodes.get('siegeDuration').value='endless';h.q.begin('warden','novice');h.runs.setTime(7200);
+ const rate=(1.7+7200/28)*.8;for(let i=0;i<1000;i++)h.runs.director(.045);
+ let r=h.q.state().run;assert.equal(r.entities.length,256);assert.equal(r.entities.filter(e=>e.elite).length,1);
+ assert.ok(Math.abs(r.spawnBudget-(rate*45-255))<1e-7);assert.equal(r.kills,0);assert.equal(r.score,0);
+ const before=r.spawnSerial,budget=r.spawnBudget;h.runs.remove(10);h.runs.director(0);r=h.q.state().run;assert.equal(r.entities.length,256);assert.equal(r.spawnSerial,before+10);assert.equal(r.spawnBudget,budget-10);assert.equal(r.kills,0);
+ await h.q.save();const reopened=harness(h.saved);await reopened.q.open();assert.equal(reopened.q.state().run.spawnBudget,r.spawnBudget);
+});
+test('director retains a boss slot even when normal reinforcement reserve is full',async()=>{
+ const h=harness();await h.q.open();h.q.begin('warden','novice');h.runs.setTime(30);for(let i=0;i<10000;i++)h.runs.director(.045);let r=h.q.state().run;assert.equal(r.entities.length,255);assert.equal(r.entities.filter(e=>e.elite).length,0);
+ h.runs.setTime(48);h.runs.director(0);r=h.q.state().run;assert.equal(r.entities.length,256);assert.equal(r.entities.filter(e=>e.elite).length,1);
+});
+test('two-hour director soak with periodic removals retains compact numeric reserve',async()=>{
+ const h=harness();await h.q.open();h.nodes.get('siegeDuration').value='endless';h.q.begin('warden','novice');let expected=0,removed=0;const started=performance.now();
+ for(let frame=0;frame<160000;frame++){const elapsed=frame*.045;h.runs.setTime(elapsed);expected+=(1.7+elapsed/28)*.8*.045;h.runs.director(.045);if(frame%22===0){const r=h.q.state().run;const n=Math.min(8,r.entities.filter(e=>!e.elite).length);h.runs.remove(n);removed+=n;}}
+ const r=h.q.state().run;assert.ok(r.entities.length<=256);assert.equal(typeof r.spawnBudget,'number');assert.ok(Math.abs(r.spawnBudget+r.spawnSerial-r.entities.filter(e=>e.elite).length-expected)<1e-5);assert.ok(removed>10000);assert.ok(JSON.stringify(r.spawnBudget).length<30);
+ console.log(JSON.stringify({fixture:'director-only 2h, removal demand8 every~1s; not full gameplay/FPS',milliseconds:performance.now()-started,active:r.entities.length,admitted:r.spawnSerial,removed,reserve:r.spawnBudget}));
+});
+
+for(const limit of [128,512])test(`director respects selected ${limit} density without discarding debt`,async()=>{const h=harness();await h.q.open();h.nodes.get('siegePopulation').value=String(limit);h.q.begin('warden','novice');h.runs.setTime(7200);for(let i=0;i<1000;i++)h.runs.director(.045);const r=h.q.state().run;assert.equal(r.combatLimit,limit);assert.equal(r.entities.length,limit);assert.ok(r.spawnBudget>0);});

@@ -1,0 +1,39 @@
+{
+  "scope": "Source-level simulation clocks and reinforcement director. Not native UI or full-game soak.",
+  "javascript": {
+    "command": "node --test tests/*.test.cjs",
+    "passed": 159
+  },
+  "python": {
+    "command": "python -m unittest discover -s tests",
+    "total": 501,
+    "passed": 472,
+    "skipped": 29
+  },
+  "bundledHtmlSha256": "d1c67c40df8253ef6bb6bce85c0e2634e71a5e45327966ba0c4585c6310fdcb6",
+  "directorFixture": {
+    "simulationSeconds": 7200,
+    "steps": 160000,
+    "modeledRemovals": "8 regular enemies about once per second; not actual combat DPS",
+    "active": 256,
+    "admitted": 57641,
+    "removed": 57385,
+    "reserve": 692718.8000000002,
+    "elapsedMilliseconds": 3608.064747,
+    "assertions": [
+      "active population bounded",
+      "pending plus admitted equals accrued demand",
+      "boss reserved slot",
+      "numeric compact persisted reserve"
+    ]
+  },
+  "unverified": [
+    "Windows WebView2/MO2",
+    "visual and controller acceptance",
+    "full combat/rendering long-run pacing and FPS",
+    "moving geode worms",
+    "loot goblins",
+    "nested portals",
+    "cross-mode rewards and deep endgame"
+  ]
+}

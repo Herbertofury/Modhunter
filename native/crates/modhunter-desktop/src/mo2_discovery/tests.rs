@@ -494,21 +494,25 @@ fn symlink_cycles_and_linked_config_files_are_not_followed() {
 #[cfg(windows)]
 #[test]
 fn windows_junction_cycles_are_reported_without_following_them() {
-    use std::os::windows::process::CommandExt;
-
     let root = tempfile::tempdir().unwrap();
     let application_path = root.path().join("MO2");
     application(&application_path);
     let link = application_path.join("cycle");
-    let command = PathBuf::from(std::env::var_os("SystemRoot").unwrap()).join("System32/cmd.exe");
-    // cmd.exe parses its own command line and does not accept every path form
-    // accepted by Rust's filesystem APIs. Keep all operands trusted literals;
-    // only CreateProcess receives the owned, ordinary Win32 working directory.
+    let powershell = PathBuf::from(std::env::var_os("SystemRoot").unwrap())
+        .join("System32/WindowsPowerShell/v1.0/powershell.exe");
+    // Use the same native junction writer as the installer fixture, with exact
+    // absolute targets passed through Unicode environment values, not command
+    // interpolation or cmd.exe's relative substitute-name handling.
     let directory = windows::fixture_shell_path(&fs::canonicalize(&application_path).unwrap());
-    let result = std::process::Command::new(command)
-        .current_dir(&directory)
-        .args(["/d", "/c"])
-        .raw_arg("mklink /J cycle .")
+    let result = std::process::Command::new(powershell)
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "$ErrorActionPreference='Stop'; New-Item -ItemType Junction -Path $env:MODHUNTER_TEST_JUNCTION -Target $env:MODHUNTER_TEST_TARGET | Out-Null",
+        ])
+        .env("MODHUNTER_TEST_JUNCTION", directory.join("cycle"))
+        .env("MODHUNTER_TEST_TARGET", &directory)
         .output()
         .unwrap();
     assert!(

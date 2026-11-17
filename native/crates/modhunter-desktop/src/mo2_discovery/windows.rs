@@ -20,7 +20,7 @@ use windows_sys::{
         },
         Storage::FileSystem::{
             GetDriveTypeW, GetFileVersionInfoSizeW, GetFileVersionInfoW, GetLogicalDriveStringsW,
-            VerQueryValueW,
+            GetLongPathNameW, VerQueryValueW,
         },
         System::{
             Com::{
@@ -44,7 +44,7 @@ use windows_sys::{
         UI::Shell::{
             CommandLineToArgvW, FOLDERID_CommonStartMenu, FOLDERID_Desktop, FOLDERID_LocalAppData,
             FOLDERID_ProgramFiles, FOLDERID_ProgramFilesX86, FOLDERID_PublicDesktop,
-            FOLDERID_StartMenu, SHGetKnownFolderPath,
+            FOLDERID_StartMenu, SHGetKnownFolderPath, SIGDN_FILESYSPATH, SLGP_RAWPATH,
         },
     },
     core::GUID,
@@ -242,7 +242,10 @@ pub(super) fn is_network_path(path: &Path) -> bool {
     if value.starts_with("\\\\") && !value.starts_with("\\\\?\\") {
         return true;
     }
-    if value.starts_with("\\\\?\\UNC\\") {
+    if value
+        .get(..8)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("\\\\?\\UNC\\"))
+    {
         return true;
     }
     let value = value.strip_prefix("\\\\?\\").unwrap_or(&value);
@@ -574,9 +577,10 @@ fn registry_candidates(seeds: &mut KnownSeeds) {
     }
 }
 
-// IPropertyStore avoids IShellLink::GetPath's MAX_PATH result and
-// GetArguments' documented silent truncation. We request allocated strings,
-// never Resolve(), launch the target, or rewrite the .lnk file.
+// The saved target PIDL provides an allocated filesystem path; the innate
+// TargetParsingPath property can be empty even for a valid saved shortcut.
+// IPropertyStore supplies allocated arguments without GetArguments truncation.
+// Neither path calls Resolve(), launches the target, or rewrites the .lnk.
 #[repr(C)]
 struct UnknownVTable {
     query_interface: unsafe extern "system" fn(*mut c_void, *const GUID, *mut *mut c_void) -> i32,
@@ -590,6 +594,13 @@ struct PersistFileVTable {
     get_class_id: usize,
     is_dirty: usize,
     load: unsafe extern "system" fn(*mut c_void, *const u16, u32) -> i32,
+}
+
+#[repr(C)]
+struct ShellLinkReaderVTable {
+    unknown: UnknownVTable,
+    get_path: unsafe extern "system" fn(*mut c_void, *mut u16, i32, *mut c_void, u32) -> i32,
+    get_id_list: unsafe extern "system" fn(*mut c_void, *mut *mut c_void) -> i32,
 }
 
 #[repr(C)]
@@ -620,6 +631,21 @@ unsafe extern "system" {
 #[link(name = "ole32")]
 unsafe extern "system" {
     fn PropVariantClear(value: *mut c_void) -> i32;
+}
+
+#[link(name = "shell32")]
+unsafe extern "system" {
+    fn SHGetNameFromIDList(id_list: *const c_void, name_kind: i32, name: *mut *mut u16) -> i32;
+}
+
+struct TaskMemory(*mut c_void);
+
+impl Drop for TaskMemory {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            unsafe { CoTaskMemFree(self.0) };
+        }
+    }
 }
 
 struct ComObject(*mut c_void);
@@ -706,6 +732,140 @@ fn property_string(store: &ComObject, name: &str) -> Result<String, String> {
     output
 }
 
+fn raw_shortcut_target(object: &ComObject) -> Result<Option<String>, String> {
+    let vtable = unsafe { &**(object.0 as *const *const ShellLinkReaderVTable) };
+    // GetPath documents MAX_PATH, even with a larger caller buffer. A value at
+    // that boundary is ambiguous and must never become a guessed installation.
+    let mut buffer = [0_u16; 260];
+    let result = unsafe {
+        (vtable.get_path)(
+            object.0,
+            buffer.as_mut_ptr(),
+            buffer.len() as i32,
+            ptr::null_mut(),
+            SLGP_RAWPATH as u32,
+        )
+    };
+    if result < 0 {
+        return Err(format!(
+            "Raw shortcut target could not be read ({result:#x})."
+        ));
+    }
+    let length = buffer
+        .iter()
+        .position(|&unit| unit == 0)
+        .unwrap_or(buffer.len());
+    if length >= buffer.len() - 1 {
+        return Err("Raw shortcut target may be truncated at the Windows path boundary.".into());
+    }
+    if length == 0 {
+        return Ok(None);
+    }
+    String::from_utf16(&buffer[..length])
+        .map(Some)
+        .map_err(|_| "Raw shortcut target contains invalid Unicode.".into())
+}
+
+fn stored_shortcut_target(object: &ComObject) -> Result<Option<String>, String> {
+    let vtable = unsafe { &**(object.0 as *const *const ShellLinkReaderVTable) };
+    let mut id_list = ptr::null_mut();
+    let result = unsafe { (vtable.get_id_list)(object.0, &mut id_list) };
+    let id_list = TaskMemory(id_list);
+    if result < 0 {
+        return Err(format!(
+            "Stored shortcut target could not be read ({result:#x})."
+        ));
+    }
+    if id_list.0.is_null() {
+        return Ok(None);
+    }
+    let mut name = ptr::null_mut();
+    let result = unsafe { SHGetNameFromIDList(id_list.0, SIGDN_FILESYSPATH, &mut name) };
+    let name = TaskMemory(name.cast());
+    if result < 0 {
+        return Err(format!(
+            "Stored shortcut target has no readable filesystem path ({result:#x})."
+        ));
+    }
+    let text = unsafe { allocated_wide(name.0.cast(), METADATA_LIMIT / 2) }?;
+    if text.is_empty() {
+        return Ok(None);
+    }
+    String::from_utf16(&text)
+        .map(Some)
+        .map_err(|_| "Stored shortcut target contains invalid Unicode.".into())
+}
+
+fn shortcut_target(object: &ComObject) -> Result<Option<String>, String> {
+    let raw = raw_shortcut_target(object);
+    // Preserve explicit environment targets instead of substituting a PIDL
+    // expanded in the shortcut creator's environment. expand() validates it.
+    if let Ok(Some(value)) = &raw
+        && value.contains('%')
+    {
+        return raw;
+    }
+    match stored_shortcut_target(object) {
+        Ok(Some(target)) => Ok(Some(target)),
+        stored => match raw {
+            Ok(Some(target)) => Ok(Some(target)),
+            Ok(None) => stored,
+            Err(error) => Err(error),
+        },
+    }
+}
+
+fn expanded_shortcut_path(target: &str) -> Result<PathBuf, String> {
+    let target = PathBuf::from(expand(target)?);
+    if !target.is_absolute() {
+        return Err("Shortcut target is not an absolute filesystem path; its working directory was not guessed.".into());
+    }
+    Ok(target)
+}
+
+fn long_shortcut_path(target: &Path) -> Result<PathBuf, String> {
+    if !target.is_absolute() {
+        return Err("Shortcut filename expansion requires an absolute filesystem path.".into());
+    }
+    if is_network_path(target) {
+        return Err("Network shortcut filename expansion was deferred; select its network folder explicitly to inspect it.".into());
+    }
+    // The Shell can return a real target using its DOS short filename. Ask the
+    // filesystem for its full spelling; an alias is never itself proof of MO2.
+    // This does not resolve a Shell link, execute it, or canonicalize junctions.
+    let mut buffer = vec![0_u16; 32768];
+    let length = unsafe {
+        GetLongPathNameW(
+            wide(target).as_ptr(),
+            buffer.as_mut_ptr(),
+            buffer.len() as u32,
+        )
+    } as usize;
+    if length == 0 {
+        return Err(format!(
+            "Shortcut filename could not be expanded from its filesystem spelling ({}).",
+            unsafe { GetLastError() }
+        ));
+    }
+    if length >= buffer.len() || buffer[length] != 0 {
+        return Err("Expanded shortcut filename exceeded the Windows path bound.".into());
+    }
+    let value = String::from_utf16(&buffer[..length])
+        .map_err(|_| "Expanded shortcut filename contains invalid Unicode.".to_string())?;
+    let path = PathBuf::from(value);
+    if !path.is_absolute() {
+        return Err("Expanded shortcut filename is not an absolute filesystem path.".into());
+    }
+    Ok(path)
+}
+
+fn mo2_executable_name(path: &Path) -> bool {
+    path.file_name().is_some_and(|name| {
+        name.to_string_lossy()
+            .eq_ignore_ascii_case("ModOrganizer.exe")
+    })
+}
+
 fn read_shortcut(path: &Path) -> Result<Option<ShortcutSeed>, String> {
     let metadata = fs::symlink_metadata(path).map_err(|error| error.to_string())?;
     if linked(&metadata) || !metadata.is_file() || metadata.len() > 2 * METADATA_LIMIT as u64 {
@@ -734,18 +894,17 @@ fn read_shortcut(path: &Path) -> Result<Option<ShortcutSeed>, String> {
     if result < 0 {
         return Err(format!("Shortcut file could not be loaded ({result:#x})."));
     }
+    let Some(target) = shortcut_target(&object)? else {
+        return Ok(None);
+    };
+    let mut target = expanded_shortcut_path(&target)?;
+    if !mo2_executable_name(&target) {
+        target = long_shortcut_path(&target)?;
+    }
+    if !mo2_executable_name(&target) {
+        return Ok(None);
+    }
     let properties = object.query(&IID_PROPERTY_STORE)?;
-    let target = property_string(&properties, "System.Link.TargetParsingPath")?;
-    if target.is_empty() {
-        return Ok(None);
-    }
-    let target = PathBuf::from(expand(&target)?);
-    if !target.file_name().is_some_and(|name| {
-        name.to_string_lossy()
-            .eq_ignore_ascii_case("ModOrganizer.exe")
-    }) {
-        return Ok(None);
-    }
     let arguments = property_string(&properties, "System.Link.Arguments")?;
     Ok(Some(ShortcutSeed {
         path: path.into(),
@@ -1025,6 +1184,17 @@ pub(super) fn fixture_shell_path(path: &Path) -> PathBuf {
 mod tests {
     use super::*;
 
+    #[link(name = "shell32")]
+    unsafe extern "system" {
+        fn SHParseDisplayName(
+            name: *const u16,
+            bind_context: *mut c_void,
+            id_list: *mut *mut c_void,
+            attributes: u32,
+            returned_attributes: *mut u32,
+        ) -> i32;
+    }
+
     #[test]
     fn shell_fixture_paths_preserve_unicode_and_only_convert_verbatim_disk_or_unc() {
         for (input, expected) in [
@@ -1051,14 +1221,14 @@ mod tests {
     #[repr(C)]
     struct ShellLinkWriterVTable {
         unknown: UnknownVTable,
-        get_path: usize,
+        get_path: unsafe extern "system" fn(*mut c_void, *mut u16, i32, *mut c_void, u32) -> i32,
         get_id_list: usize,
-        set_id_list: usize,
+        set_id_list: unsafe extern "system" fn(*mut c_void, *const c_void) -> i32,
         get_description: usize,
         set_description: usize,
         get_working_directory: usize,
         set_working_directory: usize,
-        get_arguments: usize,
+        get_arguments: unsafe extern "system" fn(*mut c_void, *mut u16, i32) -> i32,
         set_arguments: unsafe extern "system" fn(*mut c_void, *const u16) -> i32,
         get_hotkey: usize,
         set_hotkey: usize,
@@ -1096,17 +1266,102 @@ mod tests {
         );
         let object = ComObject(object);
         let vtable = unsafe { &**(object.0 as *const *const ShellLinkWriterVTable) };
-        let result = unsafe { (vtable.set_path)(object.0, wide(executable).as_ptr()) };
-        assert!(
-            result >= 0,
-            "IShellLinkW::SetPath({executable:?}): {result:#x}"
-        );
+        let mut target_id = TaskMemory(ptr::null_mut());
+        if executable.as_os_str().encode_wide().count() >= 260 {
+            // SetPath rejects this real long target on Windows. Ask the Shell
+            // for its actual identifier and save that native identity instead;
+            // no synthetic property or hand-authored .lnk data is introduced.
+            let result = unsafe {
+                SHParseDisplayName(
+                    wide(executable).as_ptr(),
+                    ptr::null_mut(),
+                    &mut target_id.0,
+                    0,
+                    ptr::null_mut(),
+                )
+            };
+            assert!(
+                result >= 0 && !target_id.0.is_null(),
+                "SHParseDisplayName({executable:?}): {result:#x}"
+            );
+            let result = unsafe { (vtable.set_id_list)(object.0, target_id.0) };
+            assert!(result >= 0, "IShellLinkW::SetIDList: {result:#x}");
+            eprintln!(
+                "Long target before save: requested={executable:?}, stored={:?}",
+                stored_shortcut_target(&object)
+            );
+        } else {
+            let result = unsafe { (vtable.set_path)(object.0, wide(executable).as_ptr()) };
+            assert!(
+                result >= 0,
+                "IShellLinkW::SetPath({executable:?}): {result:#x}"
+            );
+        }
         let result = unsafe { (vtable.set_arguments)(object.0, wide(arguments).as_ptr()) };
         assert!(result >= 0, "IShellLinkW::SetArguments: {result:#x}");
         let persist = object.query(&IID_PERSIST_FILE).unwrap();
         let vtable = unsafe { &**(persist.0 as *const *const PersistFileWriterVTable) };
         let result = unsafe { (vtable.save)(persist.0, wide(path).as_ptr(), 1) };
         assert!(result >= 0, "IPersistFile::Save({path:?}): {result:#x}");
+    }
+
+    fn observe_saved_shortcut(path: &Path) -> (String, String, String, String) {
+        let mut object = ptr::null_mut();
+        let result = unsafe {
+            CoCreateInstance(
+                &CLSID_SHELL_LINK,
+                ptr::null_mut(),
+                CLSCTX_INPROC_SERVER,
+                &IID_SHELL_LINK_W,
+                &mut object,
+            )
+        };
+        assert!(
+            result >= 0 && !object.is_null(),
+            "CoCreateInstance: {result:#x}"
+        );
+        let object = ComObject(object);
+        let persist = object.query(&IID_PERSIST_FILE).unwrap();
+        let persist_vtable = unsafe { &**(persist.0 as *const *const PersistFileVTable) };
+        let result = unsafe { (persist_vtable.load)(persist.0, wide(path).as_ptr(), 0) };
+        assert!(result >= 0, "IPersistFile::Load({path:?}): {result:#x}");
+        eprintln!(
+            "Saved target getters: raw={:?}, stored={:?}, selected={:?}",
+            raw_shortcut_target(&object),
+            stored_shortcut_target(&object),
+            shortcut_target(&object)
+        );
+        let vtable = unsafe { &**(object.0 as *const *const ShellLinkWriterVTable) };
+        // These bounded, owned fixtures fit both diagnostic buffers. These
+        // direct getters never become a production fallback with truncation.
+        let mut target = [0_u16; 32768];
+        let result = unsafe {
+            (vtable.get_path)(
+                object.0,
+                target.as_mut_ptr(),
+                target.len() as i32,
+                ptr::null_mut(),
+                4,
+            )
+        };
+        assert!(
+            result >= 0,
+            "IShellLinkW::GetPath(SLGP_RAWPATH): {result:#x}"
+        );
+        let mut arguments = [0_u16; 32768];
+        let result = unsafe {
+            (vtable.get_arguments)(object.0, arguments.as_mut_ptr(), arguments.len() as i32)
+        };
+        assert!(result >= 0, "IShellLinkW::GetArguments: {result:#x}");
+        let properties = object.query(&IID_PROPERTY_STORE).unwrap();
+        (
+            string(&target),
+            string(&arguments),
+            property_string(&properties, "System.Link.TargetParsingPath")
+                .unwrap_or_else(|error| format!("ERROR: {error}")),
+            property_string(&properties, "System.Link.Arguments")
+                .unwrap_or_else(|error| format!("ERROR: {error}")),
+        )
     }
 
     #[test]
@@ -1136,6 +1391,90 @@ mod tests {
     }
 
     #[test]
+    fn relative_shortcut_targets_never_borrow_the_scanner_working_directory() {
+        for target in [
+            "ModOrganizer.exe",
+            r"MO2\ModOrganizer.exe",
+            r"C:ModOrganizer.exe",
+            r"\MO2\ModOrganizer.exe",
+        ] {
+            let error = expanded_shortcut_path(target).unwrap_err();
+            assert!(
+                error.contains("not an absolute filesystem path"),
+                "{target}: {error}"
+            );
+        }
+        assert_eq!(
+            expanded_shortcut_path(r"C:\MO2 Unicode 特別\ModOrganizer.exe").unwrap(),
+            Path::new(r"C:\MO2 Unicode 特別\ModOrganizer.exe")
+        );
+        for target in [
+            r"\\server\share\MODORG~1.EXE",
+            r"\\?\UNC\server\share\MODORG~1.EXE",
+            r"\\?\unc\server\share\MODORG~1.EXE",
+            r"\\?\UnC\server\share\MODORG~1.EXE",
+        ] {
+            assert!(
+                long_shortcut_path(Path::new(target))
+                    .unwrap_err()
+                    .contains("Network shortcut filename expansion was deferred")
+            );
+        }
+        assert!(!is_network_path(Path::new(
+            r"\\?\C:\MO2 Unicode 特別\ModOrganizer.exe"
+        )));
+    }
+
+    #[test]
+    fn an_alias_shaped_filename_is_not_guessed_to_be_mo2() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = fixture_shell_path(&fs::canonicalize(root.path()).unwrap());
+        let executable = directory.join("MODORG~1.EXE");
+        let bytes = b"a literal alias-shaped filename, not ModOrganizer.exe";
+        fs::write(&executable, bytes).unwrap();
+        let shortcut = directory.join("Unrelated alias-shaped target.lnk");
+        let _apartment = ComApartment::initialize().unwrap();
+        create_unicode_shortcut(&shortcut, &executable, "");
+        let before = fs::read(&shortcut).unwrap();
+        assert_eq!(long_shortcut_path(&executable).unwrap(), executable);
+        assert!(read_shortcut(&shortcut).unwrap().is_none());
+        assert_eq!(fs::read(&shortcut).unwrap(), before);
+        assert_eq!(fs::read(&executable).unwrap(), bytes);
+    }
+
+    #[test]
+    fn saved_environment_target_is_expanded_without_changing_process_environment() {
+        let temp = PathBuf::from(std::env::var_os("TEMP").unwrap());
+        let root = tempfile::tempdir_in(&temp).unwrap();
+        let application = root.path().join("MO2 environment 特別");
+        fs::create_dir_all(&application).unwrap();
+        let executable = application.join("ModOrganizer.exe");
+        let bytes = b"environment non-executable shortcut fixture";
+        fs::write(&executable, bytes).unwrap();
+        let target = Path::new("%TEMP%")
+            .join(root.path().file_name().unwrap())
+            .join("MO2 environment 特別")
+            .join("ModOrganizer.exe");
+        let shortcut = root.path().join("Environment 特別.lnk");
+        let _apartment = ComApartment::initialize().unwrap();
+        create_unicode_shortcut(&shortcut, &target, r#"--instance "Environment 特別版""#);
+        let before = fs::read(&shortcut).unwrap();
+        let observed = observe_saved_shortcut(&shortcut);
+        assert_eq!(Path::new(&observed.0), target, "{observed:?}");
+        let result = read_shortcut(&shortcut)
+            .unwrap()
+            .expect("Saved environment target must remain discoverable");
+        assert_eq!(
+            fs::canonicalize(&result.executable).unwrap(),
+            fs::canonicalize(&executable).unwrap()
+        );
+        assert_eq!(result.instance_name.as_deref(), Some("Environment 特別版"));
+        assert_eq!(fs::read(&shortcut).unwrap(), before);
+        assert_eq!(fs::read(&executable).unwrap(), bytes);
+        assert_eq!(std::env::var_os("TEMP").unwrap(), temp.as_os_str());
+    }
+
+    #[test]
     fn actual_shell_link_properties_preserve_target_and_instance_without_execution() {
         let root = tempfile::tempdir().unwrap();
         let directory = fixture_shell_path(&fs::canonicalize(root.path()).unwrap());
@@ -1155,7 +1494,18 @@ mod tests {
             r#"--instance "Skyrim Unicode 特別版""#,
         );
         let before = fs::read(&shortcut).unwrap();
-        let result = read_shortcut(&shortcut).unwrap().unwrap();
+        let observed = observe_saved_shortcut(&shortcut);
+        eprintln!(
+            "Saved shortcut (raw path, raw arguments, target property, arguments property): {observed:?}"
+        );
+        assert_eq!(Path::new(&observed.0), executable, "{observed:?}");
+        assert_eq!(
+            observed.1, r#"--instance "Skyrim Unicode 特別版""#,
+            "{observed:?}"
+        );
+        let result = read_shortcut(&shortcut)
+            .unwrap()
+            .unwrap_or_else(|| panic!("Production reader omitted saved shortcut: {observed:?}"));
         assert_eq!(result.executable, executable);
         assert_eq!(
             result.instance_name.as_deref(),
@@ -1165,6 +1515,50 @@ mod tests {
         assert_eq!(
             fs::read(executable).unwrap(),
             b"non-executable shortcut fixture"
+        );
+    }
+
+    #[test]
+    fn saved_unicode_target_beyond_max_path_and_long_arguments_are_read_completely() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = fixture_shell_path(&fs::canonicalize(root.path()).unwrap());
+        let mut application = directory.clone();
+        while application.as_os_str().encode_wide().count() < 320 {
+            application.push("MO2 long Unicode 特別 0123456789");
+        }
+        fs::create_dir_all(&application).unwrap();
+        let executable = application.join("ModOrganizer.exe");
+        let bytes = b"long-path non-executable shortcut fixture";
+        fs::write(&executable, bytes).unwrap();
+        let shortcut = directory.join("Long Unicode 特別.lnk");
+        let arguments = format!(
+            "--profile \"{}\" --instance \"Long Skyrim 特別版\"",
+            "profile-name-part ".repeat(300)
+        );
+        let _apartment = ComApartment::initialize().unwrap();
+        create_unicode_shortcut(&shortcut, &executable, &arguments);
+        let before = fs::read(&shortcut).unwrap();
+        let observed = observe_saved_shortcut(&shortcut);
+        eprintln!(
+            "Saved long shortcut: rawPath={:?}, targetProperty={:?}, rawArgumentUnits={}, allocatedArgumentUnits={}, allocatedArgumentsMatch={}",
+            observed.0,
+            observed.2,
+            observed.1.encode_utf16().count(),
+            observed.3.encode_utf16().count(),
+            observed.3 == arguments
+        );
+        let result = read_shortcut(&shortcut)
+            .unwrap()
+            .expect("Saved long Unicode filesystem target must remain discoverable");
+        assert!(result.executable.as_os_str().encode_wide().count() > 260);
+        assert_eq!(fixture_shell_path(&result.executable), executable);
+        assert_eq!(result.instance_name.as_deref(), Some("Long Skyrim 特別版"));
+        assert_eq!(fs::read(&shortcut).unwrap(), before);
+        assert_eq!(fs::read(&executable).unwrap(), bytes);
+        eprintln!(
+            "Complete saved Unicode shortcut: targetUnits={}, argumentUnits={}",
+            result.executable.as_os_str().encode_wide().count(),
+            arguments.encode_utf16().count()
         );
     }
 }

@@ -8,7 +8,7 @@ MO2's Python/Qt plugin remains the supported in-process adapter for MO2's authen
 
 ## MO2 Instances and the complete library
 
-**MO2 Instances** discovers native application folders and portable/global configurations, shows their shared relationships and profiles, and deploys the matching plugin into explicitly reviewed application IDs. Known scans and complete selected-root scans have separate scopes. Cancellation retains valid discoveries. The compiled desktop pins the entire installer resource, rechecks reviewed target fingerprints, verifies installed bytes, preserves data and records previous-plugin backups. Both desktop distributions include this resource; [the instance guide](../wiki/MO2-Instances.md) covers selection and recovery.
+**MO2 Instances** discovers native application folders and portable/global configurations, shows their shared relationships and profiles, and deploys the matching plugin into explicitly reviewed application IDs. Known scans and complete selected-root scans have separate scopes. Cancellation retains valid discoveries. The compiled desktop pins the entire installer resource, rechecks reviewed target fingerprints, verifies installed bytes, preserves data and records previous-plugin backups. Both desktop distributions include this resource; [the instance guide](https://github.com/Herbertofury/Modhunter/wiki/MO2-Instances) covers selection and recovery.
 
 The Library uses the full window with a bottom search/control dock, sticky headers, real Bugs/health/notes columns, saved column visibility and MO2 separator colors. File-aware source checking keeps optional files/addons distinct from a page's main release. Shared project evidence retains per-installed-file results.
 
@@ -26,7 +26,7 @@ The 0.13.0 packaging layout includes these assets. Consult [GitHub Releases](htt
 | `Modhunter-0.13.0-Standalone.zip` | Independent `Modhunter.html`, `BUILD_INFO.json` and internal `SHA256SUMS.txt`. |
 | `Modhunter-0.13.0-Verification.zip` and `SHA256SUMS.txt` | Validated public receipts/screenshots and checksums for the downloadable release assets. |
 
-The release pipeline requires the exact compiled Windows app, complete-library measurements, installer, actual MO2 fixture and browser evidence before publication. The [Atelier guide](https://github.com/Herbertofury/Modhunter/wiki/Atelier-0.12) records the accepted checkpoint and any remaining runtime limits when those results are available.
+The release pipeline requires the exact compiled Windows app, complete-library measurements, installer, actual MO2 fixture and browser evidence before publication. The [Rust Desktop guide](https://github.com/Herbertofury/Modhunter/wiki/Rust-Desktop) describes the current acceptance gates; published receipts belong to the release's verification archive and identify their tested commit and runtime scope. Current acceptance must be established by those passing receipts and published assets. The [Atelier guide](https://github.com/Herbertofury/Modhunter/wiki/Atelier-0.12) preserves historical 0.12 design and acceptance evidence.
 
 ## Capabilities retained from 0.11.0: reviewed downloads, recovery and app upkeep
 

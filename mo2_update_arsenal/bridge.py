@@ -441,6 +441,7 @@ class ArsenalService:
         must never be represented as a pending-update boss.
         """
         from .lore import describe_enemy_theme
+        from .companions import companion_candidates
         snapshot = self.snapshot()
         seen = set()
         targets = []
@@ -462,7 +463,8 @@ class ArsenalService:
                             "lore": describe_enemy_theme(item)})
         return {"ok": True, "profileId": snapshot.get("profileId", ""),
                 "scanState": self.scan_state().get("state", "idle"),
-                "targets": targets, "count": len(targets)}
+                "targets": targets, "count": len(targets),
+                "companions": companion_candidates(snapshot.get("items", []))}
 
     @staticmethod
     def _siege_candidate(item: dict) -> bool:

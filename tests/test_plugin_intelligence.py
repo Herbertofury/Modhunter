@@ -279,8 +279,18 @@ if mode == "oversize":
     raise SystemExit(0)
 result = {"schemaVersion": 2 if mode == "schema" else 1,
           "profileId": "wrong" if mode == "profile" else request.get("profileId"),
-          "mods": {}, "warnings": [], "depth": "records" if request.get("deep") else "header",
+          "mods": {m["id"]: {"status": "no-plugins", "plugins": [], "warnings": []} for m in request.get("mods", [])},
+          "plugins": [], "stats": {}, "checkedAt": "fixture", "activationSource": "native", "inventoryComplete": True,
+          "warnings": [], "depth": "records" if request.get("deep") else "header",
           "receivedPath": request.get("mods", [{}])[0].get("path")}
+if mode == "missing":
+    result["mods"].pop("m0", None)
+if mode == "depth":
+    result["depth"] = "header"
+if mode == "row":
+    result["mods"]["m0"]["plugins"] = [False]
+if mode == "nested":
+    result["mods"]["m0"]["plugins"] = [{"header": "broken"}]
 print(json.dumps(result))
 '''
 
@@ -304,13 +314,107 @@ class RustRunnerTests(unittest.TestCase):
         self.addCleanup(self.patcher.stop)
 
     def test_real_helper_request_response_and_native_warnings(self):
-        request = {"profileId": "A", "deep": True, "mods": [{"path": str(self.root / "owned mod")}],
+        request = {"profileId": "A", "deep": True, "mods": [{"id": "m0", "path": str(self.root / "owned mod")}],
                    "nativeWarnings": ["Native activation unavailable"]}
         result = RustAuditRunner(self.helper, timeout=2).run(request)
         self.assertEqual(result["receivedPath"], str(self.root / "owned mod"))
         self.assertEqual(result["depth"], "records")
         self.assertIn("Native activation unavailable", result["warnings"])
         self.assertEqual(self.invocations[0], [str(self.helper), "audit-plugins", "--request", "-"])
+
+    def test_real_helper_missing_mod_wrong_depth_and_invalid_rows_fail(self):
+        for mode in ("missing", "depth", "row", "nested"):
+            with self.subTest(mode=mode), self.assertRaises(RuntimeError):
+                RustAuditRunner(self.helper, timeout=2).run({"profileId": "A", "deep": True,
+                    "mods": [{"id": "m0"}], "mode": mode})
+
+    def test_invalid_refresh_retains_last_good_then_retry_recovers(self):
+        mode = "ok"
+        def capture(call):
+            call.begin()
+            call.finish({"ok": True, "request": {"profileId": "A", "deep": True,
+                         "mods": [{"id": "m0"}], "mode": mode}})
+        service = ArsenalService("<html/>", self.root / "cache.json", capture, profile())
+        coordinator = ModIntelligence(service, self.root / "intelligence.json",
+                                      runner=RustAuditRunner(self.helper, timeout=2))
+        service.intelligence = coordinator
+        try:
+            coordinator.start_audit("A", deep=True)
+            wait_until(lambda: not coordinator._worker_active)
+            self.assertEqual(coordinator.state()["state"], "completed")
+            original = coordinator._result
+            for mode in ("missing", "depth", "row", "nested"):
+                with self.subTest(mode=mode):
+                    coordinator.start_audit("A", deep=True)
+                    wait_until(lambda: not coordinator._worker_active)
+                    self.assertEqual(coordinator.state()["state"], "failed")
+                    self.assertIs(coordinator._result, original)
+                    item = service.snapshot()["items"][0]
+                    self.assertEqual(item["localAnalysis"]["status"], "no-plugins")
+                    self.assertTrue(item["localAnalysis"]["needsRecheck"])
+            mode = "ok"
+            coordinator.start_audit("A", deep=True)
+            wait_until(lambda: not coordinator._worker_active)
+            self.assertEqual(coordinator.state()["state"], "completed")
+            self.assertIsNot(coordinator._result, original)
+            self.assertFalse(service.snapshot()["items"][0]["localAnalysis"]["needsRecheck"])
+        finally:
+            service.stop()
+            wait_until(lambda: not coordinator._worker_active)
+
+    def valid_result(self):
+        plugin = {"name": "Example.esp", "header": None, "records": None, "fingerprint": None,
+                  "eligibility": {"status": "unknown"}, "provenance": {"state": "unknown"},
+                  "masterIssues": [], "errors": []}
+        return {"schemaVersion": 1, "profileId": "A", "depth": "records", "checkedAt": "fixture",
+                "inventoryComplete": False, "activationSource": "unknown", "stats": {}, "warnings": [],
+                "mods": {"m0": {"status": "unknown", "plugins": [plugin], "warnings": []}},
+                "plugins": [{**copy.deepcopy(plugin), "sourceCopies": [copy.deepcopy(plugin)]}]}
+
+    def test_valid_unknown_incomplete_nullable_and_extra_roots_remain_usable(self):
+        result = self.valid_result()
+        for key in ("__game_data__", "__overwrite__"):
+            result["mods"][key] = {"status": "no-plugins", "plugins": [], "warnings": []}
+        request = {"profileId": "A", "deep": True, "mods": [{"id": "m0"}], "nativeWarnings": ["native unknown"]}
+        accepted = RustAuditRunner()._validate_result(result, request)
+        self.assertIs(accepted, result)
+        self.assertFalse(accepted["inventoryComplete"])
+        compact = ModIntelligence._compact_analysis(accepted["mods"]["m0"])
+        self.assertIsNone(compact["plugins"][0]["header"]["lightEffective"])
+        self.assertEqual(accepted["warnings"], ["native unknown"])
+
+    def test_malformed_root_and_report_containers_are_rejected_before_warning_merge(self):
+        request = {"profileId": "A", "deep": True, "mods": [{"id": "m0"}], "nativeWarnings": ["not merged"]}
+        for key, bad in (("schemaVersion", True), ("checkedAt", None), ("activationSource", []),
+                         ("inventoryComplete", 1), ("stats", []), ("warnings", {}), ("warnings", [1]),
+                         ("mods", []), ("plugins", {}), ("plugins", [None])):
+            with self.subTest(key=key, bad=bad):
+                result = self.valid_result(); result[key] = bad
+                with self.assertRaises(RuntimeError): RustAuditRunner()._validate_result(result, request)
+                if key != "warnings": self.assertEqual(result["warnings"], [])
+        for key, bad in (("status", []), ("plugins", {}), ("warnings", "oops")):
+            result = self.valid_result(); result["mods"]["m0"][key] = bad
+            with self.subTest(key=key), self.assertRaises(RuntimeError):
+                RustAuditRunner()._validate_result(result, request)
+
+    def test_malformed_nested_plugin_shapes_and_unhashable_states_are_rejected(self):
+        request = {"profileId": "A", "deep": True, "mods": [{"id": "m0"}]}
+        mutations = [("header", "bad"), ("records", 7), ("fingerprint", []),
+                     ("eligibility", []), ("provenance", False), ("errors", "bad"), ("errors", [False]),
+                     ("provenance", {"state": []}), ("eligibility", {"status": {}}),
+                     ("masterIssues", [{"name": "Master.esm", "status": []}])]
+        for location in ("mod", "winner", "source"):
+            for key, bad in mutations:
+                with self.subTest(location=location, key=key, bad=bad):
+                    result = self.valid_result()
+                    row = (result["mods"]["m0"]["plugins"][0] if location == "mod" else
+                           result["plugins"][0] if location == "winner" else result["plugins"][0]["sourceCopies"][0])
+                    row[key] = bad
+                    with self.assertRaises(RuntimeError): RustAuditRunner()._validate_result(result, request)
+        for bad in (None, {}, [False]):
+            result = self.valid_result(); result["plugins"][0]["sourceCopies"] = bad
+            with self.subTest(sourceCopies=bad), self.assertRaises(RuntimeError):
+                RustAuditRunner()._validate_result(result, request)
 
     def test_bad_exit_schema_profile_and_timeout_are_clear_failures(self):
         for mode, message in (("error", "helper diagnostic"), ("schema", "schema"), ("profile", "profile"), ("timeout", "time limit")):

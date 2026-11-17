@@ -249,9 +249,72 @@ class RustAuditRunner:
         return self._validate_result(result, request)
 
     def _validate_result(self, result: dict, request: dict) -> dict:
-        if not isinstance(result, dict) or result.get("schemaVersion") != 1 or not isinstance(result.get("mods"), dict):
+        # Validate before the coordinator replaces its last-good result. Missing
+        # coverage is not an empty mod, and a header result is not a deep audit.
+        def invalid(field):
+            raise RuntimeError("Rust plugin analysis returned invalid " + field)
+
+        def strings(value, field):
+            if not isinstance(value, list) or any(not isinstance(x, str) for x in value):
+                invalid(field)
+
+        def plugin(row, field):
+            if not isinstance(row, dict):
+                invalid(field)
+            # These nullable Rust objects are dereferenced by compact projections.
+            for key in ("header", "records", "fingerprint"):
+                if row.get(key) is not None and not isinstance(row[key], dict):
+                    invalid(field + "." + key)
+            for key in ("eligibility", "provenance"):
+                if not isinstance(row.get(key), dict):
+                    invalid(field + "." + key)
+            for key, member in (("eligibility", "status"), ("provenance", "state")):
+                if not isinstance(row[key].get(member), str):
+                    invalid(field + "." + key + "." + member)
+            if not isinstance(row.get("masterIssues"), list):
+                invalid(field + ".masterIssues")
+            for issue in row["masterIssues"]:
+                if (not isinstance(issue, dict) or not isinstance(issue.get("name"), str)
+                        or not isinstance(issue.get("status"), str)):
+                    invalid(field + ".masterIssues")
+            strings(row.get("errors"), field + ".errors")
+
+        if (not isinstance(result, dict) or type(result.get("schemaVersion")) is not int
+                or result["schemaVersion"] != 1 or not isinstance(result.get("mods"), dict)):
             raise RuntimeError("Rust plugin analysis returned an unsupported schema")
         if result.get("profileId") != request.get("profileId"):
             raise RuntimeError("Rust plugin analysis returned a different profile")
-        result.setdefault("warnings", []).extend(request.get("nativeWarnings", []))
+        if result.get("depth") != ("records" if request.get("deep") else "header"):
+            invalid("audit depth")
+        for key in ("checkedAt", "activationSource"):
+            if not isinstance(result.get(key), str):
+                invalid(key)
+        if type(result.get("inventoryComplete")) is not bool:
+            invalid("inventoryComplete")
+        if not isinstance(result.get("stats"), dict):
+            invalid("stats")
+        strings(result.get("warnings"), "warnings")
+        # Rust may include physical game-data/overwrite roots; require requested
+        # mod coverage, not equality, and keep explicit unknown/incomplete rows.
+        for mod in request.get("mods", []):
+            if mod["id"] not in result["mods"]:
+                invalid("mod coverage: " + str(mod["id"]))
+        for mod_id, report in result["mods"].items():
+            field = "mods." + str(mod_id)
+            if not isinstance(report, dict) or not isinstance(report.get("status"), str):
+                invalid(field)
+            strings(report.get("warnings"), field + ".warnings")
+            if not isinstance(report.get("plugins"), list):
+                invalid(field + ".plugins")
+            for row in report["plugins"]:
+                plugin(row, field + ".plugins")
+        if not isinstance(result.get("plugins"), list):
+            invalid("plugins")
+        for row in result["plugins"]:
+            plugin(row, "plugins")
+            if not isinstance(row.get("sourceCopies"), list):
+                invalid("plugins.sourceCopies")
+            for source in row["sourceCopies"]:
+                plugin(source, "plugins.sourceCopies")
+        result["warnings"].extend(request.get("nativeWarnings", []))
         return result

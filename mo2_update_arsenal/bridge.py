@@ -443,6 +443,7 @@ class ArsenalService:
         """
         from .lore import describe_enemy_theme
         from .companions import companion_candidates
+        from .enemy_art import enemy_art
         snapshot = self.snapshot()
         seen = set()
         targets = []
@@ -461,7 +462,7 @@ class ArsenalService:
                             "latestVersion": target, "priority": item.get("priority"),
                             "source": update.get("source", "MO2 cached metadata"),
                             "checkedAt": update.get("checkedAt"), "game": snapshot.get("game", "skyrimspecialedition"),
-                            "lore": describe_enemy_theme(item)})
+                            "lore": describe_enemy_theme(item), "artwork": enemy_art(item)})
         return {"ok": True, "profileId": snapshot.get("profileId", ""),
                 "scanState": self.scan_state().get("state", "idle"),
                 "targets": targets, "count": len(targets),
@@ -1712,7 +1713,7 @@ class ArsenalService:
                 self.send_header("X-Content-Type-Options", "nosniff")
                 self.send_header("X-Frame-Options", "DENY")
                 self.send_header("Referrer-Policy", "no-referrer")
-                self.send_header("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: https://staticdelivery.nexusmods.com https://cdn.modrinth.com https://gcdn.thunderstore.io https://cdn.thunderstore.io https://thunderstore.io; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'")
+                self.send_header("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: https://staticdelivery.nexusmods.com https://cdn.modrinth.com https://gcdn.thunderstore.io https://cdn.thunderstore.io https://thunderstore.io; connect-src 'self' https://staticdelivery.nexusmods.com https://cdn.modrinth.com https://gcdn.thunderstore.io https://cdn.thunderstore.io https://thunderstore.io; base-uri 'none'; frame-ancestors 'none'; form-action 'none'")
                 self.end_headers()
 
             def _reply(self, obj, status=200):

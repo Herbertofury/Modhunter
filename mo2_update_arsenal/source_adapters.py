@@ -294,9 +294,11 @@ def asset_matches_source(source: dict, update: dict, asset: dict) -> bool:
     if provider == "modrinth":
         return (url.hostname == "cdn.modrinth.com" and bool(re.fullmatch(r"[A-Za-z0-9]+", project))
                 and bool(re.fullmatch(r"[A-Za-z0-9]+", release))
-                and (url.path.startswith("/data/" + project + "/versions/" + release + "/")
+                # Bind the exact reviewed filename, not merely its release directory.
+                # _strict_url already rejects decoded traversal and embedded separators.
+                and (unquote(url.path) == "/data/" + project + "/versions/" + release + "/" + name
                      or asset.get("releaseVersion") == update.get("latestVersion") and bool(asset.get("releaseVersion"))
-                     and url.path.startswith("/data/" + project + "/versions/" + str(asset["releaseVersion"]) + "/")))
+                     and unquote(url.path) == "/data/" + project + "/versions/" + str(asset["releaseVersion"]) + "/" + name))
     if provider == "thunderstore":
         # projectId is the API's Namespace/Package identity; a community prefix
         # may be carried separately in compatibility and never changes ownership.

@@ -111,6 +111,28 @@ class SourceEvidenceTests(unittest.TestCase):
         altered["update"]["releaseAssets"][0].update(url="https://gitlab.com/group/sub/project/-/releases/v2.0/downloads/mod.zip", originUrl="https://evil.example/mod.zip")
         self.assertFalse(asset_matches_source(altered["source"], altered["update"], altered["update"]["releaseAssets"][0]))
 
+    def test_modrinth_download_requires_exact_filename_not_release_prefix(self):
+        item, _ = fixture("modrinth")
+        base = "https://cdn.modrinth.com/data/AbCdEfGh/versions/IjKlMnOp/"
+        for path in ("other.zip", "nested/mod.zip", "mod.zip/extra.zip", "MOD.zip"):
+            with self.subTest(path=path):
+                altered = copy.deepcopy(item)
+                asset = altered["update"]["releaseAssets"][0]
+                asset["url"] = base + path
+                # Even a newly generated proof cannot authorize a different file.
+                asset["assetProof"] = asset_proof(altered["source"], altered["update"], asset)
+                with self.assertRaisesRegex(PlanError, "provider/project/release/format"):
+                    validate_release_asset(snapshot(altered), selection(altered))
+
+    def test_modrinth_encoded_and_legacy_exact_filenames_remain_supported(self):
+        for folder in ("IjKlMnOp", "2.0.0"):
+            item, _ = fixture("modrinth")
+            asset = item["update"]["releaseAssets"][0]
+            asset.update(name="mod plus+.zip", releaseVersion="2.0.0",
+                         url=f"https://cdn.modrinth.com/data/AbCdEfGh/versions/{folder}/mod%20plus%2B.zip")
+            asset["assetProof"] = asset_proof(item["source"], item["update"], asset)
+            self.assertEqual(validate_release_asset(snapshot(item), selection(item))["url"], asset["url"])
+
     def test_other_github_tag_and_modrinth_version_cannot_reuse_an_asset_identity(self):
         for provider, old, replacement in (("github", "/v2.0/", "/v1.0/"), ("modrinth", "/IjKlMnOp/", "/QrStUvWx/")):
             item, _ = fixture(provider)
@@ -263,6 +285,26 @@ class SourceServiceTests(unittest.TestCase):
         result = self.service.install_reviewed_download(501)
         self.assertFalse(result["ok"])
         self.assertEqual(len(self.calls), 1)
+
+    def test_modrinth_exact_file_is_dispatched_but_sibling_file_is_not(self):
+        item, _ = fixture("modrinth")
+        asset = item["update"]["releaseAssets"][0]
+        original_url = asset["url"]
+        asset["url"] = original_url.replace("/mod.zip", "/other.zip")
+        asset["assetProof"] = asset_proof(item["source"], item["update"], asset)
+        self.service.set_snapshot(snapshot(item))
+        blocked = self.service.queue_reviewed_downloads({"profileId": "p", "confirm": "QUEUE_REVIEWED_DOWNLOADS", "entries": [selection(item)]})
+        self.assertFalse(blocked["ok"])
+        self.assertEqual(self.calls, [])
+        asset["url"] = original_url
+        asset["assetProof"] = asset_proof(item["source"], item["update"], asset)
+        self.service.set_snapshot(snapshot(item))
+        queued = self.service.queue_reviewed_downloads({"profileId": "p", "confirm": "QUEUE_REVIEWED_DOWNLOADS", "entries": [selection(item)]})
+        self.assertTrue(queued["ok"])
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(self.calls[0].cmd, "download-url")
+        self.assertEqual(self.calls[0].payload["url"], original_url)
+        self.assertEqual(self.calls[0].payload["assetProof"], asset["assetProof"])
 
     def test_same_archive_for_two_rows_is_queued_once_and_cannot_be_queued_again(self):
         second = copy.deepcopy(self.item)

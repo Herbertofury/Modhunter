@@ -1,0 +1,62 @@
+name: Native installer script path diagnosis
+on:
+  push:
+    branches: ['diagnostics/installer-script-path-0.13.0']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: modhunter-installer-script-path-diagnostic-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  script_path:
+    if: github.ref == 'refs/heads/diagnostics/installer-script-path-0.13.0'
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.99.1'
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+          cache-on-failure: 'true'
+      - name: Prepare genuine native compile dependencies
+        shell: pwsh
+        run: |
+          python native/scripts/prepare_assets.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python native/scripts/prepare_archive_tools.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python native/scripts/prepare_notices.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Download the exact previously tested b79 Windows resource carrier
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: '14296729097'
+          run-id: '44011920441'
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/modhunter-b79-artifact
+          merge-multiple: true
+      - name: Compare the native legacy and repaired script boundary using unchanged PS5.1
+        shell: pwsh
+        run: |
+          # The wrapper verifies every b79 resource byte, stages that exact
+          # manifest before native test compilation, then performs Preview
+          # only. Source identities remain separate and no release is built.
+          ./native/scripts/diagnose_instances_manager.ps1 -InstallerScriptTests -ArtifactDirectory (Join-Path $env:RUNNER_TEMP 'modhunter-b79-artifact') -Output "$PWD/native/target/installer-script-path-diagnostic"
+      - name: Preserve the actual native comparison and owned cleanup result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Modhunter-Installer-Script-Path-Diagnostic
+          path: native/target/installer-script-path-diagnostic/
+          if-no-files-found: error
+          retention-days: 30

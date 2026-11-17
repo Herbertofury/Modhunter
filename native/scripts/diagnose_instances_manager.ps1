@@ -3,11 +3,14 @@
 Run the current diagnostic harness against the exact already-built b79 app.
 This is not release acceptance: binary source and harness source are distinct.
 Only a newly owned disposable Windows CI installation is created or removed.
+InstallerScriptTests compiles the current Rust path regression against the
+same verified b79 resource; it invokes Preview only and never opens the app.
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory=$true)][string]$ArtifactDirectory,
-    [string]$Output = "$PSScriptRoot/../target/instances-manager-diagnostic"
+    [string]$Output = "$PSScriptRoot/../target/instances-manager-diagnostic",
+    [switch]$InstallerScriptTests
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -39,7 +42,8 @@ $ownerFile = Join-Path $owned 'owner.txt'
 [IO.File]::WriteAllText($ownerFile, $token, [Text.UTF8Encoding]::new($false))
 $target = Join-Path $owned 'desktop'
 $nativeOutput = Join-Path $Output 'native-manager'
-$receipt = Join-Path $Output 'instances-manager-diagnostic.json'
+$receiptName = if ($InstallerScriptTests) { 'installer-script-path-diagnostic.json' } else { 'instances-manager-diagnostic.json' }
+$receipt = Join-Path $Output $receiptName
 $errors = [Collections.Generic.List[string]]::new()
 $cleanupErrors = [Collections.Generic.List[string]]::new()
 $report = [ordered]@{
@@ -53,8 +57,23 @@ $report = [ordered]@{
     harnessSourceSha256 = [ordered]@{}; resourceHashes = [ordered]@{}
     uninstalled = $false; errors = $errors; cleanupErrors = $cleanupErrors
 }
-foreach ($relative in @('native/scripts/diagnose_instances_manager.ps1', 'native/scripts/instances_manager_smoke.ps1',
-        'native/scripts/verify_instances_manager.cjs', 'native/scripts/bind_native_proof.py', '.github/workflows/instances-manager-diagnostic.yml')) {
+$harnessSources = @('native/scripts/diagnose_instances_manager.ps1', 'native/scripts/instances_manager_smoke.ps1',
+        'native/scripts/verify_instances_manager.cjs', 'native/scripts/bind_native_proof.py', '.github/workflows/instances-manager-diagnostic.yml')
+if ($InstallerScriptTests) {
+    $report.kind = 'installer-script-path-diagnostic'
+    $report.scope = 'Actual native Rust helper and unchanged Windows PowerShell 5.1 preview using the genuine pinned b79 plugin resource. The disposable target is an inert x64 PE marker. No plugin installation, personal MO2, account or release acceptance.'
+    $report.bindingScope = 'The native test executable is compiled from harnessSourceCommit with the exact pinned b79 resource manifest. Resource source and test-host source are intentionally distinct; this is not a distributable release build.'
+    $report.nativeWorkerReceipt = $null
+    $report.focusedNativeTestsPassed = $false
+    $report.actualPluginInstallExecuted = $false
+    $report.nativeMO2 = $false
+    $report.appUiExecuted = $false
+    $harnessSources = @('native/scripts/diagnose_instances_manager.ps1', '.github/workflows/installer-script-path-diagnostic.yml',
+        'native/crates/modhunter-desktop/src/installer_script_windows.rs', 'native/crates/modhunter-desktop/src/instances_windows.rs',
+        'native/crates/modhunter-desktop/src/installer_bundle.rs', 'native/crates/modhunter-desktop/src/main.rs',
+        'native/crates/modhunter-desktop/Cargo.toml', 'native/Cargo.toml', 'native/Cargo.lock', 'native/Install_MO2_Plugin.ps1')
+}
+foreach ($relative in $harnessSources) {
     $report.harnessSourceSha256[$relative] = Hash (Join-Path $root $relative)
 }
 function Save-Receipt { $report | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $receipt -Encoding utf8 }
@@ -84,7 +103,7 @@ function Run-OwnedProcess([string]$File, [string[]]$Arguments) {
 }
 Save-Receipt
 [IO.File]::WriteAllText((Join-Path $Output 'DIAGNOSTIC-SCOPE.txt'),
-    "Binary source: $binaryCommit`nHarness source: $harnessCommit`nThis artifact is diagnostic only. Native worker source checkpoints identify the harness checkout, not a new binary build. No receipt here replaces the full release workflow.`n", [Text.UTF8Encoding]::new($false))
+    "Resource/binary source: $binaryCommit`nHarness source: $harnessCommit`n$($report.scope)`n$($report.bindingScope)`nNo receipt here replaces the full release workflow.`n", [Text.UTF8Encoding]::new($false))
 $installAttempted = $false
 try {
     if (@(Registrations).Count -or (Get-Process -Name Modhunter -ErrorAction SilentlyContinue)) {
@@ -127,15 +146,86 @@ try {
         $build.workflow -cne 'https://github.com/Herbertofury/Modhunter/actions/runs/44011920441') {
         throw 'Installed bundle build identity differs from b79.'
     }
-    $report.phase = 'observe-native-manager'; Save-Receipt
-    & "$PSScriptRoot/instances_manager_smoke.ps1" -Executable $executable -Output $nativeOutput
-    $native = Get-Content -LiteralPath (Join-Path $nativeOutput 'instances-manager.json') -Raw | ConvertFrom-Json
-    $report.nativeManagerPassed = $native.ok -eq $true
-    if (!$report.nativeManagerPassed) { throw 'The exact native manager diagnostic did not pass.' }
-    $report.phase = 'native-manager-complete'
+    if ($InstallerScriptTests) {
+        $report.phase = 'compile-native-installer-script-regression'; Save-Receipt
+        $stagedResource = Join-Path $root 'native/resources/mo2-installer'
+        if (Test-Path -LiteralPath $stagedResource) { throw 'Refusing to replace an existing compile-time resource.' }
+        if ((Hash (Join-Path $root 'native/Install_MO2_Plugin.ps1')) -cne $report.resourceHashes['Install_MO2_Plugin.ps1']) {
+            throw 'The current installer script no longer matches the pinned genuine resource.'
+        }
+        Copy-Item -LiteralPath $resource -Destination $stagedResource -Recurse
+        $stagedFiles = @(Get-ChildItem -LiteralPath $stagedResource -Force -File -Recurse)
+        if ($stagedFiles.Count -ne $report.resourceHashes.Count) { throw 'Copied compile-time resource inventory differs.' }
+        foreach ($entry in $stagedFiles) {
+            $relative = [IO.Path]::GetRelativePath($stagedResource, $entry.FullName).Replace('\', '/')
+            if (!$report.resourceHashes.Contains($relative) -or (Hash $entry.FullName) -cne $report.resourceHashes[$relative]) {
+                throw 'Copied compile-time resource bytes differ.'
+            }
+        }
+        $testLog = Join-Path $Output 'installer-script-tests.log'
+        $env:CARGO_TERM_COLOR = 'never'
+        Push-Location $root
+        try {
+            cargo test --manifest-path native/Cargo.toml --locked -p modhunter-desktop --bin Modhunter installer_script_ -- --nocapture 2>&1 | Tee-Object -FilePath $testLog
+            $report.nativeTestExitCode = $LASTEXITCODE
+        } finally { Pop-Location }
+        $report.nativeTestLogSha256 = Hash $testLog
+        if ($report.nativeTestExitCode -ne 0) { throw 'The actual native installer-script tests failed.' }
+        $lines = [IO.File]::ReadAllLines($testLog)
+        $marker = 'MODHUNTER_INSTALLER_SCRIPT_PREVIEW='
+        $observations = @($lines | Where-Object { $_.Contains($marker) } | ForEach-Object {
+            $_.Substring($_.IndexOf($marker, [StringComparison]::Ordinal) + $marker.Length) | ConvertFrom-Json -AsHashtable
+        })
+        if ($observations.Count -ne 1) { throw 'The required native preview observation is missing or repeated.' }
+        $report.nativePreview = $observations[0]
+        $observation = $observations[0]
+        $baseline = $observation['baselineReceipt']; $preview = $observation['previewReceipt']
+        if ($observation['schemaVersion'] -ne 1 -or $observation['ok'] -ne $true -or
+            $observation['bundleManifestSha256'] -cne $expectedManifest -or
+            $observation['targetsUnchanged'] -ne $true -or $observation['packageUnchanged'] -ne $true -or
+            $observation['actualInstallExecuted'] -ne $false -or
+            $baseline['schemaVersion'] -ne 1 -or $baseline['ok'] -ne $false -or $baseline['code'] -cne 'unsafe_path' -or
+            $preview['schemaVersion'] -ne 1 -or $preview['ok'] -ne $true -or $preview['status'] -cne 'preview' -or
+            $preview['code'] -cne 'ready' -or $preview['version'] -cne '0.13.0' -or $preview['commit'] -cne $binaryCommit -or
+            [string]$preview['installedFingerprint'] -cnotmatch '^[0-9a-f]{64}$') {
+            throw 'The actual native baseline/fixed preview does not prove the unchanged safe resource boundary.'
+        }
+        $baselineArgument = [string]$observation['baselineScriptArgument']
+        $validatedArgument = [string]$observation['validatedScriptArgument']
+        if (!$baselineArgument.StartsWith('\\?\', [StringComparison]::Ordinal) -or
+            $validatedArgument.StartsWith('\\?\', [StringComparison]::Ordinal) -or
+            (Hash $baselineArgument) -cne $report.resourceHashes['Install_MO2_Plugin.ps1'] -or
+            (Hash $validatedArgument) -cne $report.resourceHashes['Install_MO2_Plugin.ps1']) {
+            throw 'The native comparison did not use both spellings of the unchanged verified script.'
+        }
+        $resultLines = @($lines | Where-Object { $_ -match '^test result: ok\. 7 passed; 0 failed; 0 ignored;' })
+        if ($resultLines.Count -ne 1) { throw 'The complete focused native test result is missing.' }
+        $report.nativeTestSummary = $resultLines[0]
+        $testExecutables = @(foreach ($line in $lines) {
+            if ($line -match 'Running unittests .+ \((.+\.exe)\)') {
+                if ([IO.Path]::IsPathRooted($Matches[1])) { $Matches[1] } else { Join-Path $root $Matches[1] }
+            }
+        })
+        if ($testExecutables.Count -ne 1) { throw 'The exact compiled native test executable is not identified.' }
+        $report.nativeTestExecutableSha256 = Hash $testExecutables[0]
+        foreach ($entry in $stagedFiles) {
+            $relative = [IO.Path]::GetRelativePath($stagedResource, $entry.FullName).Replace('\', '/')
+            if ((Hash $entry.FullName) -cne $report.resourceHashes[$relative]) { throw 'Preview changed a compiled resource.' }
+        }
+        $report.resourceUnchangedAfterTests = $true
+        $report.focusedNativeTestsPassed = $true
+        $report.phase = 'native-installer-script-tests-complete'
+    } else {
+        $report.phase = 'observe-native-manager'; Save-Receipt
+        & "$PSScriptRoot/instances_manager_smoke.ps1" -Executable $executable -Output $nativeOutput
+        $native = Get-Content -LiteralPath (Join-Path $nativeOutput 'instances-manager.json') -Raw | ConvertFrom-Json
+        $report.nativeManagerPassed = $native.ok -eq $true
+        if (!$report.nativeManagerPassed) { throw 'The exact native manager diagnostic did not pass.' }
+        $report.phase = 'native-manager-complete'
+    }
 } catch {
     $errors.Add($_.Exception.Message)
-    $report.phase = 'native-manager-diagnostic-failed'
+    $report.phase = if ($InstallerScriptTests) { 'native-installer-script-diagnostic-failed' } else { 'native-manager-diagnostic-failed' }
 } finally {
     $workerReceipt = Join-Path $nativeOutput 'instances-manager.json'
     if (Test-Path -LiteralPath $workerReceipt) {
@@ -169,8 +259,9 @@ try {
     if ((git -C $root rev-parse HEAD).Trim() -cne $harnessCommit -or (git -C $root status --porcelain --untracked-files=all)) {
         $errors.Add('Diagnostic source changed during execution.')
     }
-    $report.ok = $report.nativeManagerPassed -and $errors.Count -eq 0 -and $cleanupErrors.Count -eq 0 -and $report.uninstalled
+    $passed = if ($InstallerScriptTests) { $report.focusedNativeTestsPassed } else { $report.nativeManagerPassed }
+    $report.ok = $passed -and $errors.Count -eq 0 -and $cleanupErrors.Count -eq 0 -and $report.uninstalled
     Save-Receipt
 }
 Get-Content -LiteralPath $receipt -Raw
-if (!$report.ok) { throw 'Native Instances diagnostic failed; inspect its preserved actual UI, IPC and cleanup evidence.' }
+if (!$report.ok) { throw 'Native diagnostic failed; inspect its preserved actual observations and cleanup evidence.' }

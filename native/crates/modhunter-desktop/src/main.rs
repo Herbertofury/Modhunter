@@ -6,6 +6,8 @@ mod import_operation;
 mod install_admission;
 mod installer_bundle;
 #[cfg(windows)]
+mod installer_script_windows;
+#[cfg(windows)]
 mod instances_windows;
 #[cfg_attr(not(windows), allow(dead_code))]
 mod locale;

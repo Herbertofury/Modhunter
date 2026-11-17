@@ -153,7 +153,7 @@ class ModIntelligence:
                 cancel_event = self._active_cancel = threading.Event()
             try:
                 captured = self.service.call_ui("plugin-audit-input", {"profileId": profile,
-                    "deep": deep, "eslifierDataPaths": configured}, timeout=25)
+                    "deep": deep, "eslifierDataPaths": configured}, timeout=25, cancel_event=cancel_event)
                 if not captured.get("ok") or not isinstance(captured.get("request"), dict):
                     raise RuntimeError(str(captured.get("error") or "MO2 plugin inventory could not be captured"))
                 with self.service._guard:

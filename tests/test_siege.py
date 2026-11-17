@@ -8,6 +8,7 @@ import gzip
 import random
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from mo2_update_arsenal.gameplay import Chronicle
 from mo2_update_arsenal.bridge import ArsenalService
@@ -36,6 +37,28 @@ class NativeBossBountyTests(unittest.TestCase):
   self.assertTrue(self.store.save_siege_state('p',{"v":1,"run":{"id":"parent"}},1)['ok'])
   self.assertNotIn('siegePortalParent',self.store.data['profiles']['p'])
   self.assertEqual(self.store.realm_wallet('p')['earned'],0)
+
+ def test_failed_portal_disk_write_never_publishes_memory_as_durable(self):
+  raw=b'{"id":"parent"}'
+  snapshot={"v":1,"codec":"gzip","bytes":len(raw),"data":base64.b64encode(gzip.compress(raw)).decode()}
+  for mode in ('realm','siege'):
+   with self.subTest(mode=mode):
+    save=self.store.save_realm_world if mode=='realm' else self.store.save_siege_state
+    read=self.store.realm_world if mode=='realm' else self.store.siege_state
+    parent={"v":1,"player":{"hp":47}} if mode=='realm' else {"v":1,"run":{"id":"parent"}}
+    session={"v":1,"childId":"child","parentId":"parent","parent":snapshot}
+    child={"v":1,"portalSession":session} if mode=='realm' else {"v":1,"run":{"id":"child","portalSession":session}}
+    save(mode,parent,0)
+    for candidate,revision in ((child,1),(parent,2)):
+     before=read(mode);disk=self.store.path.read_bytes()
+     with patch('mo2_update_arsenal.gameplay.os.replace',side_effect=OSError('disk full')):
+      with self.assertRaises(OSError):save(mode,candidate,revision)
+     self.assertEqual(read(mode),before)
+     reopened=Chronicle(self.store.path)
+     persisted=reopened.realm_world(mode) if mode=='realm' else reopened.siege_state(mode)
+     self.assertEqual(persisted,before)
+     self.assertEqual(self.store.path.read_bytes(),disk)
+     self.assertTrue(save(mode,candidate,revision)['ok'])
 
  def test_claim_creates_no_currency_or_ranked_xp(self):
   granted=self.store.claim_mod_boss('p',MOD,'run_abcdefghijk');self.assertTrue(granted['ok'])
@@ -105,6 +128,22 @@ class BridgeSiegeTests(unittest.TestCase):
   status,result=self.call('POST','/api/siege/state',{'profileId':'modhunter-demo','revision':0,'state':state})
   self.assertEqual(status,200);self.assertTrue(result['ok'],result)
   self.assertEqual(self.call('GET','/api/siege/state')[1]['state'],state)
+
+ def test_realm_portal_archive_crosses_http_and_is_atomic(self):
+  raw=json.dumps({"id":"parent","payload":base64.b64encode(random.Random(17).randbytes(430000)).decode()}).encode()
+  snapshot={"v":1,"codec":"gzip","bytes":len(raw),"data":base64.b64encode(gzip.compress(raw)).decode()}
+  world={"v":1,"portalSession":{"v":1,"childId":"child","parentId":"parent","parent":snapshot},"runtime":{"enemies":[{"id":n,"name":"x"*1000} for n in range(512)]}}
+  self.assertGreater(len(json.dumps(world)),800000)
+  status,result=self.call('POST','/api/realm/world',{'profileId':'modhunter-demo','revision':0,'world':world})
+  self.assertEqual(status,200);self.assertTrue(result['ok'],result)
+  self.assertEqual(self.call('GET','/api/realm/world')[1]['world'],world)
+  bad=copy.deepcopy(world);bad['portalSession']['parent']['data']='x'*750001
+  self.assertFalse(self.call('POST','/api/realm/world',{'profileId':'modhunter-demo','revision':1,'world':bad})[1]['ok'])
+  self.assertEqual(self.call('GET','/api/realm/world')[1]['world'],world)
+  self.assertFalse(self.call('POST','/api/realm/world',{'profileId':'modhunter-demo','revision':0,'world':{'v':1}})[1]['ok'])
+  self.assertTrue(self.call('POST','/api/realm/world',{'profileId':'modhunter-demo','revision':1,'world':{'v':1}})[1]['ok'])
+  self.assertEqual(self.call('GET','/api/realm/world')[1]['world'],{'v':1})
+  self.assertEqual(self.service.chronicle.realm_wallet('modhunter-demo')['earned'],0)
 
  def test_exact_target_and_native_mo2_focus(self):
   status,data=self.call('GET','/api/siege/targets');self.assertEqual(status,200)

@@ -36,7 +36,7 @@ from .version import VERSION
 
 MAX_REQUEST = 16_384
 MAX_PROGRESS_REQUEST = 8_000_000
-MAX_REALM_REQUEST = 800_000
+MAX_REALM_REQUEST = 9 * 1024 * 1024  # bounded child plus separate packed portal parent
 MAX_SIEGE_REQUEST = 9 * 1024 * 1024  # bounded game state and separate packed portal parent
 MAX_CACHED_SNAPSHOT = 32 * 1024 * 1024
 MAX_CONTENT_REQUEST = 1024 * 1024

@@ -352,6 +352,28 @@ class Chronicle:
                     "bossKillPoints": BOSS_KILL_POINTS, "verifiedBonusPoints": BOSS_UPDATE_BONUS_POINTS,
                     "verifiedBonusSigils": BOSS_UPDATE_BONUS_SIGILS}
 
+    def _commit_game_fields(self, profile: dict, fields: dict) -> None:
+        """Publish only a persisted game snapshot; callers hold the Chronicle lock.
+
+        A failed replace/write must not make GET look like a successful lost-ack
+        commit. Restore the exact prior optional fields and revision on failure.
+        """
+        before = {key: deepcopy(profile[key]) for key in fields if key in profile}
+        try:
+            for key, value in fields.items():
+                if value is None:
+                    profile.pop(key, None)
+                else:
+                    profile[key] = value
+            self._write()
+        except Exception:
+            for key in fields:
+                if key in before:
+                    profile[key] = before[key]
+                else:
+                    profile.pop(key, None)
+            raise
+
     def siege_state(self, profile_id: str) -> dict:
         with self.lock:
             p = self._profile(profile_id)
@@ -408,42 +430,68 @@ class Chronicle:
             current = int(p.get("siegeRevision", 0))
             if revision != current:
                 return {"ok": False, "error": "A newer Siege save exists; reload", "conflict": True, "revision": current}
-            p["siegeState"] = stored
-            if archive is None:
-                p.pop("siegePortalParent", None)
-            else:
-                p["siegePortalParent"] = archive
-            p["siegeRevision"] = current + 1
-            self._write()
+            self._commit_game_fields(p, {"siegeState": stored, "siegePortalParent": archive, "siegeRevision": current + 1})
             return {"ok": True, "profileId": profile_id, "revision": current + 1}
 
     def realm_world(self, profile_id: str) -> dict:
         with self.lock:
             p = self._profile(profile_id)
-            return {"ok": True, "profileId": profile_id,
-                    "revision": int(p.get("realmWorldRevision", 0)),
-                    "world": deepcopy(p.get("realmWorld") or {})}
+            state = deepcopy(p.get("realmWorld") or {})
+            archive = p.get("realmPortalParent")
+            if archive is not None:
+                run = state
+                if not isinstance(run, dict):
+                    return {"ok": False, "error": "Portal run mismatch; prior save retained"}
+                session = run.get("portalSession") or {}
+                if (not isinstance(session, dict) or not isinstance(archive, dict) or archive.get("childId") != session.get("childId")
+                        or archive.get("parentId") != session.get("parentId")
+                        or not isinstance(archive.get("snapshot"), dict)):
+                    return {"ok": False, "error": "Portal parent archive mismatch; retained unchanged for recovery"}
+                session["parent"] = deepcopy(archive["snapshot"])
+            return {"ok": True, "profileId": profile_id, "revision": int(p.get("realmWorldRevision", 0)),
+                    "world": state}
 
     def save_realm_world(self, profile_id: str, world: dict, revision: int) -> dict:
-        """World snapshot is cosmetic/gameplay-only: it cannot grant currency or XP."""
-        if not isinstance(world, dict):
-            return {"ok": False, "error": "Invalid world snapshot"}
-        if len(json.dumps(world, separators=(',', ':'), ensure_ascii=False)) > 750000:
-            return {"ok": False, "error": "World snapshot too large"}
-        allowed = {"v", "player", "stats", "inventory", "known", "worldTime", "quests", "camp",
-                   "records", "mode", "rift", "seed", "companions", "harvested", "removed", "cooldowns", "story", "perks"}
-        if set(world) - allowed:
-            return {"ok": False, "error": "Unexpected fields in world snapshot"}
+        """Game-only save. Not a trusted source of MO2 currency or bounty score."""
+        state = world
+        if not isinstance(state, dict) or state.get("v") != 1:
+            return {"ok": False, "error": "Invalid realm state"}
+        permitted = {"v", "player", "stats", "inventory", "known", "worldTime", "quests", "camp", "records", "mode", "rift", "seed", "companions", "harvested", "removed", "cooldowns", "story", "perks", "runtime", "portalSession"}
+        if set(state) - permitted:
+            return {"ok": False, "error": "Unexpected realm fields"}
+        stored = deepcopy(state)
+        archive = None
+        try:
+            run = stored
+            if not isinstance(run, dict):
+                return {"ok": False, "error": "Invalid Realm run"}
+            session = run.get("portalSession")
+            if session is not None:
+                if not isinstance(session, dict) or session.get("v") != 1 or not isinstance(session.get("childId"), str) or not isinstance(session.get("parentId"), str):
+                    return {"ok": False, "error": "Invalid portal session"}
+                snapshot = session.pop("parent", None)
+                if (not isinstance(snapshot, dict) or snapshot.get("v") != 1 or snapshot.get("codec") != "gzip"
+                        or not isinstance(snapshot.get("bytes"), int) or isinstance(snapshot.get("bytes"), bool)
+                        or not 0 < snapshot["bytes"] <= 8000000 or not isinstance(snapshot.get("data"), str)):
+                    return {"ok": False, "error": "Invalid portal parent snapshot; prior save retained"}
+                if len(json.dumps(snapshot, separators=(",", ":")).encode("utf-8")) > 750000:
+                    return {"ok": False, "error": "Portal parent exceeds its separate 750 KB packed budget; prior save retained"}
+                raw = base64.b64decode(snapshot["data"], validate=True)
+                if not raw.startswith(b"\x1f\x8b"):
+                    return {"ok": False, "error": "Invalid gzip parent snapshot; prior save retained"}
+                archive = {"childId": session["childId"], "parentId": session["parentId"], "snapshot": snapshot}
+            length = len(json.dumps(stored, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8"))
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "Realm state cannot be encoded"}
+        if length > 750000:
+            return {"ok": False, "error": "Realm state is too large"}
         with self.lock:
             p = self._profile(profile_id)
             current = int(p.get("realmWorldRevision", 0))
-            if int(revision) != current:
-                return {"ok": False, "error": "A newer Realm save exists; reload before overwriting", "conflict": True, "revision": current}
-            # Economy is explicitly omitted; client inventories contain only gathered resources.
-            p["realmWorld"] = deepcopy(world)
-            p["realmWorldRevision"] = current + 1
-            self._write()
-            return {"ok": True, "profileId": profile_id, "revision": current+1}
+            if revision != current:
+                return {"ok": False, "error": "A newer Realm save exists; reload", "conflict": True, "revision": current}
+            self._commit_game_fields(p, {"realmWorld": stored, "realmPortalParent": archive, "realmWorldRevision": current + 1})
+            return {"ok": True, "profileId": profile_id, "revision": current + 1}
 
     def leaderboard(self) -> list[dict]:
         with self.lock:

@@ -1,4 +1,4 @@
-# Modhunter 0.12.1 — Rust desktop
+# Modhunter 0.13.0 — Rust desktop
 
 The Windows desktop, profile import/cache engine, connection probing, tab lifecycle and native file dialogs run in Rust. Microsoft Edge WebView2 renders the existing Modhunter dashboard, Questbound, AetherFX, Shiverfell, Siege and Atlas. The shipped desktop does not require Node or Electron.
 

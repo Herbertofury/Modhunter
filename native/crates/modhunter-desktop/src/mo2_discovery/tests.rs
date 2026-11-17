@@ -494,21 +494,33 @@ fn symlink_cycles_and_linked_config_files_are_not_followed() {
 #[cfg(windows)]
 #[test]
 fn windows_junction_cycles_are_reported_without_following_them() {
+    use std::os::windows::process::CommandExt;
+
     let root = tempfile::tempdir().unwrap();
     let application_path = root.path().join("MO2");
     application(&application_path);
     let link = application_path.join("cycle");
     let command = PathBuf::from(std::env::var_os("SystemRoot").unwrap()).join("System32/cmd.exe");
+    // cmd.exe parses its own command line and does not accept every path form
+    // accepted by Rust's filesystem APIs. Keep all operands trusted literals;
+    // only CreateProcess receives the owned, ordinary Win32 working directory.
+    let directory = windows::fixture_shell_path(&fs::canonicalize(&application_path).unwrap());
     let result = std::process::Command::new(command)
-        .args(["/d", "/c", "mklink", "/J"])
-        .arg(&link)
-        .arg(&application_path)
+        .current_dir(&directory)
+        .args(["/d", "/c"])
+        .raw_arg("mklink /J cycle .")
         .output()
         .unwrap();
     assert!(
         result.status.success(),
-        "{}",
+        "Junction fixture in {directory:?}: stdout={}, stderr={}",
+        String::from_utf8_lossy(&result.stdout),
         String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(linked(&fs::symlink_metadata(&link).unwrap()));
+    assert_eq!(
+        fs::canonicalize(&link).unwrap(),
+        fs::canonicalize(&application_path).unwrap()
     );
     let result = deep(&[application_path]);
     assert_eq!(result.installations.len(), 1);

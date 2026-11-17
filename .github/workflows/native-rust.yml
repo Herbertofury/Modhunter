@@ -414,7 +414,7 @@ jobs:
           fi
           gh release create "$tag" release-assets/*.zip release-assets/*.exe release-assets/SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
-            --title "Modhunter $version — OLED desktop" --notes-file release-assets/release-notes.md
+            --title "Modhunter $version — MO2 setup and full-window library" --notes-file release-assets/release-notes.md
   mo2:
     runs-on: windows-2025
     timeout-minutes: 25

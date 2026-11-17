@@ -2,7 +2,7 @@
 
 [Home](Home) · [Daily use and setup](Daily-Use) · [Rust desktop](Rust-Desktop) · [MO2 readiness](MO2-253-Testing)
 
-**Modhunter 0.12.1 is the published Windows release for everyday library browsing, source checks, reviewed updates and recovery.** It brings the OLED-black interface and colored chapters into the packaged desktop, corrects offline checklist progress, and makes the MO2 readiness checker follow the verified package version.
+**This is the historical Modhunter 0.12.1 release record.** For the current build and setup instructions, see [Daily use](Daily-Use) and [MO2 Instances](MO2-Instances). Version 0.12.1 brought the OLED-black interface and colored chapters into the packaged desktop, corrected offline checklist progress, and made the MO2 readiness checker follow the verified package version.
 
 **[Complete portable Windows package](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.1/Modhunter-Rust-Windows.zip)** · **[Windows installer](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.1/Modhunter_0.12.1_x64-setup.exe)** · **[All components and checksums](https://github.com/Herbertofury/Modhunter/releases/tag/v0.12.1)**
 

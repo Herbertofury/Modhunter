@@ -996,9 +996,118 @@ pub(super) fn file_version(path: &Path) -> Option<String> {
     ))
 }
 
+// Shell fixture writers need an ordinary Win32 spelling of their short, owned
+// paths. Preserve Unicode/OsString data; never strip device or volume prefixes.
+#[cfg(test)]
+pub(super) fn fixture_shell_path(path: &Path) -> PathBuf {
+    use std::path::{Component, Prefix};
+
+    let mut components = path.components();
+    let Some(Component::Prefix(prefix)) = components.next() else {
+        return path.into();
+    };
+    let mut result = match prefix.kind() {
+        Prefix::VerbatimDisk(drive) => PathBuf::from(format!("{}:", char::from(drive))),
+        Prefix::VerbatimUNC(server, share) => {
+            let mut prefix = OsString::from(r"\\");
+            prefix.push(server);
+            prefix.push(r"\");
+            prefix.push(share);
+            PathBuf::from(prefix)
+        }
+        _ => return path.into(),
+    };
+    result.extend(components);
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shell_fixture_paths_preserve_unicode_and_only_convert_verbatim_disk_or_unc() {
+        for (input, expected) in [
+            (
+                r"C:\MO2 Unicode 特別\ModOrganizer.exe",
+                r"C:\MO2 Unicode 特別\ModOrganizer.exe",
+            ),
+            (
+                r"\\?\C:\MO2 Unicode 特別\ModOrganizer.exe",
+                r"C:\MO2 Unicode 特別\ModOrganizer.exe",
+            ),
+            (r"\\?\UNC\server\share\MO2 特別", r"\\server\share\MO2 特別"),
+            (
+                r"\\?\Volume{fixture}\MO2 特別",
+                r"\\?\Volume{fixture}\MO2 特別",
+            ),
+        ] {
+            assert_eq!(fixture_shell_path(Path::new(input)), Path::new(expected));
+        }
+    }
+
+    // These writer-only vtables stay in the fixture. Production discovery only
+    // loads IPersistFile and reads IPropertyStore; it never saves or resolves.
+    #[repr(C)]
+    struct ShellLinkWriterVTable {
+        unknown: UnknownVTable,
+        get_path: usize,
+        get_id_list: usize,
+        set_id_list: usize,
+        get_description: usize,
+        set_description: usize,
+        get_working_directory: usize,
+        set_working_directory: usize,
+        get_arguments: usize,
+        set_arguments: unsafe extern "system" fn(*mut c_void, *const u16) -> i32,
+        get_hotkey: usize,
+        set_hotkey: usize,
+        get_show_cmd: usize,
+        set_show_cmd: usize,
+        get_icon_location: usize,
+        set_icon_location: usize,
+        set_relative_path: usize,
+        resolve: usize,
+        set_path: unsafe extern "system" fn(*mut c_void, *const u16) -> i32,
+    }
+
+    #[repr(C)]
+    struct PersistFileWriterVTable {
+        reader: PersistFileVTable,
+        save: unsafe extern "system" fn(*mut c_void, *const u16, i32) -> i32,
+    }
+
+    fn create_unicode_shortcut(path: &Path, executable: &Path, arguments: &str) {
+        let mut object = ptr::null_mut();
+        // Explicit IShellLinkW avoids WScript.Shell automation's path/encoding
+        // boundary. This creates a real .lnk, without ever executing its target.
+        let result = unsafe {
+            CoCreateInstance(
+                &CLSID_SHELL_LINK,
+                ptr::null_mut(),
+                CLSCTX_INPROC_SERVER,
+                &IID_SHELL_LINK_W,
+                &mut object,
+            )
+        };
+        assert!(
+            result >= 0 && !object.is_null(),
+            "CoCreateInstance: {result:#x}"
+        );
+        let object = ComObject(object);
+        let vtable = unsafe { &**(object.0 as *const *const ShellLinkWriterVTable) };
+        let result = unsafe { (vtable.set_path)(object.0, wide(executable).as_ptr()) };
+        assert!(
+            result >= 0,
+            "IShellLinkW::SetPath({executable:?}): {result:#x}"
+        );
+        let result = unsafe { (vtable.set_arguments)(object.0, wide(arguments).as_ptr()) };
+        assert!(result >= 0, "IShellLinkW::SetArguments: {result:#x}");
+        let persist = object.query(&IID_PERSIST_FILE).unwrap();
+        let vtable = unsafe { &**(persist.0 as *const *const PersistFileWriterVTable) };
+        let result = unsafe { (vtable.save)(persist.0, wide(path).as_ptr(), 1) };
+        assert!(result >= 0, "IPersistFile::Save({path:?}): {result:#x}");
+    }
 
     #[test]
     fn instance_arguments_keep_empty_portable_and_unicode_names_distinct() {
@@ -1029,48 +1138,29 @@ mod tests {
     #[test]
     fn actual_shell_link_properties_preserve_target_and_instance_without_execution() {
         let root = tempfile::tempdir().unwrap();
-        let application = root.path().join("MO2 Unicode 特別");
+        let directory = fixture_shell_path(&fs::canonicalize(root.path()).unwrap());
+        assert_eq!(
+            fs::canonicalize(&directory).unwrap(),
+            fs::canonicalize(root.path()).unwrap()
+        );
+        let application = directory.join("MO2 Unicode 特別");
         fs::create_dir_all(&application).unwrap();
         let executable = application.join("ModOrganizer.exe");
         fs::write(&executable, b"non-executable shortcut fixture").unwrap();
-        let shortcut = root.path().join("Skyrim launch.lnk");
-        let script = root.path().join("create-shortcut.ps1");
-        fs::write(
-            &script,
-            r#"$ErrorActionPreference='Stop'
-$shell=New-Object -ComObject WScript.Shell
-$link=$shell.CreateShortcut($env:MODHUNTER_TEST_SHORTCUT)
-$link.TargetPath=$env:MODHUNTER_TEST_APPLICATION
-$link.Arguments='--instance "Skyrim Unicode"'
-$link.Save()
-"#,
-        )
-        .unwrap();
-        let powershell = PathBuf::from(std::env::var_os("SystemRoot").unwrap())
-            .join("System32/WindowsPowerShell/v1.0/powershell.exe");
-        let output = std::process::Command::new(powershell)
-            .args([
-                "-NoProfile",
-                "-NonInteractive",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-File",
-            ])
-            .arg(&script)
-            .env("MODHUNTER_TEST_SHORTCUT", &shortcut)
-            .env("MODHUNTER_TEST_APPLICATION", &executable)
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
+        let shortcut = directory.join("Skyrim 特別 launch.lnk");
+        let _apartment = ComApartment::initialize().unwrap();
+        create_unicode_shortcut(
+            &shortcut,
+            &executable,
+            r#"--instance "Skyrim Unicode 特別版""#,
         );
         let before = fs::read(&shortcut).unwrap();
-        let _apartment = ComApartment::initialize().unwrap();
         let result = read_shortcut(&shortcut).unwrap().unwrap();
         assert_eq!(result.executable, executable);
-        assert_eq!(result.instance_name.as_deref(), Some("Skyrim Unicode"));
+        assert_eq!(
+            result.instance_name.as_deref(),
+            Some("Skyrim Unicode 特別版")
+        );
         assert_eq!(fs::read(&shortcut).unwrap(), before);
         assert_eq!(
             fs::read(executable).unwrap(),

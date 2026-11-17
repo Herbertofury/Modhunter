@@ -1,0 +1,35 @@
+name: Windows installer pipe diagnosis
+on:
+  push:
+    branches: ['diagnostics/installer-pipe-0.13.0']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: modhunter-installer-pipe-diagnostic-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  preview:
+    if: github.ref == 'refs/heads/diagnostics/installer-pipe-0.13.0'
+    runs-on: windows-2025
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Diagnose unchanged PS5.1 preview and an output-only candidate
+        shell: pwsh
+        run: |
+          python native/scripts/diagnose_installer_pipe.py --output native/target/installer-pipe-diagnostic
+          exit $LASTEXITCODE
+      - name: Preserve exact diagnostic bytes and interrupted results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Modhunter-Installer-Pipe-Diagnostic
+          path: native/target/installer-pipe-diagnostic/
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,40 @@
+name: Library style and layout attribution
+on:
+  push:
+    branches: ['diagnostics/trace-0.13.0']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: modhunter-library-trace-diagnostic-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  trace:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Prepare the same Chromium runtime and fonts
+        run: |
+          python3 -m venv /tmp/modhunter-trace
+          /tmp/modhunter-trace/bin/pip install -q playwright==1.57.0
+          /tmp/modhunter-trace/bin/python tests/prepare_ci_fonts.py --output /tmp/modhunter-trace-proof/ci-fonts.json
+          if ! command -v chromium >/dev/null && ! command -v chromium-browser >/dev/null; then
+            /tmp/modhunter-trace/bin/python -m playwright install --with-deps chromium
+          fi
+      - name: Attribute unchanged full-library style and layout work
+        env:
+          MODHUNTER_REQUIRE_BROWSER: '1'
+        run: |
+          /tmp/modhunter-trace/bin/python -m unittest discover -s tests -p test_library_trace_diagnostic.py -v
+          PYTHONPATH=. /tmp/modhunter-trace/bin/python tests/library_trace_diagnostic.py --output /tmp/modhunter-trace-proof
+      - name: Preserve full raw traces and exact source mapping
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Modhunter-Library-Trace-Diagnostic
+          path: /tmp/modhunter-trace-proof/
+          if-no-files-found: error
+          retention-days: 90

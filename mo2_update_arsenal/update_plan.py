@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Any
 import time
 
-from .source_adapters import PUBLIC_API_PROVIDERS, REVIEW_COMPATIBILITY_STATES, asset_matches_source, asset_proof
+from .source_adapters import PUBLIC_API_PROVIDERS, REVIEW_COMPATIBILITY_STATES, asset_matches_source, asset_proof, public_hashes
 
 RISK_FLAGS = frozenset({"DLL", "HARD_ESP", "HARD_ESM", "NEMESIS", "SKSE", "ROOT_BUILDER", "BEHAVIOR"})
 RISK_VERDICTS = frozenset({"hold", "check", "avoid", "ae-only"})
@@ -208,4 +208,5 @@ def validate_release_asset(snapshot: dict, raw: dict, *, require_fresh=True) -> 
             "projectId": str(update.get("projectId") or ""), "releaseId": str(update.get("releaseId") or ""),
             "sourceUrl": str(source.get("url") or ""), "targetVersion": str(update.get("latestVersion") or ""),
             "url": str(candidate.get("url") or ""), "provider": provider, "name": str(candidate.get("name") or ""),
+            "size": candidate.get("size"), "hashes": public_hashes(candidate.get("hashes")),
             "installedVersion": str(item.get("installedVersion") or "")}

@@ -73,12 +73,25 @@ def real_path(value, *, directory=False, absent=False):
     return resolved
 
 
-def file_identity(path, cancel=None):
+def file_identity(path, cancel=None, *, expected=None):
     path = real_path(path)
     before = path.stat()
     if not stat.S_ISREG(before.st_mode) or before.st_size > MAX_ARCHIVE:
         raise ValueError("Archive is not a supported bounded regular file")
-    digest = hashlib.sha256()
+    if cancel is not None and cancel.is_set():
+        raise RuntimeError("Content operation cancelled before native mutation")
+    expected = expected or {}
+    size = expected.get("size")
+    if size is not None and (type(size) is not int or size <= 0 or size != before.st_size):
+        raise ValueError("Downloaded archive size differs from the reviewed provider file")
+    hashes = expected.get("hashes") or {}
+    lengths = {"sha256": 64, "sha512": 128, "sha1": 40}
+    if not isinstance(hashes, dict) or any(
+            key not in lengths or not isinstance(value, str)
+            or not re.fullmatch(r"[0-9a-fA-F]{" + str(lengths[key]) + "}", value)
+            for key, value in hashes.items()):
+        raise ValueError("Reviewed provider digest is invalid or unsupported")
+    digests = {key: hashlib.new(key) for key in {"sha256", *hashes}}
     count = 0
     with path.open("rb") as stream:
         while chunk := stream.read(1024 * 1024):
@@ -87,11 +100,16 @@ def file_identity(path, cancel=None):
             count += len(chunk)
             if count > MAX_ARCHIVE:
                 raise ValueError("Archive exceeds the supported size")
-            digest.update(chunk)
+            for digest in digests.values():
+                digest.update(chunk)
+    if cancel is not None and cancel.is_set():
+        raise RuntimeError("Content operation cancelled before native mutation")
     after = path.stat()
-    if (before.st_size, before.st_mtime_ns, before.st_ino) != (after.st_size, after.st_mtime_ns, after.st_ino) or count != before.st_size:
+    if (before.st_size, before.st_mtime_ns, before.st_ino, before.st_dev, before.st_ctime_ns) != (after.st_size, after.st_mtime_ns, after.st_ino, after.st_dev, after.st_ctime_ns) or count != before.st_size:
         raise ValueError("Archive changed while its complete bytes were verified")
-    return {"path": str(path), "bytes": count, "sha256": digest.hexdigest()}
+    if any(digests[key].hexdigest() != value.lower() for key, value in hashes.items()):
+        raise ValueError("Downloaded archive digest differs from the reviewed provider file")
+    return {"path": str(path), "bytes": count, "sha256": digests["sha256"].hexdigest()}
 
 
 def read_json(path, bound):
@@ -874,13 +892,30 @@ class ContentRecovery:
                 "profileId": context["profileId"], "game": context["game"], "modName": context["modName"], **extra}
 
     def _install_work(self, job, data, context, cancel):
+        if data.get("_nativeArchive"):
+            from .archive_read_lock import archive_read_lock
+            # Acquire on this worker and retain through the real native result.
+            # A busy writer fails closed, rather than silently dropping the lease.
+            with archive_read_lock(real_path(data["_nativeArchive"])) as protection:
+                self._update(job, archiveWriteProtection=protection)
+                return self._install_work_verified(job, data, context, cancel)
+        return self._install_work_verified(job, data, context, cancel)
+
+    def _install_work_verified(self, job, data, context, cancel):
         if not context.get("modRoot"):
             raise ValueError("Choose an exact existing mod or an explicit new mod name")
         if context.get("missingTarget"):
             raise ValueError("This target requires recovery of its retained transaction before installation")
         if data.get("_nativeArchive"):
-            original = file_identity(data["_nativeArchive"], cancel)
+            original = file_identity(data["_nativeArchive"], cancel, expected=data.get("_providerIntegrity"))
             installer = original
+            expected = data.get("_providerIntegrity")
+            if expected is not None:
+                self._update(job, providerVerification={
+                    "assetProof": expected["assetProof"], "provider": expected["provider"],
+                    "publishedDigestsMatched": sorted(expected["hashes"]),
+                    "publishedSizeMatched": expected["size"] is not None,
+                    "localSha256": original["sha256"]})
         else:
             original = verify_acquisition(data.get("resolvedArchive"), job["downloadId"], context, cancel)
             installer = verify_selected_archive(data.get("review") or (data.get("resolvedArchive") or {}).get("review"), original, cancel)
@@ -923,6 +958,9 @@ class ContentRecovery:
         # Rehash original/selected archive and target backup after preparation,
         # immediately before the queued native handoff. Qt then revalidates the
         # actual target/profile/game lease before opening any installer dialog.
+        # Capture before the final hash, never rebase the handoff stamp after
+        # intervening backup verification (which may take time).
+        stamp = Path(installer["path"]).stat()
         if file_identity(installer["path"], cancel) != installer:
             raise ValueError("Installer archive changed after preparation")
         verified_backup = self.runner.run(self._request(context, "verifyPrepared", id=backup["id"], **compared), cancel_event=cancel)
@@ -931,9 +969,8 @@ class ContentRecovery:
         if cancel.is_set():
             raise RuntimeError("Install cancelled before opening MO2's installer; backup retained")
         self._update(job, state="installing", backupVerified=True)
-        stamp = Path(installer["path"]).stat()
         result = self._ui("content-install", {"jobId": job["jobId"], "context": context,
-                    "archive": installer["path"], "archiveIdentity": installer, "archiveStamp": [stamp.st_size, stamp.st_mtime_ns, stamp.st_ino],
+                    "archive": installer["path"], "archiveIdentity": installer, "archiveStamp": [stamp.st_size, stamp.st_mtime_ns, stamp.st_ino, stamp.st_dev, stamp.st_ctime_ns],
                     "backupId": backup["id"], "nativeDownloadId": data.get("_nativeDownloadId")}, cancel, timeout=30)
         if result.get("nativeStarted"):
             self._update(job, nativeStarted=True)
@@ -1141,6 +1178,14 @@ class ContentRecovery:
         archive = self._ui("content-download", {"downloadId": download_id, "context": context})
         if not archive.get("ok"):
             return archive
+        from .source_adapters import PUBLIC_API_PROVIDERS
+        if ticket.get("provider") in PUBLIC_API_PROVIDERS:
+            from .update_plan import validate_release_asset
+            # Re-resolve server-owned evidence, never accept expected hashes from a browser.
+            selected = validate_release_asset(self.service.selection_snapshot([str(ticket.get("itemId") or "")]),
+                {**ticket, "kind": "source", "reviewed": True, "riskAcknowledged": True}, require_fresh=False)
+            data["_providerIntegrity"] = {"size": selected["size"], "hashes": selected["hashes"],
+                                          "assetProof": selected["assetProof"], "provider": selected["provider"]}
         data["_nativeArchive"] = archive["archive"]
         data["_nativeFileId"] = ticket.get("fileId")
         data["_nativeDownloadId"] = download_id
@@ -1379,7 +1424,7 @@ class NativeContent:
             source = real_path(payload["archive"])
             info = source.stat()
             if (str(source) != identity["path"] or info.st_size != identity["bytes"]
-                    or [info.st_size, info.st_mtime_ns, info.st_ino] != payload["archiveStamp"]):
+                    or [info.st_size, info.st_mtime_ns, info.st_ino, info.st_dev, info.st_ctime_ns] != payload["archiveStamp"]):
                 raise ValueError("Installer archive changed before native handoff")
             with self.content._lock:
                 job = self.content._jobs[payload["jobId"]]

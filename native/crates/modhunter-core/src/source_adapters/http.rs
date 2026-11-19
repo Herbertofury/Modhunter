@@ -487,7 +487,7 @@ impl<'a> HttpContext<'a> {
                         .get("x-ratelimit-remaining")
                         .is_some_and(|n| n == "0"))
             {
-                retry = retry_after(&reply.headers, self.now);
+                retry = retry_after(&reply.headers, self.now, &host);
                 self.hold_host(host, retry, 429);
                 self.stats.rate_limited.fetch_add(1, Ordering::Relaxed);
                 self.remember_failure(url, previous, 429, retry);
@@ -497,7 +497,7 @@ impl<'a> HttpContext<'a> {
                 // GameSync-style service backoff, persisted across scans. A
                 // provider outage is not a rate-limit or a current-version
                 // result, and force-refresh must not create a retry storm.
-                retry = retry_after(&reply.headers, self.now);
+                retry = retry_after(&reply.headers, self.now, &host);
                 self.hold_host(host, retry, 503);
             }
             self.remember_failure(url, previous, reply.status, retry);
@@ -642,7 +642,7 @@ fn status_name(status: u16) -> &'static str {
         _ => "unavailable",
     }
 }
-fn retry_after(headers: &BTreeMap<String, String>, now: u64) -> u64 {
+fn retry_after(headers: &BTreeMap<String, String>, now: u64, host: &str) -> u64 {
     let seconds = headers
         .get("retry-after")
         .and_then(|v| v.parse::<u64>().ok())
@@ -656,7 +656,15 @@ fn retry_after(headers: &BTreeMap<String, String>, now: u64) -> u64 {
             headers
                 .get("x-ratelimit-reset")
                 .and_then(|v| v.parse::<u64>().ok())
-                .map(|t| t.saturating_sub(now))
+                .map(|t| {
+                    // Modrinth documents seconds until reset; GitHub/GitLab use epoch seconds.
+                    // https://docs.modrinth.com/api/
+                    if host == "api.modrinth.com" {
+                        t
+                    } else {
+                        t.saturating_sub(now)
+                    }
+                })
         })
         .unwrap_or(60)
         .clamp(1, 3600);

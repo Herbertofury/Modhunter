@@ -63,3 +63,26 @@ Unsupported sites retain explicit manual/account/API-key/official-client states.
 - [Modrinth project API](https://docs.modrinth.com/api/operations/getproject/) and [project versions API](https://docs.modrinth.com/api/operations/getprojectversions/).
 - [Official Thunderstore serializers](https://github.com/thunderstore-io/Thunderstore/blob/master/django/thunderstore/repository/api/experimental/serializers/main.py) and [official CLI endpoints](https://github.com/thunderstore-io/thunderstore-cli/blob/master/ThunderstoreCLI/API/ApiHelper.cs).
 - Existing [Engineering-Atlas adapter lab](https://github.com/Herbertofury/Engineering-Atlas/tree/main/apps/atlas-lab/src): bounded JSON reading and strict Modrinth version identity informed this implementation.
+
+### Modrinth reset and exact-file contract
+
+Modrinth's `X-Ratelimit-Reset` is a relative number of seconds, unlike GitHub's
+UTC epoch reset. The HTTP adapter selects units by the validated API host,
+retains `Retry-After` precedence and the existing 1–3600 second bounds, and
+persists host cooldowns so a forced scan of another project cannot bypass them.
+Sources: https://docs.modrinth.com/api/ and
+https://docs.github.com/en/rest/using-the-rest-api/troubleshooting-the-rest-api.
+
+The MO2 review/download validator also binds the CDN path to the exact published
+filename, not only the project/version directory. It permits canonical version
+IDs and the already-supported legacy version-number route, including encoded
+filenames. A different filename or nested path fails before queue dispatch even
+if the cached row has a freshly recomputed review proof. Existing project,
+release, digest/size proof, expiry and compatibility checks remain in force.
+
+These regressions use injected HTTP responses and local queue contracts. They do
+not establish live CDN downloading, archive-byte verification, native MO2 install
+or game compatibility. Public Modrinth metadata needs no browser login; a browser
+session does not confer API permission for other providers. Nexus continues to
+use supported MO2 native authorization. No private-token, cookie scraping or
+restricted-download fallback is added.

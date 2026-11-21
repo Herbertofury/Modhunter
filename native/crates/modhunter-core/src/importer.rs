@@ -759,6 +759,27 @@ fn optional_analysis_path(path: PathBuf) -> Option<PathBuf> {
     }
 }
 
+// Explicit comparison reuses the importer's normal file policy and additionally
+// checks the selected entry after reading. No settings path is ever followed.
+pub(crate) fn read_ini_comparison_input(path: &Path) -> Result<Vec<u8>, CoreError> {
+    let before = fs::symlink_metadata(path).map_err(|e| io_error("Inspect selected INI", e))?;
+    let stamp = FileStamp::from(&before);
+    let bytes = read_bounded(path, META_LIMIT)?;
+    let after = fs::symlink_metadata(path).map_err(|e| io_error("Recheck selected INI", e))?;
+    if is_link(&before)
+        || is_link(&after)
+        || !before.is_file()
+        || !after.is_file()
+        || FileStamp::from(&after) != stamp
+        || bytes.len() as u64 != before.len()
+    {
+        return Err(CoreError::Invalid(
+            "Selected INI changed during comparison; choose a stable copy".into(),
+        ));
+    }
+    Ok(bytes)
+}
+
 fn read_bounded(path: &Path, limit: usize) -> Result<Vec<u8>, CoreError> {
     let before = fs::symlink_metadata(path).map_err(|e| io_error("Inspect MO2 file", e))?;
     if is_link(&before) || !before.is_file() {
@@ -776,7 +797,7 @@ fn read_bounded(path: &Path, limit: usize) -> Result<Vec<u8>, CoreError> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(libc::O_NOFOLLOW);
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
     }
     #[cfg(windows)]
     {

@@ -218,6 +218,7 @@
   finally{if(kind!=='detail')busy.delete(key)}
  }
  function navigate(nextView,nextFilter='all'){
+  if(view!==nextView)window.dispatchEvent(new CustomEvent('modhunter-watchtower-view',{detail:nextView}));
   view=nextView;filter=nextFilter;clearSelected();for(const name of ['pages','sessions','history','settings','downloads'])$(name+'View').hidden=name!==view;
   for(const button of $('navigation').querySelectorAll('[data-view]')){const active=button.dataset.view===view&&(view!=='pages'||button.dataset.filter===filter);button.classList.toggle('active',active);if(active)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current')}
   const names={all:'All pages',changed:'Changes to review',new:'Awaiting first check',attention:'Needs attention',paused:'Paused & muted',removed:'Removed pages'};text('viewTitle',view==='pages'?names[filter]:{sessions:'Site sign-ins',history:'Seen history',settings:'Preferences',downloads:'Page downloads'}[view]);text('viewSubtitle',view==='pages'?'Track a release page, creator, changelog, or a page that needs your sign-in.':view==='downloads'?'Downloads you explicitly choose, kept separate from installation.':view==='sessions'?'Separate browser profiles, clear ownership, and a direct route back to your pages.':view==='history'?'Review and undo the page changes you acknowledged.':'Choose when to check, which sources to contact, and what stays visible.');render();

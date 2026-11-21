@@ -1,7 +1,7 @@
 'use strict';
 (() => {
  const api=()=>window.ModhunterWatchtower,$=id=>document.getElementById(id);
- let current=null,dirty=false,generation=0,reportId=null,cleanup=null,release=null;
+ let current=null,dirty=false,generation=0,reportId=null,cleanup=null,release=null,iniReview=null,iniBusy=false,iniView=0,disposed=false;
  async function call(kind,value={}){const result=await api().command(kind,value,true);if(!result?.ok)throw new Error(result?.error||result?.message||'The action could not be completed.');return result}
  function task(action){Promise.resolve().then(action).catch(error=>api().showToast(error.message||String(error),null,'Undo',true))}
  const bytes=n=>Number.isFinite(n)?n<1048576?(n/1024).toFixed(1)+' KiB':n<1073741824?(n/1048576).toFixed(1)+' MiB':(n/1073741824).toFixed(2)+' GiB':'Unknown';
@@ -20,6 +20,17 @@
  <details><summary>Recovery snapshot retention</summary><p>These limits prepare a cleanup proposal. Snapshots are removed only after you review and confirm the exact proposal.</p><div class="form-grid"><label>Days to retain<input id="globalBackupDays" type="number" min="1" max="3650" value="30"></label><label>Snapshots per mod<input id="globalBackupCount" type="number" min="1" max="1000" value="5"></label><label>Budget per mod, GiB<input id="globalBackupGiB" type="number" min="1" max="1024" value="64"></label></div></details>
  <p id="globalPreferencesStatus" role="status">Preferences apply across the native desktop.</p><button id="globalPreferencesSave" type="submit" class="primary">Save app preferences</button></form>
  <hr><h3>About Modhunter</h3><p id="globalReleaseStatus" role="status"></p><div class="row-actions"><button id="globalCheckRelease">Check for app updates</button><button id="globalOpenRelease" disabled>Open release</button><button id="globalDismissRelease" disabled>Dismiss this version</button><button id="globalLicenses">Licenses</button><button id="globalSupport">Support report</button></div>
+ <hr><section aria-labelledby="iniReviewTitle"><h3 id="iniReviewTitle">Review INI changes</h3>
+ <p>Choose a Before and an After copy of the same QSettings INI. This does not read a live profile or save a history entry.</p>
+ <button id="globalIniCompare" type="button">Choose two saved copies</button><p id="iniReviewStatus" role="status"></p>
+ <div id="iniReviewResult" hidden>
+ <div class="form-grid"><label>Show change type<select id="iniReviewFilter"><option value="all">All changes</option><option value="changed">Changed</option><option value="added">Added</option><option value="removed">Removed</option></select></label></div>
+ <dl><dt>Editor</dt><dd>Unknown</dd><dt>Edit time</dt><dd>Unknown</dd><dt>Profile</dt><dd>Not verified</dd></dl>
+ <p>Values, paths and unrecognized setting names are hidden. Unrecognized changes are counted below.</p>
+ <p id="iniReviewEquivalence"></p>
+ <table class="ini-review-table"><thead><tr><th scope="col">Change type</th><th scope="col">All settings</th><th scope="col">Unrecognized settings</th></tr></thead><tbody id="iniReviewCounts"></tbody></table>
+ <h4>Recognized settings</h4><p id="iniReviewEmpty" hidden>No recognized changes in this view.</p><ul id="iniReviewRows"></ul>
+ </div></section>
  <hr><h3>Storage</h3><p>Review owned downloads, prepared reviews and browser data. Content snapshots remain available in Recovery.</p><div class="row-actions"><button id="globalStorage">Inspect storage</button><button id="globalCleanupPreview">Preview download cleanup</button><button id="globalClearBrowserCache">Clear site browsing data</button><button id="globalResetPreview" class="quiet danger-text">Remove application data…</button></div><div id="globalStorageResult"></div><p id="globalCleanupResult"></p><details id="globalResetCompletion" hidden><summary>Last application cleanup result</summary><pre id="globalResetCompletionText" class="native-result"></pre></details><button id="globalCleanupApply" hidden>Delete previewed downloads</button>`;
  $('settingsView').append(panel);
  const dialogs=document.createElement('div');dialogs.innerHTML=`<dialog id="supportReportDialog" class="native-wide-dialog" aria-labelledby="supportReportTitle"><div class="dialog-head"><h2 id="supportReportTitle">Support report preview</h2><button data-maint-close="supportReportDialog" aria-label="Close support report">×</button></div><div class="dialog-body"><p>Review these exact bytes before copying or saving. Source names, URLs, accounts, credentials and private paths are excluded.</p><pre id="supportReportText" class="native-result"></pre></div><footer class="dialog-footer"><button data-maint-close="supportReportDialog">Close</button><button id="supportReportCopy">Copy preview</button><button id="supportReportSave" class="primary">Save preview</button></footer></dialog>
@@ -43,6 +54,66 @@
  $('applicationResetForm').onsubmit=event=>{event.preventDefault();task(async()=>{if($('applicationResetConfirmation').value!=='REMOVE MODHUNTER DATA'){$('applicationResetError').textContent='Enter the exact confirmation phrase.';return}if(!resetPreview)throw new Error('Preview the current owned folders first.');$('applicationResetSubmit').disabled=true;try{const result=await call('applyAppReset',{expectedDigest:resetPreview.digest,confirm:'REMOVE MODHUNTER DATA'});$('applicationResetError').textContent='Closing for cleanup. Completion report: '+(result.reset?.completionReport||'shown on the next start');}catch(error){$('applicationResetError').textContent=error.message;$('applicationResetSubmit').disabled=false}})};
  $('globalCleanupPreview').onclick=()=>task(async()=>{cleanup=(await call('previewDownloadCleanup')).cleanup;$('globalCleanupResult').textContent=cleanup.count+' downloads · '+bytes(cleanup.bytes)+'. '+cleanup.scope;$('globalCleanupApply').hidden=!cleanup.count});$('globalCleanupApply').onclick=()=>task(async()=>{if(!cleanup||!await api().confirmAction('Delete previewed downloads?','The exact previewed archive files and receipts will be removed. Active operations and installed mods are excluded.','Delete downloads'))return;const result=await call('applyDownloadCleanup',{previewId:cleanup.id,confirm:'DELETE DOWNLOADS'});$('globalCleanupResult').textContent=result.cleanup.removed.length+' removed; '+result.cleanup.failed.length+' failures.';cleanup=null;$('globalCleanupApply').hidden=true});
  $('globalSupport').onclick=()=>task(async()=>{const result=await call('diagnosticsPreview');reportId=result.reportId;$('supportReportText').textContent=result.text;dialog('supportReportDialog')});$('supportReportCopy').onclick=()=>task(async()=>{const result=await call('diagnosticsCopy',{reportId});api().showToast(result.message)});$('supportReportSave').onclick=()=>task(async()=>{const result=await call('diagnosticsSave',{reportId});if(!result.cancelled)api().showToast(result.message)});
+ const iniKinds=Object.freeze({changed:'Changed',added:'Added',removed:'Removed'});
+ const iniLabels=Object.freeze({instanceBaseDirectory:'Instance base directory',modsDirectory:'Mods directory',profilesDirectory:'Profiles directory',gameNexusName:'Game Nexus name',gameName:'Game name',game:'Game',gameRuntimeVersion:'Game runtime version'});
+ function projectIni(report){
+  const safeCount=value=>Number.isSafeInteger(value)&&value>=0&&value<=256000;
+  if(report?.schemaVersion!==1||report.comparison!=='qsettingsIni'||report.orderEvidence!=='callerSupplied'||report.profileIdentity!=='notVerified'||report.editorAttribution!=='unknown'||report.values!=='notIncluded'||
+     typeof report.byteIdentical!=='boolean'||typeof report.effectiveSettingsEqual!=='boolean'||!safeCount(report.beforeSettings)||!safeCount(report.afterSettings)||
+     !Array.isArray(report.labeledChanges)||report.labeledChanges.length>Object.keys(iniLabels).length)return null;
+  const rows=[],seen=new Set(),counts={},unlabeled={};
+  for(const entry of report.labeledChanges){
+   if(typeof entry?.setting!=='string'||typeof entry.kind!=='string'||!Object.hasOwn(iniLabels,entry.setting)||!Object.hasOwn(iniKinds,entry.kind)||seen.has(entry.setting))return null;
+   seen.add(entry.setting);rows.push({setting:entry.setting,kind:entry.kind});
+  }
+  for(const kind of Object.keys(iniKinds)){
+   const count=report.changes?.[kind],hidden=report.unlabeledChanges?.[kind];
+   if(!safeCount(count)||!safeCount(hidden)||count-hidden!==rows.filter(row=>row.kind===kind).length)return null;
+   counts[kind]=count;unlabeled[kind]=hidden;
+  }
+  if(counts.added-counts.removed!==report.afterSettings-report.beforeSettings||
+     report.effectiveSettingsEqual!==Object.values(counts).every(value=>value===0)||
+     (report.byteIdentical&&!report.effectiveSettingsEqual))return null;
+  return {rows,counts,unlabeled,byteIdentical:report.byteIdentical,effectiveSettingsEqual:report.effectiveSettingsEqual};
+ }
+ function clearIni(){
+  iniReview=null;$('iniReviewResult').hidden=true;$('iniReviewStatus').textContent='';$('iniReviewEquivalence').textContent='';
+  $('iniReviewCounts').replaceChildren();$('iniReviewRows').replaceChildren();$('iniReviewFilter').value='all';
+ }
+ function renderIni(){
+  if(!iniReview)return;
+  const filter=$('iniReviewFilter').value,section=Object.keys(iniKinds).filter(kind=>filter==='all'||kind===filter);
+  const make=(tag,value)=>{const el=document.createElement(tag);el.textContent=value;return el};
+  $('iniReviewCounts').replaceChildren(...section.map(kind=>{
+   const tr=document.createElement('tr'),label=make('th',iniKinds[kind]);label.scope='row';
+   tr.append(label,make('td',String(iniReview.counts[kind])),make('td',String(iniReview.unlabeled[kind])));return tr;
+  }));
+  const rows=iniReview.rows.filter(row=>section.includes(row.kind));
+  $('iniReviewRows').replaceChildren(...rows.map(row=>{
+   const li=document.createElement('li');li.append(make('strong',iniLabels[row.setting]),document.createTextNode(' · '),make('span',iniKinds[row.kind]));return li;
+  }));
+  $('iniReviewEmpty').hidden=rows.length>0;
+  $('iniReviewEquivalence').textContent=iniReview.byteIdentical?'The selected copies are byte-identical.':iniReview.effectiveSettingsEqual?'The copies differ on disk but encode the same settings.':'The selected copies encode different settings.';
+  $('iniReviewResult').hidden=false;
+ }
+ $('iniReviewFilter').onchange=renderIni;
+ $('globalIniCompare').onclick=async()=>{
+  if(iniBusy||disposed||$('settingsView').hidden)return;
+  const view=iniView,owns=()=>!disposed&&view===iniView&&!$('settingsView').hidden;
+  iniBusy=true;clearIni();$('globalIniCompare').disabled=true;$('globalIniCompare').setAttribute('aria-busy','true');
+  $('iniReviewStatus').textContent='Select the Before copy first, then the After copy.';
+  try{
+   const result=await call('compareIniSnapshots',{});
+   if(!owns())return;
+   if(result.canceled){$('iniReviewStatus').textContent='Comparison canceled or view changed. No files were changed.';return}
+   iniReview=projectIni(result.comparison);
+   if(!iniReview)throw Error('Unrecognized comparison');
+   renderIni();$('iniReviewStatus').textContent='Review ready. No files were changed.';
+  }catch(_error){if(owns())$('iniReviewStatus').textContent='Could not compare these copies. Choose two readable, unambiguous QSettings INIs.'}
+  finally{iniBusy=false;if(!disposed){$('globalIniCompare').disabled=false;$('globalIniCompare').setAttribute('aria-busy','false')}}
+ };
+ window.addEventListener('modhunter-watchtower-view',event=>{if(event.detail!=='settings'){iniView++;clearIni()}});
+ window.addEventListener('beforeunload',()=>{disposed=true;iniView++;clearIni()},{once:true});
  $('globalLicenses').onclick=()=>task(async()=>{const result=await call('licenses');const rows=[];for(const item of result.licenses){if(item.name==='Third-party components'){let index;try{index=JSON.parse(item.text)}catch{index=null}if(index){for(const pkg of index.packages)rows.push({name:pkg.name+' '+pkg.version,text:'Declared license: '+(pkg.license||'See supplied notice')+'\n'+(pkg.repository||'')+'\n\n'+pkg.texts.map(t=>t.file+'\n'+t.text).join('\n\n')});continue}}rows.push(item)}$('licenseComponent').replaceChildren(...rows.map((r,i)=>{const o=document.createElement('option');o.value=i;o.textContent=r.name;return o}));$('licenseComponent').onchange=()=>{$('licenseText').textContent=rows[Number($('licenseComponent').value)].text};$('licenseComponent').onchange();dialog('licensesDialog')});
  document.addEventListener('click',event=>{const button=event.target.closest('[data-maint-close]');if(button)close(button.dataset.maintClose)});
  async function initialize(){try{fill((await call('maintenance')).maintenance);const result=await call('browserChoices');$('globalBrowserStatus').textContent=result.browsers.length?'Found: '+result.browsers.map(b=>b.label).join(', '):'No supported private browser was detected.';}catch(error){$('globalPreferencesStatus').textContent=error.message}}

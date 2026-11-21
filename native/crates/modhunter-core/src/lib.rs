@@ -9,6 +9,7 @@ pub mod content_vault;
 pub mod duplicate_report;
 pub mod importer;
 pub mod ini;
+pub mod ini_snapshot;
 pub mod plugin_analysis;
 pub mod source_adapters;
 pub mod watchtower;

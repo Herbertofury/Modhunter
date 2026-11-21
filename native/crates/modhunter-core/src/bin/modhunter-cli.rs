@@ -34,7 +34,13 @@ fn number(args: &[String], key: &str, default: usize) -> Result<usize, String> {
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let args: Vec<String> = std::env::args_os()
+        .skip(1)
+        .map(|arg| {
+            arg.into_string()
+                .map_err(|_| "Command arguments must be valid Unicode")
+        })
+        .collect::<Result<_, _>>()?;
     match args.first().map(String::as_str) {
         Some("import") => {
             let request = ImportRequest {
@@ -166,10 +172,22 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .map_err(std::io::Error::other)?;
             println!("{}", serde_json::to_string(&reply)?);
         }
+        Some("ini-compare") => {
+            if !matches!(args.as_slice(), [_, left, _, right, _]
+                if (left == "--before" && right == "--after")
+                    || (left == "--after" && right == "--before"))
+            {
+                return Err("ini-compare requires --before PATH --after PATH".into());
+            }
+            let before = PathBuf::from(value(&args, "--before")?.ok_or("Select a before INI")?);
+            let after = PathBuf::from(value(&args, "--after")?.ok_or("Select an after INI")?);
+            let report = modhunter_core::ini_snapshot::compare_files(&before, &after, &|| false)?;
+            println!("{}", serde_json::to_string(&report)?);
+        }
         Some("benchmark") => benchmark(&args)?,
         Some("--version") => println!("Modhunter Rust engine {}", env!("CARGO_PKG_VERSION")),
         None | Some("--help") | Some("help") => println!(
-            "Modhunter Rust engine\n\nimport --modlist PATH [--ini PATH] [--mods PATH] [--workers 1..32]\nprobe --endpoint http://127.0.0.1:PORT/\naudit-plugins --request PATH|-\nscan-sources --request PATH|-\narchive-review --request PATH|- (bounded original-byte review)\nduplicate-report --request PATH|- (complete ownership and reversible quarantine)\ncontent-vault --request PATH|- (explicit scoped backup/restore)\nbenchmark [--mods 2500] [--rounds 5] [--workers 8]\n\nImport and plugin audits are read-only. ESL eligibility is conditional; save, dependent-mod, asset and external-reference safety is not certified. The live MO2 plugin remains responsible for downloads and FOMOD installation. Benchmark uses a generated fixture, not a user's MO2 installation."
+            "Modhunter Rust engine\n\nimport --modlist PATH [--ini PATH] [--mods PATH] [--workers 1..32]\nprobe --endpoint http://127.0.0.1:PORT/\naudit-plugins --request PATH|-\nscan-sources --request PATH|-\narchive-review --request PATH|- (bounded original-byte review)\nduplicate-report --request PATH|- (complete ownership and reversible quarantine)\ncontent-vault --request PATH|- (explicit scoped backup/restore)\nini-compare --before PATH --after PATH (read-only selected QSettings INIs; values redacted)\nbenchmark [--mods 2500] [--rounds 5] [--workers 8]\n\nImport and plugin audits are read-only. ESL eligibility is conditional; save, dependent-mod, asset and external-reference safety is not certified. The live MO2 plugin remains responsible for downloads and FOMOD installation. Benchmark uses a generated fixture, not a user's MO2 installation."
         ),
         Some(command) => {
             return Err(format!("Unknown command: {command}. Run modhunter-cli --help").into());

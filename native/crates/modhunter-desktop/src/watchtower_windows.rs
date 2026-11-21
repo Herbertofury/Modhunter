@@ -1873,6 +1873,19 @@ pub async fn watchtower_command(
     if !policy::trusted_manager(webview.label(), &webview.url().map_err(err)?) {
         return Err("Watchtower commands belong only to the bundled manager.".into());
     }
+    if kind == "compareIniSnapshots" {
+        if !value
+            .as_ref()
+            .is_none_or(|v| v.is_null() || v.as_object().is_some_and(|v| v.is_empty()))
+        {
+            return Err("Choose snapshots through the local file pickers.".into());
+        }
+        return tauri::async_runtime::spawn_blocking(move || {
+            crate::windows::watchtower_compare_selected_ini(&app, &webview)
+        })
+        .await
+        .map_err(err)?;
+    }
     tauri::async_runtime::spawn_blocking(move || {
         let result = execute(&app, &kind, value.unwrap_or(Value::Null));
         if result.is_err() {

@@ -49,3 +49,5 @@
 .native-operation:focus-within { border-bottom-color:var(--accent); }
 .native-result[data-feedback="error"] { color:var(--error-text); background:var(--error-bg); border-color:var(--error-edge); }
 .native-result[data-feedback="success"] { color:var(--success-text); background:var(--success-bg); border-color:var(--success-edge); }
+
+.ini-review-table{width:100%;border-collapse:collapse;margin:12px 0}.ini-review-table th,.ini-review-table td{text-align:left;padding:8px;border-bottom:1px solid var(--line,#272b35)}

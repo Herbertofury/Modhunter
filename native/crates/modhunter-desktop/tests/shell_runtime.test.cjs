@@ -12,7 +12,7 @@ const markup = fs.readFileSync(path.join(__dirname, '../../../ui/shell.html'), '
 const injection = fs.readFileSync(path.join(__dirname, '../../../ui/catalog_injection.js'), 'utf8');
 
 function snapshot(overrides = {}) {
-  return { epoch: 1, importOperationId: 0, tabs: [{ id: 1, title: 'Mod Vault', url: 'http://tauri.localhost/Modhunter.html', loading: false }],
+  return { epoch: 1, importOperationId: 0, iniViewRevision: 1, tabs: [{ id: 1, title: 'Mod Vault', url: 'http://tauri.localhost/Modhunter.html', loading: false }],
     activeId: 1, connected: false, endpoint: null, importing: false, auditing: false,
     offlineProfile: 'Fixture A', offlineModCount: 4, warnings: [],
     stats: { mods: 4, elapsedMs: 2, metadataCacheHits: 4 }, ...overrides };
@@ -243,4 +243,37 @@ test('live Refresh and Details are enabled and send the real live commands', asy
  }
  h.emit(snapshot({epoch:2,endpoint:'http://127.0.0.1:50000/',connected:false,offlineProfile:null}));
  for(const id of ['refreshProfile','pluginAudit','diagnostics'])assert.equal(h.nodes.get(id).disabled,true,id);
+});
+
+test('Compare INI sends no path authority, avoids duplicate work, and remains independent', async () => {
+  const h = await harness(snapshot({ epoch: 4, iniViewRevision: 7 }));
+  h.deferred.add('compareIni');
+  const compare = h.nodes.get('compareIni');
+  assert.equal(compare.disabled, false);
+  const pending = compare.onclick();
+  assert.equal(compare.disabled, true);
+  assert.equal(compare.attributes['aria-busy'], 'true');
+  await compare.onclick();
+  const requests = h.calls.filter(call => call.kind === 'compareIni');
+  assert.equal(requests.length, 1);
+  assert.equal(JSON.stringify(requests[0].value), '{"epoch":4,"tab":1,"viewRevision":7}');
+  assert.equal(h.nodes.get('configureIni').disabled, false);
+  h.resolve('compareIni', snapshot({ epoch: 4, iniViewRevision: 7 }), { canceled: true });
+  await pending;
+  assert.equal(compare.disabled, false);
+  assert.match(h.nodes.get('message').textContent, /canceled.*No files/);
+});
+
+test('Compare INI drops completion after A/B/A or a profile generation change', async () => {
+  const h = await harness(snapshot({ epoch: 4, revision: 1, iniViewRevision: 5 }));
+  const run = async transitions => {
+    h.deferred.add('compareIni');
+    const pending = h.nodes.get('compareIni').onclick();
+    for (const transition of transitions) h.emit(snapshot(transition));
+    h.resolve('compareIni', snapshot({ epoch: 4, revision: 1, iniViewRevision: 5 }), { canceled: true });
+    await pending;
+    assert.equal(h.nodes.get('message').textContent, '');
+  };
+  await run([{ epoch: 4, revision: 2, iniViewRevision: 6, activeId: 2 }, { epoch: 4, revision: 3, iniViewRevision: 7 }]);
+  await run([{ epoch: 5, revision: 4, iniViewRevision: 7 }]);
 });

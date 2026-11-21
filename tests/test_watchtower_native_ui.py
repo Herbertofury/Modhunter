@@ -96,6 +96,13 @@ OVERRIDE=r'''(() => {
   }
   if(kind==='contentJobs')return finish({operations:{jobs:f.native.jobs,nativeAvailable:true,helperAvailable:true}});
   if(kind==='discardReview'){if(f.native.review?.submitted&&['unknown','interrupted'].includes(f.native.review.state))throw Error('Unresolved operation retains this review.');f.state.reviews.rows=[];f.publish();return finish()}
+  if(kind==='compareIniSnapshots'){
+   if(Object.keys(v).length)throw Error('The UI may request pickers only');
+   if(f.defer[kind])await new Promise(resolve=>f.pending.push({kind,resolve}));
+   return finish({comparison:{schemaVersion:1,comparison:'qsettingsIni',orderEvidence:'callerSupplied',profileIdentity:'notVerified',editorAttribution:'unknown',values:'notIncluded',
+    byteIdentical:false,effectiveSettingsEqual:false,beforeSettings:4,afterSettings:5,changes:{changed:2,added:2,removed:1},unlabeledChanges:{changed:1,added:1,removed:0},
+    labeledChanges:[{setting:'modsDirectory',kind:'changed'},{setting:'gameRuntimeVersion',kind:'added'},{setting:'instanceBaseDirectory',kind:'removed'}]}});
+  }
   if(kind==='diagnosticsPreview')return finish({reportId:'report-fixture-exact',text:JSON.stringify({application:'Modhunter',version:f.state.version,redacted:true})+'\n'});
   if(kind==='diagnosticsCopy'||kind==='diagnosticsSave'){if(v.reportId!=='report-fixture-exact')throw Error('Preview changed');f.native.savedReports.push({kind,...clone(v)});return finish({message:'Exact preview exported.'})}
   if(kind==='storage')return finish({storage:{groups:[{id:'downloads',label:'Verified downloads',complete:true,usage:{bytes:1000,files:1}}]}});
@@ -253,6 +260,28 @@ class NativeUiTests(base.WatchtowerBrowserTests):
         self.review('unknown');self.page.locator('#nativeInstallReview').click();self.page.locator('#confirmProceed').click();self.page.wait_for_function('__WATCH_FIX__.native.review.submitted')
         self.assertTrue(self.page.locator('#nativeInstallReview').is_disabled());self.page.locator('[data-native-close="nativeReviewDialog"]').first.click();self.page.locator('#nativeRefreshJobs').click();self.page.wait_for_selector('[data-native-action="open-review"]')
         self.assertIn('unknown',self.page.locator('#nativeReviewQueue').inner_text());self.assertEqual(self.page.locator('[data-native-action="discard-review"]').count(),0)
+    def test_ini_snapshot_review_filters_counts_and_drops_stale_results(self):
+        self.open_native()
+        self.navigate('settings')
+        self.page.locator('#globalIniCompare').click()
+        self.page.wait_for_selector('#iniReviewResult:not([hidden])')
+        self.assertEqual(self.calls('compareIniSnapshots')[0]['value'],{})
+        report=self.page.locator('#iniReviewResult')
+        self.assertEqual(report.locator('dd').all_text_contents(),['Unknown','Unknown','Not verified'])
+        self.assertEqual(report.locator('#iniReviewRows li').count(),3)
+        self.page.locator('#iniReviewFilter').select_option('removed')
+        self.assertEqual(report.locator('#iniReviewRows li').all_text_contents(),['Instance base directory · Removed'])
+        self.assertEqual(report.locator('#iniReviewCounts tr td').all_text_contents(),['1','0'])
+        self.page.evaluate("__WATCH_FIX__.defer.compareIniSnapshots=true")
+        self.page.locator('#globalIniCompare').click()
+        self.page.wait_for_function("__WATCH_FIX__.pending.some(x=>x.kind==='compareIniSnapshots')")
+        self.navigate('history')
+        self.navigate('settings')
+        self.page.evaluate("__WATCH_FIX__.release('compareIniSnapshots')")
+        self.page.wait_for_function("!document.getElementById('globalIniCompare').disabled")
+        self.assertTrue(report.is_hidden())
+        self.assertEqual(self.page.locator('#iniReviewRows li').count(),0)
+
     def test_support_export_uses_the_exact_preview_identity(self):
         self.open_native();self.navigate('settings');self.page.locator('#globalSupport').click();self.page.wait_for_selector('#supportReportDialog[open]');self.assertNotIn('mods.example',self.page.locator('#supportReportText').inner_text())
         self.page.locator('#supportReportCopy').click();self.page.locator('#supportReportSave').click();self.page.wait_for_function('__WATCH_FIX__.native.savedReports.length===2')

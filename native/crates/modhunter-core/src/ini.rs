@@ -10,6 +10,14 @@ pub struct Ini {
 
 impl Ini {
     pub fn parse(text: &str) -> Result<Self, CoreError> {
+        Self::parse_internal(text, false)
+    }
+
+    pub(crate) fn parse_unique(text: &str) -> Result<Self, CoreError> {
+        Self::parse_internal(text, true)
+    }
+
+    fn parse_internal(text: &str, reject_duplicates: bool) -> Result<Self, CoreError> {
         let mut parsed = Self::default();
         let mut section = String::from("general");
         for (n, raw) in text.trim_start_matches('\u{feff}').lines().enumerate() {
@@ -54,11 +62,17 @@ impl Ini {
                 )));
             }
             let value = decode_value(value.trim())?;
-            parsed
+            let previous = parsed
                 .sections
                 .entry(section.clone())
                 .or_default()
                 .insert(key, value);
+            if reject_duplicates && previous.is_some() {
+                return Err(CoreError::Invalid(format!(
+                    "Duplicate INI key at line {}",
+                    n + 1
+                )));
+            }
         }
         Ok(parsed)
     }
@@ -68,6 +82,18 @@ impl Ini {
             .get(&section.to_ascii_lowercase())?
             .get(&key.to_ascii_lowercase())
             .map(String::as_str)
+    }
+
+    pub(crate) fn canonical_entries(&self) -> impl Iterator<Item = (&str, &str, &str)> {
+        self.sections.iter().flat_map(|(section, entries)| {
+            entries
+                .iter()
+                .map(move |(key, value)| (section.as_str(), key.as_str(), value.as_str()))
+        })
+    }
+
+    pub(crate) fn get_canonical(&self, section: &str, key: &str) -> Option<&str> {
+        self.sections.get(section)?.get(key).map(String::as_str)
     }
 
     pub fn general(&self, key: &str) -> &str {

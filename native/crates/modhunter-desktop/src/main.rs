@@ -3,6 +3,8 @@
 mod catalog;
 mod discovery;
 mod import_operation;
+#[cfg(any(windows, test))]
+mod ini_review;
 #[cfg_attr(not(windows), allow(dead_code))]
 mod locale;
 mod policy;

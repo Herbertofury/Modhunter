@@ -2,12 +2,13 @@
 (() => {
  const $=id=>document.getElementById(id);
  const api=window.__TAURI__;
- let state={tabs:[],activeId:null,connected:false},messageTimer=0,disposed=false;
+ let state={tabs:[],activeId:null,connected:false},messageTimer=0,disposed=false,iniView=0;
  const busy=new Set(),tabNodes=new Map();
  function message(text,persistent=false,failure=false){clearTimeout(messageTimer);$('message').setAttribute('data-feedback',failure?'error':'info');$('message').textContent=String(text||'');$('message').title=String(text||'');if(!persistent)messageTimer=setTimeout(()=>{$('message').textContent=''},12000)}
  function render(next){
   if(Number.isFinite(next.revision)&&Number.isFinite(state.revision)&&next.revision<state.revision)return false;
   if(Number.isFinite(next.epoch)&&Number.isFinite(state.epoch)&&next.epoch<state.epoch)return false;
+  if(state.epoch!==next.epoch||state.activeId!==next.activeId||state.iniViewRevision!==next.iniViewRevision)iniView++;
   state=next;
   const connected=!!state.connected,auditing=!!state.auditing||busy.has('pluginAudit'),waiting=auditing||busy.has('connect')||busy.has('discover')||!!state.importing;
   $('status').className='status'+(waiting?' busy':connected?' live':state.endpoint?' error':'');
@@ -28,6 +29,9 @@
   $('cancelImport').textContent=state.cancelling?'CANCELING…':'CANCEL';
   $('pluginAudit').title=state.endpoint?'Run Plugin audit on the live MO2 dashboard and active profile':'Read plugin records and check recorded ESLifier output for the imported profile';
   for(const id of ['configureIni','configureMods','clearPaths','configureEslifierData'])$(id).disabled=!!state.importing||busy.has(id);
+  $('compareIni').disabled=busy.has('compareIni')||!Number.isSafeInteger(state.epoch)||!Number.isSafeInteger(state.activeId)||!Number.isSafeInteger(state.iniViewRevision);
+  $('compareIni').textContent=busy.has('compareIni')?'COMPARING…':'COMPARE INI';
+  $('compareIni').setAttribute('aria-busy',String(busy.has('compareIni')));
   $('clearEslifierData').disabled=!state.eslifierDataPath||!!state.importing||busy.has('clearEslifierData');
   $('disconnect').disabled=!state.endpoint&&!busy.has('connect')&&!busy.has('discover');
   for(const [id,kind] of [['connect','connect'],['openWatchtower','watchtower'],['discover','discover'],['importMo2','importMo2'],['refreshProfile','refreshProfile'],['diagnostics','diagnostics'],['pluginAudit','pluginAudit'],['cancelImport','cancelImport'],['configureIni','configureIni'],['configureMods','configureMods'],['clearPaths','clearPaths'],['configureEslifierData','configureEslifierData'],['clearEslifierData','clearEslifierData']]){
@@ -73,6 +77,17 @@
   finally{if(exclusive){busy.delete(kind);render(state)}}
  }
  for(const [id,kind,value] of [['openWatchtower','watchtower'],['openReadiness','readiness'],['newDash','new','dashboard'],['newSiege','new','siege'],['newRealm','new','realm'],['back','back'],['forward','forward'],['reload','reload'],['open','external'],['copy','copy'],['diagnostics','diagnostics'],['disconnect','disconnect'],['importMo2','importMo2'],['refreshProfile','refreshProfile'],['pluginAudit','pluginAudit'],['configureIni','configureIni'],['configureMods','configureMods'],['clearPaths','clearPaths'],['configureEslifierData','configureEslifierData'],['clearEslifierData','clearEslifierData']])$(id).onclick=()=>command(kind,value);
+ $('compareIni').onclick=async()=>{
+  if(disposed||$('compareIni').disabled)return;
+  const owner=iniView,visible=()=>!disposed&&owner===iniView;
+  const value={epoch:state.epoch,tab:state.activeId,viewRevision:state.iniViewRevision};
+  busy.add('compareIni');render(state);
+  try{
+   const result=await api.core.invoke('shell_command',{kind:'compareIni',value});
+   if(visible()&&result?.canceled)message('Comparison canceled. No files were changed.');
+  }catch(error){if(visible())message(String(error),true,true)}
+  finally{busy.delete('compareIni');if(!disposed)render(state)}
+ };
  $('connect').onclick=()=>command('connect',$('endpoint').value.trim());
  $('discover').onclick=()=>command('discover');
  $('cancelImport').onclick=()=>command('cancelImport',{epoch:state.epoch,importOperationId:state.importOperationId});

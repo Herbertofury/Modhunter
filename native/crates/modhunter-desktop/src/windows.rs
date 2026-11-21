@@ -74,6 +74,7 @@ struct Runtime {
     importing: AtomicBool,
     auditing: AtomicBool,
     import_operation: crate::import_operation::ImportOperation,
+    ini_review: crate::ini_review::ReviewGate,
     probing: AtomicBool,
     catalog_cache: crate::catalog::CatalogCache,
     smoke_output: Option<PathBuf>,
@@ -185,6 +186,7 @@ impl Runtime {
             "epoch": self.epoch.load(Ordering::Acquire),
             "revision": self.revision.fetch_add(1, Ordering::AcqRel) + 1,
             "importOperationId": self.import_operation.id(),
+            "iniViewRevision": self.ini_review.view_revision(),
             "endpoint": m.endpoint, "connectionError": m.connection_error, "latencyMs": m.latency_ms,
             "offlineProfile": m.catalog.as_ref().and_then(|c| c.get("profileName")),
             "offlineModCount": m.catalog.as_ref().and_then(|c| c.get("items")).and_then(Value::as_array).map_or(0, Vec::len),
@@ -437,6 +439,9 @@ fn activate(app: &tauri::AppHandle, id: u64) -> Result<()> {
             .ok_or("Tab no longer exists")?
             .label
             .clone();
+        if m.active_id != Some(id) {
+            state.ini_review.invalidate();
+        }
         m.active_id = Some(id);
         (
             active,
@@ -1375,6 +1380,124 @@ fn live_dashboard_action(app: &tauri::AppHandle, action: &str) -> Result<Value> 
         "message":"Action sent to the live MO2 dashboard; its result appears there."}))
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct IniReviewView {
+    epoch: u64,
+    tab: u64,
+    view_revision: u64,
+}
+
+fn ini_review_view_current(app: &tauri::AppHandle, view: &IniReviewView) -> bool {
+    let state = app.state::<Runtime>();
+    !crate::watchtower_windows::reset_pending(app)
+        && state.model.lock().is_ok_and(|model| {
+            model.active_id == Some(view.tab)
+                && state.epoch.load(Ordering::Acquire) == view.epoch
+                && state.ini_review.view_revision() == view.view_revision
+        })
+}
+
+fn review_selected_ini(
+    app: &tauri::AppHandle,
+    state: &Runtime,
+    parent: &tauri::Window,
+    current: impl Fn() -> bool + Sync,
+) -> Result<Option<(u64, modhunter_core::ini_snapshot::SnapshotComparison)>> {
+    use crate::ini_review::Side;
+    state.ini_review.review(
+        |side| {
+            let title = match side {
+                Side::Before => "Choose the BEFORE copy of the INI",
+                Side::After => "Choose the AFTER copy of the same INI",
+            };
+            app.dialog()
+                .file()
+                .set_title(crate::watchtower_windows::localized(app, title))
+                .add_filter("INI snapshot", &["ini"])
+                .set_parent(parent)
+                .blocking_pick_file()
+                .map(|file| {
+                    file.into_path()
+                        .map_err(|_| "Choose a local INI file, not an address.".to_owned())
+                })
+                .transpose()
+        },
+        current,
+    )
+}
+
+pub(crate) fn watchtower_compare_selected_ini(
+    app: &tauri::AppHandle,
+    webview: &Webview,
+) -> Result<Value> {
+    let state = app
+        .try_state::<Runtime>()
+        .ok_or("Local desktop review is unavailable.")?;
+    let view = {
+        let model = state.model.lock().map_err(err)?;
+        IniReviewView {
+            epoch: state.epoch.load(Ordering::Acquire),
+            tab: model
+                .active_id
+                .ok_or("Local desktop review is unavailable.")?,
+            view_revision: state.ini_review.view_revision(),
+        }
+    };
+    // Use the requesting window's actual Webview handle, not the reusable label
+    // alone. A reopened Watchtower is not the owner of the previous picker.
+    let parent = webview.window();
+    let current = || {
+        webview
+            .url()
+            .is_ok_and(|url| policy::local_asset(&url, "/watchtower.html"))
+            && ini_review_view_current(app, &view)
+    };
+    let reviewed = review_selected_ini(app, &state, &parent, current)?;
+    match reviewed {
+        Some((token, report)) if current() && state.ini_review.current(token) => {
+            // SnapshotComparison exposes counts and constant labels only.
+            Ok(json!({"ok":true,"comparison":report}))
+        }
+        _ => Ok(json!({"ok":true,"canceled":true})),
+    }
+}
+
+fn compare_selected_ini(app: &tauri::AppHandle, value: Value) -> Result<Value> {
+    let view: IniReviewView = serde_json::from_value(value)
+        .map_err(|_| "Compare INI requires the current toolbar view, not file paths.")?;
+    let state = app.state::<Runtime>();
+    let main = app.get_window("main").ok_or("Modhunter is closing.")?;
+    let reviewed = review_selected_ini(app, &state, &main, || ini_review_view_current(app, &view))?;
+    let Some((token, report)) = reviewed else {
+        return Ok(json!({"ok":true,"canceled":true}));
+    };
+    let result_app = app.clone();
+    app.run_on_main_thread(move || {
+        let state = result_app.state::<Runtime>();
+        if !state.ini_review.current(token) || !ini_review_view_current(&result_app, &view) {
+            return;
+        }
+        let Some(main) = result_app.get_window("main") else {
+            return;
+        };
+        let text = crate::ini_review::format_report(&report, |text| {
+            crate::watchtower_windows::localized(&result_app, text)
+        });
+        result_app
+            .dialog()
+            .message(text)
+            .title(crate::watchtower_windows::localized(
+                &result_app,
+                "Compare INI snapshots",
+            ))
+            .parent(&main)
+            .show(|_| {});
+    })
+    .map_err(|_| "Modhunter closed before the comparison could be shown.")?;
+    Ok(json!({"ok":true}))
+}
+
 fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
     if kind != "state" && crate::watchtower_windows::reset_pending(app) {
         return Err("Modhunter is closing for an approved application reset.".into());
@@ -1434,6 +1557,9 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
                 } else {
                     m.active_id
                 };
+                if m.active_id != next {
+                    state.ini_review.invalidate();
+                }
                 m.active_id = next;
                 (tab, next)
             };
@@ -1469,6 +1595,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
                 state.importing.load(Ordering::Acquire),
             );
         }
+        "compareIni" => return compare_selected_ini(app, value),
         "configureIni" => {
             let picked = app
                 .dialog()
@@ -1739,6 +1866,7 @@ pub fn run() {
                 importing: AtomicBool::new(false),
                 auditing: AtomicBool::new(false),
                 import_operation: crate::import_operation::ImportOperation::default(),
+                ini_review: crate::ini_review::ReviewGate::default(),
                 probing: AtomicBool::new(false),
                 catalog_cache: crate::catalog::CatalogCache::default(),
                 smoke_output,
@@ -1765,6 +1893,7 @@ pub fn run() {
                     if closing.swap(true, Ordering::AcqRel) {
                         return;
                     }
+                    handle.state::<Runtime>().ini_review.close();
                     if let Some(main) = handle.get_window("main") {
                         let _ = main.hide();
                     }

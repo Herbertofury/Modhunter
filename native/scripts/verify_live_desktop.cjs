@@ -13,7 +13,7 @@ const root=path.resolve(__dirname,'../..');
 const hash=f=>crypto.createHash('sha256').update(fs.readFileSync(f)).digest('hex');
 const options=Object.fromEntries(process.argv.slice(2).map(s=>{const at=s.indexOf('=');return[s.slice(0,at),s.slice(at+1)];}));
 const exe=options['--exe'],output=options['--output'],endpoint=options['--endpoint'];
-const checks=[],timings={},policyValues=[];let phase='preflight',child,browser,launchError='',attachError='',childOutput='',ownedDesktopWindow=null,originalDisplay=null;
+const checks=[],timings={},policyValues=[];let phase='preflight',child,browser,launchError='',attachError='',childOutput='',ownedDesktopWindow=null,originalDisplay=null,themeWait=null;
 // Runtime 150+ correctly ignores user-controlled debugging overrides in an
 // elevated process. Set only this disposable runner's exact application policy,
 // never a wildcard, HKCU override, runtime downgrade, or shipped app change.
@@ -39,6 +39,21 @@ function clearCiPolicies(){
  }
 }
 function check(name,value){checks.push({name,passed:!!value});if(!value)throw Error('Failed: '+name);}
+// Failure-only context for the existing theme wait; do not retry or alter its deadline.
+async function waitForThemeAcceptance(page,label,theme,predicate,...args){
+ themeWait={label,theme};
+ await page.waitForFunction(predicate,...args);
+ themeWait=null;
+}
+function inspectThemeFixture(){
+ const byId=id=>document.getElementById(id);
+ const theme=byId('globalTheme'),status=byId('globalPreferencesStatus')?.textContent,
+  release=byId('globalReleaseStatus')?.textContent,save=byId('globalPreferencesSave');
+ return {selectedTheme:['system','light','dark'].includes(theme?.value)?theme.value:null,
+  settingsVisible:byId('settingsView')?.hidden===false,saveDisabled:save?save.disabled:null,
+  releaseState:release?.includes('Installed')?'installed':release?.startsWith('Release check failed:')?'release-check-error':release?'other':release===''?'empty':'missing',
+  preferenceState:status==='App preferences saved.'?'saved':status==='Unsaved app preferences.'?'unsaved':status==='Earlier preferences saved. Newer edits remain unsaved.'?'superseded':status==='Preferences apply across the native desktop.'?'initial':status?'other':status===''?'empty':'missing'};
+}
 // WebView2 cancels native appearance-protocol navigation outside Chromium. Its
 // CDP navigation signal can stay pending even after the actual page and native
 // preference acknowledge the change, so later Locator actions wait forever.
@@ -262,7 +277,7 @@ async function main(){
  watchtower.setDefaultTimeout(15000);
  await watchtower.locator('#navigation [data-view="settings"]').click();
  await watchtower.locator('#globalTheme').waitFor();
- await watchtower.waitForFunction(()=>document.getElementById('globalReleaseStatus')?.textContent.includes('Installed'));
+ await waitForThemeAcceptance(watchtower,'watchtower-installed-status',null,()=>document.getElementById('globalReleaseStatus')?.textContent.includes('Installed'));
  const originalTheme=await watchtower.locator('#globalTheme').inputValue();
  const activateDashboard=async()=>{
   const tabs=shell.locator('.tab-open');
@@ -274,10 +289,10 @@ async function main(){
   await watchtower.locator('#navigation [data-view="settings"]').click();
   await watchtower.locator('#globalTheme').selectOption(theme);
   await watchtower.locator('#globalPreferencesSave').click();
-  await watchtower.waitForFunction(()=>document.getElementById('globalPreferencesStatus').textContent==='App preferences saved.');
+  await waitForThemeAcceptance(watchtower,'watchtower-preferences-saved',theme,()=>document.getElementById('globalPreferencesStatus').textContent==='App preferences saved.');
   await activateDashboard();
-  await dashboard.waitForFunction(theme=>document.body.dataset.theme===(theme==='light'?'snow':'night'),theme);
-  await shell.waitForFunction(theme=>document.documentElement.dataset.theme===theme,theme);
+  await waitForThemeAcceptance(dashboard,'dashboard-theme-applied',theme,theme=>document.body.dataset.theme===(theme==='light'?'snow':'night'),theme);
+  await waitForThemeAcceptance(shell,'shell-theme-applied',theme,theme=>document.documentElement.dataset.theme===theme,theme);
  };
  const nativeCaptures=[];
  for(const [width,height,theme] of [[1440,960,'dark'],[900,850,'light']]){
@@ -337,11 +352,15 @@ main().catch(async error=>{
   try{
    const url=new URL(page.url());
    const state=await page.evaluate(()=>({title:document.title,source:document.getElementById('sourceText')?.textContent,message:document.getElementById('message')?.textContent,sessionChoices:document.querySelectorAll('#mo2Sessions option').length,rootTheme:document.documentElement.dataset.theme,dashboardTheme:document.body?.dataset.theme}));
-   failureViews.push({path:url.pathname,...state});
+   const view={path:url.pathname,...state};
+   if(themeWait&&url.pathname==='/watchtower.html'){
+    try{view.themeFixture=await page.evaluate(inspectThemeFixture);}catch{}
+   }
+   failureViews.push(view);
    if(url.pathname.endsWith('/shell.html'))await page.screenshot({path:path.join(path.dirname(output),'desktop-failure.png')});
   }catch{}
  }
- if(output)fs.writeFileSync(output,JSON.stringify({schemaVersion:1,ok:false,phase,error:String(error.message),checks,childExitCode:child?.exitCode??null,launchError,attachError,childOutput,failureViews},null,2));
+ if(output)fs.writeFileSync(output,JSON.stringify({schemaVersion:1,ok:false,phase,error:String(error.message),checks,childExitCode:child?.exitCode??null,launchError,attachError,childOutput,...(themeWait?{themeWait}:{}),failureViews},null,2));
  console.error('Live desktop validation failed at '+phase+': '+error.message);process.exitCode=1;
 }).finally(async()=>{
  if(browser)try{await browser.close();}catch{}

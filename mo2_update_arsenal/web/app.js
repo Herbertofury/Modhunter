@@ -9,7 +9,7 @@ let STORAGE='dragonborn-mod-update-arsenal-v1';
 const BRIDGE=window.__MO2_BRIDGE_BOOT__||{active:false};
 const INSIGHTS=window.ModhunterInsights;
 const SOURCES=window.ModhunterSources;
-let LIVE_SCAN=null,LIVE_CATALOG=null,SCAN_TIMER=null,FILE_PICKER_MOD=null,LIVE_GENERATION=0,LIVE_REFRESH_BUSY=false;
+let LIVE_SCAN=null,LIVE_CATALOG=null,SCAN_TIMER=null,FILE_PICKER_MOD=null,LIVE_GENERATION=0,LIVE_REFRESH_BUSY=false,FILE_PICKER_VIEW=0;
 let WORKSHOP_PLAN=null,WORKSHOP_CHOICES=new Map(),WORKSHOP_BUSY=false,WORKSHOP_REVIEW_ID=null,FAST_PICKER_ID=null;
 let QUICK_RUNNING=false,QUICK_POLL=null,QUICK_SKIPPED=new Map();
 let QUEUE_PENDING=null,INSTALL_PREVIEW_ID=null,INSTALL_PREVIEW_PROFILE='',PREVIEW_RETURN_FOCUS=null,INSPECTOR_RETURN_FOCUS=null;
@@ -1644,27 +1644,40 @@ async function refreshDownloadSnapshot(){
  }
 }
 function filterFilePicker(){
- const query=$('filePickerSearch').value.trim().toLowerCase();
+ const query=$('filePickerSearch').value.trim().toLowerCase(),role=$('filePickerRole').value;
  let visible=0,total=0;
  $('filePickerFiles').querySelectorAll('.picker-file').forEach(row=>{
   const haystack=row.textContent.toLowerCase();
-  row.hidden=Boolean(query&&!haystack.includes(query));
+  const retained=role==='matches'?row.dataset.pickerMatches==='true':role==='receipt'?row.dataset.pickerReceipt==='true':
+   role==='main'||role==='other'?row.dataset.pickerRole===role:true;
+  row.hidden=!retained||Boolean(query&&!haystack.includes(query));
   total++;if(!row.hidden)visible++;
  });
  SET('filePickerMatchCount',visible+' / '+total+' files');
 }
 $('filePickerSearch').oninput=filterFilePicker;
+$('filePickerRole').onchange=filterFilePicker;
+function filePickerArchive(j,files){
+ const receipt=j.archiveReceipt;
+ if(!Number.isSafeInteger(receipt?.fileId)||receipt.fileId<=0||!['listed','notListed'].includes(receipt.state))return {state:'unknown'};
+ const matches=files.filter(file=>file.fileId===receipt.fileId).length;
+ if((receipt.state==='listed'&&matches===1)||(receipt.state==='notListed'&&matches===0))return receipt;
+ return {state:'unknown'};
+}
 async function openFilePicker(m){
  const nativeNexus=Boolean(INSIGHTS?.isNexus(m)&&(!SOURCES||SOURCES.provider(m)==='nexus'));
  if(!BRIDGE.active||(!nativeNexus&&!hasReleaseAssets(m))){toast('No verified download assets for this source.');return}
- const context=profileContext();FILE_PICKER_MOD=m;
+ const context=profileContext(),view=++FILE_PICKER_VIEW;FILE_PICKER_MOD=m;
+ const current=()=>view===FILE_PICKER_VIEW&&FILE_PICKER_MOD===m&&contextIsCurrent(context)&&ITEM_MAP.get(m.id)===m;
+ $('filePickerRole').value='all';$('filePickerRoleLabel').hidden=true;$('filePickerArchiveReceipt').hidden=true;
+ $('filePickerArchiveReceipt').textContent='';
  $('filePickerSearch').value='';$('filePickerMatchCount').textContent='Loading…';
  $('filePickerTitle').textContent=m.name;
  $('filePickerSummary').textContent='Installed: '+m.installedVersion+' · Target runtime: '+(DATA.gameRuntime||'unknown')+'. Inspect file version, requirements and FOMOD instructions.';
  $('filePickerVeil').hidden=false;$('filePickerFiles').innerHTML='<div class="picker-loading">Loading exact file choices…</div>';
  if(m.update?.detailsAvailable||(!m.update?.releaseAssets?.length&&hasReleaseAssets(m))){
   await loadSourceDetails(m);
-  if(FILE_PICKER_MOD!==m||!contextIsCurrent(context)||ITEM_MAP.get(m.id)!==m)return;
+  if(!current())return;
  }
  const detailed=sourceDetailMod(m),assets=Array.isArray(detailed.update?.releaseAssets)?detailed.update.releaseAssets:[];
  const releaseFiles=assets.length?'<div class="picker-source-title">'+escapeHTML(providerLabel(SOURCES?.provider(detailed)||detailed.update?.provider))+' · PUBLISHED RELEASE FILES</div>'+(SOURCES?.assetCards(detailed)||''):'';
@@ -1673,12 +1686,26 @@ async function openFilePicker(m){
   filterFilePicker();return;
  }
  try{
-  const j=await bridgeRequest('GET','files?modId='+m.nexusId+'&itemId='+encodeURIComponent(m.id));
+  const j=await bridgeRequest('GET','files?modId='+m.nexusId+'&itemId='+encodeURIComponent(m.id)+'&reviewArchive=1&reviewView='+view);
   if(!j.ok)throw Error(j.error||'Nexus file review unavailable');
-  if(FILE_PICKER_MOD!==m||!contextIsCurrent(context))return;
-  const nexus=(j.files||[]).map(f=>{
+  if(!current())return;
+  // A current file list can coexist with no verified historical receipt.
+  // Refuse contradictory identity evidence, including delayed results for a reused picker.
+  if((j.itemId!=null&&j.itemId!==m.id)||(j.modId!=null&&j.modId!==Number(m.nexusId))||(j.profileId!=null&&j.profileId!==context.profile))
+   throw Error('The file review no longer identifies this mod. Reopen the picker.');
+  const files=Array.isArray(j.files)?j.files:[];
+  const receipt=Boolean(context.profile)&&j.itemId===m.id&&j.modId===Number(m.nexusId)&&j.profileId===context.profile?filePickerArchive(j,files):{state:'unknown'};
+  const archiveNote=$('filePickerArchiveReceipt');
+  archiveNote.textContent=receipt.state==='listed'?'The recorded Nexus archive for this row and displayed version is marked below. History does not verify installed files or compatibility.':
+   receipt.state==='notListed'?'Recorded Nexus archive #'+receipt.fileId+' is not in the returned list. This does not prove it was removed.':
+   'No unambiguous recorded Nexus archive for this row and displayed version.';
+  archiveNote.hidden=false;$('filePickerRoleLabel').hidden=false;
+  const receiptOption=$('filePickerRole').querySelector('option[value="receipt"]');
+  if(receiptOption)receiptOption.disabled=receipt.state!=='listed';
+  const nexus=files.map(f=>{
+   const recorded=receipt.state==='listed'&&Number(f.fileId)===receipt.fileId;
    const tag=f.suggested?'◈ VERSION-MATCHED MAIN FILE':f.releaseVersionMatch?'✓ PROJECT VERSION MATCH':f.category===1?'MAIN FILE':'OPTIONAL / OTHER';
-   return '<div class="picker-file'+(f.suggested?' picker-suggested':'')+'"><div class="picker-file-main"><span class="picker-match-tag">'+escapeHTML(tag)+'</span><strong>'+escapeHTML(f.name)+'</strong><span>v'+escapeHTML(f.version||'?')+' · '+escapeHTML(f.fileName||'')+' · '+escapeHTML(f.sizeInKB||'?')+' KB '+(f.category===1?' · MAIN FILE':'')+'</span>'+(f.reviewHint?'<p class="picker-hint">'+escapeHTML(f.reviewHint)+'</p>':'')+(f.description?'<p class="picker-file-desc">'+escapeHTML(f.description)+'</p>':'')+'</div><button class="button-bright" data-file-id="'+Number(f.fileId)+'" data-file-version="'+escapeHTML(f.version||'')+'" data-mod-id="'+Number(m.nexusId)+'" data-archive-name="'+escapeHTML(f.fileName||f.name)+'">Select Nexus file</button></div>';
+   return '<div class="picker-file'+(f.suggested?' picker-suggested':'')+'" data-picker-role="'+(f.category===1?'main':'other')+'" data-picker-matches="'+String(f.releaseVersionMatch===true)+'" data-picker-receipt="'+String(recorded)+'"><div class="picker-file-main"><span class="picker-match-tag">'+escapeHTML(tag)+'</span><strong>'+escapeHTML(f.name)+'</strong>'+(recorded?'<span class="picker-archive-receipt">Recorded archive</span>':'')+'<span>Nexus #'+Number(f.fileId)+' · v'+escapeHTML(f.version||'?')+' · '+escapeHTML(f.fileName||'')+' · '+escapeHTML(f.sizeInKB||'?')+' KB '+(f.category===1?' · MAIN FILE':'')+'</span>'+(f.reviewHint?'<p class="picker-hint">'+escapeHTML(f.reviewHint)+'</p>':'')+(f.description?'<p class="picker-file-desc">'+escapeHTML(f.description)+'</p>':'')+'</div><button class="button-bright" data-file-id="'+Number(f.fileId)+'" data-file-version="'+escapeHTML(f.version||'')+'" data-mod-id="'+Number(m.nexusId)+'" data-archive-name="'+escapeHTML(f.fileName||f.name)+'">Select Nexus file</button></div>';
   }).join('');
   if(!nexus&&!releaseFiles)throw Error('No files available for this project');
   $('filePickerFiles').innerHTML=(nexus?'<div class="picker-source-title">NEXUS MODS · EXACT FILES</div>'+nexus:'')+releaseFiles;
@@ -1686,12 +1713,13 @@ async function openFilePicker(m){
   else if(j.reviewAdvice?.matchingMainFiles>1)$('filePickerSummary').textContent='Several main files share the published version. Compare the variants carefully for your runtime and mod configuration.';
   filterFilePicker();
  }catch(ex){
-  if(FILE_PICKER_MOD!==m||!contextIsCurrent(context))return;
+  if(!current())return;
+  $('filePickerRoleLabel').hidden=true;$('filePickerArchiveReceipt').hidden=true;$('filePickerArchiveReceipt').textContent='';
   $('filePickerFiles').innerHTML='<div class="picker-error">'+escapeHTML(ex.message)+'<p>Use the original Nexus Files page and Mod Manager Download if required by your account.</p></div>'+releaseFiles;
   filterFilePicker();
  }
 }
-function closeFilePicker(){$('filePickerVeil').hidden=true;FILE_PICKER_MOD=null;WORKSHOP_REVIEW_ID=null;FAST_PICKER_ID=null}
+function closeFilePicker(){FILE_PICKER_VIEW++;$('filePickerVeil').hidden=true;FILE_PICKER_MOD=null;WORKSHOP_REVIEW_ID=null;FAST_PICKER_ID=null}
 $('filePickerClose').onclick=closeFilePicker;$('filePickerCancel').onclick=closeFilePicker;$('filePickerVeil').addEventListener('click',e=>{if(e.target===$('filePickerVeil'))closeFilePicker()});
 $('filePickerNexus').onclick=()=>{if(FILE_PICKER_MOD)window.open(getSrc(FILE_PICKER_MOD).url,'_blank','noopener,noreferrer')};
 $('filePickerFiles').addEventListener('click',async e=>{const b=e.target.closest('button[data-file-id]');if(!b)return;const m=FILE_PICKER_MOD;if(!m)return;

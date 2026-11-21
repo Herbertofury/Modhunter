@@ -4,6 +4,22 @@
 
 Modhunter now presents a unified **Update Workshop** in the standalone HTML, Rust desktop app, and MO2 plugin's browser dashboard. **Only a live MO2 plugin connection can authorize Nexus downloads or install them.** The standalone HTML keeps its own mod checklist and can export an advisory plan without MO2.
 
+## Review file evidence without changing the mod
+
+Use **Find exact file** or the **File evidence** filter in the Nexus file picker:
+All files, Matches published version, Main files, Optional or other files,
+and Recorded archive. A main/project-version match is not a compatibility
+claim or permission to install. The default still shows every returned file.
+
+**Recorded archive** is a read-only history match by exact Nexus file ID from
+the newest unambiguous finished updater receipt for this same profile, mod row,
+game/runtime, and displayed version. The recorded target version is checked;
+it does not prove current on-disk contents, an installation choice, or that
+another file is the right replacement. A newer uncertain result, tied receipts,
+a changed scope or duplicate provider ID leaves the evidence unknown. If Nexus
+does not return the recorded ID, the picker does not substitute a matching
+name or version or claim the file was removed.
+
 ## One-click MO2 updates (default experience)
 
 1. Open Modhunter from **MO2 → Tools → Update Arsenal**, using your normal active profile and Nexus login. Run **Check all mod sources** or your preferred fast audit. The current MO2 game/profile/installed versions remain authoritative.

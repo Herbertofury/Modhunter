@@ -952,22 +952,52 @@ def validate_live_desktop(report: dict, commit: str, executable_hash: str) -> No
     public_json(report)
 
 
+_WINDOWS_DEVICE_NAME = re.compile(r"(?:CON|PRN|AUX|NUL|(?:COM|LPT)[1-9¹²³])", re.IGNORECASE)
+
+
+def portable_member_index(entries: list[ZipInfo]) -> dict[str, ZipInfo]:
+    # Index the Windows directory tree, not just complete member strings.
+    # Two distinct ZIP names must remain distinct after ordinary extraction.
+    index = {}
+    names = set()
+    tree = {}
+    for entry in entries:
+        name = entry.filename.replace("\\", "/")
+        is_dir = entry.is_dir()
+        parts = (name.removesuffix("/") if is_dir else name).split("/")
+        folded_name = name.casefold()
+        require(all(part not in {"", ".", ".."} for part in parts), "Unsafe path in portable archive")
+        require(folded_name not in names, f"Duplicate portable archive member: {name}")
+        require(not stat.S_ISLNK(entry.external_attr >> 16), "Linked member in portable archive")
+        branch = tree
+        for at, part in enumerate(parts):
+            require(not part.startswith(" ") and not part.endswith((".", " "))
+                    and all(ord(char) >= 32 and char not in '<>:"|?*' for char in part)
+                    and not _WINDOWS_DEVICE_NAME.fullmatch(part.split(".", 1)[0].rstrip(" ")),
+                    "Portable archive has a Windows-incompatible path component")
+            key = part.casefold()
+            directory = is_dir or at + 1 < len(parts)
+            previous = branch.get(key)
+            if previous is None:
+                children = {} if directory else None
+                branch[key] = (part, children)
+            else:
+                spelling, children = previous
+                require(spelling == part and directory and children is not None,
+                        f"Portable archive has a conflicting Windows path: {name}")
+            branch = children
+        names.add(folded_name)
+        index[name] = entry
+    return index
+
+
 def portable_contents(path: Path, commit: str, run_url: str, native_report: dict, watchtower_report: dict, mo2_result: dict, qt_helper_hash: str, qt_forward_report: dict, live_report: dict, archive_report:dict) -> dict[str, bytes]:
     public: dict[str, bytes] = {}
     try:
         with ZipFile(path) as archive:
             entries = archive.infolist()
             require(len(entries) <= 10000 and sum(e.file_size for e in entries) <= PORTABLE_EXPANDED_LIMIT, "Portable archive exceeds the release validation bounds")
-            index = {}
-            windows_names = set()
-            for entry in entries:
-                name = entry.filename.replace("\\", "/")
-                parts = PurePosixPath(name).parts
-                require(not name.startswith("/") and ".." not in parts and not any(":" in part for part in parts), "Unsafe path in portable archive")
-                require(name not in index and name.casefold() not in windows_names, f"Duplicate portable archive member: {name}")
-                require(not stat.S_ISLNK(entry.external_attr >> 16), "Linked member in portable archive")
-                index[name] = entry
-                windows_names.add(name.casefold())
+            index = portable_member_index(entries)
             for name in ("BUILD_INFO.json", "Modhunter.exe", "modhunter-cli.exe", BUNDLED_HELPER, BUNDLED_QT_HELPER, "Install_MO2_Plugin.ps1", "Install_MO2_Plugin.bat", "Evidence/native-smoke.json", "Evidence/watchtower-smoke.json", "Evidence/qt-forward.json", "Evidence/desktop-live.json", "Evidence/archive-review-proof.json", "PROJECT_NOTICE.txt", "THIRD_PARTY_NOTICES.json", "Check_MO2_Readiness.ps1", "Check_MO2_Readiness.bat", "START-HERE-MO2-253.md", "GameSync-Update-Techniques.md"):
                 require(name in index and not index[name].is_dir() and index[name].file_size > 0, f"Portable package is missing {name}")
             require(archive.testzip() is None, "Portable ZIP failed its CRC check")
@@ -1681,6 +1711,65 @@ def self_test() -> None:
                     with self.assertRaisesRegex(ReleaseError, message):
                         prepare(self.artifacts, self.output, self.commit, self.run)
                     self.assertFalse(self.output.exists())
+
+        def portable_cli(self, artifacts, out):
+            import contextlib
+            import io
+            import sys
+            from unittest.mock import patch
+
+            argv = [str(ROOT / "native/scripts/prepare_release.py"), str(artifacts), str(out),
+                    "--commit", self.commit, "--run-url", self.run]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            status = 0
+            with (patch.object(sys, "argv", argv), contextlib.chdir(self.root),
+                  contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr)):
+                try:
+                    main()
+                except SystemExit as error:
+                    status = error.code
+            return status, stdout.getvalue(), stderr.getvalue()
+
+        def test_packaging_cli_rejects_windows_aliases_in_a_moved_portable_zip(self):
+            moved = self.root / "Relocated build files"
+            relative_zip = self.zip_path.relative_to(self.artifacts)
+            self.artifacts.rename(moved)
+            self.zip_path = moved / relative_zip
+            original = self.zip_path.read_bytes()
+            cases = (
+                ("file-first", ["Local evidence", "Local Evidence/note.txt"], "conflicting Windows"),
+                ("directory-first", ["Local Evidence/note.txt", "Local evidence"], "conflicting Windows"),
+                ("directory-case", ["Result/note-a.txt", "result/note-b.txt"], "conflicting Windows"),
+                ("trailing-dot", ["Local Evidence./note.txt"], "Windows-incompatible"),
+                ("trailing-space", ["Local Evidence/note.txt "], "Windows-incompatible"),
+                ("reserved-device", ["Local Evidence/AUX.txt"], "Windows-incompatible"),
+            )
+            for label, names, reason in cases:
+                with self.subTest(label=label):
+                    self.zip_path.write_bytes(original)
+                    with ZipFile(self.zip_path, "a") as archive:
+                        for name in names:
+                            archive.writestr(name, b"ordinary synthetic note")
+                    self.refresh_portable_manifest()
+                    out = self.root / f"Rejected {label}"
+                    status, stdout, stderr = self.portable_cli(moved, out)
+                    self.assertNotEqual(status, 0, stdout)
+                    self.assertIn(reason, stderr)
+                    self.assertFalse(out.exists())
+
+        def test_packaging_cli_keeps_valid_moved_portable_bytes(self):
+            moved = self.root / "Relocated release files"
+            relative_zip = self.zip_path.relative_to(self.artifacts)
+            self.artifacts.rename(moved)
+            self.zip_path = moved / relative_zip
+            with ZipFile(self.zip_path, "a") as archive:
+                archive.writestr("Field Notes/first.txt", b"one")
+                archive.writestr("Field Notes/second.txt", b"two")
+            self.refresh_portable_manifest()
+            status, stdout, stderr = self.portable_cli(moved, self.output)
+            self.assertEqual(status, 0, stderr)
+            self.assertTrue(json.loads(stdout)["ok"])
+            self.assertEqual((self.output / PORTABLE_NAME).read_bytes(), self.zip_path.read_bytes())
 
         def test_source_versions_reject_stale_manifest_lockfile_and_plugin(self):
             manifests = ("native/Cargo.toml", "native/Cargo.lock", "native/crates/modhunter-core/Cargo.toml",

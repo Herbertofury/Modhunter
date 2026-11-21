@@ -135,6 +135,11 @@ jobs:
         with:
           workspaces: native
           cache-on-failure: 'true'
+          prefix-key: v1-modhunter-windows-compile
+          cache-targets: 'false'
+          cache-directories: |
+            native/target/debug
+            native/target/release
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

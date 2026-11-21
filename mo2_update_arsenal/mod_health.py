@@ -35,6 +35,7 @@ MAX_PAGE_BYTES = 1_048_576
 PAGE_TTL_SECONDS = 15 * 60
 METADATA_TTL_SECONDS = 24 * 60 * 60
 MAX_COUNT = 2_147_483_647
+LAST_GOOD_BUGS = "last-good-after-transient-check"
 _SLUG = re.compile(r"[a-z0-9][a-z0-9_-]{1,63}\Z")
 _PATH = re.compile(r"/([a-z0-9][a-z0-9_-]{1,63})/mods/([1-9][0-9]{0,9})/?\Z")
 _VOID_TAGS = frozenset({"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"})
@@ -566,6 +567,56 @@ def _local_actions(item: dict, analysis: dict | None) -> list[dict]:
     return output[:256]
 
 
+def _scoped_bug_observation(observation, identity) -> bool:
+    return (isinstance(observation, dict) and observation.get("provider") == "nexus"
+            and observation.get("identity") == {"game": identity[0], "modId": identity[1]}
+            and _same_mod_url(str(observation.get("url") or ""), *identity))
+
+
+def _transient_bug_check(observation, identity) -> bool:
+    if not _scoped_bug_observation(observation, identity):
+        return False
+    fetch = observation.get("fetch")
+    if not isinstance(fetch, dict):
+        return False
+    status = fetch.get("httpStatus")
+    state = fetch.get("state")
+    return ((status is None and state in ("timeout", "in-flight-timeout", "unavailable"))
+            or (status == 429 and state == "rate-limited")
+            or (type(status) is int and 500 <= status <= 599 and state == "unavailable"))
+
+
+def _last_good_bug_count(observation, identity) -> dict | None:
+    """Validate separately stamped historic evidence, including on reopen."""
+    if not _transient_bug_check(observation, identity):
+        return None
+    prior = observation.get("lastGoodBugs")
+    if not _scoped_bug_observation(prior, identity):
+        return None
+    old, recent = _timestamp(prior.get("checkedAt")), _timestamp(observation.get("checkedAt"))
+    count = _integer(prior.get("displayedCount"))
+    if old is not None and recent is not None and old < recent and count is not None:
+        return {"provider": "nexus", "identity": {"game": identity[0], "modId": identity[1]},
+                "url": nexus_page_url(*identity), "checkedAt": old, "displayedCount": count}
+    return None
+
+
+def retain_last_good_bug_count(observation: dict, previous: dict | None, identity: tuple[str, int]) -> dict:
+    """Carry only a scalar, exact-source public badge across a transient fetch."""
+    if not _transient_bug_check(observation, identity) or not _scoped_bug_observation(previous, identity):
+        return observation
+    fetch, bugs = previous.get("fetch"), previous.get("bugs")
+    retained = _last_good_bug_count(previous, identity)
+    if (isinstance(fetch, dict) and fetch.get("state") == "ok" and fetch.get("httpStatus") == 200
+            and isinstance(bugs, dict) and bugs.get("state") == "available"
+            and bugs.get("source") == "nexus-public-page" and bugs.get("reasonCode") == "observed-bugs-navigation"):
+        retained = {"provider": "nexus", "identity": {"game": identity[0], "modId": identity[1]},
+                    "url": nexus_page_url(*identity), "checkedAt": previous.get("checkedAt"),
+                    "displayedCount": bugs.get("displayedCount")}
+    candidate = _last_good_bug_count({**observation, "lastGoodBugs": retained}, identity)
+    return {**observation, "lastGoodBugs": candidate} if candidate is not None else observation
+
+
 def build_mod_health(item: dict, *, game: str = "", now: float | None = None,
                      metadata: dict | None = None, metadata_checked_at: float | None = None,
                      page_evidence: dict | None = None, local_analysis: dict | None = None,
@@ -602,6 +653,13 @@ def build_mod_health(item: dict, *, game: str = "", now: float | None = None,
                     result["page"].update(status=observed_page["status"], source="nexus-public-page", sourceUrl=links["project"], checkedAt=evidence_stamp)
                 if isinstance(page_evidence.get("fetch"), dict):
                     result["fetch"] = {"state": str(page_evidence["fetch"].get("state") or "unknown")[:80], "httpStatus": _integer(page_evidence["fetch"].get("httpStatus"))}
+                if result["page"]["status"] not in {"hidden", "removed", "under-moderation", "unpublished", "not-found", "unavailable"}:
+                    older = _last_good_bug_count(page_evidence, identity)
+                    if older is not None and result["bugs"]["state"] == "unavailable":
+                        result["bugs"].update(state="available", displayedCount=older["displayedCount"],
+                            checkedAt=older["checkedAt"], reasonCode=LAST_GOOD_BUGS,
+                            reason="The latest public check could not confirm the Bugs tab. This is the last observed Nexus badge only; no report or affected version is verified.",
+                            changedSincePrevious=None, previousState=None)
     else:
         result["bugs"].update(state="unsupported" if provider != "unknown" else "unknown", countLabel="Provider issue count",
                                 reasonCode="provider-not-supported", reason="This provider has no verified bug-count adapter. Open its original issue or project page.")
@@ -609,6 +667,7 @@ def build_mod_health(item: dict, *, game: str = "", now: float | None = None,
         if source.get("verified") and update.get("source") == f"{provider}-release-api":
             result["page"].update(status="release-observed", source=update["source"], sourceUrl=canonical_source_url(update.get("releaseUrl")) or links.get("project", ""), checkedAt=_timestamp(update.get("checkedAt")))
     page, bugs = result["page"], result["bugs"]
+    last_good = bugs.get("reasonCode") == LAST_GOOD_BUGS
     if isinstance(previous, dict) and previous.get("identity") == result["identity"] and previous.get("provider") == provider:
         old = previous.get("page") if isinstance(previous.get("page"), dict) else {}
         old_updated, old_checked = _timestamp(old.get("updatedTimestamp")), _timestamp(old.get("checkedAt"))
@@ -622,7 +681,8 @@ def build_mod_health(item: dict, *, game: str = "", now: float | None = None,
             # change notification (including two installed copies of a project).
             page["changedSincePrevious"] = old["changedSincePrevious"]
         prior_bugs = previous.get("bugs") if isinstance(previous.get("bugs"), dict) else {}
-        if bugs["state"] in {"available", "disabled", "hidden", "locked"} and prior_bugs.get("state") in {"available", "disabled", "hidden", "locked"}:
+        if (not last_good and bugs["state"] in {"available", "disabled", "hidden", "locked"}
+                and prior_bugs.get("state") in {"available", "disabled", "hidden", "locked"}):
             prior_bug_stamp = _timestamp(prior_bugs.get("checkedAt"))
             if bugs.get("checkedAt") and prior_bug_stamp and bugs["checkedAt"] > prior_bug_stamp:
                 bugs["changedSincePrevious"] = bugs["state"] != prior_bugs["state"]
@@ -635,6 +695,8 @@ def build_mod_health(item: dict, *, game: str = "", now: float | None = None,
                     bugs["previousState"] = prior_bugs["previousState"]
     page["freshness"] = freshness(page.get("checkedAt"), now)
     bugs["freshness"] = freshness(bugs.get("checkedAt"), now, PAGE_TTL_SECONDS)
+    if last_good:
+        bugs["freshness"]["state"] = "stale"
     checked = [stamp for stamp in (page.get("checkedAt"), bugs.get("checkedAt")) if _timestamp(stamp)]
     result["checkedAt"] = max(checked) if checked else None
     states = {page["freshness"]["state"], bugs["freshness"]["state"]}
@@ -657,11 +719,16 @@ def build_mod_health(item: dict, *, game: str = "", now: float | None = None,
     if bugs["state"] in {"disabled", "hidden", "locked"}:
         add("review-support-channel", "info", "Check the author's support instructions", f"The observed bugs section is {bugs['state']}. Check the description for another support channel; this observation does not identify who changed it.", "open-url", links.get("project", ""), bugs["source"])
     elif bugs.get("displayedCount") is not None and bugs["displayedCount"] > 0:
-        add("review-bugs", "info", "Review Nexus bug reports", f"The observed Nexus badge shows {bugs['displayedCount']}. Reports may concern other versions or setups; this is not an open/total count or a diagnosis of this installation.", "open-url", links.get("bugs", ""), bugs["source"])
+        if last_good:
+            add("review-bugs", "info", "Review last known Nexus bug evidence", bugs["reason"], "open-url", links.get("bugs", ""), bugs["source"])
+        else:
+            add("review-bugs", "info", "Review Nexus bug reports", f"The observed Nexus badge shows {bugs['displayedCount']}. Reports may concern other versions or setups; this is not an open/total count or a diagnosis of this installation.", "open-url", links.get("bugs", ""), bugs["source"])
     elif bugs["state"] in {"unknown", "unavailable", "unsupported"} and links.get("bugs"):
         add("check-bugs", "info", "Open the bug or issue page", bugs["reason"], "open-url", links["bugs"], bugs["source"])
     if aggregate in {"stale", "clock-skew"}:
-        add("refresh-health", "info", "Refresh health evidence", "Some observations are old or have an inconsistent timestamp. Refresh before relying on them.", "refresh-health", evidence="Observation timestamps")
+        detail = ("The latest public check could not confirm the retained bug evidence. Refresh before relying on it."
+                  if last_good else "Some observations are old or have an inconsistent timestamp. Refresh before relying on them.")
+        add("refresh-health", "info", "Refresh health evidence", detail, "refresh-health", evidence="Observation timestamps")
     actions.extend(_local_actions(item, local_analysis))
     actions.sort(key=lambda action: 0 if action["severity"] == "warning" else 1)
     return result

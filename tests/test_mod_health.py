@@ -13,7 +13,8 @@ import urllib.request
 
 from mo2_update_arsenal.mod_health import (
     MAX_PAGE_BYTES, NexusPageClient, _SameModRedirect, _RedirectBlocked,
-    build_mod_health, freshness, nexus_identity, nexus_page_url, parse_nexus_page,
+    _observation, build_mod_health, freshness, nexus_identity, nexus_page_url,
+    parse_nexus_page, retain_last_good_bug_count,
 )
 
 
@@ -262,6 +263,30 @@ class HealthEvaluationTests(unittest.TestCase):
         self.assertEqual(health["freshness"]["state"], "partial")
         self.assertTrue(health["links"]["files"].endswith("?tab=files"))
         self.assertIn("tab=description", health["links"]["changelog"])
+
+    def test_last_known_badge_is_identity_checked_and_never_guessed(self):
+        previous = parse_nexus_page(markup(count="0"), game=GAME, mod_id=MID, checked_at=NOW-120)
+        blocked = _observation(GAME, MID, NOW-60, "timeout", None, "Timeout")
+        captured = retain_last_good_bug_count(blocked, previous, (GAME, MID))
+        projected = build_mod_health(item(), game=GAME, now=NOW, page_evidence=captured)
+        self.assertEqual(projected["bugs"]["displayedCount"], 0, "observed zero is not unknown")
+        self.assertEqual(projected["bugs"]["freshness"]["state"], "stale")
+        self.assertIsNone(projected["bugs"]["open"])
+        self.assertIsNone(projected["bugs"]["resolved"])
+        self.assertEqual(projected["fetch"]["state"], "timeout")
+        for invalid in ({**previous, "checkedAt": None}, {**previous, "checkedAt": NOW},
+                        {**previous, "identity": {"game": "fallout4", "modId": MID}},
+                        {**previous, "url": "https://example.invalid/"}, {**previous, "provider": "github"}):
+            self.assertEqual(retain_last_good_bug_count(blocked, invalid, (GAME, MID)), blocked)
+        for state, status in (("not-found",404), ("forbidden",403), ("authentication-required",401),
+                              ("challenge",200), ("redirect-blocked",None), ("unavailable",200)):
+            reply = _observation(GAME, MID, NOW-10, state, status, "Unverified")
+            self.assertIs(retain_last_good_bug_count(reply, captured, (GAME, MID)), reply)
+        healthy_again = observe(markup(count="4"))
+        self.assertIs(retain_last_good_bug_count(healthy_again, captured, (GAME, MID)), healthy_again)
+        modified = {**captured, "lastGoodBugs": {**captured["lastGoodBugs"],
+                    "identity": {"game": GAME, "modId": 999}}}
+        self.assertIsNone(build_mod_health(item(),game=GAME,now=NOW,page_evidence=modified)["bugs"]["displayedCount"])
 
     def test_explicit_removed_hidden_and_missing_are_different(self):
         for status, expected in (("hidden", "hidden"), ("removed", "removed"), ("not_found", "not-found"), ("under_moderation", "under-moderation")):

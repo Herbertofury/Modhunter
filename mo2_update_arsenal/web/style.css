@@ -364,3 +364,8 @@ body[data-theme="snow"] .download-pulse{background:linear-gradient(120deg,#e9f5f
 body[data-theme="snow"] .download-pulse-head h3,body[data-theme="snow"] .download-pulse-stats strong{color:#1f4e4b}
 body[data-theme="snow"] .download-pulse-stats span{background:#f7fbfa;color:#35515a}
 @media(max-width:700px){.download-pulse{padding:13px}.download-pulse-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.download-pulse-actions{width:100%}.download-pulse-actions button{flex:1}}
+
+#filePickerRoleLabel { display:flex;align-items:center;gap:6px; }
+#filePickerRoleLabel[hidden] { display:none; }
+#filePickerRole { min-width:0;max-width:100%; }
+.picker-archive-receipt { color:var(--text-main,#eef5e9);font-size:11px;font-weight:650;letter-spacing:.02em; }

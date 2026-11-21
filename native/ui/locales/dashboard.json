@@ -1925,7 +1925,17 @@
     "READING THE LIVE PLUGIN STATUS...": "READING THE LIVE PLUGIN STATUS...",
     "SPACE": "SPACE",
     "SHIVERFELL SURVIVAL REALM": "SHIVERFELL SURVIVAL REALM",
-    "USSEP FILES": "USSEP FILES"
+    "USSEP FILES": "USSEP FILES",
+    "File evidence": "File evidence",
+    "All files": "All files",
+    "Matches published version": "Matches published version",
+    "Main files": "Main files",
+    "Optional or other files": "Optional or other files",
+    "Recorded archive": "Recorded archive",
+    "The recorded Nexus archive for this row and displayed version is marked below. History does not verify installed files or compatibility.": "The recorded Nexus archive for this row and displayed version is marked below. History does not verify installed files or compatibility.",
+    "Recorded Nexus archive #{fileId} is not in the returned list. This does not prove it was removed.": "Recorded Nexus archive #{fileId} is not in the returned list. This does not prove it was removed.",
+    "No unambiguous recorded Nexus archive for this row and displayed version.": "No unambiguous recorded Nexus archive for this row and displayed version.",
+    "The file review no longer identifies this mod. Reopen the picker.": "The file review no longer identifies this mod. Reopen the picker."
   },
   "es": {
     "All": "Todo",
@@ -3853,7 +3863,17 @@
     "READING THE LIVE PLUGIN STATUS...": "LEYENDO EL ESTADO DEL PLUGIN EN VIVO...",
     "SPACE": "ESPACIO",
     "SHIVERFELL SURVIVAL REALM": "REINO DE SUPERVIVENCIA DE SHIVERFELL",
-    "USSEP FILES": "ARCHIVOS DE USSEP"
+    "USSEP FILES": "ARCHIVOS DE USSEP",
+    "File evidence": "Evidencia del archivo",
+    "All files": "Todos los archivos",
+    "Matches published version": "Coincide con la versión publicada",
+    "Main files": "Archivos principales",
+    "Optional or other files": "Archivos opcionales u otros",
+    "Recorded archive": "Archivo registrado",
+    "The recorded Nexus archive for this row and displayed version is marked below. History does not verify installed files or compatibility.": "Abajo se marca el archivo de Nexus registrado para esta fila y la versión mostrada. El historial no verifica los archivos instalados ni la compatibilidad.",
+    "Recorded Nexus archive #{fileId} is not in the returned list. This does not prove it was removed.": "El archivo de Nexus registrado #{fileId} no aparece en la lista recibida. Esto no demuestra que lo hayan retirado.",
+    "No unambiguous recorded Nexus archive for this row and displayed version.": "No hay un archivo de Nexus registrado inequívocamente para esta fila y la versión mostrada.",
+    "The file review no longer identifies this mod. Reopen the picker.": "La revisión ya no corresponde a este mod. Vuelve a abrir el selector."
   },
   "it": {
     "All": "Tutto",
@@ -5781,7 +5801,17 @@
     "READING THE LIVE PLUGIN STATUS...": "LETTURA DELLO STATO ATTUALE DEL PLUGIN...",
     "SPACE": "SPAZIO",
     "SHIVERFELL SURVIVAL REALM": "REGNO DI SOPRAVVIVENZA DI SHIVERFELL",
-    "USSEP FILES": "FILE DI USSEP"
+    "USSEP FILES": "FILE DI USSEP",
+    "File evidence": "Prove del file",
+    "All files": "Tutti i file",
+    "Matches published version": "Corrisponde alla versione pubblicata",
+    "Main files": "File principali",
+    "Optional or other files": "File facoltativi o di altro tipo",
+    "Recorded archive": "Archivio registrato",
+    "The recorded Nexus archive for this row and displayed version is marked below. History does not verify installed files or compatibility.": "L’archivio Nexus registrato per questa riga e la versione mostrata è indicato qui sotto. La cronologia non verifica i file installati né la compatibilità.",
+    "Recorded Nexus archive #{fileId} is not in the returned list. This does not prove it was removed.": "L’archivio Nexus registrato #{fileId} non compare nell’elenco ricevuto. Ciò non dimostra che sia stato rimosso.",
+    "No unambiguous recorded Nexus archive for this row and displayed version.": "Nessun archivio Nexus registrato in modo univoco per questa riga e la versione mostrata.",
+    "The file review no longer identifies this mod. Reopen the picker.": "La verifica non corrisponde più a questa mod. Riapri il selettore."
   },
   "zh-TW": {
     "All": "全部",
@@ -7709,6 +7739,16 @@
     "READING THE LIVE PLUGIN STATUS...": "正在讀取即時外掛狀態…",
     "SPACE": "空白鍵",
     "SHIVERFELL SURVIVAL REALM": "Shiverfell 生存世界",
-    "USSEP FILES": "USSEP 檔案"
+    "USSEP FILES": "USSEP 檔案",
+    "File evidence": "檔案證據",
+    "All files": "所有檔案",
+    "Matches published version": "符合發布版本",
+    "Main files": "主要檔案",
+    "Optional or other files": "選用或其他檔案",
+    "Recorded archive": "已記錄的封存檔",
+    "The recorded Nexus archive for this row and displayed version is marked below. History does not verify installed files or compatibility.": "下方標示此項目與顯示版本的 Nexus 封存檔記錄。歷程無法驗證已安裝的檔案或相容性。",
+    "Recorded Nexus archive #{fileId} is not in the returned list. This does not prove it was removed.": "傳回的清單並無已記錄的 Nexus 封存檔 #{fileId}。這不代表檔案已遭移除。",
+    "No unambiguous recorded Nexus archive for this row and displayed version.": "無法確定此項目與顯示版本所對應的 Nexus 封存檔記錄。",
+    "The file review no longer identifies this mod. Reopen the picker.": "這份檔案檢閱已無法辨識此模組。請重新開啟選擇器。"
   }
 }

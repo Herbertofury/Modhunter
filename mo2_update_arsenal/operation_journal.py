@@ -170,6 +170,42 @@ class OperationJournal:
         except (ValueError, TypeError, KeyError):
             return False
 
+    def nexus_archive_for_review(self, profile_id: str, game: str, runtime: str,
+                                 item_id: str, mod_id: int, installed_version: str) -> int | None:
+        """One read-only identifier, never a claim about bytes or permission to install."""
+        context = (profile_id, game, runtime, item_id, installed_version)
+        unknown = {"", "?", "unknown", "none", "invalid", "0", "0.0"}
+        if any(not isinstance(value, str) or value.strip().lower() in unknown for value in context):
+            return None
+        newest_time = None
+        newest = None
+        tied = False
+        with self.lock:
+            if self.error:
+                return None
+            for record in self.records.values():
+                if (record.get("profileId") != profile_id or record.get("itemId") != item_id
+                        or record.get("status") not in {"installed", "installing", "needs-review"}):
+                    continue
+                try:
+                    timestamp = datetime.fromisoformat(record.get("lastAt", ""))
+                    if timestamp.utcoffset() is None:
+                        return None
+                except (TypeError, ValueError, OverflowError):
+                    return None
+                if newest_time is None or timestamp > newest_time:
+                    newest_time, newest, tied = timestamp, record, False
+                elif timestamp == newest_time:
+                    tied = True
+            if tied or newest is None or (newest.get("status") != "installed"
+                    or newest.get("verifiedUpdate") is not True
+                    or newest.get("provider") != "nexus" or newest.get("modId") != mod_id
+                    or newest.get("game") != game or newest.get("gameRuntime") != runtime
+                    or newest.get("targetVersion") != installed_version):
+                return None
+            file_id = newest.get("fileId")
+            return file_id if type(file_id) is int and 0 < file_id <= 9_007_199_254_740_991 else None
+
     def profile(self, profile_id: str) -> dict:
         """Return ALL history for this profile, never as actionable MO2 tickets."""
         with self.lock:

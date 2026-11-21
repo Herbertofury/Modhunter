@@ -828,7 +828,7 @@ class ArsenalService:
         except (NexusError, MissingAuth, ValueError) as ex:
             return {"ok": False, "error": str(ex)}
 
-    def review_files(self, mod_id: int, item_id: str) -> dict:
+    def review_files(self, mod_id: int, item_id: str, *, include_archive_receipt: bool = False) -> dict:
         """Decorate native Nexus files for one exact MO2 row, not shared projects."""
         snapshot = self.selection_snapshot([item_id])
         item = next((row for row in snapshot.get("items", [])
@@ -839,10 +839,20 @@ class ArsenalService:
         response = self.fetch_files(mod_id)
         if not response.get("ok"):
             return response
+        advisory = advise_nexus_files(item, response["files"])
+        result = {**response, **advisory, "itemId": item_id}
+        if include_archive_receipt:
+            file_id = self.journal.nexus_archive_for_review(
+                snapshot.get("profileId"), snapshot.get("game"), snapshot.get("gameRuntime"),
+                item_id, mod_id, item.get("installedVersion"))
+            matches = sum(type(file.get("fileId")) is int and file["fileId"] == file_id
+                          for file in advisory["files"])
+            result["profileId"] = snapshot.get("profileId")
+            result["archiveReceipt"] = ({"state": "unknown"} if file_id is None or matches > 1
+                else {"state": "listed" if matches == 1 else "notListed", "fileId": file_id})
         if self.selection_snapshot([item_id]) != snapshot:
             return {"ok": False, "error": "Selected mod changed while loading files; refresh and review again"}
-        advisory = advise_nexus_files(item, response["files"])
-        return {**response, **advisory, "itemId": item_id}
+        return result
 
     def _start_native_download(self, command: str, native_payload: dict, ticket: dict) -> dict:
         """Register native IDs atomically with any completion signal received early."""
@@ -1839,7 +1849,9 @@ class ArsenalService:
                     except (ValueError, TypeError):
                         mid = 0
                     item_id = query.get("itemId", [""])[0]
-                    return self._reply(service.review_files(mid, item_id) if item_id else service.fetch_files(mid))
+                    return self._reply(service.review_files(mid, item_id,
+                        include_archive_receipt=query.get("reviewArchive") == ["1"])
+                        if item_id else service.fetch_files(mid))
                 if uri.path == "/api/diagnostics":
                     return self._reply({"ok": True, "version": VERSION,
                                         "native": dict(service.native_diagnostics),

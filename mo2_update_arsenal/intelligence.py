@@ -14,7 +14,8 @@ from pathlib import Path
 import threading
 import time
 
-from .mod_health import build_mod_health, nexus_identity, NexusPageClient, PAGE_TTL_SECONDS
+from .mod_health import (build_mod_health, nexus_identity, retain_last_good_bug_count,
+                         NexusPageClient, LAST_GOOD_BUGS, PAGE_TTL_SECONDS)
 from .plugin_intelligence import RustAuditRunner
 from .source_registry import provider_of
 
@@ -284,7 +285,8 @@ class ModIntelligence:
                         # first render or first installed row sharing a project.
                         for part in ("page", "bugs"):
                             prior = previous.get(part, {})
-                            if prior.get("checkedAt") == health.get(part, {}).get("checkedAt"):
+                            if (prior.get("checkedAt") == health.get(part, {}).get("checkedAt")
+                                    and health[part].get("reasonCode") != LAST_GOOD_BUGS):
                                 for field in ("changedSincePrevious", "previousState"):
                                     if prior.get(field) is not None:
                                         health[part][field] = prior[field]
@@ -354,7 +356,7 @@ class ModIntelligence:
             with self.service._guard:
                 if self.service._stopped:
                     return
-                self._evidence[key] = evidence
+                self._evidence[key] = retain_last_good_bug_count(evidence, self._evidence.get(key), identity)
                 self._evidence.move_to_end(key)
                 while len(self._evidence) > 400:
                     self._evidence.popitem(last=False)

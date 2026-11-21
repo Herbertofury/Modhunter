@@ -26,6 +26,7 @@ Open **The Update Workshop** in the live dashboard. It separates candidates, mod
 * Queue vetted ZIP/7Z/RAR release assets through MO2's native URL downloader; unsupported formats and gated providers retain clear manual-review states.
 * Queue Nexus downloads via supported MO2 pathways, opening the standard installer.
 * Show winning plugin light/full state, ESL candidate or compaction-review findings, stale conversion output, master problems and checked bug-tab evidence on individual mods.
+* If a public Bugs check times out or is rate-limited, a previously observed badge can stay visible as **stale** with its original check time. Access denial, removal or an unknown previous observation never supply an old count. This is neither a count of open reports nor a crash or fix verified for your installed version. Open the linked original report page to review it.
 * Jump to the exact relevant mod row.
 * Award verified Forge Sigils only upon authorized real update evidence.
 * Serve an optional loopback dashboard for independent app and browser clients.

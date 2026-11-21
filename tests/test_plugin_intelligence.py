@@ -22,7 +22,7 @@ from unittest.mock import patch
 
 from mo2_update_arsenal.bridge import ArsenalService, UIRequest
 from mo2_update_arsenal.intelligence import ModIntelligence
-from mo2_update_arsenal.mod_health import parse_nexus_page
+from mo2_update_arsenal.mod_health import _observation, parse_nexus_page
 from mo2_update_arsenal.plugin_intelligence import (
     RustAuditRunner, attach_native_plugin_state, build_audit_request, native_plugin_facts,
 )
@@ -389,7 +389,7 @@ class GatedPages:
         try:
             if not entry["release"].wait(3):
                 raise RuntimeError("Test did not release page")
-            return public_evidence(game, mid, checked=time.time())
+            return entry.get("evidence") or public_evidence(game, mid, checked=time.time())
         finally:
             with self.lock:
                 self.active -= 1
@@ -549,6 +549,77 @@ class IntelligenceLifecycleTests(unittest.TestCase):
         second["release"].set()
         wait_until(lambda: not self.coordinator._health_active)
         self.assertTrue(self.coordinator.health_state("m0", "A")["health"]["bugs"]["displayedCount"] == 0)
+
+    def run_health_observation(self, evidence, *, profile_name="A"):
+        self.assertTrue(self.coordinator.start_health("m0", profile_name, force=True)["ok"])
+        entry = self.pages.started.get(timeout=1)
+        entry["evidence"] = evidence
+        entry["release"].set()
+        wait_until(lambda: not self.coordinator._health_active)
+        return self.coordinator.health_state("m0", profile_name)["health"]
+
+    def test_transient_bug_check_keeps_original_timestamp_and_recovers_after_restart(self):
+        with patch("mo2_update_arsenal.intelligence.time.time", return_value=NOW):
+            old = public_evidence(count="7", checked=NOW-120)
+            self.assertEqual(self.run_health_observation(old)["bugs"]["freshness"]["state"], "fresh")
+            first_failure = _observation(GAME, 77, NOW-60, "timeout", None, "Timeout")
+            health = self.run_health_observation(first_failure)
+            self.assertEqual(health["fetch"]["state"], "timeout")
+            self.assertEqual(health["bugs"]["checkedAt"], NOW-120)
+            self.assertEqual(health["bugs"]["displayedCount"], 7)
+            self.assertEqual(health["bugs"]["freshness"]["state"], "stale")
+            self.assertEqual(health["bugs"]["freshness"]["ageSeconds"], 120)
+            self.assertIsNone(health["bugs"]["changedSincePrevious"])
+            self.assertIn("affected version", health["bugs"]["reason"])
+            self.assertEqual(health["links"]["bugs"], old["url"])
+            self.assertTrue(all(action["action"] not in ("install", "download") for action in health["actions"]))
+            disk = self.coordinator.path
+            self.coordinator = ModIntelligence(self.service, disk, runner=self.runner, page_client=self.pages)
+            self.service.intelligence = self.coordinator
+            self.assertEqual(self.service.snapshot()["items"][0]["modHealth"]["bugs"]["checkedAt"], NOW-120)
+            recent = _observation(GAME, 77, NOW-30, "rate-limited", 429, "Rate limited")
+            bounded = self.run_health_observation(recent)
+            self.assertEqual(bounded["bugs"]["checkedAt"], NOW-120)
+            self.assertEqual(bounded["fetch"]["state"], "rate-limited")
+            # Use a future completed fresh request in the same simulated clock, not a retry during backoff.
+            fresh = self.run_health_observation(public_evidence(count="9", checked=NOW))
+            self.assertEqual(fresh["bugs"]["freshness"]["state"], "fresh")
+            self.assertEqual(fresh["bugs"]["displayedCount"], 9)
+            self.assertEqual(fresh["bugs"]["checkedAt"], NOW)
+
+    def test_completed_public_health_keeps_exact_project_on_profile_and_row_reuse(self):
+        with patch("mo2_update_arsenal.intelligence.time.time", return_value=NOW):
+            self.run_health_observation(public_evidence(count="7", checked=NOW-90))
+            self.assertTrue(self.coordinator.start_health("m0", "A", force=True)["ok"])
+            older = self.pages.started.get(timeout=1)
+            self.service.set_snapshot(profile("B", game="fallout4", count=3))
+            self.assertIsNone(self.coordinator.health_state("m0", "B")["health"]["bugs"]["displayedCount"])
+            next_a = profile("A", count=3)
+            next_a["items"][0].update(nexusId=89, source={"verified": True, "kind": "project", "url": f"https://www.nexusmods.com/{GAME}/mods/89"})
+            self.service.set_snapshot(next_a)
+            older["evidence"] = _observation(GAME, 77, NOW-60, "timeout", None, "Timeout")
+            older["release"].set()
+            wait_until(lambda: not self.coordinator._health_active)
+            self.assertIsNone(self.coordinator.health_state("m0", "A")["health"]["bugs"]["displayedCount"])
+            self.assertEqual(len(self.pages.calls), 2, "profile changes do not schedule another public request")
+            self.service.set_snapshot(profile("A", count=3))
+            exact = self.coordinator.health_state("m0", "A")["health"]["bugs"]
+            self.assertEqual(exact["displayedCount"], 7)
+            self.assertEqual(exact["freshness"]["state"], "stale")
+
+    def test_private_or_removed_page_never_reuses_prior_bug_count(self):
+        with patch("mo2_update_arsenal.intelligence.time.time", return_value=NOW):
+            self.run_health_observation(public_evidence(count="7", checked=NOW-120))
+            recent = self.run_health_observation(_observation(GAME, 77, NOW-100, "timeout", None, "Timeout"))
+            self.assertEqual(recent["bugs"]["displayedCount"], 7)
+            self.service.cache.set(GAME, 77, {"checkedAt": NOW-90, "meta": {"status": "removed"}})
+            self.assertIsNone(self.coordinator.health_state("m0", "A")["health"]["bugs"]["displayedCount"])
+            self.service.cache.set(GAME, 77, {"checkedAt": NOW-80, "meta": {"status": "published"}})
+            private = self.run_health_observation(_observation(GAME, 77, NOW-60, "forbidden", 403, "Access denied"))
+            self.assertIsNone(private["bugs"]["displayedCount"])
+            late = self.run_health_observation(_observation(GAME, 77, NOW-40, "timeout", None, "Timeout"))
+            self.assertIsNone(late["bugs"]["displayedCount"])
+            self.assertEqual(late["bugs"]["state"], "unavailable")
 
     def test_failed_health_evidence_obeys_short_retry_ttl(self):
         saved = public_evidence(checked=NOW - 61)

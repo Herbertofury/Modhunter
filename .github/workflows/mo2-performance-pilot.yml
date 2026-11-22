@@ -1,0 +1,136 @@
+name: MO2 same-host performance pilot
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'native/scripts/mo2_perf/**'
+      - '.github/workflows/mo2-performance-pilot.yml'
+permissions:
+  contents: read
+
+jobs:
+  pilot:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: windows-2025
+    timeout-minutes: 55
+    steps:
+      - name: Set the dedicated hosted scratch root
+        shell: pwsh
+        run: |
+          "BENCH_PARENT=$(Join-Path $env:RUNNER_TEMP 'modhunter-same-host-pilot')" >> $env:GITHUB_ENV
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.99.1'
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+      - name: Install the same Qt SDK as the existing native smoke
+        id: qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.7.1'
+          host: windows
+          target: desktop
+          arch: win64_msvc2019_64
+          archives: qtbase
+          cache: 'true'
+          set-env: 'false'
+      - name: Verify benchmark contracts and build the production helper inputs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          Push-Location native/scripts/mo2_perf
+          python -m unittest -v test_benchmark
+          Pop-Location
+          $env:PATH = "${{ steps.qt.outputs.qt-root-dir }}/bin;$env:PATH"
+          cmake -S native/qt_bridge -B native/target/qt-bridge -A x64 "-DCMAKE_PREFIX_PATH=${{ steps.qt.outputs.qt-root-dir }}" -DBUILD_TESTING=ON
+          cmake --build native/target/qt-bridge --config Release --parallel 2
+          ctest --test-dir native/target/qt-bridge -C Release --output-on-failure
+          python native/scripts/prepare_release.py --print-version
+          python native/scripts/prepare_assets.py
+          python native/scripts/prepare_archive_tools.py
+          cargo build --manifest-path native/Cargo.toml --release --locked -p modhunter-core
+      - name: Stage pinned official upstream, actual published asset and candidate plugin
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          New-Item -ItemType Directory -Path $env:BENCH_PARENT | Out-Null
+          $MoArchive = Join-Path $env:BENCH_PARENT 'Mod.Organizer-2.5.2.7z'
+          $Release = Join-Path $env:BENCH_PARENT 'Modhunter-0.12.1-MO2-Plugin.zip'
+          $MoExtract = Join-Path $env:BENCH_PARENT 'official'
+          $ReleaseExtract = Join-Path $env:BENCH_PARENT 'released'
+          $Candidate = Join-Path $env:BENCH_PARENT 'candidate/mo2_update_arsenal'
+          Invoke-WebRequest -Uri 'https://github.com/ModOrganizer2/modorganizer/releases/download/v2.5.2/Mod.Organizer-2.5.2.7z' -OutFile $MoArchive -TimeoutSec 300
+          $MoArchiveSha = (Get-FileHash -LiteralPath $MoArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+          # Observed independently in the existing native MO2 smoke receipt,
+          # not an upstream-supplied release digest.
+          if ((Get-Item -LiteralPath $MoArchive).Length -ne 149660212 -or
+              $MoArchiveSha -ne 'e6376efd87fd5ddd95aee959405e8f067afa526ea6c2c0c5aa03c5108bf4a815') {
+            throw 'Official MO2 archive length or independently observed SHA-256 differs'
+          }
+          Invoke-WebRequest -Uri 'https://github.com/Herbertofury/Modhunter/releases/download/v0.12.1/Modhunter-0.12.1-MO2-Plugin.zip' -OutFile $Release -TimeoutSec 90
+          if ((Get-FileHash -LiteralPath $Release -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'fe3552411af9d3dbcc218e5146030417be0adf417b22bccf700b473adc07bfd1') { throw 'Published v0.12.1 plugin ZIP identity differs' }
+          $SevenZipCommand = Get-Command '7z.exe' -ErrorAction SilentlyContinue
+          $SevenZip = if ($SevenZipCommand) { $SevenZipCommand.Source } else { Join-Path $env:ProgramFiles '7-Zip/7z.exe' }
+          if (!(Test-Path -LiteralPath $SevenZip -PathType Leaf)) { throw 'Recognized hosted 7-Zip is unavailable' }
+          & $SevenZip x $MoArchive "-o$MoExtract" -y *> (Join-Path $env:BENCH_PARENT 'extraction.log')
+          $Mo = @(Get-ChildItem -LiteralPath $MoExtract -Filter 'ModOrganizer.exe' -File -Recurse)
+          if ($Mo.Count -ne 1 -or $Mo[0].VersionInfo.FileVersion -notmatch '^2\.5\.2(?:[. +\-]|$)') { throw 'Expected a uniquely scoped MO2 2.5.2 executable' }
+          Expand-Archive -LiteralPath $Release -DestinationPath $ReleaseExtract
+          New-Item -ItemType Directory -Path (Split-Path $Candidate -Parent) | Out-Null
+          Copy-Item -LiteralPath mo2_update_arsenal -Destination $Candidate -Recurse
+          Get-ChildItem -LiteralPath $Candidate -Directory -Recurse -Filter __pycache__ | Remove-Item -Recurse -Force
+          $Bin = Join-Path $Candidate 'bin'
+          New-Item -ItemType Directory -Path $Bin -Force | Out-Null
+          Copy-Item -LiteralPath native/target/release/modhunter-cli.exe -Destination $Bin
+          Copy-Item -LiteralPath native/target/qt-bridge/Release/modhunter-qt-bridge.dll -Destination $Bin
+          Copy-Item -LiteralPath native/resources/archive-tools -Destination $Bin -Recurse
+          $PluginSha = (Get-FileHash -LiteralPath mo2_update_arsenal/plugin.py -Algorithm SHA256).Hash.ToLowerInvariant()
+          @{
+            moRoot = $Mo[0].Directory.FullName
+            moExeSha = (Get-FileHash -LiteralPath $Mo[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            moArchive = $MoArchive
+            moArchiveSha = $MoArchiveSha
+            released = (Join-Path $ReleaseExtract 'MO2/mo2_update_arsenal')
+            releaseZip = $Release
+            candidate = $Candidate
+            pluginSha = $PluginSha
+            candidateCommit = (git rev-parse HEAD)
+          } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $env:BENCH_PARENT 'stage.json') -Encoding utf8
+      - name: Launch ordinary installed plugin, published plugin and absent controls
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $Stage = Get-Content -LiteralPath (Join-Path $env:BENCH_PARENT 'stage.json') -Raw | ConvertFrom-Json
+          $Options = @(
+            '--output', (Join-Path $env:BENCH_PARENT 'evidence'),
+            '--mo2-root', $Stage.moRoot, '--mo2-exe-sha256', $Stage.moExeSha,
+            '--mo2-archive', $Stage.moArchive, '--mo2-archive-sha256', $Stage.moArchiveSha,
+            '--release-asset', $Stage.releaseZip, '--released-plugin', $Stage.released,
+            '--candidate-plugin', $Stage.candidate, '--candidate-plugin-sha256', $Stage.pluginSha,
+            '--candidate-commit', $Stage.candidateCommit,
+            '--fixture-game', 'native/scripts/mo2_smoke_plugin/game_modhunter_smoke.py'
+          )
+          try { python native/scripts/mo2_perf/benchmark.py @Options --preflight }
+          catch {
+            @{ status = 'not qualified'; reason = $_.Exception.Message; mode = 'native preflight' } |
+              ConvertTo-Json | Set-Content -LiteralPath (Join-Path $env:BENCH_PARENT 'pilot-failure.json') -Encoding utf8
+            throw
+          }
+      - name: Retain raw measurements and failure receipts only
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Modhunter-MO2-Performance-Pilot
+          path: |
+            ${{ runner.temp }}/modhunter-same-host-pilot/pilot-failure.json
+            ${{ runner.temp }}/modhunter-same-host-pilot/evidence/*.json
+            ${{ runner.temp }}/modhunter-same-host-pilot/evidence/*/events/*.json
+          if-no-files-found: warn
+          retention-days: 14

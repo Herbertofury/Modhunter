@@ -1,3 +1,3 @@
 """Packaged MO2 version; release validation checks native/Cargo.toml matches."""
 
-VERSION = "0.12.1"
+VERSION = "0.12.2"

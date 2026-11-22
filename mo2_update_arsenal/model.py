@@ -91,7 +91,7 @@ def inspect_local_flags(mod_directory: Path) -> list[str]:
     try:
         for key in ("SKSE/Plugins", "skse/plugins"):
             plugins = mod_directory / key
-            if plugins.is_dir() and any(x.suffix.lower() == ".dll" for x in plugins.iterdir() if x.is_file()):
+            if plugins.is_dir() and any(x.suffix.lower() == ".dll" and x.is_file() for x in plugins.iterdir()):
                 flags.append("DLL")
                 break
     except (OSError, PermissionError):

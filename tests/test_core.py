@@ -6,9 +6,9 @@ import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
-from mo2_update_arsenal.model import take_snapshot, source_url, inspect_local_flags, identity
+from mo2_update_arsenal.model import LocalMetadataCache, take_snapshot, source_url, inspect_local_flags, identity
 from mo2_update_arsenal.scanner import Cache, NexusClient, UpdateScanner, version_verdict, local_mo2_candidates, safe_game_slug
 
 class Mod:
@@ -60,6 +60,35 @@ class TestModel(unittest.TestCase):
     def test_dll_detection(self):
         with tempfile.TemporaryDirectory() as tmp:
             p=Path(tmp)/'SKSE'/'Plugins';p.mkdir(parents=True);(p/'x.dll').write_bytes(b'dll');self.assertEqual(inspect_local_flags(Path(tmp)),['DLL'])
+    def test_large_metadata_capture_ignores_non_dll_entries_without_file_probes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            mods, expected = {}, {}
+            for i in range(64):
+                name = f"Fixture {i}"
+                modpath = root / name
+                plugin_dir = modpath / ("SKSE/Plugins" if i % 2 else "skse/plugins")
+                plugin_dir.mkdir(parents=True)
+                for n in range(32):
+                    (plugin_dir / f"settings-{n}.toml").write_text("fixture = true")
+                # A suffix match itself is not enough: directories aren't DLLs.
+                (plugin_dir / "folder.dll").mkdir()
+                if i % 4 in (1, 2):
+                    (plugin_dir / "live.DlL").write_bytes(b"synthetic header only")
+                mods[name] = Mod(name, path=str(modpath))
+                expected[name] = ["DLL"] if i % 4 in (1, 2) else []
+            original_stat, non_dll_probes = Path.stat, []
+            def stat(path, *args, **kwargs):
+                if path.suffix == ".toml":
+                    non_dll_probes.append(path.name)
+                return original_stat(path, *args, **kwargs)
+            cache = LocalMetadataCache()
+            with patch.object(Path, "stat", stat):
+                for force in (False, False, True):
+                    snapshot = take_snapshot(Organizer(mods), metadata_cache=cache, force_metadata=force)
+                    self.assertEqual({row["name"]:row["flags"] for row in snapshot["items"]}, expected)
+            self.assertEqual(len(non_dll_probes), 0, "known non-DLL files never need a DLL type probe")
+
     def test_no_false_link(self):
         self.assertFalse(source_url('skyrimspecialedition',0)['verified'])
 

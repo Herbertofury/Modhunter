@@ -529,8 +529,37 @@ class WatchtowerBrowserTests(unittest.TestCase):
         self.assertEqual(self.page.locator(".capture-preview").count(), 0)
 
     def test_responsive_complete_list(self):
-        self.open(snapshot(2500))
+        state = snapshot(2500)
+        for index, row in enumerate(state["watches"]):
+            if index % 2 == 0:
+                row["title"] = ""
+                row["url"] = f"https://mods-{(index * 197) % 1301:04d}.example.com/release/{index}"
+        self.open(state)
         self.assertEqual(self.page.locator("#watchList .watch-row").count(), 2500)
+        self.page.locator('[data-select="watch-2499"]').focus()
+        self.page.keyboard.press("Space")
+        sort_result = self.page.evaluate("""() => {
+            const catalog = document.querySelector('#watchList'), select = document.querySelector('#sort');
+            const focused = document.activeElement, previous = focused.closest('[data-watch-id]');
+            const originalURL = window.URL, originalNow = Date.now;
+            const label = w => w.title || new originalURL(w.url).host;
+            const expected = __WATCH_FIX__.state.watches.slice().sort((a,b) => label(a).localeCompare(label(b))).map(w => w.id);
+            let urlParses = 0;
+            // Count synchronous work in the actual renderer. No wall-clock
+            // threshold, timer-driven refresh, provider call or layout proxy.
+            window.URL = class extends originalURL { constructor(...args){ urlParses++; super(...args); } };
+            try {
+                const now = originalNow(); Date.now = () => now;
+                select.value = 'name'; select.dispatchEvent(new Event('change'));
+            } finally { window.URL = originalURL; Date.now = originalNow; }
+            const actual = [...catalog.children].map(row => row.dataset.watchId);
+            return {urlParses, exactOrder: JSON.stringify(actual) === JSON.stringify(expected),
+                    rowRetained: previous === catalog.querySelector('[data-watch-id="watch-2499"]'),
+                    focusRetained: !!focused.matches('[data-select="watch-2499"]') && focused === document.activeElement,
+                    selected: focused.checked};
+        }""")
+        self.assertLessEqual(sort_result.pop("urlParses"), 10_000)
+        self.assertEqual(sort_result, {"exactOrder": True, "rowRetained": True, "focusRetained": True, "selected": True})
         # Compact navigation is a presentation change; complete observations and
         # keyboard reachability remain unchanged in the rail and expanded view.
         self.page.locator("#toggleNavigation").click()

@@ -51,6 +51,7 @@ pub struct BridgeHealth {
     pub version: String,
     pub profile_id: String,
     pub generation: u64,
+    pub execution_epoch: Option<u64>,
     pub latency_ms: f64,
 }
 
@@ -64,6 +65,7 @@ struct HealthResponse {
     version: String,
     profile_id: String,
     generation: u64,
+    execution_epoch: Option<u64>,
 }
 
 #[derive(Clone)]
@@ -131,6 +133,7 @@ impl BridgeClient {
             version: info.version,
             profile_id: info.profile_id,
             generation: info.generation,
+            execution_epoch: info.execution_epoch,
             latency_ms: start.elapsed().as_secs_f64() * 1000.0,
         })
     }
@@ -192,6 +195,12 @@ mod tests {
         let health = BridgeClient::new().unwrap().probe(&url).unwrap();
         assert_eq!(health.profile_id, "hero");
         assert_eq!(health.generation, 3);
+        assert_eq!(health.execution_epoch, None);
+        worker.join().unwrap();
+        let body = r#"{"ok":true,"app":"Modhunter","protocol":1,"live":true,"version":"0.9.0","profileId":"hero","generation":3,"executionEpoch":81}"#.to_owned();
+        let (url, worker) = mock("200 OK", body);
+        let health = BridgeClient::new().unwrap().probe(&url).unwrap();
+        assert_eq!(health.execution_epoch, Some(81));
         worker.join().unwrap();
         let (url, worker) = mock("200 OK", "x".repeat(20_000));
         assert!(

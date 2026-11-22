@@ -83,6 +83,10 @@
   window.__TAURI__ = {
     event: {listen: async (event, listener) => {
       if (event === 'watchtower-download-error') return () => {};
+      if (event === 'watchtower-install-queue-context') {
+        f.publishInstallQueueContext = value => listener({payload: clone(value)});
+        return () => { delete f.publishInstallQueueContext; };
+      }
       if (event !== 'watchtower-state') throw Error('Unexpected fixture event: ' + event);
       listeners.add(listener); return () => listeners.delete(listener);
     }},

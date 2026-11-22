@@ -57,6 +57,8 @@ struct Model {
     connected: bool,
     connection_error: String,
     latency_ms: Option<f64>,
+    install_queue_scope: Option<(String, u64)>,
+    install_queue_revision: u64,
     catalog: Option<Arc<Value>>,
     stats: Option<Value>,
     warnings: Vec<String>,
@@ -242,6 +244,43 @@ impl Runtime {
 fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
+fn record_install_queue_scope(
+    model: &mut Model,
+    scope: Option<(String, u64)>,
+    force: bool,
+) -> bool {
+    if !force && model.install_queue_scope == scope {
+        return false;
+    }
+    model.install_queue_scope = scope;
+    model.install_queue_revision += 1;
+    true
+}
+
+/// Reuse the existing shell health observation. This cached stamp does not
+/// query MO2, grant authority, or publish profile data to external webviews.
+pub(crate) fn install_queue_context(app: &tauri::AppHandle) -> Value {
+    let Some(runtime) = app.try_state::<Runtime>() else {
+        return Value::Null;
+    };
+    let Ok(model) = runtime.model.lock() else {
+        return Value::Null;
+    };
+    let scope = model
+        .install_queue_scope
+        .as_ref()
+        .map(|(profile, epoch)| json!({"profileId":profile,"executionEpoch":epoch}));
+    json!({"revision":model.install_queue_revision,"scope":scope})
+}
+
+fn notify_install_queue_context(app: &tauri::AppHandle) {
+    let _ = app.emit_to(
+        "watchtower",
+        "watchtower-install-queue-context",
+        install_queue_context(app),
+    );
+}
+
 fn notify(app: &tauri::AppHandle) {
     let state = app.state::<Runtime>().snapshot();
     let _ = app.emit_to("chrome", "modhunter-state", state);
@@ -1287,7 +1326,15 @@ fn connect_with_health(app: &tauri::AppHandle, health: BridgeHealth, epoch: u64)
         m.connected = true;
         m.connection_error.clear();
         m.latency_ms = Some(health.latency_ms);
+        record_install_queue_scope(
+            &mut m,
+            health
+                .execution_epoch
+                .map(|e| (health.profile_id.clone(), e)),
+            true,
+        );
     }
+    notify_install_queue_context(app);
     if let Err(e) = state.save() {
         alert(app, format!("Connected. Could not remember address: {e}"));
     }
@@ -1314,20 +1361,25 @@ fn probe(app: &tauri::AppHandle) -> Result<Value> {
         return Ok(json!({"ok": true, "stale": true}));
     }
     let was_connected = m.connected;
-    match response {
+    let queue_scope_changed = match response {
         Ok(h) => {
             m.connected = true;
             m.connection_error.clear();
             m.latency_ms = Some(h.latency_ms);
+            record_install_queue_scope(&mut m, h.execution_epoch.map(|e| (h.profile_id, e)), false)
         }
         Err(e) => {
             m.connected = false;
             m.connection_error = e.to_string();
             m.latency_ms = None;
+            record_install_queue_scope(&mut m, None, false)
         }
-    }
+    };
     let recovered = !was_connected && m.connected;
     drop(m);
+    if queue_scope_changed {
+        notify_install_queue_context(app);
+    }
     if recovered {
         navigate_all(app)?;
     }
@@ -1716,6 +1768,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
                         version: session.version,
                         profile_id: session.profile_id,
                         generation: session.generation,
+                        execution_epoch: session.execution_epoch,
                         latency_ms: session.latency_ms,
                     }, epoch);
                 },
@@ -1730,7 +1783,9 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
             m.connected = false;
             m.connection_error.clear();
             m.latency_ms = None;
+            record_install_queue_scope(&mut m, None, true);
             drop(m);
+            notify_install_queue_context(app);
             state.save()?;
             navigate_all(app)?;
         }
@@ -1853,6 +1908,8 @@ pub fn run() {
                     connected: false,
                     connection_error: String::new(),
                     latency_ms: None,
+                    install_queue_scope: None,
+                    install_queue_revision: 0,
                     catalog: None,
                     stats: None,
                     warnings: Vec::new(),

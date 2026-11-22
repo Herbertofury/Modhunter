@@ -277,3 +277,102 @@ test('Compare INI drops completion after A/B/A or a profile generation change', 
   await run([{ epoch: 4, revision: 2, iniViewRevision: 6, activeId: 2 }, { epoch: 4, revision: 3, iniViewRevision: 7 }]);
   await run([{ epoch: 5, revision: 4, iniViewRevision: 7 }]);
 });
+
+function watchtowerQueueFixture(command) {
+  const queueScript = fs.readFileSync(path.join(__dirname, '../../../ui/watchtower-queue.js'), 'utf8');
+  const nodes = new Map(), events = new Map(), calls = [];
+  function node() {
+    return { children: [], dataset: {}, hidden: false, disabled: false, ownText: '',
+      get textContent() { return this.ownText + this.children.map(value => value.textContent).join(''); },
+      set textContent(value) { this.ownText = value; this.children = []; },
+      append(...children) { this.children.push(...children); },
+      prepend(...children) { this.children.unshift(...children); },
+      replaceChildren(...children) { this.ownText = ''; this.children = children; },
+      removeAttribute() {} };
+  }
+  for (const [, id] of queueScript.matchAll(/\bid="([^"]+)"/g)) nodes.set(id, node());
+  nodes.set('downloadsView', node());
+  const settings = { hideTitles: false };
+  const context = { document: {
+    createElement: node,
+    createTextNode(value) { const element = node(); element.textContent = value; return element; },
+    getElementById: id => nodes.get(id)
+  }, MutationObserver: class { constructor(callback) { events.set('visibility', callback); } observe() {} }, clearTimeout() {}, setTimeout() { return 1; },
+  addEventListener(kind, callback) { events.set(kind, callback); },
+  ModhunterWatchtower: { state: () => ({ settings }),
+    confirmAction: async () => true, showToast(message) { calls.push(message); },
+    command(kind, value) { calls.push({ kind, value }); return command(kind, value); }
+  } };
+  context.window = context;
+  vm.runInNewContext(queueScript, context, { filename: 'watchtower-queue.js' });
+  function profile(revision, profileId, executionEpoch) {
+    events.get('modhunter-install-queue-context')?.({detail:{revision,scope:profileId?{profileId,executionEpoch}:null}});
+  }
+  return {nodes, events, calls, settings, profile};
+}
+const flushQueue = () => new Promise(resolve => setImmediate(resolve));
+test('Watchtower queue receipts stay exact/read only and quick hide redacts identity', async () => {
+  const digest = 'abcdef12'.repeat(8);
+  const response = { profileId: 'A', executionEpoch: 2, mode: 'running', active: null, activeInOtherProfile: true, history: [
+    { kind: 'native', modName: 'Private target', state: 'complete', sourceArchive: {
+      state: 'reviewedApiSelection', provider: 'nexus', filename: 'Selected exact.zip', modId: 44, fileId: 901 } },
+    { kind: 'page', modName: 'Page target', state: 'complete', sourceArchive: {
+      state: 'verifiedOriginalPage', bytes: 42, sha256: digest, filename: '../../private.zip' } },
+    { kind: 'page', modName: 'Legacy target', state: 'failed', error: 'Private diagnostic' }
+  ] };
+  const {nodes, events, calls, settings, profile}=watchtowerQueueFixture(async()=>({ok:true,installQueue:response}));
+  profile(1,'A',2);
+  await flushQueue();
+  const summary = nodes.get('installQueueStatus').textContent;
+  const history = nodes.get('installQueueHistory');
+  assert.match(summary, /active in another profile/);
+  assert.match(history.textContent, /Selected exact\.zip.*Nexus project 44 \/ file 901/);
+  assert.match(history.textContent, new RegExp('Verified original page archive.*42 bytes.*' + digest));
+  assert.doesNotMatch(history.textContent, /private\.zip/);
+  assert.match(history.textContent, /Archive evidence unavailable/);
+  assert.equal((history.textContent.match(/FOMOD choices not captured/g) || []).length, 3);
+  settings.hideTitles = true;
+  events.get('modhunter-native-state')();
+  assert.doesNotMatch(history.textContent, /Selected exact|Nexus project|Private target|Page target|Private diagnostic|abcdef12/);
+  assert.match(history.textContent, /Archive identifiers hidden/);
+  assert.match(history.textContent, /FOMOD choices not captured/);
+  assert.deepEqual(calls.map(call => call.kind), ['installQueue']);
+});
+
+
+test('Watchtower erases stale queue rows, fences late GET/control across A/B/A and never reads while hidden', async () => {
+  const pending=[];
+  const {nodes, events, calls, profile}=watchtowerQueueFixture(kind=>new Promise(resolve=>pending.push({kind,resolve})));
+  const snapshot=(profileId,executionEpoch,modName)=>({ok:true,installQueue:{profileId,executionEpoch,mode:'running',
+    active:{kind:'page',modName,state:'installing'},history:[{kind:'page',modName,state:'complete'}]},message:'stale-control-toast'});
+  const history=nodes.get('installQueueHistory'),status=nodes.get('installQueueStatus');
+  const show=(profileId)=>assert.match(history.textContent,new RegExp(profileId));
+  const cleared=()=>{assert.equal(history.textContent,'');assert.doesNotMatch(status.textContent,/private/i);};
+  profile(1,'A',2);
+  nodes.get('installQueueRefresh').onclick();
+  pending.shift().resolve(snapshot('A',2,'Private initial A'));await flushQueue();show('initial A');
+  nodes.get('installQueueRefresh').onclick();
+  assert.equal(pending[0].kind,'installQueue');
+  profile(2,'B',3);cleared();
+  profile(3,'A',4);cleared();
+  profile(2,'B',3); // Delayed context update must not reset the current scope.
+  pending.shift().resolve(snapshot('A',2,'Private stale GET'));await flushQueue();cleared();
+  assert.equal(pending[0].kind,'installQueue');
+  pending.shift().resolve(snapshot('A',4,'Private current A'));await flushQueue();show('current A');
+  nodes.get('installQueueStop').onclick();
+  assert.equal(pending[0].kind,'installQueueControl');
+  profile(4,'B',5);cleared();
+  pending[1].resolve(snapshot('B',5,'Private current B'));await flushQueue();show('current B');
+  pending.shift().resolve(snapshot('A',4,'Private stale control'));await flushQueue();show('current B');
+  assert.doesNotMatch(status.textContent,/stale control/);
+  assert.doesNotMatch(history.textContent,/stale control/);
+  assert.equal(calls.includes('stale-control-toast'),false);
+  const before=calls.length;
+  nodes.get('downloadsView').hidden=true;events.get('visibility')();cleared();
+  profile(5,'A',6);cleared();
+  nodes.get('installQueueRefresh').onclick();await flushQueue();
+  assert.equal(calls.length,before);
+  nodes.get('downloadsView').hidden=false;events.get('visibility')();
+  pending.pop().resolve(snapshot('A',5,'Private bad exact epoch'));
+  await flushQueue();cleared();
+});

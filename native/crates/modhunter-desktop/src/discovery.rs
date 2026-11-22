@@ -33,6 +33,7 @@ pub struct Session {
     pub profile_name: String,
     pub version: String,
     pub generation: u64,
+    pub execution_epoch: Option<u64>,
     pub latency_ms: f64,
 }
 
@@ -131,6 +132,7 @@ pub fn discover(directory: &Path, client: &BridgeClient) -> std::io::Result<Vec<
                             profile_name,
                             version: health.version,
                             generation: health.generation,
+                            execution_epoch: health.execution_epoch,
                             latency_ms: health.latency_ms,
                         });
                 }

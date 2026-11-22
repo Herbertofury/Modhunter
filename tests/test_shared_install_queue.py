@@ -1,5 +1,8 @@
 """Approved page/API work shares real content transactions and one native lease."""
+from contextlib import closing
 from copy import deepcopy
+import http.client
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -88,7 +91,6 @@ class MixedFixture(Fixture):
         item = "live-1" if name == "Example" else "live-" + name
         receipt = {"id": did, "state": "ready", "extension": "zip", "bytes": identity["bytes"], "sha256": identity["sha256"],
             "binding": {"contentIntent": "update", "association": {"profileId": "profile-1", "itemId": item}}}
-        import json
         receipts = json.loads((self.acquisitions / "receipts.json").read_text())
         receipts["jobs"].append(receipt)
         (self.acquisitions / "receipts.json").write_bytes(canonical_json(receipts))
@@ -138,6 +140,97 @@ class SharedQueueTests(unittest.TestCase):
             self.skipTest("Set MODHUNTER_CONTENT_CLI to exercise the actual content/archive helper")
         self.f.service.content.runner = ContentRunner(Path(executable))
 
+    def test_queue_projection_keeps_active_ownership_private_after_profile_switch(self):
+        f = self.f
+        entry = {"kind": "native", "profileId": "profile-1", "itemId": "live-private",
+                 "modName": "Private prior profile target", "state": "installing", "cancel": threading.Event()}
+        f.service._install_active = entry
+        self.assertEqual(f.service.install_queue()["active"]["itemId"], "live-private")
+        before = f.service.health()
+        f.service.set_snapshot({**f.snapshot(), "profileId": "profile-2", "profileName": "Other"})
+        state = f.service.install_queue()
+        changed = f.service.health()
+        self.assertEqual((changed["profileId"], changed["executionEpoch"]), (state["profileId"], state["executionEpoch"]))
+        self.assertGreater(changed["executionEpoch"], before["executionEpoch"])
+        self.assertIsNone(state["active"])
+        self.assertIs(state["activeInOtherProfile"], True)
+        self.assertEqual(state["counts"]["active"], 1)
+        self.assertNotIn("Private prior profile target", repr(state))
+        self.assertIs(f.service._install_active, entry)
+        f.service.set_snapshot(f.snapshot())
+        returned = f.service.health()
+        self.assertEqual(returned["profileId"], before["profileId"])
+        self.assertGreater(returned["executionEpoch"], changed["executionEpoch"])
+
+    def test_queue_archive_evidence_is_exposed_only_through_the_owned_native_projection(self):
+        f = self.f
+        f.service._install_history = [{"profileId": "profile-1", "sourceArchive": {"state": "reviewedApiSelection",
+                                      "provider": "nexus", "fileId": 31, "filename": "reviewed-fixture.zip"},
+                                      "fomodChoices": "unknown"}]
+        f.service.start()
+        port = f.service._server.server_port
+
+        def get(extra, *, token=True):
+            headers = {"X-Arsenal-Token": f.service.token} if token else {}
+            with closing(http.client.HTTPConnection("127.0.0.1", port, timeout=5)) as connection:
+                connection.request("GET", "/api/install-queue", headers={**headers, **extra})
+                response = connection.getresponse()
+                return response.status, json.loads(response.read())
+
+        native = {"X-Modhunter-Native": "content-v1"}
+        self.assertEqual(get(native, token=False)[0], 403)
+        status, browser = get({**native, "Sec-Fetch-Site": "same-origin"})
+        self.assertEqual(status, 200)
+        self.assertNotIn("sourceArchive", browser["history"][0])
+        self.assertNotIn("fomodChoices", browser["history"][0])
+        status, owned = get(native)
+        self.assertEqual(status, 200)
+        self.assertEqual(owned["history"][0]["sourceArchive"]["filename"], "reviewed-fixture.zip")
+
+    def test_queue_history_reports_only_reviewed_archive_labels_and_confirmed_original_bytes(self):
+        f = self.f
+        f.ticket(901, "Example")
+        ticket = f.service._downloads[901]
+        entry = {"kind": "native", "downloadId": 901, "profileId": ticket["profileId"], "ticket": ticket}
+        f.service._install_active = entry
+        f.service._finish_queued_install(entry, {"ok": True, "state": "complete"})
+        ready = {"state": "reviewedApiSelection", "provider": "nexus", "modId": ticket["modId"],
+                 "fileId": 901, "filename": "owned-fixture.zip"}
+        self.assertEqual(f.service.install_queue(include_archive_evidence=True)["history"][0]["sourceArchive"], ready)
+        self.assertNotIn("sourceArchive", f.service.install_queue()["history"][0])
+
+        page = f.page("Example")
+        receipt = page["resolvedArchive"]["receipt"]
+        entry = {"kind": "page", "downloadId": page["downloadId"], "profileId": "profile-1", "data": page}
+        f.service._install_active = entry
+        f.service._finish_queued_install(entry, {"ok": True, "state": "complete"})
+        row = f.service.install_queue(include_archive_evidence=True)["history"][-1]
+        self.assertEqual(row["sourceArchive"], {"state": "verifiedOriginalPage", "bytes": receipt["bytes"],
+                                               "sha256": receipt["sha256"]})
+        self.assertEqual(row["fomodChoices"], "unknown")
+        self.assertNotIn(str(f.root), repr(row))
+
+        f.service._install_active = entry
+        f.service._finish_queued_install(entry, {"ok": False, "state": "failed"})
+        row = f.service.install_queue(include_archive_evidence=True)["history"][-1]
+        self.assertEqual(row["sourceArchive"], {"state": "unknown"})
+        self.assertEqual(row["fomodChoices"], "unknown")
+
+        # A copied receipt for a different download cannot be displayed as
+        # the verified original associated with this outcome.
+        f.service._install_active = {**entry, "downloadId": "download-another"}
+        f.service._finish_queued_install(f.service._install_active, {"ok": True, "state": "complete"})
+        self.assertEqual(f.service.install_queue(include_archive_evidence=True)["history"][-1]["sourceArchive"],
+                         {"state": "unknown"})
+
+        ticket["fileName"] = r"C:\private\hidden.zip"
+        entry = {"kind": "native", "downloadId": 901, "profileId": ticket["profileId"], "ticket": ticket}
+        f.service._install_active = entry
+        f.service._finish_queued_install(entry, {"ok": True, "state": "complete"})
+        row = f.service.install_queue(include_archive_evidence=True)["history"][-1]
+        self.assertNotIn("filename", row["sourceArchive"])
+        self.assertNotIn("hidden.zip", repr(row))
+
     def test_mixed_api_page_api_waits_and_uses_same_real_content_engine(self):
         self.actual_cli()
         f = self.f
@@ -162,6 +255,12 @@ class SharedQueueTests(unittest.TestCase):
         jobs = f.service.content.jobs()["jobs"]
         self.assertEqual(len(jobs), 3)
         self.assertTrue(all(job["backupVerified"] and job["backup"]["undoAvailable"] for job in jobs))
+        page_outcome = next(row for row in f.service.install_queue(include_archive_evidence=True)["history"]
+                            if row["kind"] == "page")
+        original = page["resolvedArchive"]["receipt"]
+        self.assertEqual(page_outcome["sourceArchive"], {"state": "verifiedOriginalPage",
+                         "bytes": original["bytes"], "sha256": original["sha256"]})
+        self.assertEqual(page_outcome["fomodChoices"], "unknown")
         replay = f.service.content.start_install(page)
         self.assertTrue(replay["alreadyAccepted"])
         self.assertEqual(len(f.installs), 3)

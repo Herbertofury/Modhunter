@@ -213,7 +213,7 @@
  async function command(kind,value={},quiet=false){
   if(!api?.core?.invoke){if(!quiet)showToast('Open Watchtower from WATCH PAGES in Modhunter.exe.');return null}
   const key=kind+':'+(value.id||value.eventId||'');if(kind!=='detail'&&busy.has(key))return null;if(kind!=='detail')busy.add(key);
-  try{const result=await api.core.invoke('watchtower_command',{kind,value});if(result?.ok===false)throw new Error(result.error||result.message||'The action could not be completed.');if(result?.state)accept(result.state);if(result?.message&&!quiet)showToast(result.message);return result||{ok:true}}
+  try{const result=await api.core.invoke('watchtower_command',{kind,value});if(result?.ok===false)throw new Error(result.error||result.message||'The action could not be completed.');if(result?.installQueueContext)window.dispatchEvent(new CustomEvent('modhunter-install-queue-context',{detail:result.installQueueContext}));if(result?.state)accept(result.state);if(result?.message&&!quiet)showToast(result.message);return result||{ok:true}}
   catch(error){if(!quiet)showToast(errorText(error),null,'Undo',true);return {ok:false,error:errorText(error)}}
   finally{if(kind!=='detail')busy.delete(key)}
  }
@@ -448,7 +448,7 @@ $('settingsForm').onsubmit=savePreferences;$('settingsForm').addEventListener('i
  window.ModhunterWatchtower={command,confirmAction,showToast,esc,openDetail,state:()=>state};
  async function start(){
   render();if(!api?.core?.invoke||!api?.event?.listen){$('connectionBanner').hidden=false;text('connectionBanner','Open WATCH PAGES in the Rust desktop to manage real pages and site sign-ins.');return}
-  unsubscribe.push(await api.event.listen('watchtower-state',event=>accept(event.payload)));unsubscribe.push(await api.event.listen('watchtower-download-error',event=>showToast(event.payload?.message||'Download needs review.')));ready=true;const result=await command('state',{},true);if(!result?.ok){ready=false;$('connectionBanner').hidden=false;text('connectionBanner',result?.error||'Watchtower could not connect. Reopen this window from the desktop toolbar.')}else $('connectionBanner').hidden=true;render();poll();
+  unsubscribe.push(await api.event.listen('watchtower-install-queue-context',event=>window.dispatchEvent(new CustomEvent('modhunter-install-queue-context',{detail:event.payload}))));unsubscribe.push(await api.event.listen('watchtower-state',event=>accept(event.payload)));unsubscribe.push(await api.event.listen('watchtower-download-error',event=>showToast(event.payload?.message||'Download needs review.')));ready=true;const result=await command('state',{},true);if(!result?.ok){ready=false;$('connectionBanner').hidden=false;text('connectionBanner',result?.error||'Watchtower could not connect. Reopen this window from the desktop toolbar.')}else $('connectionBanner').hidden=true;render();poll();
  }
  start().catch(error=>{$('connectionBanner').hidden=false;text('connectionBanner','Watchtower startup: '+errorText(error))});
 })();

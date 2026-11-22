@@ -119,6 +119,12 @@ class Bench(mobase.IPlugin):
         self.refresh=win.findChild(QtWidgets.QPushButton,"dataTabRefresh")
         need(all(x is not None for x in (self.list,self.filter,self.tabs,self.data,self.plugins,self.refresh)),
              "MO2 widgets differ from the pinned source")
+        need(self.tabs.indexOf(self.plugins)>=0, "native Plugins tab missing: fixture GamePlugins must be registered")
+        self.plugin_view=self.plugins.findChild(QtWidgets.QAbstractItemView,"espList")
+        need(self.plugin_view is not None, "native Plugins view is absent")
+        feature=self.org.gameFeatures().gameFeature(mobase.GamePlugins)
+        need(isinstance(feature,mobase.GamePlugins) and len(feature.getLoadOrder())==self.size,
+             "native organizer did not return the fixture's typed GamePlugins provider")
         model=self.list.model()
         need(model is not None and model.rowCount()>=self.size and not self.filter.text(),
              "initial native fixture rows missing")
@@ -149,13 +155,14 @@ class Bench(mobase.IPlugin):
             wanted=mods/enabled[i%len(enabled)]/name
             need(value and os.path.normcase(str(Path(value).resolve()))==os.path.normcase(str(wanted.resolve())),
                  "native VFS did not resolve "+name+" to the controlled fixture")
-        # Some BasicGame configurations do not advertise active Bethesda
-        # plugins. Report observed inventory separately; never call it active.
         pl=self.org.pluginList()
-        get_names=getattr(pl,"pluginNames",None)
-        names=(list(get_names()) if callable(get_names) else [])
+        names=set(pl.pluginNames())
+        active={name for name in filenames if pl.state(name)==mobase.PluginState.ACTIVE}
+        need(set(filenames)<=names and active==set(filenames[:min(32,self.size//5)]),
+             "native plugin rows or fixture active set differ from staged lists")
         self.write("burst",{"native_vfs_verified":len(filenames),
-                            "native_fixture_esp_rows":len(set(names).intersection(filenames)) if callable(get_names) else None})
+                            "native_fixture_esp_rows":len(names.intersection(filenames)),
+                            "active_fixture_plugins":len(active)})
         self.queue(150,self.step)
 
     def step(self):
@@ -187,7 +194,9 @@ class Bench(mobase.IPlugin):
             rows=self.list.model().rowCount()
             observed={"filter":0<rows<self.size and self.filter.text()=="Bench Alpha",
                       "data":self.tabs.currentWidget()==self.data,
-                      "refresh":self.tabs.currentWidget()==self.data,"plugins":self.tabs.currentWidget()==self.plugins,
+                      "refresh":self.tabs.currentWidget()==self.data,
+                      "plugins":self.tabs.currentWidget()==self.plugins and self.plugin_view.model() is not None
+                                and self.plugin_view.model().rowCount()>=self.size,
                       "clear":rows>=self.size and not self.filter.text(),"select":index is not None and self.list.currentIndex()==index}[op]
             elapsed=(time.perf_counter()-now)*1000
             need(elapsed<2500, "native state not confirmed: "+op)

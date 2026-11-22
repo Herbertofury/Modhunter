@@ -155,6 +155,79 @@ class BenchmarkContract(unittest.TestCase):
             self.assertNotIn(str(root),tail)
             self.assertNotIn("pretendsecret",tail)
 
+    def test_disposable_shim_registers_typed_provider_and_roundtrips_fixture_lists(self):
+        import os
+        import sys
+        import types
+        from unittest.mock import patch
+        fixture=Path(__file__).resolve().parent.parent/"mo2_smoke_plugin/game_modhunter_smoke.py"
+        addon=Path(p.__file__).parent/"game_plugins.inc"
+        host=types.ModuleType("mobase")
+        host.ModDataChecker=type("ModDataChecker",(),{})
+        host.GamePlugins=type("GamePlugins",(),{})
+        host.PluginState=types.SimpleNamespace(ACTIVE="active",INACTIVE="inactive")
+        base=types.ModuleType("pilot_fake.basic_game")
+        class BasicGame:
+            def init(self, organizer):
+                self.organizer=organizer
+                return True
+            def _register_feature(self, feature):
+                self.organizer.providers.append(feature)
+                return True
+        base.BasicGame=BasicGame
+        with tempfile.TemporaryDirectory() as tmp:
+            for size in p.SIZES:
+                root=Path(tmp)/str(size);root.mkdir()
+                p.stage(root,size)
+                profile=root/"instance/profiles/Modhunter Smoke"
+                names=list(p.fixture_marker_map(size))
+                first=min(32,size//5)
+                class Organizer:
+                    providers=[]
+                    def profilePath(self): return str(profile)
+                class PluginList:
+                    order=[]
+                    states={name:"inactive" for name in names}
+                    def pluginNames(self): return names
+                    def state(self,n): return self.states[n]
+                    def setState(self,n,state): self.states[n]=state
+                    def setLoadOrder(self,n): self.order=list(n)
+                    def priority(self,n): return self.order.index(n)
+                namespace={"__name__":"pilot_fake.games.fixture","__package__":"pilot_fake.games"}
+                env={"MO2_BENCH_ROOT":str(root),"MO2_BENCH_SIZE":str(size),
+                     "GITHUB_ACTIONS":"true","RUNNER_ENVIRONMENT":"github-hosted"}
+                with patch.dict(sys.modules,{"mobase":host,"pilot_fake.basic_game":base}),patch.dict(os.environ,env):
+                    exec(p.game_fixture_source(fixture,addon),namespace)
+                    organizer=Organizer()
+                    self.assertTrue(namespace["ModhunterSmokeGame"]().init(organizer))
+                    self.assertEqual(2,len(organizer.providers))
+                    feature=organizer.providers[1]
+                    self.assertIsInstance(feature,host.GamePlugins)
+                    plugin_list=PluginList()
+                    feature.readPluginLists(plugin_list)
+                    self.assertEqual(names,feature.getLoadOrder())
+                    self.assertEqual(names,plugin_list.order)
+                    self.assertEqual(set(names[:first]),{n for n in names if plugin_list.state(n)=="active"})
+                    plugin_list.order.reverse()
+                    plugin_list.states[names[0]]="inactive"
+                    feature.writePluginLists(plugin_list)
+                    self.assertEqual(list(reversed(names)),(profile/"loadorder.txt").read_text().splitlines())
+                    self.assertEqual(["*"+n for n in reversed(names[1:first])],(profile/"plugins.txt").read_text().splitlines())
+                    feature.readPluginLists(plugin_list)
+                    self.assertEqual(list(reversed(names)),feature.getLoadOrder())
+                    organizer.profilePath=lambda: str(root)
+                    with self.assertRaisesRegex(RuntimeError,"outside the exact owned profile"):
+                        feature.readPluginLists(plugin_list)
+
+    def test_staged_shim_refuses_mutated_addon_bytes(self):
+        fixture=Path(__file__).resolve().parent.parent/"mo2_smoke_plugin/game_modhunter_smoke.py"
+        addon=Path(p.__file__).parent/"game_plugins.inc"
+        with tempfile.TemporaryDirectory() as tmp:
+            bad=Path(tmp)/"game_plugins.inc"
+            bad.write_bytes(addon.read_bytes()+b"# modified")
+            with self.assertRaisesRegex(RuntimeError,"extension identity mismatch"):
+                p.game_fixture_source(fixture,bad)
+
     def test_runtime_intake_refuses_symlink_and_bytes_over_limit(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)

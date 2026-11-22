@@ -37,6 +37,7 @@ REQUIRED=("test_review_preserves_complete_selection_and_exact_install_ids",
           "test_shared_queue_controls_preserve_action_boundaries",
           "test_shared_queue_receipt_is_read_only_and_hides_archive_identifiers",
           "test_shared_queue_clears_rendered_rows_and_rejects_delayed_profile_replies",
+          "test_shared_queue_replays_context_delivered_before_overlay_mount",
           "test_four_locales_preserve_names_focus_and_theme",
           "test_notice_list_is_private_and_accepts_native_substate_updates",
           "test_notice_click_uses_only_opaque_id_and_opens_current_native_item",
@@ -377,6 +378,31 @@ class NativeUiTests(base.WatchtowerBrowserTests):
         self.assertEqual(self.page.evaluate('__WATCH_FIX__.native.queue.active.jobId'),'api-exact')
         self.page.get_by_text('Recent queue outcomes',exact=True).click();self.assertTrue(self.page.locator('#installQueueHistory').is_visible())
         self.assertIn('cancelled',self.page.locator('#installQueueHistory').inner_text())
+
+    def test_shared_queue_replays_context_delivered_before_overlay_mount(self):
+        # Hold the real queue module until an actual startup reply has been
+        # forwarded by Watchtower, independently of script download speed.
+        self.page.add_init_script("""window.addEventListener('modhunter-install-queue-context',event=>{
+          if (event.detail?.scope?.profileId==='profile-1')window.__initialQueueScopeForwarded=true;
+        });""")
+        source=(ROOT/"native/ui/watchtower-queue.js").read_text("utf-8")
+        wrapper="""(() => {
+          const mount=()=>{
+            if(!window.__initialQueueScopeForwarded)throw Error('Queue mounted before startup scope');
+            window.__queueMountedAfterStartupScope=true;
+        """+source+"""
+          };
+          const schedule=()=>queueMicrotask(mount);
+          if(window.__initialQueueScopeForwarded)schedule();
+          else window.addEventListener('modhunter-install-queue-context',schedule,{once:true});
+        })();"""
+        self.page.route("**/watchtower-queue.js",lambda route: route.fulfill(body=wrapper,content_type="text/javascript"))
+        self.open_native()
+        self.page.wait_for_function("""window.__queueMountedAfterStartupScope &&
+          document.getElementById('installQueueStatus').textContent.includes('API target')""")
+        self.assertIn('Page target',self.page.locator('#installQueuePending').inner_text())
+        self.assertEqual([call['value'] for call in self.calls('installQueue')],[{}])
+        self.assertEqual(self.calls('installQueueControl'),[])
 
     def test_shared_queue_clears_rendered_rows_and_rejects_delayed_profile_replies(self):
         self.open_native()

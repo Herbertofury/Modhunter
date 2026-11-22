@@ -278,7 +278,7 @@ test('Compare INI drops completion after A/B/A or a profile generation change', 
   await run([{ epoch: 5, revision: 4, iniViewRevision: 7 }]);
 });
 
-function watchtowerQueueFixture(command) {
+function watchtowerQueueFixture(command, {initiallyHidden=false, initialContext, contextDuringReplay}={}) {
   const queueScript = fs.readFileSync(path.join(__dirname, '../../../ui/watchtower-queue.js'), 'utf8');
   const nodes = new Map(), events = new Map(), calls = [];
   function node() {
@@ -292,6 +292,7 @@ function watchtowerQueueFixture(command) {
   }
   for (const [, id] of queueScript.matchAll(/\bid="([^"]+)"/g)) nodes.set(id, node());
   nodes.set('downloadsView', node());
+  nodes.get('downloadsView').hidden=initiallyHidden;
   const settings = { hideTitles: false };
   const context = { document: {
     createElement: node,
@@ -300,6 +301,10 @@ function watchtowerQueueFixture(command) {
   }, MutationObserver: class { constructor(callback) { events.set('visibility', callback); } observe() {} }, clearTimeout() {}, setTimeout() { return 1; },
   addEventListener(kind, callback) { events.set(kind, callback); },
   ModhunterWatchtower: { state: () => ({ settings }),
+    installQueueContext() {
+      if(contextDuringReplay)events.get('modhunter-install-queue-context')({detail:contextDuringReplay});
+      return initialContext;
+    },
     confirmAction: async () => true, showToast(message) { calls.push(message); },
     command(kind, value) { calls.push({ kind, value }); return command(kind, value); }
   } };
@@ -375,4 +380,23 @@ test('Watchtower erases stale queue rows, fences late GET/control across A/B/A a
   nodes.get('downloadsView').hidden=false;events.get('visibility')();
   pending.pop().resolve(snapshot('A',5,'Private bad exact epoch'));
   await flushQueue();cleared();
+});
+
+
+test('Watchtower late queue mount replays initial scope without a hidden read; a newer event wins', async () => {
+  const initialContext={revision:1,scope:{profileId:'A',executionEpoch:4}};
+  const contextDuringReplay={revision:2,scope:{profileId:'B',executionEpoch:5}};
+  for(const options of [{initialContext},{initialContext,contextDuringReplay}]){
+    const expected=options.contextDuringReplay||options.initialContext;
+    const response={ok:true,installQueue:{...expected.scope,mode:'running',
+      history:[{kind:'page',modName:'Queued before mount: '+expected.scope.profileId,state:'complete'}]}};
+    const {nodes,events,calls,profile}=watchtowerQueueFixture(async()=>response,{...options,initiallyHidden:true});
+    assert.deepEqual(calls,[]);
+    nodes.get('downloadsView').hidden=false;events.get('visibility')();
+    await flushQueue();
+    assert.deepEqual(calls.map(call=>call.kind),['installQueue']);
+    assert.match(nodes.get('installQueueHistory').textContent,new RegExp('Queued before mount: '+expected.scope.profileId));
+    profile(1,'A',4);await flushQueue();
+    assert.equal(calls.length,1);
+  }
 });

@@ -87,11 +87,12 @@
  new MutationObserver(invalidate).observe($('downloadsView'),{attributes:true,attributeFilter:['hidden']});
  window.addEventListener('beforeunload',()=>{disposed=true;clearTimeout(poll)});
  window.addEventListener('modhunter-native-state',()=>{if(queue)render()});
- window.addEventListener('modhunter-install-queue-context',event=>{
-  const next=event.detail;
+ function acceptContext(next){
   if(!Number.isSafeInteger(next?.revision)||next.revision<=context.revision)return;
   const scope=next.scope;
   context={revision:next.revision,scope:typeof scope?.profileId==='string'&&scope.profileId&&Number.isSafeInteger(scope.executionEpoch)&&scope.executionEpoch>=0?scope:null};
   invalidate();
- });
+ }
+ window.addEventListener('modhunter-install-queue-context',event=>acceptContext(event.detail));
+ acceptContext(api()?.installQueueContext?.());
 })();

@@ -10,6 +10,13 @@
  let searchFrame=null,toastTimer=null,editWatch=null,editSession=null,detailId=null,detailReturn=null,detailRequest=0,lastDetailKey='',settingsDirty=false,lastSettingsRevision=-1;
  let prefillRevision=0,pendingPrefill=null,importDocument=null,importRevision=null,confirmation=null,dialogReturn=null,lastStateKey='',importGeneration=0,settingsGeneration=0,pageFormGeneration=0,sessionFormGeneration=0,exportGeneration=0;
  let sourceDraft=null,creatorDraft=null,sourceAssociations=[];
+ // Initial state may arrive before the separately bundled queue module loads.
+ // Keep the newest native stamp as well as notifying mounted views.
+ let installQueueContext=null;
+ function acceptInstallQueueContext(next){
+  if(!Number.isSafeInteger(next?.revision)||next.revision<0||(installQueueContext&&next.revision<=installQueueContext.revision))return;
+  installQueueContext=next;window.dispatchEvent(new CustomEvent('modhunter-install-queue-context',{detail:next}));
+ }
  const downloadRows=new Map();
  const rows=new Map(),sessionRows=new Map(),historyRows=new Map(),selected=new Set(),selectedObservations=new Map(),busy=new Set(),searchIndexes=new Map();
  let watchById=new Map(),sessionById=new Map(),workIds=new Set(),activeIds=new Set();
@@ -213,7 +220,7 @@
  async function command(kind,value={},quiet=false){
   if(!api?.core?.invoke){if(!quiet)showToast('Open Watchtower from WATCH PAGES in Modhunter.exe.');return null}
   const key=kind+':'+(value.id||value.eventId||'');if(kind!=='detail'&&busy.has(key))return null;if(kind!=='detail')busy.add(key);
-  try{const result=await api.core.invoke('watchtower_command',{kind,value});if(result?.ok===false)throw new Error(result.error||result.message||'The action could not be completed.');if(result?.installQueueContext)window.dispatchEvent(new CustomEvent('modhunter-install-queue-context',{detail:result.installQueueContext}));if(result?.state)accept(result.state);if(result?.message&&!quiet)showToast(result.message);return result||{ok:true}}
+  try{const result=await api.core.invoke('watchtower_command',{kind,value});if(result?.ok===false)throw new Error(result.error||result.message||'The action could not be completed.');acceptInstallQueueContext(result?.installQueueContext);if(result?.state)accept(result.state);if(result?.message&&!quiet)showToast(result.message);return result||{ok:true}}
   catch(error){if(!quiet)showToast(errorText(error),null,'Undo',true);return {ok:false,error:errorText(error)}}
   finally{if(kind!=='detail')busy.delete(key)}
  }
@@ -445,10 +452,10 @@ $('settingsForm').onsubmit=savePreferences;$('settingsForm').addEventListener('i
  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!document.querySelector('dialog[open]'))closeDetail();if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='f'&&!document.querySelector('dialog[open]')){event.preventDefault();navigate('pages',filter);$('search').focus()}if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='n'&&!document.querySelector('dialog[open]')&&canMutate()){event.preventDefault();openPageForm()}});
  const unsubscribe=[];window.addEventListener('beforeunload',()=>{disposed=true;clearTimeout(toastTimer);if(searchFrame!==null)cancelAnimationFrame(searchFrame);for(const stop of unsubscribe)stop()},{once:true});
  async function poll(){if(disposed)return;if(ready&&!document.hidden){await command('state',{},true);renderPages()}if(!disposed)setTimeout(poll,15000)}
- window.ModhunterWatchtower={command,confirmAction,showToast,esc,openDetail,state:()=>state};
+ window.ModhunterWatchtower={command,confirmAction,showToast,esc,openDetail,state:()=>state,installQueueContext:()=>installQueueContext};
  async function start(){
   render();if(!api?.core?.invoke||!api?.event?.listen){$('connectionBanner').hidden=false;text('connectionBanner','Open WATCH PAGES in the Rust desktop to manage real pages and site sign-ins.');return}
-  unsubscribe.push(await api.event.listen('watchtower-install-queue-context',event=>window.dispatchEvent(new CustomEvent('modhunter-install-queue-context',{detail:event.payload}))));unsubscribe.push(await api.event.listen('watchtower-state',event=>accept(event.payload)));unsubscribe.push(await api.event.listen('watchtower-download-error',event=>showToast(event.payload?.message||'Download needs review.')));ready=true;const result=await command('state',{},true);if(!result?.ok){ready=false;$('connectionBanner').hidden=false;text('connectionBanner',result?.error||'Watchtower could not connect. Reopen this window from the desktop toolbar.')}else $('connectionBanner').hidden=true;render();poll();
+  unsubscribe.push(await api.event.listen('watchtower-install-queue-context',event=>acceptInstallQueueContext(event.payload)));unsubscribe.push(await api.event.listen('watchtower-state',event=>accept(event.payload)));unsubscribe.push(await api.event.listen('watchtower-download-error',event=>showToast(event.payload?.message||'Download needs review.')));ready=true;const result=await command('state',{},true);if(!result?.ok){ready=false;$('connectionBanner').hidden=false;text('connectionBanner',result?.error||'Watchtower could not connect. Reopen this window from the desktop toolbar.')}else $('connectionBanner').hidden=true;render();poll();
  }
  start().catch(error=>{$('connectionBanner').hidden=false;text('connectionBanner','Watchtower startup: '+errorText(error))});
 })();

@@ -92,7 +92,10 @@
    (next&&!next.disabled?next:$('nativeFileView')).focus();
   }
  }
- function showReview(value){review=value;selected=new Set(value.selected||[]);page=0;filter='';fileView='all';$('nativeFileSearch').value='';$('nativeFileView').value='all';$('nativeReviewTarget').textContent=[name(value.filename),name(value.context?.profileName||''),value.context?.game||'',value.context?.gameRuntime||'',name(value.context?.target?.modName||''),value.context?.target?.version||''].filter(Boolean).join(' · ');$('nativeReviewHash').textContent=value.archive?.sha256||'';$('nativeReviewError').textContent='';toggleBusy(false);openDialog('nativeReviewDialog');}
+ function showReview(value){
+  // Remembering exclusions may replace a saved policy. A new review needs its own opt-in.
+  $('nativeRememberExclusions').checked=false;
+  review=value;selected=new Set(value.selected||[]);page=0;filter='';fileView='all';$('nativeFileSearch').value='';$('nativeFileView').value='all';$('nativeReviewTarget').textContent=[name(value.filename),name(value.context?.profileName||''),value.context?.game||'',value.context?.gameRuntime||'',name(value.context?.target?.modName||''),value.context?.target?.version||''].filter(Boolean).join(' · ');$('nativeReviewHash').textContent=value.archive?.sha256||'';$('nativeReviewError').textContent='';toggleBusy(false);openDialog('nativeReviewDialog');}
  async function prepare(downloadId,targetName=''){
   const generation=++requestGeneration;$('nativePrepareState').textContent='Verifying and inspecting the archive…';$('nativePrepareState').hidden=false;
   try{const result=await call('prepareReview',{downloadId,targetName});if(generation===requestGeneration)showReview(result.review);renderQueue()}finally{if(generation===requestGeneration)$('nativePrepareState').hidden=true;}

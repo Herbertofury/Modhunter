@@ -24,7 +24,7 @@ from typing import Any, Callable
 
 from .version_evidence import compare_versions
 from .source_adapters import (RustSourceRunner, adapter_capabilities, normalize_adapter_record,
-                              CACHE_LIMIT, PUBLIC_API_PROVIDERS, asset_proof)
+                              CACHE_LIMIT, PUBLIC_API_PROVIDERS, PUBLIC_RELEASE_TTL, asset_proof)
 
 
 LOG = logging.getLogger(__name__)
@@ -240,7 +240,7 @@ def release_verdict(item: dict, data: Any, provider: str, project: str) -> dict:
               "provider": provider, "releaseUrl": canonical_source_url(release_url),
               "reason": comparison["reason"],
               "releaseAssets": _github_assets(project, data) if provider == "github" else [],
-              "checkedAt": now, "expiresAt": now + 900, "sourceUrl": canonical_source_url((item.get("source") or {}).get("url") or ""),
+              "checkedAt": now, "expiresAt": now + PUBLIC_RELEASE_TTL, "sourceUrl": canonical_source_url((item.get("source") or {}).get("url") or ""),
               "projectId": project, "releaseId": str(data.get("id") or version), "outcome": "release", "freshness": "fresh",
               "availability": "available", "changelog": str((data.get("body") if provider == "github" else data.get("description")) or "")[:24000],
               "publishedAt": str(data.get("published_at") or data.get("released_at") or "")[:80]}

@@ -8,7 +8,9 @@ from __future__ import annotations
 from typing import Any
 import time
 
-from .source_adapters import PUBLIC_API_PROVIDERS, REVIEW_COMPATIBILITY_STATES, asset_matches_source, asset_proof
+from .source_adapters import (CURRENT_PUBLIC_RELEASE_FRESHNESS, PUBLIC_API_PROVIDERS,
+                              REVIEW_COMPATIBILITY_STATES, asset_matches_source, asset_proof,
+                              public_release_times)
 
 RISK_FLAGS = frozenset({"DLL", "HARD_ESP", "HARD_ESM", "NEMESIS", "SKSE", "ROOT_BUILDER", "BEHAVIOR"})
 RISK_VERDICTS = frozenset({"hold", "check", "avoid", "ae-only"})
@@ -176,9 +178,12 @@ def validate_release_asset(snapshot: dict, raw: dict, *, require_fresh=True) -> 
         provider = "github"
     if update.get("verdict") != "candidate" or provider not in PUBLIC_API_PROVIDERS or update.get("source") != f"{provider}-release-api":
         raise PlanError("Only verified public release candidates support direct source downloads")
-    if require_fresh and (update.get("freshness") in {"stale", "unverified"}
-            or isinstance(update.get("expiresAt"), (int, float)) and update["expiresAt"] <= time.time()):
-        raise PlanError("Source evidence expired; check this project again before downloading")
+    if require_fresh:
+        now = time.time()
+        _, expires = public_release_times(update.get("checkedAt"), update.get("expiresAt"), now=now)
+        freshness = update.get("freshness")
+        if expires is None or expires <= now or not isinstance(freshness, str) or freshness not in CURRENT_PUBLIC_RELEASE_FRESHNESS:
+            raise PlanError("Source evidence expired or is not verified; check this project again before downloading")
     if raw.get("targetVersion") is not None and str(raw["targetVersion"]) != str(update.get("latestVersion") or ""):
         raise PlanError("Published source release changed; review its archives again")
     if risk_reasons(item) and raw.get("riskAcknowledged") is not True:

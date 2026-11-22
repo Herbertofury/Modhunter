@@ -17,6 +17,8 @@ from urllib.parse import unquote, urlsplit
 from .plugin_intelligence import RustAuditRunner
 
 PUBLIC_API_PROVIDERS = frozenset({"github", "gitlab", "modrinth", "thunderstore"})
+CURRENT_PUBLIC_RELEASE_FRESHNESS = frozenset({"fresh", "cached", "revalidated"})
+PUBLIC_RELEASE_TTL = 900  # Matches the Rust release-cache lifetime.
 REVIEW_COMPATIBILITY_STATES = frozenset({"mismatch", "incompatible", "unsupported", "game-mismatch", "context-required", "community-required", "deprecated"})
 ARCHIVE_SUFFIXES = (".zip", ".7z", ".rar")
 CACHE_LIMIT = 4_194_304
@@ -140,6 +142,15 @@ def _person(raw) -> dict | None:
     return result if result["name"] or result["url"] else None
 
 
+def public_release_times(checked, expires, *, now):
+    """Validate a bounded evidence window without coercing untrusted JSON numbers."""
+    if type(checked) not in (int, float) or not 0 < checked <= now + 300:
+        return None, None
+    if type(expires) not in (int, float) or not checked < expires <= checked + PUBLIC_RELEASE_TTL:
+        return checked, None
+    return checked, expires
+
+
 def normalize_adapter_record(item: dict, raw: dict, *, now=None) -> dict:
     """Whitelist the Rust observation; compare only fresh actual release evidence."""
     from .version_evidence import compare_versions
@@ -150,18 +161,17 @@ def normalize_adapter_record(item: dict, raw: dict, *, now=None) -> dict:
     provider = provider_of(source_url)
     outcome = str(raw.get("outcome") or "unavailable")
     freshness = str(raw.get("freshness") or "unverified")
-    checked = raw.get("checkedAt")
-    expires = raw.get("expiresAt")
-    valid_time = (isinstance(checked, (int, float)) and not isinstance(checked, bool)
-                  and math.isfinite(checked) and 0 < checked <= now + 300)
-    expired = (isinstance(expires, (int, float)) and not isinstance(expires, bool)
-               and math.isfinite(expires) and expires <= now)
+    checked, expires = public_release_times(raw.get("checkedAt"), raw.get("expiresAt"), now=now)
+    if outcome == "release" and freshness in CURRENT_PUBLIC_RELEASE_FRESHNESS:
+        if expires is None:
+            freshness = "unverified"
+        elif expires <= now:
+            freshness = "stale"
     same_source = (raw.get("provider") == provider and raw.get("sourceUrl") == source_url
                    and source.get("verified") is True and source.get("kind") != "advisory")
     result = {"provider": provider, "source": f"{provider}-release-api" if provider in PUBLIC_API_PROVIDERS else provider,
               "sourceUrl": source_url, "outcome": outcome, "availability": str(raw.get("availability") or "unknown")[:80],
-              "freshness": freshness, "checkedAt": checked if valid_time else None,
-              "expiresAt": expires if isinstance(expires, (int, float)) and not isinstance(expires, bool) and math.isfinite(expires) else None,
+              "freshness": freshness, "checkedAt": checked, "expiresAt": expires,
               "capabilities": adapter_capabilities(provider), "reason": str(raw.get("reason") or "Source evidence needs review.")[:1200],
               "verdict": "unverified" if outcome in {"manual", "unsupported"} else "review" if outcome == "review" else "unknown"}
     if outcome in {"manual", "unsupported"} and (raw.get("sourceUrl") or "") == source_url:
@@ -219,7 +229,7 @@ def normalize_adapter_record(item: dict, raw: dict, *, now=None) -> dict:
         safe["installable"] = asset.get("installable") is not False and asset_matches_source(source, result, safe)
         result["releaseAssets"].append(safe)
     incompatible = (result.get("compatibility") or {}).get("status") in REVIEW_COMPATIBILITY_STATES
-    if outcome == "release" and same_source and valid_time and not expired and freshness in {"fresh", "cached", "revalidated"} and not incompatible:
+    if outcome == "release" and same_source and freshness in CURRENT_PUBLIC_RELEASE_FRESHNESS and not incompatible:
         comparison = compare_versions(str(item.get("installedVersion") or ""), str(result.get("latestVersion") or ""))
         verdict = comparison["verdict"]
         result["versionComparison"] = comparison

@@ -19,6 +19,8 @@ def mod(mid, project, *, flags=None, source="nexus-api"):
               "update": {"verdict": "candidate", "latestVersion": "2.0", "source": source}}
     if source == "github-release-api":
         result["source"] = {"type": "github", "url": "https://github.com/org/my-mod", "verified": True}
+        now = time.time()
+        result["update"].update(freshness="fresh", checkedAt=now, expiresAt=now + 900)
         result["update"]["releaseAssets"] = [{"assetId": 17, "name": "archive.zip",
             "url": "https://github.com/org/my-mod/releases/download/v2/archive.zip"}]
     return result

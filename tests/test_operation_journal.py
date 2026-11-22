@@ -96,6 +96,32 @@ class OperationJournalTests(unittest.TestCase):
         after_restart = OperationJournal(self.path, "another").profile("p1")["records"][0]
         self.assertFalse(after_restart["needsReview"])  # Already installed, not automatically actionable.
 
+    def test_archive_identity_does_not_admit_fomod_looking_metadata_on_record_or_reload(self):
+        journal = OperationJournal(self.path, "first-session")
+        original = {**ticket(), "status": "installed", "verifiedUpdate": True,
+                    "fileName": "Option-Sounding-Name.7z"}
+        unbound = {"fomodChoices": {"state": "captured", "steps": ["Claim without a bound run"]},
+                   "installerMetadata": {"FOMOD Plus": {"selected": ["Historical selection"]}}}
+        self.assertTrue(journal.record({**original, **unbound}, 11))
+        event = json.loads(self.path.read_text("utf-8"))
+        self.assertTrue(set(unbound).isdisjoint(event["ticket"]))
+        # Synthetic legacy/foreign fields on disk: project none as authoritative
+        # choice evidence, but never rewrite the old receipt just by reading it.
+        event["ticket"].update(unbound)
+        line = json.dumps(event) + "\n"
+        self.path.write_text(line, encoding="utf-8")
+        reopened = OperationJournal(self.path, "next-session")
+        record = reopened.profile("p1")["records"][0]
+        self.assertTrue(set(unbound).isdisjoint(record))
+        self.assertEqual((record["fileName"], record["downloadId"], record["modId"], record["fileId"]),
+                         ("Option-Sounding-Name.7z", 11, 15, 48))
+        self.assertEqual(reopened.nexus_archive_for_review("p1", "skyrimspecialedition", "1.5.97",
+                                                            "live-1", 15, "2.0"), 48)
+        self.assertIsNone(reopened.nexus_archive_for_review("other-profile", "skyrimspecialedition",
+                                                            "1.5.97", "live-1", 15, "2.0"))
+        self.assertFalse(record["actionable"])
+        self.assertEqual(self.path.read_text("utf-8"), line)
+
     def test_repair_torn_last_line_without_losing_valid_receipts(self):
         j = OperationJournal(self.path, "old")
         j.record(ticket(), 5)

@@ -13,6 +13,7 @@ import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
+import xml.etree.ElementTree as ET
 import zipfile
 
 from mo2_update_arsenal.bridge import ArsenalService
@@ -225,6 +226,93 @@ class ContentRecoveryTests(unittest.TestCase):
         self.assertTrue(f.service._install_lock.acquire(blocking=False))
         f.service._install_lock.release()
         self.assertEqual([c["action"] for c in f.service.content.runner.calls], ["snapshot", "verifyPrepared", "seal"])
+
+    def test_exact_archive_and_identical_install_results_do_not_prove_fomod_choices(self):
+        f = self.fixture
+        options = ("Synthetic Alpha", "Synthetic Beta")
+        config = """<config><moduleName>Ambiguous fixture</moduleName><installSteps order="Explicit">
+          <installStep name="Pick a label"><optionalFileGroups order="Explicit">
+          <group name="Either label" type="SelectExactlyOne"><plugins order="Explicit">
+          %s
+          </plugins></group></optionalFileGroups></installStep></installSteps></config>""" % "".join(
+            f'<plugin name="{option}"><description>{option}</description><files>'
+            '<file source="payload.txt" destination="payload.txt"/></files>'
+            '<typeDescriptor><type name="Optional"/></typeDescriptor></plugin>' for option in options)
+        with zipfile.ZipFile(f.archive, "w") as archive:
+            archive.writestr("fomod/ModuleConfig.xml", config)
+            archive.writestr("payload.txt", "same output for either option")
+        f.identity = file_identity(f.archive)
+        f.receipt.update(bytes=f.identity["bytes"], sha256=f.identity["sha256"],
+                         filename="Filename-Claims-A-Choice.zip",
+                         fomodChoices={"state": "claimed", "options": ["Archive metadata is not a choice"]})
+        (f.acquisitions / "receipts.json").write_bytes(canonical_json({"schema": 1, "jobs": [f.receipt]}))
+        prior = '[General]\nnotes=Existing manual notes\n[FOMOD Plus]\nfomod=Unbound legacy choices\n'
+        traces = []
+        reads_or_writes = []
+        f.target.pluginSetting = lambda *_: reads_or_writes.append("read")
+        f.target.pluginSettings = lambda *_: reads_or_writes.append("read all")
+        f.target.setPluginSetting = lambda *_: reads_or_writes.append("write")
+
+        def only_aggregate_native_result(option):
+            # Different UI decisions are known to this synthetic oracle only:
+            # the actual adapter sees the same installed mod reference and bytes.
+            traces.append(option)
+            with zipfile.ZipFile(f.archive) as source:
+                module = ET.fromstring(source.read("fomod/ModuleConfig.xml"))
+                selection, = [node for node in module.findall(".//plugin") if node.get("name") == option]
+                mapping, = selection.findall("files/file")
+                self.assertEqual(mapping.attrib, {"source": "payload.txt", "destination": "payload.txt"})
+                (f.mod / "payload.txt").write_bytes(source.read(mapping.get("source")))
+            f.version = "2.0"
+            return f.target
+
+        profiles, digests, aggregate = [], [], []
+        for option in options:
+            f.version = "1.0"
+            f.refresh_snapshot()
+            (f.mod / "payload.txt").write_text("before")
+            (f.mod / "meta.ini").write_text(prior)
+            f.install_hook = lambda option=option: only_aggregate_native_result(option)
+            data = f.payload()
+            data["review"]["requiresInstaller"] = True
+            accepted = f.service.content.start_install(data)
+            self.assertTrue(accepted["ok"], accepted)
+            ident = accepted["jobId"]
+            job = f.wait(ident)
+            self.assertEqual(job["state"], "complete")
+            until = time.monotonic() + 3
+            while True:
+                history = f.service.install_queue(include_archive_evidence=True)["history"]
+                outcome = next((row for row in history if row.get("reviewId") == ident), None)
+                if outcome is not None:
+                    break
+                self.assertLess(time.monotonic(), until, "Exact native session outcome did not complete")
+                time.sleep(0.005)
+            self.assertEqual(outcome["fomodChoices"], "unknown")
+            self.assertEqual(outcome["sourceArchive"], {
+                "state": "verifiedOriginalPage", "bytes": f.identity["bytes"], "sha256": f.identity["sha256"],
+                "filename": "Filename-Claims-A-Choice.zip"})
+            profiles.append(outcome["profileId"])
+            digests.append(outcome["sourceArchive"]["sha256"])
+            reopened = ContentRecovery(f.service, f.service.content.ledger, runner=f.service.content.runner)
+            durable = next(row for row in reopened.jobs()["jobs"] if row["jobId"] == ident)
+            self.assertNotIn("fomodChoices", durable)
+            self.assertTrue(durable["verifiedUpdate"])
+            self.assertTrue(durable["backupRetained"])
+            self.assertEqual((durable["reviewId"], durable["downloadId"], durable["profileId"]),
+                             (ident, f.receipt["id"], "profile-1"))
+            self.assertEqual((f.mod / "meta.ini").read_text(), prior)
+            aggregate.append((durable["verifiedUpdate"], durable["installedName"], durable["state"],
+                              (f.mod / "payload.txt").read_bytes()))
+        self.assertEqual(traces, list(options))
+        self.assertEqual(profiles, ["profile-1", "profile-1"])
+        self.assertEqual(digests, [f.identity["sha256"]] * 2)
+        self.assertEqual(aggregate[0], aggregate[1])
+        self.assertEqual(reads_or_writes, [])
+        self.assertEqual(f.installs, [(str(f.archive), "Example")] * 2)
+        unrelated = ContentRecovery(SimpleNamespace(profile_id=lambda: "other-profile"),
+                                    f.service.content.ledger, runner=f.service.content.runner)
+        self.assertEqual(unrelated.jobs()["jobs"], [])
 
     def test_review_retry_returns_same_job_and_cannot_change_intent(self):
         data, completed = self.install()

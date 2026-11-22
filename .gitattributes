@@ -22,3 +22,5 @@ Cargo.lock text eol=lf
 native/PROJECT_NOTICE.txt text eol=lf
 # Keep cmd.exe launchers explicit and identical on all checkout platforms too.
 *.bat text eol=crlf
+# MO2 pilot verifies this fixture's source bytes before composing the owned game.
+/native/scripts/mo2_perf/game_plugins.inc text eol=lf

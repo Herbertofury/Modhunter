@@ -35,6 +35,9 @@ REQUIRED=("test_review_preserves_complete_selection_and_exact_install_ids",
           "test_readiness_identifies_live_and_offline_profiles_without_scanning",
           "test_inventory_caches_complete_results_and_reveals_exact_ids",
           "test_shared_queue_controls_preserve_action_boundaries",
+          "test_shared_queue_receipt_is_read_only_and_hides_archive_identifiers",
+          "test_shared_queue_clears_rendered_rows_and_rejects_delayed_profile_replies",
+          "test_shared_queue_replays_context_delivered_before_overlay_mount",
           "test_four_locales_preserve_names_focus_and_theme",
           "test_notice_list_is_private_and_accepts_native_substate_updates",
           "test_notice_click_uses_only_opaque_id_and_opens_current_native_item",
@@ -47,13 +50,21 @@ OVERRIDE=r'''(() => {
  f.state.maintenance=structuredClone(maintenance);
  f.state.notices={rows:[{id:'notice-'+('a'.repeat(64)),kind:'updater',createdAt:1000,seen:false,title:'A version candidate was recorded',body:'Open to recheck and review the exact current item.',actionLabel:'Review current item'},{id:'notice-'+('b'.repeat(64)),kind:'page',createdAt:900,seen:false,title:'A watched page changed',body:'Open to recheck and review the exact current item.',actionLabel:'Review current item'}],status:'Recorded notices are rechecked when you open them.',desktopActionScope:'Windows forwards clicks while the toast is on screen. Notices remain actionable here after the toast expires.'};
  const context={profileId:'profile-1',profileName:'Native review fixture',game:'SkyrimSE',gameRuntime:'1.6.1170',executionEpoch:3,target:{itemId:'mod-1',modName:'Exact existing mod',version:'1.0',exists:true}};
+ f.native.queueContext={revision:1,scope:{profileId:'profile-1',executionEpoch:3}};
  const clone=x=>structuredClone(x);
+ f.native.switchQueue=(revision,profileId,executionEpoch,name)=>{
+  f.native.queueContext={revision,scope:{profileId,executionEpoch}};
+  f.native.queue={profileId,executionEpoch,mode:'running',active:{kind:'page',modName:name,state:'installing'},
+   pending:[{kind:'page',modName:name,state:'queued'}],history:[{kind:'page',modName:name,state:'complete'}]};
+  f.publishInstallQueueContext(f.native.queueContext);
+ };
  function finish(value={}){return {ok:true,...clone(value),state:f.snapshot()}}
  window.__TAURI__.core.invoke=async(command,args)=>{
   const kind=args.kind,v=args.value||{};
   const owned=['maintenance','browserChoices','prepareReview','openReview','saveReviewSelection','installReview','contentJobs','discardReview','cancelReview','cancelContentJob','diagnosticsPreview','diagnosticsCopy','diagnosticsSave','globalSettings','storage','previewDownloadCleanup','applyDownloadCleanup','duplicateScan','duplicateRecovery','contentBackups','contentRecovery','contentBatchRestore','checkAppRelease','dismissAppRelease','openAppRelease','previewAppReset','applyAppReset'];
   owned.push('readiness','scanUnattributed','unattributedInventory','cancelUnattributed','revealUnattributed','installQueue','installQueueControl');
   owned.push('notices','refreshNotices','activateNotice','dismissNotice');
+  if(kind==='state')return {...await original(command,args),installQueueContext:clone(f.native.queueContext)};
   if(!owned.includes(kind))return original(command,args);
   f.calls.push(clone(args));
   if(kind==='notices'||kind==='refreshNotices')return finish({notices:f.state.notices});
@@ -66,9 +77,11 @@ OVERRIDE=r'''(() => {
    return finish({noticeAction:row.kind==='page'?{kind:'page',watchId:'watch-0',observationId:'observation-0'}:{kind:'updater',itemId:'live-notice-1',profileId:'profile-1',game:'SkyrimSE',itemName:'Private current native mod',installedVersion:'1.0',latestVersion:'2.0',provider:'nexus',checkedAt:1000,sourceUrl:'https://www.nexusmods.com/skyrimspecialedition/mods/12',scope:'A current project-version candidate. Exact file, compatibility and access still require review; nothing was downloaded or installed.'}});
   }
   if(kind==='installQueue'||kind==='installQueueControl'){
-   f.native.queue||={mode:'running',active:{kind:'native',jobId:'api-exact',modName:'API target',state:'installing',nativeStarted:true},pending:[{kind:'page',jobId:'page-exact',modName:'Page target',state:'queued'}],history:[],counts:{pending:1,awaitingDownload:1,active:1}};
+   f.native.queue||={...f.native.queueContext.scope,mode:'running',active:{kind:'native',jobId:'api-exact',modName:'API target',state:'installing',nativeStarted:true},pending:[{kind:'page',jobId:'page-exact',modName:'Page target',state:'queued'}],history:[],counts:{pending:1,awaitingDownload:1,active:1}};
    if(kind==='installQueueControl'){if(Object.keys(v).join(',')!=='action')throw Error('Only action belongs to the renderer');f.native.queue.mode=v.action==='resume'?'running':'paused';if(v.action==='cancelPreparation'){f.native.queue.pending=[];f.native.queue.counts.pending=0;f.native.queue.history=[{kind:'page',jobId:'page-exact',modName:'Page target',state:'cancelled',needsReview:false}]}}
-   return finish({installQueue:f.native.queue,message:kind==='installQueueControl'?'Queue control applied.':undefined});
+   const captured=clone(f.native.queue);
+   if(f.native.deferQueue===kind)await new Promise(resolve=>{f.native.resumeQueue=resolve;f.native.deferQueue=null});
+   return finish({installQueue:captured,installQueueContext:f.native.queueContext,message:kind==='installQueueControl'?'Queue control applied.':undefined});
   }
   if(kind==='readiness')return finish({readiness:{mode:f.native.offline?'offline':'live',contextKey:f.native.contextKey||'context-fixture',capturedAt:1000,profileId:'profile-1',profileName:'Exact profile',game:'SkyrimSE',gameRuntime:'1.6.1170',endpoint:f.native.offline?null:'http://127.0.0.1:54321/',modsRoot:f.native.offline?null:'D:/Redirected/Mods',profilesRoot:f.native.offline?null:'E:/Profiles',counts:{mods:11207,verifiedSourceMods:11000,unverifiedSourceMods:207,trackedMods:2,observedSignedIn:1,signInOrVerification:1,unobservedSessions:2},mods:Array.from({length:11207},(_,i)=>({id:'mod-'+i,name:'Native mod '+i,sourceVerified:i<11000})),instances:[{profileName:'Exact profile',endpoint:'http://127.0.0.1:54321/'},{profileName:'Separate MO2 instance',endpoint:'http://127.0.0.1:54322/'}],scope:'Observed account sign-in is not proof of access to a particular release.'}});
   if(kind==='unattributedInventory')return finish({inventory:f.native.inventory||null,running:false});
@@ -365,6 +378,99 @@ class NativeUiTests(base.WatchtowerBrowserTests):
         self.assertEqual(self.page.evaluate('__WATCH_FIX__.native.queue.active.jobId'),'api-exact')
         self.page.get_by_text('Recent queue outcomes',exact=True).click();self.assertTrue(self.page.locator('#installQueueHistory').is_visible())
         self.assertIn('cancelled',self.page.locator('#installQueueHistory').inner_text())
+
+    def test_shared_queue_replays_context_delivered_before_overlay_mount(self):
+        # Hold the real queue module until an actual startup reply has been
+        # forwarded by Watchtower, independently of script download speed.
+        self.page.add_init_script("""window.addEventListener('modhunter-install-queue-context',event=>{
+          if (event.detail?.scope?.profileId==='profile-1')window.__initialQueueScopeForwarded=true;
+        });""")
+        source=(ROOT/"native/ui/watchtower-queue.js").read_text("utf-8")
+        wrapper="""(() => {
+          const mount=()=>{
+            if(!window.__initialQueueScopeForwarded)throw Error('Queue mounted before startup scope');
+            window.__queueMountedAfterStartupScope=true;
+        """+source+"""
+          };
+          const schedule=()=>queueMicrotask(mount);
+          if(window.__initialQueueScopeForwarded)schedule();
+          else window.addEventListener('modhunter-install-queue-context',schedule,{once:true});
+        })();"""
+        self.page.route("**/watchtower-queue.js",lambda route: route.fulfill(body=wrapper,content_type="text/javascript"))
+        self.open_native()
+        self.page.wait_for_function("""window.__queueMountedAfterStartupScope &&
+          document.getElementById('installQueueStatus').textContent.includes('API target')""")
+        self.assertIn('Page target',self.page.locator('#installQueuePending').inner_text())
+        self.assertEqual([call['value'] for call in self.calls('installQueue')],[{}])
+        self.assertEqual(self.calls('installQueueControl'),[])
+
+    def test_shared_queue_clears_rendered_rows_and_rejects_delayed_profile_replies(self):
+        self.open_native()
+        self.page.wait_for_function('document.getElementById("installQueueStatus").textContent.includes("API target")')
+        self.page.get_by_text('Recent queue outcomes',exact=True).click()
+        self.page.evaluate('__WATCH_FIX__.native.deferQueue="installQueue"')
+        self.page.locator('#installQueueRefresh').click()
+        self.page.wait_for_function('Boolean(__WATCH_FIX__.native.resumeQueue)')
+        cleared=self.page.evaluate("""() => {
+          const f=__WATCH_FIX__, rows=()=>['Status','Pending','History'].map(k=>document.getElementById('installQueue'+k).textContent).join(' ');
+          f.native.switchQueue(2,'profile-2',4,'Private B');
+          const whileB=rows();
+          f.native.switchQueue(3,'profile-1',5,'Private current A');
+          const whileA=rows();
+          f.publishInstallQueueContext({revision:2,scope:{profileId:'profile-2',executionEpoch:4}});
+          f.native.resumeQueue();f.native.resumeQueue=null;
+          return [whileA,whileB];
+        }""")
+        for view in cleared:
+            self.assertNotIn('API target',view)
+            self.assertNotIn('Page target',view)
+            self.assertNotIn('Private',view)
+        self.page.wait_for_function('document.getElementById("installQueueHistory").textContent.includes("Private current A")')
+        self.page.evaluate('__WATCH_FIX__.native.deferQueue="installQueueControl"')
+        self.page.locator('#installQueueStop').click()
+        self.page.wait_for_function('Boolean(__WATCH_FIX__.native.resumeQueue)')
+        self.page.evaluate('__WATCH_FIX__.native.switchQueue(4,"profile-2",6,"Private current B")')
+        self.page.wait_for_function('document.getElementById("installQueueHistory").textContent.includes("Private current B")')
+        self.page.evaluate('__WATCH_FIX__.native.resumeQueue();__WATCH_FIX__.native.resumeQueue=null')
+        self.page.wait_for_function('!document.getElementById("installQueueStop").disabled')
+        self.assertNotIn('Private current A',self.page.locator('#installQueueHistory').inner_text())
+        self.assertEqual(self.calls('installQueueControl')[-1]['value'],{'action':'stopAfterCurrent'})
+        self.navigate('pages')
+        previous=len(self.calls('installQueue'))
+        self.page.evaluate('__WATCH_FIX__.native.switchQueue(5,"profile-1",7,"Private hidden A")')
+        self.assertEqual(self.page.locator('#installQueueHistory').text_content(),'')
+        self.assertEqual(len(self.calls('installQueue')),previous)
+        self.navigate('downloads')
+        self.page.wait_for_function('document.getElementById("installQueueHistory").textContent.includes("Private hidden A")')
+
+    def test_shared_queue_receipt_is_read_only_and_hides_archive_identifiers(self):
+        self.open_native()
+        self.page.wait_for_function('Boolean(__WATCH_FIX__.native.queue)')
+        self.page.evaluate("""() => {
+          const queue=__WATCH_FIX__.native.queue;queue.active=null;queue.activeInOtherProfile=true;
+          queue.history=[
+            {kind:'native',modName:'Exact queue target',state:'complete',sourceArchive:{state:'reviewedApiSelection',
+             provider:'nexus',filename:'Exact fixture.zip',modId:19,fileId:43},fomodChoices:'unknown'},
+            {kind:'page',modName:'Exact page target',state:'complete',sourceArchive:{state:'verifiedOriginalPage',
+             bytes:42,sha256:'abcdef12'.repeat(8)}},
+            {kind:'page',modName:'Legacy target',state:'failed',error:'Private fixture diagnostic'}];
+        }""")
+        self.page.locator('#installQueueRefresh').click()
+        self.page.wait_for_function('document.getElementById("installQueueStatus").textContent.includes("active in another profile")')
+        self.page.get_by_text('Recent queue outcomes',exact=True).click()
+        history=self.page.locator('#installQueueHistory')
+        visible=history.inner_text()
+        for evidence in ('Exact fixture.zip','Nexus project 19 / file 43','42 bytes','abcdef12'*8,
+                         'Archive evidence unavailable','FOMOD choices not captured'):
+            self.assertIn(evidence,visible)
+        self.assertEqual(self.calls('installQueueControl'),[])
+        self.page.evaluate('__WATCH_FIX__.change(s=>s.settings.hideTitles=true)')
+        hidden=history.inner_text()
+        for private in ('Exact fixture.zip','Exact queue target','Exact page target','Nexus project 19',
+                        'abcdef12'*8,'Private fixture diagnostic'):
+            self.assertNotIn(private,hidden)
+        self.assertIn('Archive identifiers hidden',hidden)
+        self.assertIn('FOMOD choices not captured',hidden)
 
     def test_four_locales_preserve_names_focus_and_theme(self):
         self.open_native();self.navigate('settings');self.page.get_by_text('Recovery snapshot retention',exact=True).click()

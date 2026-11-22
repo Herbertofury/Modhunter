@@ -195,7 +195,7 @@ class ArsenalService:
         with self._guard:
             return {"ok": True, "app": "Modhunter", "protocol": 1, "live": True,
                     "version": VERSION, "profileId": self._snapshot.get("profileId"),
-                    "generation": self._generation}
+                    "generation": self._generation, "executionEpoch": self._execution_epoch}
 
     def snapshot_response(self) -> dict:
         # The catalog and its revision must describe the same state even when
@@ -1101,19 +1101,62 @@ class ArsenalService:
             public.update(state=entry["job"]["state"], nativeStarted=entry["job"].get("nativeStarted") is True)
         return public
 
-    def install_queue(self) -> dict:
+    @staticmethod
+    def _install_archive_evidence(entry: dict, result: dict) -> dict:
+        """Read-only receipt projection; never inspect or return an archive path."""
+        def filename(row, key):
+            name = row.get(key)
+            if (isinstance(name, str) and 0 < len(name) <= 240
+                    and not any(ord(c) < 32 or 127 <= ord(c) <= 159 or c in '<>:"/\\|?*' for c in name)
+                    and name.lower().endswith((".zip", ".7z", ".rar"))):
+                return {"filename": name}
+            return {}
+
+        if entry.get("kind") == "native":
+            ticket = entry["ticket"]
+            if ticket.get("reviewed") is True:
+                provider = ticket.get("provider")
+                if provider == "nexus":
+                    mod_id, file_id = ticket.get("modId"), ticket.get("fileId")
+                    if all(type(value) is int and 0 < value <= 9_007_199_254_740_991 for value in (mod_id, file_id)):
+                        return {"state": "reviewedApiSelection", "provider": provider, "modId": mod_id,
+                                "fileId": file_id, **filename(ticket, "fileName")}
+                proof = ticket.get("assetProof")
+                if (isinstance(provider, str) and provider in PUBLIC_API_PROVIDERS
+                        and isinstance(proof, str) and re.fullmatch(r"[0-9a-f]{64}", proof)):
+                    return {"state": "reviewedApiSelection", "provider": provider,
+                            **filename(ticket, "fileName")}
+        # Only the completed content worker independently checked the owned
+        # original against the receipt. This is not the installed-file manifest.
+        if entry.get("kind") == "page" and result.get("ok") is True and result.get("state") == "complete":
+            data = entry.get("data")
+            resolved = data.get("resolvedArchive") if isinstance(data, dict) else None
+            receipt = resolved.get("receipt") if isinstance(resolved, dict) else None
+            if isinstance(receipt, dict) and receipt.get("state") == "ready" and receipt.get("id") == entry.get("downloadId"):
+                size, digest = receipt.get("bytes"), receipt.get("sha256")
+                if (type(size) is int and 0 <= size <= 9_007_199_254_740_991
+                        and isinstance(digest, str) and re.fullmatch(r"[0-9a-f]{64}", digest)):
+                    return {"state": "verifiedOriginalPage", "bytes": size, "sha256": digest,
+                            **filename(receipt, "filename")}
+        return {"state": "unknown"}
+
+    def install_queue(self, *, include_archive_evidence=False) -> dict:
         with self._guard:
             profile = self._snapshot.get("profileId")
             pending = [self._public_install_entry(entry) for entry in self._install_pending if entry["profileId"] == profile]
-            active = self._public_install_entry(self._install_active) if self._install_active else None
+            active_elsewhere = bool(self._install_active and self._install_active["profileId"] != profile)
+            active = self._public_install_entry(self._install_active) if self._install_active and not active_elsewhere else None
+            history = [row if include_archive_evidence else {key: value for key, value in row.items()
+                       if key not in {"sourceArchive", "fomodChoices"}}
+                       for row in self._install_history if row["profileId"] == profile]
             waiting_downloads = sum(ticket.get("profileId") == profile and ticket.get("autoInstallRequested") is True
                                     and ticket.get("status") != "complete" for ticket in self._downloads.values())
             return {"ok": True, "profileId": profile, "executionEpoch": self._execution_epoch,
                     "mode": self._install_mode, "stopMode": self._install_stop_mode,
-                    "active": active, "pending": pending,
-                    "history": deepcopy([row for row in self._install_history if row["profileId"] == profile]),
+                    "active": active, "activeInOtherProfile": active_elsewhere, "pending": pending,
+                    "history": deepcopy(history),
                     "counts": {"pending": len(pending), "awaitingDownload": waiting_downloads,
-                               "active": int(active is not None)}}
+                               "active": int(self._install_active is not None)}}
 
     def _enqueue_install(self, entry: dict) -> None:
         with self._guard:
@@ -1217,7 +1260,8 @@ class ArsenalService:
             record = self._public_install_entry(entry)
             record.update(state=result.get("state", "complete" if result.get("ok") else "failed"),
                           ok=result.get("ok") is True, needsReview=result.get("needsReview") is True,
-                          error=str(result.get("error") or "")[:240], finishedAt=int(time.time() * 1000))
+                          error=str(result.get("error") or "")[:240], finishedAt=int(time.time() * 1000),
+                          sourceArchive=self._install_archive_evidence(entry, result), fomodChoices="unknown")
             self._install_history.append(record)
             self._install_history = self._install_history[-100:]
             self._install_active = None
@@ -1234,7 +1278,7 @@ class ArsenalService:
                 found["cancel"].set()
             return found
 
-    def install_queue_control(self, data: dict) -> dict:
+    def install_queue_control(self, data: dict, *, include_archive_evidence=False) -> dict:
         action = data.get("action")
         if action not in {"stopAfterCurrent", "cancelPreparation", "resume"}:
             return {"ok": False, "error": "Choose stopAfterCurrent, cancelPreparation, or resume"}
@@ -1267,7 +1311,7 @@ class ArsenalService:
                         {"ok": False, "state": "cancelled", "error": "Queue preparation cancelled before native mutation"})
         if action == "resume":
             self._maybe_autoinstall()
-        return {**self.install_queue(), "action": action,
+        return {**self.install_queue(include_archive_evidence=include_archive_evidence), "action": action,
                 "message": "An already-started native installer or atomic file transaction keeps its lease until its actual result. Cancelled and uncertain jobs are never replayed."}
 
     def _maybe_autoinstall(self) -> None:
@@ -1827,7 +1871,7 @@ class ArsenalService:
                         result = {"ok": True, "profileId": service.profile_id(), "downloads": service.downloads()}
                     return self._reply(result)
                 if uri.path == "/api/install-queue":
-                    return self._reply(service.install_queue())
+                    return self._reply(service.install_queue(include_archive_evidence=self._native_client()))
                 if uri.path == "/api/notification-facts":
                     if not self._native_client():
                         return self._reply({"ok": False, "error": "Updater fact verification requires the native client"}, 403)
@@ -1878,7 +1922,7 @@ class ArsenalService:
                         return self._reply({"ok": False, "error": "Archive installation requires the owned native review"}, 403)
                     return self._reply(service.content.start_install(data))
                 if uri.path == "/api/install-queue-control":
-                    return self._reply(service.install_queue_control(data))
+                    return self._reply(service.install_queue_control(data, include_archive_evidence=self._native_client()))
                 if uri.path == "/api/content-cancel":
                     return self._reply(service.content.cancel(data))
                 if uri.path == "/api/content-recovery":

@@ -1568,7 +1568,9 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
         snapshot["reviews"] = review::snapshot(app);
         snapshot["maintenance"] = maintenance::snapshot(app);
         snapshot["notices"] = notices::snapshot(app);
-        return Ok(json!({"ok":true,"state":snapshot}));
+        return Ok(
+            json!({"ok":true,"state":snapshot,"installQueueContext":crate::windows::install_queue_context(app)}),
+        );
     }
     if kind == "close" {
         if let Some(window) = app.get_webview_window("watchtower") {
@@ -1598,6 +1600,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
         }
         "installQueue" | "installQueueControl" => {
             result = queue::execute(app, kind, &value)?;
+            result["installQueueContext"] = crate::windows::install_queue_context(app);
         }
         "readiness"
         | "scanUnattributed"

@@ -57,7 +57,7 @@ class LargeProfileTests(unittest.TestCase):
         self.assertNotIn(self.service.token.encode(), body)
         self.assertNotIn(b"private-nexus-key", body)
         self.assertEqual(json.loads(body), {"ok": True, "app": "Modhunter", "protocol": 1,
-            "version": VERSION, "live": True, "profileId": "large-profile", "generation": 1})
+            "version": VERSION, "live": True, "profileId": "large-profile", "generation": 1, "executionEpoch": 0})
         self.assertEqual(self.http("/api/health", host="evil.example", token=False)[0], 403)
         self.assertEqual(self.http("/api/snapshot", token=False)[0], 403)
 

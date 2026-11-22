@@ -11,7 +11,7 @@
     "withGlobalTauri": true,
     "security": {
       "capabilities": ["shell", "watchtower"],
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://staticdelivery.nexusmods.com https://cdn.modrinth.com https://gcdn.thunderstore.io https://cdn.thunderstore.io https://thunderstore.io; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'"
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://staticdelivery.nexusmods.com https://cdn.modrinth.com https://gcdn.thunderstore.io https://cdn.thunderstore.io https://thunderstore.io; connect-src ipc: http://ipc.localhost https://staticdelivery.nexusmods.com https://cdn.modrinth.com https://gcdn.thunderstore.io https://cdn.thunderstore.io https://thunderstore.io; object-src 'none'; base-uri 'none'; frame-src 'none'; form-action 'none'"
     }
   },
   "bundle": {

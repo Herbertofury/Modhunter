@@ -707,6 +707,76 @@ fn inject_catalog(app: &tauri::AppHandle, label: &str) -> Result<()> {
     Ok(())
 }
 
+fn siege_source_trusted(app: &tauri::AppHandle, label: &str) -> bool {
+    app.get_webview(label).is_some_and(|view| {
+        view.url().ok().is_some_and(|current| {
+            app.state::<Runtime>().model.lock().is_ok_and(|model| {
+                model.connected
+                    && model
+                        .tabs
+                        .iter()
+                        .any(|tab| tab.label == label && tab.mode == Mode::Siege)
+                    && policy::owned_page(&current, model.endpoint.as_deref())
+                    && Mode::from_url(&current) == Mode::Siege
+            })
+        })
+    })
+}
+
+fn siege_source_handoff(app: &tauri::AppHandle, label: &str, target: &Url) {
+    static OPENING: AtomicBool = AtomicBool::new(false);
+    if !siege_source_trusted(app, label) || OPENING.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    let request = crate::siege_sources::intent(target);
+    let app = app.clone();
+    let label = label.to_string();
+    tauri::async_runtime::spawn_blocking(move || {
+        let _guard = FlagGuard(&OPENING);
+        let run = || -> Result<()> {
+            let (profile, id) = request?;
+            let (client, endpoint, epoch) = mo2_connection(&app)?;
+            let snapshot = client
+                .native_content(&endpoint, "snapshot", &json!({}))
+                .map_err(err)?;
+            let bounties = client
+                .native_content(&endpoint, "siege/bounties", &json!({}))
+                .map_err(err)?;
+            let url =
+                crate::siege_sources::resolve(&snapshot["catalog"], &bounties, &profile, &id)?;
+            let health = client.probe(&endpoint).map_err(err)?;
+            if health.profile_id != profile
+                || snapshot["generation"].as_u64() != Some(health.generation)
+                || !mo2_connection_current(&app, &endpoint, epoch)
+                || !siege_source_trusted(&app, &label)
+            {
+                return Err("MO2 or the Siege tab changed before source launch. Retry from the current encounter.".into());
+            }
+            // Independent outcomes: an embedded-site failure must not hide the external fallback.
+            let internal = crate::watchtower_windows::open_siege_source(&app, url.clone());
+            let external = app
+                .opener()
+                .open_url(url.as_str(), None::<&str>)
+                .map_err(err);
+            match (internal, external) {
+                (Ok(()), Ok(())) => Ok(()),
+                (Err(a), Ok(())) => Err(format!(
+                    "External source opened; integrated browser failed: {a}"
+                )),
+                (Ok(()), Err(b)) => Err(format!(
+                    "Integrated source opened; external browser failed: {b}"
+                )),
+                (Err(a), Err(b)) => Err(format!(
+                    "Source launch failed. Integrated: {a}. External: {b}"
+                )),
+            }
+        };
+        if let Err(error) = run() {
+            alert(&app, error);
+        }
+    });
+}
+
 fn watchtower_handoff(app: &tauri::AppHandle, label: &str, target: &Url) {
     let trusted = app.get_webview(label).is_some_and(|view| {
         view.url().ok().is_some_and(|current| {
@@ -737,6 +807,9 @@ fn watchtower_handoff(app: &tauri::AppHandle, label: &str, target: &Url) {
 }
 
 fn inject_watchtower_capability(app: &tauri::AppHandle, view: &Webview) {
+    if siege_source_trusted(app, view.label()) {
+        let _ = view.eval("window.__MODHUNTER_NATIVE_SIEGE_SOURCE__=true;");
+    }
     let trusted = view.url().ok().is_some_and(|current| {
         app.state::<Runtime>().model.lock().is_ok_and(|model| {
             model
@@ -899,6 +972,10 @@ fn open_tab(app: &tauri::AppHandle, mode: Mode) -> Result<u64> {
                         }
                     });
                 }
+                return false;
+            }
+            if url.scheme() == "modhunter-siege" {
+                siege_source_handoff(&nav_app, &nav_label, url);
                 return false;
             }
             if url.scheme() == "modhunter-watch" {

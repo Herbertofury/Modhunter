@@ -35,3 +35,6 @@
 @media(max-width:1200px){.atlas-region-map{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:710px){.atlas{padding:15px;margin-top:23px}.atlas-region-map{grid-template-columns:repeat(2,minmax(0,1fr))}.atlas-contracts,.atlas-legacy-grid{grid-template-columns:1fr}.atlas-region{padding:9px 7px}.atlas-region-icon{font-size:23px}.atlas-region b{font-size:10px}}
 @media(max-width:370px){.atlas-region-map{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){.atlas-region{transition:none!important}}
+
+/* Exact archive/runtime reviews preserve readable field boundaries. */
+#siegeDialogDesc{white-space:pre-line}

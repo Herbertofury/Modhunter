@@ -8,6 +8,7 @@ mod ini_review;
 #[cfg_attr(not(windows), allow(dead_code))]
 mod locale;
 mod policy;
+mod siege_sources;
 mod watchtower_policy;
 #[cfg(windows)]
 mod watchtower_windows;

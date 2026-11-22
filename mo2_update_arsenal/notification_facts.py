@@ -34,6 +34,20 @@ def _wire_timestamp(value):
     return millis if 0 < millis <= MAX_WIRE_MILLISECONDS else None
 
 
+def current_update_window(update: dict, *, now: float, now_ms: int | None = None) -> tuple[int, int] | None:
+    """Use one wire-compatible freshness boundary for notices and inspector advice."""
+    freshness = update.get("freshness")
+    if not isinstance(freshness, str) or freshness not in CURRENT_PUBLIC_RELEASE_FRESHNESS:
+        return None
+    now_ms = _wire_timestamp(now) if now_ms is None else now_ms
+    checked, expires = update.get("checkedAt"), update.get("expiresAt")
+    checked_ms, expires_ms = _wire_timestamp(checked), _wire_timestamp(expires)
+    if (now_ms is None or checked_ms is None or expires_ms is None or checked > now + 300
+            or expires_ms <= max(now_ms, checked_ms)):
+        return None
+    return checked_ms, expires_ms
+
+
 def collect(snapshot: dict, context: dict, *, now: float | None = None, detailed=False) -> dict:
     """Produce a complete bounded result from independently captured native state."""
     now = time.time() if now is None else now
@@ -69,20 +83,17 @@ def collect(snapshot: dict, context: dict, *, now: float | None = None, detailed
                 or not isinstance(installed, str) or not isinstance(latest, str)
                 or len(installed) > 240 or len(latest) > 240 or update.get("error") or update.get("errors")):
             continue
-        freshness, compatibility = update.get("freshness"), update.get("compatibility")
-        if (not isinstance(freshness, str) or freshness not in CURRENT_PUBLIC_RELEASE_FRESHNESS
-                or (compatibility is not None and not isinstance(compatibility, dict))):
+        compatibility = update.get("compatibility")
+        if compatibility is not None and not isinstance(compatibility, dict):
             continue
         compatibility_status = compatibility.get("status") if compatibility else None
         if compatibility_status is not None and (
                 not isinstance(compatibility_status, str) or compatibility_status in REVIEW_COMPATIBILITY_STATES):
             continue
-        checked, expires = update.get("checkedAt"), update.get("expiresAt")
-        checked_ms, expires_ms = _wire_timestamp(checked), _wire_timestamp(expires)
-        if (checked_ms is None or expires_ms is None or checked > now + 300
-                or expires_ms <= max(now_ms, checked_ms)
-                or version_verdict(installed, latest) != "candidate"):
+        window = current_update_window(update, now=now, now_ms=now_ms)
+        if window is None or version_verdict(installed, latest) != "candidate":
             continue
+        checked_ms, expires_ms = window
         url = canonical_source_url(source.get("url") or "")
         if update.get("source") == "nexus-api":
             project = nexus_project_id(item, str(context.get("game") or ""))

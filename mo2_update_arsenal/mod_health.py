@@ -27,6 +27,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from .notification_facts import current_update_window
 from .source_registry import canonical_source_url, provider_of
 
 
@@ -709,7 +710,7 @@ def build_mod_health(item: dict, *, game: str = "", now: float | None = None,
     if not links or source.get("kind") == "advisory":
         add("link-source", "info", "Confirm the original source", "Link the exact project before using provider facts to choose an update.", "link-source", links.get("project", ""), "MO2 source identity")
     update = item.get("update") if isinstance(item.get("update"), dict) else {}
-    if update.get("verdict") == "candidate":
+    if update.get("verdict") == "candidate" and current_update_window(update, now=now) is not None:
         latest = str(update.get("latestVersion") or "the newer version")[:120]
         add("review-update", "info", "Review available update", f"Installed version {str(item.get('installedVersion') or '?')[:120]}; provider candidate {latest}. Check exact files, requirements and installed options before updating.", "review-files", links.get("files", links.get("project", "")), str(update.get("source") or "Version comparison")[:100])
     if page.get("changedSincePrevious"):

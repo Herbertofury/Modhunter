@@ -5,6 +5,11 @@
  const esc=value=>api().esc(value);
  const terminal=new Set(['complete','failed','cancelled','interrupted','unknown']);
  const discardable=new Set(['complete','failed','cancelled']);
+ let signaledReviews=new Set(),observedProfile,profileGeneration=0,inFlightScope=-1;
+ const pendingReviewReads=new Map(),enumerationAttempts=6;
+ const scopeStamp=()=>api().installQueueContext?.()||{revision:-1,scope:null};
+ const jobKey=job=>JSON.stringify([job.reviewId,job.jobId,job.downloadId,job.profileId]);
+ const staleScope=new Error('The active MO2 profile changed. Refresh its native operations.');
  let review=null,selected=new Set(),page=0,filter='',busy=false,requestGeneration=0,jobs=[],duplicates=null,restoreChoices=new Map(),timer=null,stopped=false,lastDuplicateJob='',refreshPromise=null,lastQueueKey='';
  const chunk=100;
  const bytes=n=>!Number.isFinite(n)?'Unknown':n<1024?n+' B':n<1048576?(n/1024).toFixed(1)+' KiB':n<1073741824?(n/1048576).toFixed(1)+' MiB':(n/1073741824).toFixed(2)+' GiB';
@@ -80,7 +85,53 @@
  function renderJobs(){
   $('nativeJobs').innerHTML=jobs.length?jobs.map(job=>'<article class="native-operation"><div><strong>'+esc(name(job.modName||job.action))+'</strong><p>'+esc(job.action)+' · '+esc(job.state)+(job.refreshRequired?' · refresh needed':'')+'</p>'+(job.error?'<p class="form-error">'+esc(job.error)+'</p>':'')+'</div><div class="row-actions">'+(!terminal.has(job.state)?'<button data-native-action="cancel-job" data-job-id="'+esc(job.jobId)+'" data-review-id="'+esc(job.reviewId)+'" data-download-id="'+esc(job.downloadId||'')+'">Cancel</button>':'')+(job.backupId?'<button data-native-action="backups" data-item-id="'+esc(job.itemId||'')+'">Recovery snapshots</button>':'')+'</div></article>').join(''):'<p>No recorded native file operations for the connected MO2 profile.</p>';
  }
- function refreshJobs(){if(refreshPromise)return refreshPromise;refreshPromise=(async()=>{const result=await call('contentJobs');jobs=result.operations?.jobs||[];$('nativeOperationsStatus').textContent=result.operations?.error||'Connected to native MO2 content operations.';renderJobs();renderQueue();const completed=jobs.filter(j=>j.action?.startsWith('duplicate:')&&terminal.has(j.state)).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0))[0];if(completed&&completed.jobId!==lastDuplicateJob){lastDuplicateJob=completed.jobId;await latestDuplicates()}return result})().finally(()=>{refreshPromise=null});return refreshPromise}
+ function refreshJobs(retryRevision=true){
+  const stamp=scopeStamp(),profile=stamp.scope?.profileId,generation=profileGeneration;
+  const current=()=>!stopped&&scopeStamp().revision===stamp.revision;
+  // An install can advance the execution revision on the very same profile.
+  // Allow one explicit read retry for that case, never across profile changes.
+  const withRetry=request=>retryRevision?request.catch(error=>{
+   if(error===staleScope&&!stopped&&profile&&generation===profileGeneration&&scopeStamp().scope?.profileId===profile)return refreshJobs(false);
+   throw error;
+  }):request;
+  if(refreshPromise){
+   if(inFlightScope===stamp.revision)return withRetry(refreshPromise);
+   // Native command deduplication allows one read at a time. Do not join an
+   // older profile's result; an explicit newer request can wait for its turn.
+   return refreshPromise.catch(()=>{}).then(()=>{if(!current())throw staleScope;return refreshJobs(retryRevision)});
+  }
+  inFlightScope=stamp.revision;
+  const attempted=[...pendingReviewReads],captured=new Set();
+  let healthyListing=false;
+  const request=(async()=>{
+   const result=await call('contentJobs');
+   if(!current())throw staleScope;
+   jobs=(result.operations?.jobs||[]).filter(job=>!profile||job.profileId===profile);
+   for(const job of jobs)captured.add(jobKey(job));
+   healthyListing=Array.isArray(result.operations?.jobs)&&!result.operations?.error;
+   $('nativeOperationsStatus').textContent=result.operations?.error||(pendingReviewReads.size
+    ?'Reconciling the reported MO2 operation…':'Connected to native MO2 content operations.');
+   renderJobs();renderQueue();
+   const completed=jobs.filter(j=>j.action?.startsWith('duplicate:')&&terminal.has(j.state)).sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0))[0];
+   if(completed&&completed.jobId!==lastDuplicateJob){await latestDuplicates(current);if(!current())throw staleScope;lastDuplicateJob=completed.jobId}
+   return result;
+  })().finally(()=>{
+   if(current()){
+    for(const [key,budget] of attempted){
+     if(pendingReviewReads.get(key)!==budget)continue;
+     if(captured.has(key))pendingReviewReads.delete(key);
+     else if(budget.remaining>0)budget.remaining--;
+    }
+    if(healthyListing&&!api().state().reviews?.error)$('nativeOperationsStatus').textContent=!pendingReviewReads.size
+     ?'Connected to native MO2 content operations.'
+     :hasPendingRetry()?'Waiting for MO2 to list the reported operation…'
+     :'MO2 did not list the reported operation. Use Refresh native operations to check again.';
+   }
+   refreshPromise=null;scheduleJobRefresh();
+  });
+  refreshPromise=request;
+  return withRetry(request);
+ }
  async function loadBackups(itemId){const result=await call('contentBackups',itemId?{itemId}:{});const data=result.result||{};const backups=data.backups||[],retentionTargets=new Set();restoreChoices=new Map();$('nativeRecoveryList').replaceChildren(...backups.map(backup=>{
   const row=document.createElement('article');row.className='native-operation';const title=document.createElement('strong');title.textContent=name(backup.modName||backup.id);const meta=document.createElement('p');meta.textContent=[backup.state,backup.createdAt?new Date(Number(backup.createdAt)* (Number(backup.createdAt)<1e12?1000:1)).toLocaleString():'',bytes(backup.bytes??backup.backupBytes)].filter(Boolean).join(' · ');const info=document.createElement('div');info.append(title,meta);const controls=document.createElement('div');controls.className='row-actions';const target=backup.itemId||itemId||'';
   const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.setAttribute('aria-label','Include '+(backup.modName||backup.id)+' in batch restore');checkbox.disabled=!target||!['sealed','sealedNew'].includes(backup.state);checkbox.onchange=()=>{if(checkbox.checked)restoreChoices.set(backup.id,{itemId:target,backupId:backup.id,action:backup.newTarget?'restoreNew':'restore'});else restoreChoices.delete(backup.id)};controls.append(checkbox);
@@ -106,7 +157,7 @@
   $('nativeRetentionList').replaceChildren(...plan.eligible.map(row=>{const li=document.createElement('li');li.textContent=row.id+' · '+row.state+' · '+bytes(row.bytes??row.backupBytes);return li}));
   $('nativeRetentionApply').disabled=!plan.eligible.length;openDialog('nativeRetentionDialog');
  }
- async function latestDuplicates(){const result=await call('duplicateScan');const data=result.result||{};duplicates=data.report||null;$('nativeDuplicateStatus').textContent=data.error||('Scan state: '+(data.state||'not started'));renderDuplicates();return data;}
+ async function latestDuplicates(current=()=>true){const result=await call('duplicateScan');if(!current())throw staleScope;const data=result.result||{};duplicates=data.report||null;$('nativeDuplicateStatus').textContent=data.error||('Scan state: '+(data.state||'not started'));renderDuplicates();return data;}
  function renderDuplicates(){
   const groups=duplicates?.fileGroups||[],all=duplicates?.completeContentGroups||duplicates?.groups||[];
   $('nativeDuplicateSummary').textContent=duplicates?(groups.length+' equal-content file groups · '+all.length+' identical-mod groups · '+bytes(duplicates.logicalDuplicateBytes)+' logical duplicate bytes. Hard links share physical storage; quarantine keeps recoverable bytes and does not promise freed disk space.'):'Scan all native MO2 mods and saved profiles before choosing cleanup.';
@@ -161,8 +212,50 @@
   if(!$('nativeDuplicateResult').childNodes.length)$('nativeDuplicateResult').textContent=JSON.stringify(data,null,2);
  }
  $('nativePreviewQuarantine').onclick=()=>launch(()=>quarantine(true));$('nativeQuarantine').onclick=()=>launch(()=>quarantine(false));$('nativeDuplicateReceipts').onclick=()=>launch(loadQuarantineHistory);
- window.addEventListener('modhunter-native-state',renderQueue);
- window.addEventListener('beforeunload',()=>{stopped=true;clearTimeout(timer)});
- async function poll(){renderQueue();if(jobs.some(j=>!terminal.has(j.state))&&!document.hidden){try{await refreshJobs()}catch(error){$('nativeOperationsStatus').textContent=error.message}}timer=setTimeout(poll,jobs.some(j=>!terminal.has(j.state))?2000:10000)}
- renderQueue();timer=setTimeout(poll,2000);
+ // Native state owns review rows, but only contentJobs reconciles MO2's
+ // exact operation result. Keep that fallback scoped to visible, active work.
+ function hasPendingRetry(){for(const budget of pendingReviewReads.values())if(budget.remaining>0)return true;return false}
+ function canRefreshJobs(){return !stopped&&!document.hidden&&!downloads.hidden&&(hasPendingRetry()||jobs.some(job=>!terminal.has(job.state)))}
+ function clearJobRefresh(){clearTimeout(timer);timer=null}
+ function scheduleJobRefresh(delay=2000){
+  if(!canRefreshJobs()){clearJobRefresh();return}
+  if(timer!==null||refreshPromise)return;
+  timer=setTimeout(async()=>{
+   timer=null;
+   if(!canRefreshJobs())return;
+   try{await refreshJobs(false)}catch(error){if(error!==staleScope&&!stopped&&!document.hidden&&!downloads.hidden)$('nativeOperationsStatus').textContent=error.message}
+  },delay);
+ }
+ function observeReviews(){
+  renderQueue();
+  const active=new Set(),profile=scopeStamp().scope?.profileId;
+  const settled=new Set(jobs.filter(job=>terminal.has(job.state)).map(jobKey));
+  for(const row of api().state().reviews?.rows||[]){
+   if(row.recoveryOnly||!row.submitted||!row.jobId||terminal.has(row.state)||(profile&&row.context?.profileId!==profile))continue;
+   const key=jobKey({reviewId:row.id,jobId:row.jobId,downloadId:row.downloadId,profileId:row.context?.profileId});
+   if(!settled.has(key))active.add(key);
+  }
+  for(const key of pendingReviewReads.keys())if(!active.has(key))pendingReviewReads.delete(key);
+  let newSignal=false;
+  for(const key of active)if(!signaledReviews.has(key)){
+   pendingReviewReads.set(key,{remaining:enumerationAttempts});newSignal=true;
+  }
+  signaledReviews=active;scheduleJobRefresh(newSignal?0:2000);
+ }
+ function onVisibility(){clearJobRefresh();scheduleJobRefresh(0)}
+ function onScope(){
+  const profile=scopeStamp().scope?.profileId;
+  if(profile===observedProfile)return;
+  observedProfile=profile;profileGeneration++;
+  clearJobRefresh();signaledReviews.clear();pendingReviewReads.clear();jobs=[];lastDuplicateJob='';
+  $('nativeJobs').replaceChildren();
+  $('nativeOperationsStatus').textContent='Refresh native operations to inspect this MO2 profile.';
+  observeReviews();
+ }
+ window.addEventListener('modhunter-install-queue-context',onScope);
+ window.addEventListener('modhunter-native-state',observeReviews);
+ window.addEventListener('beforeunload',()=>{stopped=true;clearJobRefresh()});
+ document.addEventListener('visibilitychange',onVisibility);
+ new MutationObserver(onVisibility).observe(downloads,{attributes:true,attributeFilter:['hidden']});
+ observedProfile=scopeStamp().scope?.profileId;observeReviews();
 })();

@@ -32,6 +32,8 @@ REQUIRED=("test_review_preserves_complete_selection_and_exact_install_ids",
           "test_retention_requires_exact_preview_and_explicit_confirmation",
           "test_application_reset_requires_exact_phrase_and_preview",
           "test_native_substates_update_without_watchstore_revision",
+          "test_native_review_fallback_runs_only_for_visible_work",
+          "test_native_review_drops_delayed_operations_across_profile_round_trip",
           "test_readiness_identifies_live_and_offline_profiles_without_scanning",
           "test_inventory_caches_complete_results_and_reveals_exact_ids",
           "test_shared_queue_controls_preserve_action_boundaries",
@@ -107,7 +109,11 @@ OVERRIDE=r'''(() => {
    if(f.native.mode==='lostAck')throw Error('Connection ended after native acceptance. Refresh operations.');
    return finish({review:f.native.review,operation:f.native.jobs[0],message:'Native operation recorded.'});
   }
-  if(kind==='contentJobs')return finish({operations:{jobs:f.native.jobs,nativeAvailable:true,helperAvailable:true}});
+  if(kind==='contentJobs'){
+   const jobs=clone(f.native.jobs);
+   if(f.defer[kind])await new Promise(resolve=>f.pending.push({kind,resolve}));
+   return finish({operations:{jobs,nativeAvailable:true,helperAvailable:true}});
+  }
   if(kind==='discardReview'){if(f.native.review?.submitted&&['unknown','interrupted'].includes(f.native.review.state))throw Error('Unresolved operation retains this review.');f.state.reviews.rows=[];f.publish();return finish()}
   if(kind==='compareIniSnapshots'){
    if(Object.keys(v).length)throw Error('The UI may request pickers only');
@@ -341,6 +347,78 @@ class NativeUiTests(base.WatchtowerBrowserTests):
         self.page.locator('#applicationResetConfirmation').fill('REMOVE MODHUNTER DATA');self.page.locator('#applicationResetSubmit').click();self.page.wait_for_function("__WATCH_FIX__.calls.some(c=>c.kind==='applyAppReset')")
         self.assertEqual(self.calls('applyAppReset')[0]['value'],{'expectedDigest':'d'*64,'confirm':'REMOVE MODHUNTER DATA'})
 
+
+    def test_native_review_fallback_runs_only_for_visible_work(self):
+        self.page.clock.install()
+        self.open_native()
+        self.page.clock.run_for(10001)
+        self.assertEqual(self.calls('contentJobs'),[])
+        self.navigate('pages')
+        self.page.evaluate("""() => {
+          const f=__WATCH_FIX__,job={jobId:'visible-job',reviewId:'external-review',downloadId:'external-archive',
+            profileId:'profile-1',action:'install',modName:'External active operation',state:'installing'};
+          f.native.pendingNativeEnumeration=job;
+          f.change(s=>{s.reviews.rows=[{id:job.reviewId,jobId:job.jobId,downloadId:job.downloadId,
+            context:{profileId:job.profileId},filename:'External active fixture.zip',state:'installing',submitted:true}];});
+          f.native.activeReviewSnapshot=f.snapshot();
+        }""")
+        self.page.clock.run_for(6001)
+        self.assertEqual(self.calls('contentJobs'),[])
+        self.navigate('downloads')
+        self.page.wait_for_function('__WATCH_FIX__.calls.some(c=>c.kind==="contentJobs")')
+        self.assertNotIn('External active operation',self.page.locator('#nativeJobs').inner_text())
+        self.page.evaluate('__WATCH_FIX__.native.jobs=[__WATCH_FIX__.native.pendingNativeEnumeration]')
+        self.page.clock.run_for(2100)
+        self.page.wait_for_function('document.getElementById("nativeJobs").textContent.includes("External active operation")')
+        count=len(self.calls('contentJobs'))
+        self.page.evaluate("""() => {
+          Object.defineProperty(document,'hidden',{configurable:true,value:true});
+          document.dispatchEvent(new Event('visibilitychange'));
+        }""")
+        self.page.clock.run_for(6001)
+        self.assertEqual(len(self.calls('contentJobs')),count)
+        self.page.evaluate("""() => {
+          delete document.hidden;
+          document.dispatchEvent(new Event('visibilitychange'));
+        }""")
+        self.page.wait_for_function('count=>__WATCH_FIX__.calls.filter(c=>c.kind==="contentJobs").length>count',arg=count)
+        self.page.evaluate('__WATCH_FIX__.native.jobs[0].state="cancelled"')
+        self.page.clock.run_for(2100)
+        self.assertIn('cancelled',self.page.locator('#nativeJobs').inner_text())
+        stopped=len(self.calls('contentJobs'))
+        self.page.evaluate('__WATCH_FIX__.publish(__WATCH_FIX__.native.activeReviewSnapshot)')
+        self.page.clock.run_for(6001)
+        self.assertEqual(len(self.calls('contentJobs')),stopped)
+        self.page.locator('#nativeRefreshJobs').click()
+        self.page.wait_for_function('count=>__WATCH_FIX__.calls.filter(c=>c.kind==="contentJobs").length===count+1',arg=stopped)
+        self.assertIn('cancelled',self.page.locator('#nativeJobs').inner_text())
+
+    def test_native_review_drops_delayed_operations_across_profile_round_trip(self):
+        self.open_native()
+        self.page.evaluate("""() => {
+          const f=__WATCH_FIX__;
+          f.native.receipt=(profileId,modName)=>({jobId:'same-job',reviewId:'same-review',downloadId:'same-archive',
+            profileId,modName,state:'complete',action:'install'});
+          f.native.jobs=[f.native.receipt('profile-1','Private earlier native result')];
+          f.defer.contentJobs=true;
+        }""")
+        refresh=self.page.locator('#nativeRefreshJobs')
+        refresh.click()
+        self.page.wait_for_function('__WATCH_FIX__.pending.some(p=>p.kind==="contentJobs")')
+        self.page.evaluate("""() => {
+          const f=__WATCH_FIX__;
+          f.native.switchQueue(2,'profile-2',4,'Unrelated queue target');
+          f.native.switchQueue(3,'profile-1',5,'Current queue target');
+          f.native.jobs=[f.native.receipt('profile-2','Private wrong-profile result'),
+            f.native.receipt('profile-1','Exact current native result')];
+        }""")
+        refresh.click()
+        self.assertEqual(len(self.calls('contentJobs')),1)
+        self.assertNotIn('Private',self.page.locator('#nativeJobs').inner_text())
+        self.page.evaluate('__WATCH_FIX__.release("contentJobs")')
+        self.page.wait_for_function('document.getElementById("nativeJobs").textContent.includes("Exact current native result")')
+        self.assertNotIn('Private',self.page.locator('#nativeJobs').inner_text())
+        self.assertEqual(len(self.calls('contentJobs')),2)
 
     def test_readiness_identifies_live_and_offline_profiles_without_scanning(self):
         self.open_native();self.navigate('settings');self.page.locator('#readinessRefresh').click()

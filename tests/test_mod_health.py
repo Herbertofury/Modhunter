@@ -6,16 +6,24 @@ from email.message import Message
 import io
 import http.client
 import json
+from pathlib import Path
+import tempfile
 import threading
 import unittest
 import urllib.error
 import urllib.request
+from unittest.mock import patch
 
+from mo2_update_arsenal.bridge import ArsenalService
 from mo2_update_arsenal.mod_health import (
     MAX_PAGE_BYTES, NexusPageClient, _SameModRedirect, _RedirectBlocked,
     _observation, build_mod_health, freshness, nexus_identity, nexus_page_url,
     parse_nexus_page, retain_last_good_bug_count,
 )
+
+from mo2_update_arsenal.notification_facts import collect
+from mo2_update_arsenal.scanner import STARTUP_CACHE_SECONDS, summary_from_metadata
+from mo2_update_arsenal.source_adapters import normalize_adapter_record
 
 
 NOW = 1_800_000_000.0
@@ -323,6 +331,70 @@ class HealthEvaluationTests(unittest.TestCase):
         self.assertEqual(health["freshness"]["state"], "stale")
         self.assertIn("refresh-health", [action["id"] for action in health["actions"]])
         self.assertEqual(freshness(NOW + 1000, NOW)["state"], "clock-skew")
+
+    def test_nexus_inspector_candidate_expires_at_the_same_boundary_as_watchtower(self):
+        target = item(id="live-inspected")
+        target["update"] = summary_from_metadata(target, {"version": "2.0", "status": "published"},
+                                                 NOW - STARTUP_CACHE_SECONDS)
+        expires = target["update"]["expiresAt"]
+        self.assertEqual(expires, NOW)
+        context = {"profileId": "fixture-profile", "profileName": "Fixture", "game": GAME,
+                   "gameRuntime": "1.6.1170", "executionEpoch": 1,
+                   "nativeGeneration": 1, "nativeLease": "a" * 32}
+        snapshot = {**context, "items": [target]}
+        evidence = observe(markup(count="0"))
+        metadata = {"status": "published", "updated_timestamp": NOW - 300}
+        with tempfile.TemporaryDirectory() as temp:
+            service = ArsenalService("", Path(temp) / "cache.json",
+                                     lambda _: self.fail("Read-only health made a native request"), snapshot)
+            self.addCleanup(service.stop)
+            service.cache.set(GAME, MID, {"meta": metadata, "checkedAt": NOW - 30})
+            service.intelligence._evidence[f"{GAME}/{MID}"] = evidence
+            for clock, current in [(expires - 1, True), (expires, False), (expires + 1, False)]:
+                with self.subTest(clock=clock), patch("mo2_update_arsenal.intelligence.time.time", return_value=clock):
+                    self.assertEqual(bool(collect(snapshot, context, now=clock)["facts"]), current)
+                    response = service.intelligence.health_state(target["id"], context["profileId"])
+                    self.assertTrue(response["ok"])
+                    health = response["health"]
+                    actions = [action["id"] for action in health["actions"]]
+                    self.assertEqual("review-update" in actions, current)
+                    self.assertEqual(health["page"]["status"], "available")
+                    self.assertEqual(health["bugs"]["displayedCount"], 0)
+
+    def test_inspector_omits_candidate_without_bounded_current_evidence(self):
+        target = item()
+        summary = summary_from_metadata(target, {"version": "2.0"}, NOW - 10)
+        broken = ({"checkedAt": None}, {"expiresAt": None}, {"checkedAt": True}, {"expiresAt": float("inf")},
+                  {"expiresAt": 10**400}, {"expiresAt": "1800000800"}, {"checkedAt": NOW + 301},
+                  {"expiresAt": NOW - 10}, {"freshness": "stale"}, {"freshness": ["fresh"]})
+        for changes in broken:
+            with self.subTest(changes=changes):
+                health = build_mod_health({**target, "update": {**summary, **changes}}, game=GAME,
+                                          now=NOW, page_evidence=observe(markup(count=None)))
+                self.assertNotIn("review-update", [action["id"] for action in health["actions"]])
+                self.assertIsNone(health["bugs"]["displayedCount"])
+        without_expiry = {key: value for key, value in summary.items() if key != "expiresAt"}
+        health = build_mod_health({**target, "update": without_expiry}, game=GAME, now=NOW)
+        self.assertNotIn("review-update", [action["id"] for action in health["actions"]])
+
+    def test_existing_normalized_public_release_stops_suggesting_update_after_expiry(self):
+        url = "https://github.com/fixture/project"
+        target = item(source={"type": "github", "verified": True, "kind": "project", "url": url})
+        target["update"] = normalize_adapter_record(target, {
+            "provider": "github", "sourceUrl": url, "releaseUrl": url + "/releases/tag/v2.0",
+            "outcome": "release", "availability": "available", "freshness": "cached",
+            "latestVersion": "2.0", "projectId": "fixture/project", "releaseId": "fixture-v2",
+            "checkedAt": NOW - 10, "expiresAt": NOW + 5,
+        }, now=NOW)
+        self.assertEqual(target["update"]["verdict"], "candidate")
+        current = build_mod_health(target, game=GAME, now=NOW)
+        expired = build_mod_health(target, game=GAME, now=NOW + 5)
+        self.assertIn("review-update", [action["id"] for action in current["actions"]])
+        self.assertNotIn("review-update", [action["id"] for action in expired["actions"]])
+        for field in ("status", "source", "sourceUrl", "checkedAt"):
+            self.assertEqual(expired["page"][field], current["page"][field])
+        self.assertEqual(expired["links"]["bugs"], url + "/issues")
+        self.assertEqual(expired["bugs"]["state"], "unsupported")
 
     def test_new_provider_timestamp_signals_review_not_an_install_guarantee(self):
         previous = build_mod_health(item(), game=GAME, now=NOW - 100, metadata_checked_at=NOW - 100,

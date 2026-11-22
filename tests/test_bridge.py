@@ -63,7 +63,7 @@ class BridgeTests(unittest.TestCase):
   self.assertEqual(result['itemRecords']['m1']['verdict'],'candidate')
   self.assertEqual(result['itemRecords']['m2']['verdict'],'current')
  def test_files_explicit_verification_and_profile_isolation(self):
-  self.service._file_cache[('skyrimspecialedition',77)]={'ok':True,'files':[{'fileId':9}]}
+  self.service._file_cache[('skyrimspecialedition',77)]=(time.monotonic(),{'ok':True,'files':[{'fileId':9}]})
   rejected=self.service.request_download(77,7,'DOWNLOAD')
   self.assertFalse(rejected['ok'])
   permitted=self.service.request_download(77,9,'DOWNLOAD')

@@ -38,6 +38,7 @@ MAX_PROGRESS_REQUEST = 8_000_000
 MAX_REALM_REQUEST = 800_000
 MAX_CACHED_SNAPSHOT = 32 * 1024 * 1024
 MAX_CONTENT_REQUEST = 1024 * 1024
+NEXUS_FILE_LIST_TTL_SECONDS = 300
 
 
 class UIRequest:
@@ -152,7 +153,7 @@ class ArsenalService:
         self._scan_cancel = threading.Event()
         self._source_scanner = None
         self._source_cache_path = cache_path.with_name("source-adapter-cache.json")
-        self._file_cache: dict[tuple[str, int], dict] = {}
+        self._file_cache: dict[tuple[str, int], tuple[float, dict]] = {}
         self._file_epoch = 0
         self._file_inflight: dict[tuple, dict] = {}
         self._downloads: dict[int, dict] = {}
@@ -759,9 +760,15 @@ class ArsenalService:
             domain = self._snapshot.get("game", "skyrimspecialedition")
             profile = self._snapshot.get("profileId")
             epoch = self._file_epoch
-            cached = self._file_cache.get((domain, mod_id))
-            if cached:
-                return deepcopy(cached)
+            cache_key = (domain, mod_id)
+            cached = self._file_cache.get(cache_key)
+            if cached is not None:
+                fetched_at, result = cached
+                if 0 <= time.monotonic() - fetched_at < NEXUS_FILE_LIST_TTL_SECONDS:
+                    return deepcopy(result)
+                # Expiration is checked only on demand. Do not promote stale
+                # file rows if the requested lookup is currently unavailable.
+                self._file_cache.pop(cache_key, None)
             key = self.api_key
             native_nexus = self.native_nexus_available and self.native_nexus_files_available is not False
             if not key and not native_nexus:
@@ -786,7 +793,7 @@ class ArsenalService:
                 if current != identity or mod_id not in self._nexus_ids:
                     result = {"ok": False, "error": "MO2 profile or scan changed while loading files; refresh and review again"}
                 elif result.get("ok"):
-                    self._file_cache[(domain, mod_id)] = result
+                    self._file_cache[cache_key] = (time.monotonic(), result)
                 flight["result"] = result
                 self._file_inflight.pop(identity, None)
                 flight["event"].set()

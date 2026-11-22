@@ -7,6 +7,7 @@ import json
 import os
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -98,7 +99,7 @@ class LargeProfileTests(unittest.TestCase):
         self.assertEqual(self.service.selection_snapshot(["live-20"])["items"][0]["name"], "Mod 20")
 
     def test_cached_file_lookup_and_exact_focus_do_not_scan_all_mods(self):
-        self.service._file_cache[("skyrimspecialedition", 21)] = {"ok": True, "files": [{"fileId": 8}]}
+        self.service._file_cache[("skyrimspecialedition", 21)] = (time.monotonic(), {"ok": True, "files": [{"fileId": 8}]})
         with patch.object(self.service, "snapshot", side_effect=AssertionError("Full scan")):
             self.assertTrue(self.service.fetch_files(21)["ok"])
             self.assertTrue(self.service.focus_mod("live-20", "large-profile")["ok"])
@@ -159,6 +160,60 @@ class NexusRequestSharingTests(unittest.TestCase):
         self.assertTrue(all(value["ok"] for value in self.results))
         self.results[0]["files"][0]["version"] = "corrupted"
         self.assertEqual(self.service.fetch_files(1)["files"][0]["version"], "2.0")
+
+    def test_reopening_exact_nexus_files_expires_success_without_background_requests(self):
+        reply = {"ok": True, "files": [{"fileId": 9, "version": "1.9"}], "modId": 1}
+        with patch.object(self.service, "_fetch_files_remote", side_effect=lambda *_: copy.deepcopy(reply)) as remote, \
+             patch("mo2_update_arsenal.bridge.time.monotonic", return_value=10) as clock:
+            first = self.service.review_files(1, "live-0")
+            self.assertEqual(first["files"][0]["fileId"], 9)
+            reply = {"ok": False, "error": "Synthetic provider temporarily unavailable"}
+            clock.return_value = 309
+            self.assertEqual(self.service.review_files(1, "live-0")["files"][0]["fileId"], 9)
+            self.assertEqual(remote.call_count, 1)
+            clock.return_value = 310
+            self.assertEqual(remote.call_count, 1, "passing time alone must not request the provider")
+            expired = self.service.review_files(1, "live-0")
+            self.assertFalse(expired["ok"], expired)
+            self.assertNotIn("files", expired)
+            self.assertIn("temporarily unavailable", expired["error"])
+            self.assertEqual(remote.call_count, 2)
+            reply = {"ok": True, "files": [{"fileId": 37, "version": "2.5"}], "modId": 1}
+            fresh = self.service.review_files(1, "live-0")
+            self.assertEqual([row["fileId"] for row in fresh["files"]], [37])
+            self.assertEqual(remote.call_count, 3)
+
+    def test_removed_cached_file_cannot_reach_native_dispatch_after_expiration(self):
+        old = {"ok": True, "files": [{"fileId": 9}], "modId": 1}
+        current = {"ok": True, "files": [{"fileId": 37}], "modId": 1}
+        with patch.object(self.service, "_fetch_files_remote", side_effect=[old, current]) as remote, \
+             patch.object(self.service, "_start_native_download", return_value={"ok": True}) as dispatch, \
+             patch("mo2_update_arsenal.bridge.time.monotonic", return_value=10) as clock:
+            self.assertEqual(self.service.fetch_files(1)["files"][0]["fileId"], 9)
+            clock.return_value = 310
+            removed = self.service.request_download(1, 9, "DOWNLOAD")
+            self.assertFalse(removed["ok"], removed)
+            dispatch.assert_not_called()
+            confirmed = self.service.request_download(1, 37, "DOWNLOAD")
+            self.assertTrue(confirmed["ok"], confirmed)
+            self.assertEqual(dispatch.call_args.args[1]["fileId"], 37)
+            self.assertEqual(remote.call_count, 2)
+
+    def test_expired_concurrent_reopening_keeps_one_shared_provider_request(self):
+        remote = self.service._fetch_files_remote
+        initial = {"ok": True, "files": [{"fileId": 3, "version": "1.0"}], "modId": 1}
+        with patch.object(self.service, "_fetch_files_remote", return_value=initial), \
+             patch("mo2_update_arsenal.bridge.time.monotonic", return_value=10):
+            self.assertEqual(self.service.fetch_files(1)["files"][0]["fileId"], 3)
+        with patch.object(self.service, "_fetch_files_remote", side_effect=remote), \
+             patch("mo2_update_arsenal.bridge.time.monotonic", return_value=310):
+            for _ in range(8):
+                self.spawn()
+            self.assertTrue(self.started.wait(1), "an expired file review requires a new owner")
+            self.finish()
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(len(self.results), 8)
+        self.assertTrue(all(row["ok"] and row["files"][0]["fileId"] == 9 for row in self.results))
 
     def test_profile_switch_during_provider_call_never_poisons_new_profile(self):
         self.spawn()

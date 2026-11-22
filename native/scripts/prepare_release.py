@@ -174,7 +174,36 @@ FONT_RENDERING_CHECKS = {
 }
 FONT_RENDERING_SCREENSHOTS = {'ci-font-library.png': (1440, 1000),
                             'ci-font-expedition.png': (900, 1000)}
-NATIVE_MANAGER_CHECKS = {'duplicate_report_preserves_whole_mod_and_file_ownership', 'cleanup_requires_a_matching_preview_and_confirmation', 'inventory_caches_complete_results_and_reveals_exact_ids', 'review_preserves_complete_selection_and_exact_install_ids', 'global_preferences_preserve_unsaved_edits_and_switch_language', 'unknown_native_outcome_remains_visible_and_cannot_be_discarded', 'support_export_uses_the_exact_preview_identity', 'new_content_requires_an_explicit_new_target', 'application_reset_requires_exact_phrase_and_preview', 'native_substates_update_without_watchstore_revision', 'readiness_identifies_live_and_offline_profiles_without_scanning', 'notice_click_uses_only_opaque_id_and_opens_current_native_item', 'fomod_selection_is_explicitly_advisory', 'retained_reviews_remain_visible_without_replay', 'retention_requires_exact_preview_and_explicit_confirmation', 'four_locales_preserve_names_focus_and_theme', 'shared_queue_controls_preserve_action_boundaries', 'notice_list_is_private_and_accepts_native_substate_updates', 'stale_notice_rejection_never_opens_a_target', 'lost_acknowledgement_refreshes_submission_state'}
+# Keep this explicit fail-closed list in sync with the executed Chromium suite.
+NATIVE_MANAGER_CHECKS = {
+    "application_reset_requires_exact_phrase_and_preview",
+    "cleanup_requires_a_matching_preview_and_confirmation",
+    "duplicate_report_preserves_whole_mod_and_file_ownership",
+    "fomod_selection_is_explicitly_advisory",
+    "four_locales_preserve_names_focus_and_theme",
+    "global_preferences_preserve_unsaved_edits_and_switch_language",
+    "inventory_caches_complete_results_and_reveals_exact_ids",
+    "lost_acknowledgement_refreshes_submission_state",
+    "native_review_drops_delayed_operations_across_profile_round_trip",
+    "native_review_fallback_runs_only_for_visible_work",
+    "native_substates_update_without_watchstore_revision",
+    "new_content_requires_an_explicit_new_target",
+    "notice_click_uses_only_opaque_id_and_opens_current_native_item",
+    "notice_list_is_private_and_accepts_native_substate_updates",
+    "readiness_identifies_live_and_offline_profiles_without_scanning",
+    "remembered_optional_exclusions_do_not_follow_another_review",
+    "retained_reviews_remain_visible_without_replay",
+    "retention_requires_exact_preview_and_explicit_confirmation",
+    "review_filters_show_exact_choices_without_changing_the_plan",
+    "review_preserves_complete_selection_and_exact_install_ids",
+    "shared_queue_clears_rendered_rows_and_rejects_delayed_profile_replies",
+    "shared_queue_controls_preserve_action_boundaries",
+    "shared_queue_receipt_is_read_only_and_hides_archive_identifiers",
+    "shared_queue_replays_context_delivered_before_overlay_mount",
+    "stale_notice_rejection_never_opens_a_target",
+    "support_export_uses_the_exact_preview_identity",
+    "unknown_native_outcome_remains_visible_and_cannot_be_discarded",
+}
 NATIVE_MANAGER_SCREENSHOTS = {'watchtower-exact-notice.png', 'watchtower-file-review.png', 'watchtower-duplicates.png', 'watchtower-file-inventory.png', 'watchtower-preferences-zh.png', 'watchtower-support-preview.png', 'watchtower-preferences-es.png'}
 QT_FORWARD_SOURCES = (
     "mo2_update_arsenal/qt_bridge.py", "tests/test_native_qt_bridge.py",
@@ -2085,6 +2114,20 @@ def self_test() -> None:
                     prepare(self.artifacts, self.output, self.commit, self.run)
             self.assertFalse(self.output.exists())
 
+        def test_native_manager_manifest_matches_the_executed_chromium_suite(self):
+            source = ast.parse((ROOT / "tests/test_watchtower_native_ui.py").read_text("utf-8"))
+            declarations = [
+                node.value for node in source.body
+                if isinstance(node, ast.Assign)
+                and any(isinstance(target, ast.Name) and target.id == "REQUIRED" for target in node.targets)
+            ]
+            self.assertEqual(len(declarations), 1)
+            required = ast.literal_eval(declarations[0])
+            self.assertIsInstance(required, tuple)
+            self.assertTrue(all(isinstance(name, str) and name.startswith("test_") for name in required))
+            self.assertEqual(len(required), len(set(required)))
+            self.assertEqual({name.removeprefix("test_") for name in required}, NATIVE_MANAGER_CHECKS)
+
         def test_native_manager_rejects_stale_partial_or_synthetic_interaction_proof(self):
             original=public_json(self.manager_ui)
             for mutate in (
@@ -2092,6 +2135,10 @@ def self_test() -> None:
                 lambda r:r.update(sourceDirty=True),
                 lambda r:r.update(realChromium=False),
                 lambda r:r.update(skipped=1),
+                lambda r:r.update(testsRun=r["testsRun"] - 1),
+                lambda r:r.update(testsRun=r["testsRun"] + 1),
+                lambda r:r["checks"].append({"name":"unexpected_interaction", "passed":True}),
+                lambda r:r["checks"][0].update(name="unexpected_interaction"),
                 lambda r:r["sourceFiles"].update({NATIVE_MANAGER_SOURCES[0]:"0"*64}),
                 lambda r:r["checks"].pop(),
                 lambda r:r["checks"][0].update(passed=False),

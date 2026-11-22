@@ -36,7 +36,7 @@ def discover_eslifier_paths(organizer, game: str, configured=()) -> list[str]:
     return list(dict.fromkeys(paths))[:4]
 
 
-def native_plugin_facts(organizer, snapshot: dict) -> tuple[list[dict] | None, dict, list[str]]:
+def native_plugin_facts(organizer, snapshot: dict, *, resolve_paths: bool = True) -> tuple[list[dict] | None, dict, list[str]]:
     """Read actual winning origins and activation without walking plugin bytes."""
     plugin_list = _value(organizer, "pluginList")
     names = _value(plugin_list, "pluginNames")
@@ -64,7 +64,7 @@ def native_plugin_facts(organizer, snapshot: dict) -> tuple[list[dict] | None, d
         except (ValueError, TypeError):
             order = None
         origin = str(_value(plugin_list, "origin", name, default="") or "")
-        resolved = str(_value(organizer, "resolvePath", name, default="") or "")
+        resolved = str(_value(organizer, "resolvePath", name, default="") or "") if resolve_paths else ""
         active = state == 2 if state in (0, 1, 2) else None
         if active is None:
             complete = False
@@ -112,7 +112,10 @@ def native_plugin_facts(organizer, snapshot: dict) -> tuple[list[dict] | None, d
 
 
 def attach_native_plugin_state(organizer, snapshot: dict) -> dict:
-    states, rows, warnings = native_plugin_facts(organizer, snapshot)
+    # The displayed state uses origin/activation/headers, never physical paths.
+    # Resolving every VFS winner here was discarded work on MO2's UI thread.
+    # Explicit audit capture still resolves paths through the default above.
+    states, rows, warnings = native_plugin_facts(organizer, snapshot, resolve_paths=False)
     for item in snapshot.get("items", []):
         if str(item["id"]) in rows:
             item["localAnalysis"] = rows[str(item["id"])]

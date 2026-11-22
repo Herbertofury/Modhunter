@@ -22,6 +22,7 @@ SOURCES=("native/ui/watchtower.html","native/ui/watchtower.css","native/ui/watch
 REQUIRED=("test_review_preserves_complete_selection_and_exact_install_ids",
           "test_new_content_requires_an_explicit_new_target",
           "test_fomod_selection_is_explicitly_advisory",
+          "test_review_filters_show_exact_choices_without_changing_the_plan",
           "test_unknown_native_outcome_remains_visible_and_cannot_be_discarded",
           "test_support_export_uses_the_exact_preview_identity",
           "test_cleanup_requires_a_matching_preview_and_confirmation",
@@ -275,6 +276,39 @@ class NativeUiTests(base.WatchtowerBrowserTests):
         self.assertEqual(self.calls('prepareReview')[0]['value'],{'downloadId':'download-fixture','targetName':'Distinct new variant'});self.assertIn('Distinct new variant',self.page.locator('#nativeReviewTarget').inner_text())
     def test_fomod_selection_is_explicitly_advisory(self):
         self.review('fomod');text=self.page.locator('#nativeReviewScope').inner_text();self.assertIn('advisory',text);self.assertIn('original verified archive',text)
+        self.assertIn('marked for review',self.page.locator('#nativeFileSummary').inner_text())
+
+    def test_review_filters_show_exact_choices_without_changing_the_plan(self):
+        self.review()
+        view=self.page.locator('#nativeFileView')
+        search=self.page.locator('#nativeFileSearch')
+        rows=self.page.locator('#nativeReviewFiles tr')
+        view.select_option('included')
+        search.fill('fixture-01200')
+        self.assertEqual(rows.count(),1)
+        self.assertIn('fixture-01200.dds',rows.first.inner_text())
+        view.select_option('installed')
+        self.assertEqual(rows.count(),0)
+        search.fill('')
+        self.assertEqual(rows.count(),1)
+        self.assertIn('old/installed-only.nif',rows.first.inner_text())
+        self.assertTrue(rows.first.locator('input').is_disabled())
+        view.select_option('included')
+        search.fill('fixture-01200')
+        rows.first.locator('input').press('Space')
+        self.assertEqual(rows.count(),0)
+        self.assertEqual(self.page.evaluate('document.activeElement.id'),'nativeFileView')
+        view.select_option('excluded')
+        self.assertIn('fixture-01200.dds',rows.first.inner_text())
+        self.assertEqual(self.calls('saveReviewSelection'),[])
+        self.assertEqual(self.calls('installReview'),[])
+        self.page.locator('#nativeSelectionSave').click()
+        self.page.wait_for_function('__WATCH_FIX__.calls.some(c=>c.kind==="saveReviewSelection")')
+        selection=self.calls('saveReviewSelection')[0]['value']
+        self.assertEqual(selection['reviewId'],'review-1000-1')
+        self.assertNotIn('textures/fixture-01200.dds',selection['selected'])
+        self.assertIn('textures/fixture-01204.dds',selection['selected'])
+        self.assertEqual(self.calls('installReview'),[])
     def test_unknown_native_outcome_remains_visible_and_cannot_be_discarded(self):
         self.review('unknown');self.page.locator('#nativeInstallReview').click();self.page.locator('#confirmProceed').click();self.page.wait_for_function('__WATCH_FIX__.native.review.submitted')
         self.assertTrue(self.page.locator('#nativeInstallReview').is_disabled());self.page.locator('[data-native-close="nativeReviewDialog"]').first.click();self.page.locator('#nativeRefreshJobs').click();self.page.wait_for_selector('[data-native-action="open-review"]')

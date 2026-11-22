@@ -2,6 +2,7 @@ from copy import deepcopy
 import threading
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from mo2_update_arsenal.notification_facts import collect, facts
 
@@ -55,6 +56,58 @@ class NotificationFactsTests(unittest.TestCase):
         self.item["update"]["availability"] = "available"
         self.item["source"]["verified"] = False
         self.assertEqual(self.result()["facts"], [])
+
+    def test_invalid_row_evidence_never_hides_other_current_notices_or_changes_order(self):
+        final = deepcopy(self.item)
+        final["id"] = "live-last"
+        final["installedVersion"] = "2.1"
+        final["update"]["latestVersion"] = "3.0"
+        expected = collect({**self.snapshot, "items": [self.item, final]}, self.context, now=1000)
+        self.assertEqual([row["itemId"] for row in expected["facts"]], ["live-exact", "live-last"])
+        for changes in ({"expiresAt": 1e308}, {"expiresAt": 10**400},
+                        {"checkedAt": 10**400}, {"expiresAt": float("nan")},
+                        {"expiresAt": (1 << 64) // 1000 + 1},
+                        {"freshness": ["fresh"]}, {"compatibility": "matched"},
+                        {"compatibility": {"status": ["matched"]}},
+                        {"checkedAt": 1000.0001, "expiresAt": 1000.0002},
+                        {"checkedAt": 0.0001, "expiresAt": 1001}):
+            with self.subTest(changes=changes):
+                malformed = deepcopy(self.item)
+                malformed["id"] = "live-unverified"
+                malformed["update"].update(changes)
+                mixed = {**self.snapshot, "items": [self.item, malformed, final]}
+                self.assertEqual(collect(mixed, self.context, now=1000), expected)
+
+    def test_smallest_emitted_window_is_ordered_in_rust_integer_milliseconds(self):
+        self.item["update"].update(checkedAt=1000, expiresAt=1000.001)
+        facts_now = self.result()
+        self.assertEqual(facts_now["capturedAt"], 1000000)
+        row, = facts_now["facts"]
+        self.assertEqual((row["checkedAt"], row["expiresAt"]), (1000000, 1000001))
+        self.assertEqual(row["installedVersion"], "1.0")
+        self.assertEqual(row["latestVersion"], "2.0")
+        self.assertFalse(collect(self.snapshot, self.context, now=1000.001)["facts"])
+
+    def test_bulk_unverified_evidence_is_not_a_service_error_but_exact_notice_needs_proof(self):
+        self.item["update"]["expiresAt"] = 1e308
+        content = SimpleNamespace(_lock=threading.RLock(), _contexts={})
+        def capture(*_args, **_kwargs):
+            content._contexts["captured"] = deepcopy(self.context)
+            return {"ok": True, "contextId": "captured"}
+        content.capture = capture
+        content._context = lambda key: content._contexts[key]
+        service = SimpleNamespace(content=content, _guard=threading.RLock(), _generation=1,
+                                  _stopped=False, snapshot=lambda: self.snapshot,
+                                  selection_snapshot=lambda _ids: self.snapshot)
+        with patch("mo2_update_arsenal.notification_facts.time.time", return_value=1000):
+            bulk = facts(service)
+            self.assertTrue(bulk["ok"])
+            self.assertEqual(bulk["facts"], [])
+            self.assertEqual(content._contexts, {})
+            exact = facts(service, "live-exact")
+            self.assertFalse(exact["ok"])
+            self.assertIn("no longer has the verified current update fact", exact["error"])
+            self.assertEqual(content._contexts, {})
 
     def test_profile_runtime_and_duplicate_identity_invalidates_complete_result(self):
         for key, changed in (("profileId", "other"), ("gameRuntime", "other"), ("executionEpoch", 4)):

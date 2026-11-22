@@ -18,6 +18,10 @@ class Element{
  append(...children){this.children.push(...children)}
  replaceChildren(...children){this.children=[...children];this.innerHTML=''}
  addEventListener(name,fn){this.events[name]=fn}
+ setAttribute(key,value){this[key]=value}
+ querySelectorAll(){return []}
+ showModal(){this.open=true}
+ focus(){this.focused=true}
 }
 function makeContext(extra={}){
  const elements=new Map();
@@ -88,7 +92,7 @@ test('complete mod groups and file groups retain every page and correct physical
 function reviewRuntime(){
  const elements=new Map(),windowEvents=new Map(),documentEvents=new Map(),timers=new Map(),calls=[];
  const state={reviews:{rows:[],preparing:[]},settings:{hideTitles:false}};
- const jobs={current:[],read:null};let tick=0,sequence=0,visibilityChanged,serializations=0,scope=null;
+ const jobs={current:[],read:null},plan={current:null};let tick=0,sequence=0,visibilityChanged,serializations=0,scope=null;
  const element=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id)};
  const downloads=element('downloadsView'),history=element('nativeJobs');
  const document={hidden:false,body:new Element(),activeElement:null,getElementById:element,
@@ -98,6 +102,10 @@ function reviewRuntime(){
    calls.push({kind,value});
    if(kind==='contentJobs')return {ok:true,operations:{jobs:jobs.read?await jobs.read():jobs.current}};
    if(kind==='cancelContentJob'){jobs.current=jobs.current.map(row=>({...row,state:'cancelled'}));return {ok:true}}
+   if(kind==='openReview')return {ok:true,review:plan.current};
+   if(kind==='saveReviewSelection'){
+    plan.current={...plan.current,selected:[...value.selected]};return {ok:true,review:plan.current};
+   }
    throw Error('Unexpected native command: '+kind);
   }};
  const window={ModhunterWatchtower:api,addEventListener:(kind,callback)=>windowEvents.set(kind,callback)};
@@ -118,7 +126,7 @@ function reviewRuntime(){
  const changeScope=(revision,profileId)=>{scope={revision,scope:profileId?{profileId,executionEpoch:revision}:null};windowEvents.get('modhunter-install-queue-context')?.()};
  const pane=hidden=>{downloads.hidden=hidden;visibilityChanged?.()};
  const windowHidden=hidden=>{document.hidden=hidden;documentEvents.get('visibilitychange')?.()};
- return {state,jobs,history,calls,timers,advance,publish,pane,windowHidden,element,documentEvents,changeScope,
+ return {state,jobs,plan,history,calls,timers,advance,publish,pane,windowHidden,element,documentEvents,changeScope,
   serializations:()=>serializations,readCount:()=>calls.filter(call=>call.kind==='contentJobs').length};
 }
 
@@ -214,4 +222,36 @@ test('a manual read after A/B/A does not reuse or render the earlier in-flight o
  replies.shift()([job('B','Private wrong-profile B'),job('A','Current A receipt')]);await ui.advance(0);
  assert.match(ui.history.innerHTML,/Current A receipt/);
  assert.doesNotMatch(ui.history.innerHTML,/Private/);
+});
+
+test('archive review filters audit the full plan without changing consent or hidden selections',async()=>{
+ const ui=reviewRuntime(),entries=Array.from({length:1205},(_,i)=>({path:'textures/fixture-'+i+'.dds',bytes:1,state:'add',selectable:true,selectedDefault:i===10||i===1200}));
+ entries.push({path:'old/installed-only.nif',bytes:1,state:'notInArchive',selectable:false});
+ const selected=[entries[10].path,entries[1200].path];
+ ui.plan.current={id:'review-exact',context:{},archive:{sha256:'a'.repeat(64)},layout:'gameData',selected,entries};
+ const open=()=>{const button={dataset:{nativeAction:'open-review',reviewId:'review-exact'}};ui.documentEvents.get('click')({target:{closest:selector=>selector==='[data-native-action]'?button:null}})};
+ open();await ui.advance(0);
+ const table=ui.element('nativeReviewFiles'),view=ui.element('nativeFileView'),search=ui.element('nativeFileSearch');
+ const paths=()=>table.children.map(row=>row.children[1].textContent);
+ const choose=value=>{view.value=value;view.onchange?.({target:view})};
+ const find=value=>{search.value=value;search.oninput({target:search})};
+ assert.equal(paths().length,100);
+ choose('included');assert.deepEqual(paths(),selected,'all selected rows, even on a later page, are auditable');
+ find('fixture-1200');assert.deepEqual(paths(),[selected[1]]);
+ choose('installed');assert.deepEqual(paths(),[]);
+ find('');assert.deepEqual(paths(),['old/installed-only.nif']);
+ assert.equal(table.children[0].children[0].children[0].disabled,true);
+ choose('included');find('fixture-1200');
+ const check=table.children[0].children[0].children[0];check.checked=false;check.events.change();
+ assert.deepEqual(paths(),[]);assert.equal(view.focused,true);
+ choose('excluded');assert.deepEqual(paths(),[selected[1]]);
+ assert.deepEqual(ui.calls.map(x=>x.kind),['openReview']);
+ ui.element('nativeRememberExclusions').checked=false;
+ ui.element('nativeSelectionSave').onclick();await ui.advance(0);
+ assert.deepEqual(JSON.parse(JSON.stringify(ui.calls.at(-1))),{kind:'saveReviewSelection',value:{reviewId:'review-exact',selected:[selected[0]],rememberOptional:false}});
+ open();await ui.advance(0);assert.equal(view.value,'all');assert.equal(search.value,'');assert.equal(paths().length,100);
+
+ ui.plan.current={...ui.plan.current,requiresInstaller:true,layout:'needsReview'};
+ open();await ui.advance(0);assert.match(ui.element('nativeFileSummary').textContent,/1 incoming files marked for review/);
+ assert.equal(ui.calls.some(x=>x.kind==='installReview'),false);
 });

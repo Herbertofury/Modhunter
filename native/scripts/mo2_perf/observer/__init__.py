@@ -75,10 +75,12 @@ class Bench(mobase.IPlugin):
         breadcrumb("callback-registered",accepted=accepted is not False)
         return accepted is not False
 
-    def ui_ready(self):
+    def ui_ready(self, window):
+        # MO2 supplies the native QMainWindow on this one-argument callback.
+        self._main_window = window
         self.phase="native-ui-callback"
         breadcrumb("native-ui-callback")
-        return self.queue(0,self.start)
+        self.queue(0,self.start)
 
     def write(self,name,row):
         tmp=self.events/(name+".write")
@@ -106,8 +108,9 @@ class Bench(mobase.IPlugin):
         if not windows and self.attempts<100:
             self.queue(25,self.start)
             return
-        need(len(windows)==1 and self.org.profileName()=="Modhunter Smoke", "main fixture window/profile absent")
-        win=windows[0]
+        need(len(windows)==1 and windows[0] == self._main_window
+             and self.org.profileName()=="Modhunter Smoke", "callback's main fixture window/profile absent")
+        win=self._main_window
         self.list=win.findChild(QtWidgets.QTreeView,"modList")
         self.filter=win.findChild(QtWidgets.QLineEdit,"modFilterEdit")
         self.tabs=win.findChild(QtWidgets.QTabWidget,"tabWidget")

@@ -86,6 +86,41 @@ class BenchmarkContract(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError,"unsafe published"):
                 p.published_manifest(z,p.sha(z))
 
+    def test_native_ui_registration_requires_and_uses_one_window_argument(self):
+        import importlib.util
+        import inspect
+        import os
+        import sys
+        import types
+        from unittest.mock import patch
+
+        host_binding=types.ModuleType("mobase")
+        host_binding.IPlugin=object
+        qt=types.ModuleType("PyQt6")
+        qt.QtCore=qt.QtGui=qt.QtWidgets=object()
+        spec=importlib.util.spec_from_file_location(
+            "mo2_pilot_observer_contract",Path(p.__file__).parent/"observer/__init__.py"
+        )
+        module=importlib.util.module_from_spec(spec)
+        with patch.dict(sys.modules,{"mobase":host_binding,"PyQt6":qt}), patch.dict(os.environ,{"MO2_BENCH_DIAGNOSTIC":"0"}):
+            spec.loader.exec_module(module)
+        window=object()
+        class Organizer:
+            def onUserInterfaceInitialized(self, callback):
+                # Contract double for the verified one-QMainWindow Mobase ABI.
+                inspect.signature(callback).bind(window)
+                self.callback=callback
+                return True
+        observer=module.Bench.__new__(module.Bench)
+        organizer=Organizer()
+        scheduled=[]
+        observer.queue=lambda delay,action: scheduled.append((delay,action))
+        self.assertTrue(observer.init(organizer))
+        self.assertEqual([],scheduled)
+        self.assertIsNone(organizer.callback(window))
+        self.assertIs(window,observer._main_window)
+        self.assertEqual([(0,observer.start)],scheduled)
+
     def test_first_observer_failure_does_not_wait_for_ready_timeout(self):
         class Alive:
             def poll(self): return None

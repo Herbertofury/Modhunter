@@ -85,6 +85,15 @@ jobs:
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python -m unittest discover -s tests -p test_watchtower_sources_ui.py -v
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/test_watchtower_native_ui.py
           PYTHONPATH=. MODHUNTER_QA_OUTPUT=/tmp/modhunter-proof /tmp/modhunter-qa/bin/python tests/ci_font_rendering_qa.py
+          # The pinned benchmark can outlive this job's shallow checkout.
+          benchmark_app="63e5df3e3ef218ae72ce58b5e4502165c40ca604:mo2_update_arsenal/web/app.js"
+          if ! git cat-file -e "$benchmark_app" 2>/dev/null; then
+            git fetch --no-tags --no-recurse-submodules --depth=1 origin "${benchmark_app%%:*}"
+          fi
+          if [ "$(git cat-file -t "$benchmark_app")" != blob ]; then
+            echo "Missing pinned dashboard benchmark source: $benchmark_app" >&2
+            exit 1
+          fi
           PYTHONPATH=. /tmp/modhunter-qa/bin/python scripts/benchmark_dashboard_render.py --baseline-ref 63e5df3e3ef218ae72ce58b5e4502165c40ca604 --output /tmp/modhunter-proof/dashboard-render-comparison.json
       - name: Upload browser proof
         if: always()

@@ -36,6 +36,20 @@ def need(ok, reason):
         raise RuntimeError(reason)
 
 
+def need_fixture_plugins(filenames, names, active, expected_count):
+    fixtures=set(filenames)
+    expected=set(filenames[:expected_count])
+    present=fixtures & names
+    missing=fixtures-names
+    inactive=expected-active
+    unexpected=(active & fixtures)-expected
+    need(not(missing or inactive or unexpected),
+         f"native fixture ESPs {len(present)}/{len(fixtures)}, active {len(active & fixtures)}/{expected_count}; "
+         f"missing rows ({len(missing)}): {sorted(missing)[:8]}; "
+         f"expected-active but inactive ({len(inactive)}): {sorted(inactive)[:8]}; "
+         f"unexpectedly active ({len(unexpected)}): {sorted(unexpected)[:8]}")
+
+
 class Bench(mobase.IPlugin):
     def __init__(self):
         super().__init__()
@@ -158,8 +172,7 @@ class Bench(mobase.IPlugin):
         pl=self.org.pluginList()
         names=set(pl.pluginNames())
         active={name for name in filenames if pl.state(name)==mobase.PluginState.ACTIVE}
-        need(set(filenames)<=names and active==set(filenames[:min(32,self.size//5)]),
-             "native plugin rows or fixture active set differ from staged lists")
+        need_fixture_plugins(filenames,names,active,min(32,self.size//5))
         self.write("burst",{"native_vfs_verified":len(filenames),
                             "native_fixture_esp_rows":len(names.intersection(filenames)),
                             "active_fixture_plugins":len(active)})

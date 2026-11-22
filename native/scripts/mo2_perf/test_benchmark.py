@@ -120,6 +120,15 @@ class BenchmarkContract(unittest.TestCase):
         self.assertIsNone(organizer.callback(window))
         self.assertIs(window,observer._main_window)
         self.assertEqual([(0,observer.start)],scheduled)
+        module.need_fixture_plugins(["Bench0000.esp","Bench0001.esp"],
+                                    {"Bench0000.esp","Bench0001.esp","unrelated.esp"},
+                                    {"Bench0000.esp"},1)
+        with self.assertRaisesRegex(RuntimeError,
+                     r"ESPs 1/2, active 1/1.*missing rows \(1\): .*Bench0000.*"
+                     r"expected-active but inactive \(1\): .*Bench0000.*unexpectedly active \(1\): .*Bench0001") as failure:
+            module.need_fixture_plugins(["Bench0000.esp","Bench0001.esp"],
+                                    {"Bench0001.esp","unrelated.esp"},{"Bench0001.esp"},1)
+        self.assertNotIn("unrelated.esp",str(failure.exception))
 
     def test_first_observer_failure_does_not_wait_for_ready_timeout(self):
         class Alive:
@@ -166,8 +175,12 @@ class BenchmarkContract(unittest.TestCase):
         host.ModDataChecker=type("ModDataChecker",(),{})
         host.GamePlugins=type("GamePlugins",(),{})
         host.PluginState=types.SimpleNamespace(ACTIVE="active",INACTIVE="inactive")
+        host.LoadOrderMechanism=types.SimpleNamespace(Unsupported="none",PluginsTxt="plugins.txt")
         base=types.ModuleType("pilot_fake.basic_game")
         class BasicGame:
+            def loadOrderMechanism(self):
+                # Inherited MO2 IPluginGame default.
+                return host.LoadOrderMechanism.Unsupported
             def init(self, organizer):
                 self.organizer=organizer
                 return True
@@ -190,7 +203,10 @@ class BenchmarkContract(unittest.TestCase):
                     states={name:"inactive" for name in names}
                     def pluginNames(self): return names
                     def state(self,n): return self.states[n]
-                    def setState(self,n,state): self.states[n]=state
+                    def setState(self,n,state):
+                        # MO2 2.5.2 PluginList force-disables ordinary ESPs
+                        # when the game's load-order mechanism is None.
+                        self.states[n]=state if game.loadOrderMechanism()==host.LoadOrderMechanism.PluginsTxt else "inactive"
                     def setLoadOrder(self,n): self.order=list(n)
                     def priority(self,n): return self.order.index(n)
                 namespace={"__name__":"pilot_fake.games.fixture","__package__":"pilot_fake.games"}
@@ -199,7 +215,8 @@ class BenchmarkContract(unittest.TestCase):
                 with patch.dict(sys.modules,{"mobase":host,"pilot_fake.basic_game":base}),patch.dict(os.environ,env):
                     exec(p.game_fixture_source(fixture,addon),namespace)
                     organizer=Organizer()
-                    self.assertTrue(namespace["ModhunterSmokeGame"]().init(organizer))
+                    game=namespace["ModhunterSmokeGame"]()
+                    self.assertTrue(game.init(organizer))
                     self.assertEqual(2,len(organizer.providers))
                     feature=organizer.providers[1]
                     self.assertIsInstance(feature,host.GamePlugins)

@@ -134,7 +134,11 @@ def game_fixture_source(shim, addon):
     register=(b"        self._benchmark_plugins = BenchmarkGamePlugins(organizer)\n"
               b"        return (bool(self._register_feature(self._fixture_data_checker))\n"
               b"                and bool(self._register_feature(self._benchmark_plugins)))")
-    staged=original.replace(anchor,extension+b"\n\n"+anchor).replace(hook,register)
+    # BasicGame inherits MO2's None load-order mechanism. MO2 2.5.2
+    # force-disables ordinary ESPs in that mode, even with a GamePlugins feature.
+    fixture_class=(anchor+b"\n    def loadOrderMechanism(self):\n"
+                   b"        return mobase.LoadOrderMechanism.PluginsTxt\n")
+    staged=original.replace(anchor,extension+b"\n\n"+fixture_class).replace(hook,register)
     compile(staged,"<staged MO2 benchmark BasicGame>","exec")
     return staged
 

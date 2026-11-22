@@ -23,6 +23,7 @@ REQUIRED=("test_review_preserves_complete_selection_and_exact_install_ids",
           "test_new_content_requires_an_explicit_new_target",
           "test_fomod_selection_is_explicitly_advisory",
           "test_review_filters_show_exact_choices_without_changing_the_plan",
+          "test_remembered_optional_exclusions_do_not_follow_another_review",
           "test_unknown_native_outcome_remains_visible_and_cannot_be_discarded",
           "test_support_export_uses_the_exact_preview_identity",
           "test_cleanup_requires_a_matching_preview_and_confirmation",
@@ -309,6 +310,41 @@ class NativeUiTests(base.WatchtowerBrowserTests):
         self.assertNotIn('textures/fixture-01200.dds',selection['selected'])
         self.assertIn('textures/fixture-01204.dds',selection['selected'])
         self.assertEqual(self.calls('installReview'),[])
+    def test_remembered_optional_exclusions_do_not_follow_another_review(self):
+        self.review()
+        dialog=self.page.locator('#nativeReviewDialog')
+        remember=dialog.locator('#nativeRememberExclusions')
+        remember.check()
+        dialog.locator('#nativeFileView').select_option('excluded')
+        self.assertTrue(remember.is_checked())
+        dialog.locator('#nativeSelectionSave').click()
+        self.page.wait_for_function('__WATCH_FIX__.calls.filter(c=>c.kind==="saveReviewSelection").length===1 && !document.getElementById("nativeSelectionSave").disabled')
+        self.assertTrue(self.calls('saveReviewSelection')[0]['value']['rememberOptional'])
+        dialog.locator('[data-native-close="nativeReviewDialog"]').first.click()
+        self.page.evaluate("""() => {
+            const f=window.__WATCH_FIX__, previous=f.native.review;
+            f.native.review={...previous,id:'review-1000-2',filename:'Second fixture.zip',
+                archive:{...previous.archive,sha256:'b'.repeat(64)},
+                context:{...previous.context,target:{...previous.context.target,itemId:'mod-2',modName:'Second fixture mod'}},
+                selected:[...previous.selected,'docs/readme.txt']};
+            f.state.reviews.rows=[f.native.review];f.publish();
+        }""")
+        self.page.locator('[data-native-action="open-review"][data-review-id="review-1000-2"]').click()
+        self.page.wait_for_selector('#nativeReviewDialog[open]')
+        dialog.locator('#nativeSelectionSave').click()
+        self.page.wait_for_function('__WATCH_FIX__.calls.filter(c=>c.kind==="saveReviewSelection").length===2')
+        second=self.calls('saveReviewSelection')[1]['value']
+        self.assertEqual(second['reviewId'],'review-1000-2')
+        self.assertIn('docs/readme.txt',second['selected'])
+        self.assertFalse(second['rememberOptional'])
+        self.assertFalse(remember.is_checked())
+        self.assertEqual(self.calls('installReview'),[])
+        dialog.locator('#nativeInstallReview').click()
+        self.page.locator('#confirmProceed').click()
+        self.page.wait_for_function('__WATCH_FIX__.calls.some(c=>c.kind==="installReview")')
+        self.assertFalse(self.calls('saveReviewSelection')[2]['value']['rememberOptional'])
+        self.assertEqual(self.calls('installReview')[0]['value'],{'reviewId':'review-1000-2','confirm':'INSTALL'})
+
     def test_unknown_native_outcome_remains_visible_and_cannot_be_discarded(self):
         self.review('unknown');self.page.locator('#nativeInstallReview').click();self.page.locator('#confirmProceed').click();self.page.wait_for_function('__WATCH_FIX__.native.review.submitted')
         self.assertTrue(self.page.locator('#nativeInstallReview').is_disabled());self.page.locator('[data-native-close="nativeReviewDialog"]').first.click();self.page.locator('#nativeRefreshJobs').click();self.page.wait_for_selector('[data-native-action="open-review"]')

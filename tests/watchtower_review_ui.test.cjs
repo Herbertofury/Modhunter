@@ -21,6 +21,7 @@ class Element{
  setAttribute(key,value){this[key]=value}
  querySelectorAll(){return []}
  showModal(){this.open=true}
+ close(){this.open=false}
  focus(){this.focused=true}
 }
 function makeContext(extra={}){
@@ -98,6 +99,7 @@ function reviewRuntime(){
  const document={hidden:false,body:new Element(),activeElement:null,getElementById:element,
   createElement:tag=>new Element(tag),addEventListener:(kind,callback)=>documentEvents.set(kind,callback)};
  const api={state:()=>state,installQueueContext:()=>scope,esc:value=>String(value??''),showToast(){},
+  async confirmAction(){return false},
   async command(kind,value){
    calls.push({kind,value});
    if(kind==='contentJobs')return {ok:true,operations:{jobs:jobs.read?await jobs.read():jobs.current}};
@@ -254,4 +256,46 @@ test('archive review filters audit the full plan without changing consent or hid
  ui.plan.current={...ui.plan.current,requiresInstaller:true,layout:'needsReview'};
  open();await ui.advance(0);assert.match(ui.element('nativeFileSummary').textContent,/1 incoming files marked for review/);
  assert.equal(ui.calls.some(x=>x.kind==='installReview'),false);
+});
+
+
+test('optional documentation memory requires a fresh opt-in on each exact archive review',async()=>{
+ const ui=reviewRuntime(),remember=ui.element('nativeRememberExclusions');
+ const entries=[
+  {path:'textures/fixture.dds',bytes:1,state:'add',selectable:true,selectedDefault:true},
+  {path:'docs/readme.txt',bytes:2,state:'add',selectable:true,optional:true}
+ ];
+ const first={id:'review-a',filename:'First.zip',context:{profileId:'profile-a',target:{modName:'First'}},archive:{sha256:'a'.repeat(64)},layout:'gameData',entries,selected:[entries[0].path]};
+ const second={...first,id:'review-b',filename:'Other.zip',context:{profileId:'profile-a',target:{modName:'Other'}},archive:{sha256:'b'.repeat(64)},selected:entries.map(row=>row.path)};
+ const click=(selector,button)=>ui.documentEvents.get('click')({target:{closest:key=>key===selector?button:null}});
+ const open=async plan=>{ui.plan.current=plan;click('[data-native-action]',{dataset:{nativeAction:'open-review',reviewId:plan.id}});await ui.advance(0)};
+ const close=()=>click('[data-native-close]',{dataset:{nativeClose:'nativeReviewDialog'}});
+ const save=async()=>{ui.element('nativeSelectionSave').onclick();await ui.advance(0)};
+ const writes=()=>ui.calls.filter(call=>call.kind==='saveReviewSelection').map(call=>JSON.parse(JSON.stringify(call.value)));
+ // Model only the Rust save opcode: true replaces this scope's policy, even
+ // when the selected paths leave no optional exclusion to remember.
+ const applyWrites=()=>{const policies={'review-b':['previously-excluded.txt']};
+  for(const {reviewId,selected,rememberOptional} of writes())if(rememberOptional)policies[reviewId]=entries.filter(e=>e.optional&&!selected.includes(e.path)).map(e=>e.path);
+  return policies;
+ };
+ await open(first);remember.checked=true;
+ const view=ui.element('nativeFileView');view.value='excluded';view.onchange({target:view});
+ assert.equal(remember.checked,true,'filters in the same review must preserve the user’s opt-in');
+ await save();close();
+ assert.deepEqual(writes(),[{reviewId:first.id,selected:first.selected,rememberOptional:true}]);
+ assert.deepEqual(applyWrites()[first.id],['docs/readme.txt']);
+
+ await open(second);await save();
+ assert.equal(writes()[1].reviewId,second.id);
+ assert.deepEqual(applyWrites()[second.id],['previously-excluded.txt'],'saving a different archive must not overwrite its existing remembered policy');
+ assert.equal(remember.checked,false);
+ ui.element('nativeInstallReview').onclick();await ui.advance(0);
+ assert.equal(writes()[2].rememberOptional,false,'the install review pre-save also must not persist another review’s opt-in');
+ assert.equal(ui.calls.some(call=>call.kind==='installReview'),false,'confirmation was declined');
+
+ remember.checked=true;await save();
+ assert.equal(writes()[3].rememberOptional,true);
+ assert.deepEqual(applyWrites()[second.id],[],'an explicit newly checked opt-in may replace the current target policy');
+ close();await open(first);await save();
+ assert.equal(writes()[4].rememberOptional,false,'reopening an earlier review is not a new opt-in');
 });

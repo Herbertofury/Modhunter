@@ -68,6 +68,28 @@ native fixture VFS lookups, filtering, tab navigation and clean exit.
 If it does not, identify the precise incompatibility and keep the gate
 unqualified; do not weaken checks to get a green badge.
 
+## First-host startup diagnostics
+
+The exact first [pilot run](https://github.com/Herbertofury/Modhunter/actions/runs/45056183809)
+failed in the 40-mod **absent** arm: process alive, no native ready or observer
+result. Neither installed arm ran. There is no demonstrated cause or measured
+regression. First-host failure retention now captures the already owned MO2
+PID's bounded top-level caption/class and redacted fixture-local MO2 and NXM
+output before terminating that child; it does not inspect other applications.
+A failure receipt bypasses neither the existing readiness check nor timing
+constraints. Preflight-only import/factory/registration/Qt-phase breadcrumbs
+and child output distinguish load and UI initialization failures; the full
+performance run does not add those startup trace writes.
+
+To match the independently successful native smoke setup and stock MO2's
+global fixture preference lookup, create exact noregister=true in both the
+portable clone and an exclusive fresh runner-only %LOCALAPPDATA%/ModOrganizer
+directory. Require an ownership marker and unmodified preference before/after
+every trial, do not overwrite an existing directory, and refuse existing or
+new NXM protocol registration. No registry writes. This matches the known
+control; absence of the global preference on the failed trial is not proven to
+have caused a modal prompt (the helper also supports a portable fallback).
+
 ## Measurement and limits
 
 Each full run is 36 sequential fresh portable launches: at 40 and 1,000 mods,
@@ -109,7 +131,7 @@ and never launched. No accounts, downloads through MO2, owner profile or game.
   Full owned-fixture results, existing native contracts/workflows, and any
   remaining feature/scale verification remain prerequisites before a release.
 
-Local evidence: eight stdlib tests including both fixture counts, exact
+Local evidence: 11 stdlib tests including both fixture counts, exact
 42-byte headers, hashes/ZIP safety, all balanced pairs, rejects invalid/noisy
 inputs, and tail-versus-average math; Python modules syntax-compiled; proposed
 YAML structurally validated. No PowerShell, Win32/MO2 process, Qt widgets,

@@ -7,8 +7,28 @@ import sys
 import time
 import traceback
 
-import mobase
-from PyQt6 import QtCore, QtGui, QtWidgets
+def breadcrumb(phase, **values):
+    env=os.environ
+    if (env.get("MO2_BENCH_DIAGNOSTIC") != "1" or env.get("GITHUB_ACTIONS")!="true"
+            or env.get("RUNNER_ENVIRONMENT")!="github-hosted"):
+        return
+    root=Path(env["MO2_BENCH_ROOT"]).resolve(strict=True)
+    events=Path(env["MO2_BENCH_EVENTS"]).resolve(strict=True)
+    if Path(__file__).resolve().parents[2]!=root or events!=root.parent/"events":
+        return
+    p=events/("startup-"+phase+".json")
+    with p.open("x",encoding="utf-8") as f:
+        json.dump({"phase":phase,"pid":os.getpid(),**values},f)
+
+
+breadcrumb("module-entered")
+try:
+    import mobase
+    from PyQt6 import QtCore, QtGui, QtWidgets
+except Exception as error:
+    breadcrumb("native-import-failed",error_type=type(error).__name__)
+    raise
+breadcrumb("native-imports-ready")
 
 
 def need(ok, reason):
@@ -32,6 +52,7 @@ class Bench(mobase.IPlugin):
         self.size = int(env["MO2_BENCH_SIZE"])
         self.quiet = int(env["MO2_BENCH_QUIET"])
         self.steps = int(env["MO2_BENCH_STEPS"])
+        self.phase = "constructor"
         need(self.size in (40,1000) and self.quiet==20 and self.steps==48,"unexpected test scope")
         self.work = []
         self.attempts = 0
@@ -44,7 +65,20 @@ class Bench(mobase.IPlugin):
     def isActive(self): return True
     def init(self, organizer):
         self.org=organizer
-        return organizer.onUserInterfaceInitialized(lambda: self.queue(0,self.start)) is not False
+        self.phase = "organizer-init"
+        breadcrumb("organizer-init")
+        try:
+            accepted=organizer.onUserInterfaceInitialized(self.ui_ready)
+        except Exception as error:
+            breadcrumb("callback-registration-failed",error_type=type(error).__name__)
+            raise
+        breadcrumb("callback-registered",accepted=accepted is not False)
+        return accepted is not False
+
+    def ui_ready(self):
+        self.phase="native-ui-callback"
+        breadcrumb("native-ui-callback")
+        return self.queue(0,self.start)
 
     def write(self,name,row):
         tmp=self.events/(name+".write")
@@ -58,13 +92,16 @@ class Bench(mobase.IPlugin):
         def guarded():
             try: fn()
             except Exception:
-                self.write("result",{"ok":False,"error":traceback.format_exc(limit=8)})
+                self.write("result",{"ok":False,"phase":self.phase,"error":traceback.format_exc(limit=8)})
                 QtCore.QCoreApplication.quit()
         QtCore.QTimer.singleShot(delay,guarded)
         return True  # Preserve a concrete native callback result.
 
     def start(self):
+        self.phase="native-list-start"
         self.attempts+=1
+        if self.attempts==1:
+            breadcrumb("first-qt-callback")
         windows=[w for w in QtWidgets.QApplication.topLevelWidgets() if w.objectName()=="MainWindow" and w.isVisible()]
         if not windows and self.attempts<100:
             self.queue(25,self.start)
@@ -97,6 +134,7 @@ class Bench(mobase.IPlugin):
         self.queue(self.quiet*1000,self.burst)
 
     def burst(self):
+        self.phase="fixture-vfs"
         # Verify representative source capacity before timing. This controlled
         # pass does not assert gameplay validity or count ModHunter internals.
         mods=self.root/"instance"/"mods"
@@ -118,6 +156,7 @@ class Bench(mobase.IPlugin):
         self.queue(150,self.step)
 
     def step(self):
+        self.phase="ordinary-native-actions"
         if len(self.work)==self.steps:
             need(not self.filter.text() and self.list.model().rowCount()>=self.size, "original list was not restored")
             self.write("result",{"ok":True,"work_ms":self.work})
@@ -158,4 +197,11 @@ class Bench(mobase.IPlugin):
 
 
 def createPlugin():
-    return Bench()
+    breadcrumb("factory-entered")
+    try:
+        observer=Bench()
+    except Exception as error:
+        breadcrumb("factory-failed",error_type=type(error).__name__)
+        raise
+    breadcrumb("factory-ready")
+    return observer

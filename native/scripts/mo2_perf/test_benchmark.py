@@ -86,6 +86,40 @@ class BenchmarkContract(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError,"unsafe published"):
                 p.published_manifest(z,p.sha(z))
 
+    def test_first_observer_failure_does_not_wait_for_ready_timeout(self):
+        class Alive:
+            def poll(self): return None
+        with tempfile.TemporaryDirectory() as tmp:
+            events=Path(tmp)
+            p.dump_new(events/"result.json",{"ok":False,"phase":"native-list-start"})
+            with self.assertRaisesRegex(RuntimeError,"native observer stopped before ready.json: native-list-start"):
+                p.wait_file(events/"ready.json",Alive(),.1)
+
+    def test_nxm_setup_never_reuses_or_changes_another_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)/"ModOrganizer"
+            p.stage_nxm(root,"own-fixture")
+            p.nxm_fixture(root,"own-fixture")
+            with self.assertRaisesRegex(RuntimeError,"existing global MO2 data"):
+                p.stage_nxm(root,"another-fixture")
+            with self.assertRaisesRegex(RuntimeError,"owner"):
+                p.nxm_fixture(root,"another-fixture")
+            (root/"nxmhandler.ini").write_text("[General]\nnoregister=false\n")
+            with self.assertRaisesRegex(RuntimeError,"preference changed"):
+                p.nxm_fixture(root,"own-fixture")
+            self.assertIn("false",(root/"nxmhandler.ini").read_text())
+
+    def test_log_tail_bound_and_known_private_literal_filter(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            pth=root/"child.stdout"
+            pth.write_bytes(b"x"*20000+b"last: "+str(root).encode()+b" Bearer pretendsecret")
+            tail=p.log_tail(pth,[(root,"<FIXTURE>")],128)
+            self.assertLessEqual(len(tail),128)
+            self.assertIn("<FIXTURE> Bearer [REDACTED]",tail)
+            self.assertNotIn(str(root),tail)
+            self.assertNotIn("pretendsecret",tail)
+
     def test_runtime_intake_refuses_symlink_and_bytes_over_limit(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)

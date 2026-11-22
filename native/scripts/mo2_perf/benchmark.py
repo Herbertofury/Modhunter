@@ -164,6 +164,27 @@ class Win:
         self.k.CloseHandle.restype=W.BOOL
         self.k.GetProcessTimes.argtypes=(W.HANDLE,)+(C.POINTER(W.FILETIME),)*4
         self.k.GetProcessTimes.restype=W.BOOL
+    def owned_windows(self,pid,roots):
+        winproc=C.WINFUNCTYPE(W.BOOL,W.HWND,W.LPARAM)
+        self.u.EnumWindows.argtypes=(winproc,W.LPARAM)
+        self.u.EnumWindows.restype=W.BOOL
+        for f in (self.u.GetWindowTextW,self.u.GetClassNameW):
+            f.argtypes=(W.HWND,W.LPWSTR,C.c_int)
+            f.restype=C.c_int
+        rows=[]
+        @winproc
+        def visit(hwnd,_):
+            if len(rows)<12 and self.pid(hwnd)==pid:
+                title=C.create_unicode_buffer(256)
+                cls=C.create_unicode_buffer(128)
+                self.u.GetWindowTextW(hwnd,title,len(title))
+                self.u.GetClassNameW(hwnd,cls,len(cls))
+                rows.append({"title":scrub(title.value,roots),"class":cls.value,
+                             "visible":bool(self.u.IsWindowVisible(hwnd))})
+            return True
+        self.u.EnumWindows(visit,0)
+        return rows
+
     def pid(self,hwnd):
         p=W.DWORD()
         self.u.GetWindowThreadProcessId(hwnd,C.byref(p))
@@ -187,18 +208,82 @@ class Win:
         finally:
             self.k.CloseHandle(handle)
 
+def scrub(text,roots):
+    for root,label in roots:
+        for spelling in {str(root),Path(root).as_posix()}:
+            text=re.sub(re.escape(spelling),lambda _:label,text,flags=re.I)
+    return re.sub(r"(?i)(bearer\s+|(?:[?&]|^)(?:key|token|code)=)[^\s&]+",r"\1[REDACTED]",text)
+
+def log_tail(path,roots,limit=8192):
+    if not path.is_file() or path.is_symlink():
+        return None
+    with path.open("rb") as f:
+        f.seek(max(0,path.stat().st_size-limit))
+        tail=f.read(limit).decode("utf-8","replace")
+    return scrub(tail,roots)
+
+def failure_receipt(events,root,pid,exit_code,win,global_root,detail):
+    roots=[(root,"<FIXTURE>"),(global_root.parent,"<LOCAL_APPDATA>")]
+    home=os.environ.get("USERPROFILE")
+    if home:
+        roots.append((home,"<HOST_HOME>"))
+    logs={}
+    for name,path in {"mo2":root/"logs/mo_interface.log",
+                      "portable_nxm":root/"nxmhandler.log",
+                      "global_fixture_nxm":global_root/"nxmhandler.log",
+                      "stderr":events/"child.stderr",
+                      "stdout":events/"child.stdout"}.items():
+        try:
+            if (tail:=log_tail(path,roots)) is not None:
+                logs[name]=tail
+        except OSError as e:
+            logs[name]="Unavailable: "+type(e).__name__
+    try:
+        windows=win.owned_windows(pid,roots)
+    except OSError:
+        windows=[]
+    dump_new(events/"runtime-failure.json",{"reason":scrub(str(detail),roots),"process_exit_code":exit_code,
+             "owned_mo2_top_level_windows":windows,"logs":logs,
+             "observer_result_present":(events/"result.json").is_file(),
+             "phase_files":sorted(x.name for x in events.glob("startup-*.json"))})
+
 def wait_file(path,proc,seconds):
     end=time.perf_counter()+seconds
     while time.perf_counter()<end:
         if path.is_file():
             return json.loads(path.read_text(encoding="utf-8"))
+        failure=path.with_name("result.json")
+        if failure!=path and failure.is_file():
+            row=json.loads(failure.read_text(encoding="utf-8"))
+            need(row.get("ok") is True,"native observer stopped before "+path.name+
+                 ": "+str(row.get("phase","unknown")))
         need(proc.poll() is None,"owned MO2 exited before "+path.name)
         time.sleep(.025)
     raise RuntimeError("native step timed out: "+path.name)
 
-def no_existing_mo2():
+NXM_PREFERENCE=b"[General]\r\nnoregister=true\r\n"
+NXM_OWNER_MARKER=".modhunter-benchmark-owned"
+
+def nxm_fixture(root,nonce=None):
+    if nonce is None:
+        need(not root.exists() and not root.is_symlink(),"existing global MO2 data")
+        return
+    for p,expected in ((root/NXM_OWNER_MARKER,nonce.encode("ascii")),
+                       (root/"nxmhandler.ini",NXM_PREFERENCE)):
+        need(p.is_file() and not p.is_symlink() and p.read_bytes()==expected,
+             "isolated NXM owner or no-register preference changed")
+
+def stage_nxm(root,nonce):
+    nxm_fixture(root)
+    root.mkdir()
+    for path,blob in ((root/NXM_OWNER_MARKER,nonce.encode("ascii")),
+                      (root/"nxmhandler.ini",NXM_PREFERENCE)):
+        with path.open("xb") as f:
+            f.write(blob)
+
+def no_existing_mo2(global_root,nonce=None):
     import winreg
-    need(not (Path(os.environ["LOCALAPPDATA"])/"ModOrganizer").exists(),"existing or unexpected global MO2 data")
+    nxm_fixture(global_root,nonce)
     try:
         with winreg.OpenKey(winreg.HKEY_CLASSES_ROOT,"nxm"):
             raise RuntimeError("existing or unexpected NXM handler")
@@ -207,13 +292,19 @@ def no_existing_mo2():
     listed=subprocess.check_output(["tasklist.exe","/FI","IMAGENAME eq ModOrganizer.exe","/FO","CSV","/NH"],text=True,timeout=5)
     need('"modorganizer.exe"' not in listed.lower(),"an existing MO2 process is already active")
 
-def trial(root, events, size, block, arm, win):
+def trial(root, events, size, block, arm, win, global_root, diagnostic=False):
     env={k:v for k,v in os.environ.items() if not k.startswith(("MODHUNTER","QT_","QML")) and k not in ("PYTHONHOME","PYTHONPATH")}
     env.update(PYTHONNOUSERSITE="1", MO2_BENCH_ROOT=str(root), MO2_BENCH_EVENTS=str(events),
                MO2_BENCH_ARM=arm, MO2_BENCH_SIZE=str(size), MO2_BENCH_QUIET=str(QUIET),
-               MO2_BENCH_STEPS=str(STEPS), MO2_BENCH_NONCE=uuid.uuid4().hex)
-    launched=time.perf_counter()
-    proc=subprocess.Popen([str(root/"ModOrganizer.exe")],cwd=root,env=env)
+               MO2_BENCH_STEPS=str(STEPS), MO2_BENCH_NONCE=uuid.uuid4().hex,
+               MO2_BENCH_DIAGNOSTIC=str(int(diagnostic)))
+    if diagnostic:
+        with (events/"child.stdout").open("xb") as cout,(events/"child.stderr").open("xb") as cerr:
+            launched=time.perf_counter()
+            proc=subprocess.Popen([str(root/"ModOrganizer.exe")],cwd=root,env=env,stdout=cout,stderr=cerr)
+    else:
+        launched=time.perf_counter()
+        proc=subprocess.Popen([str(root/"ModOrganizer.exe")],cwd=root,env=env)
     try:
         ready=wait_file(events/"ready.json",proc,45)
         startup=(time.perf_counter()-launched)*1000
@@ -270,6 +361,14 @@ def trial(root, events, size, block, arm, win):
         dump_new(events/"metrics.json",row)
         need(proc.wait(timeout=8)==0,"unclean normal MO2 exit")
         return row
+    except Exception as e:
+        # Capture the still-running owned window and bounded local logs before
+        # terminating only this child. Diagnostics cannot turn a failure green.
+        try:
+            failure_receipt(events,root,proc.pid,proc.poll(),win,global_root,e)
+        except (OSError,ValueError):
+            pass
+        raise
     finally:
         if proc.poll() is None:
             proc.terminate(); proc.wait(timeout=8)
@@ -293,7 +392,8 @@ def main():
          "refusing anything except a clean disposable GitHub-hosted Windows runner")
     need(all(HEX.fullmatch(x) for x in (args.mo2_exe_sha256,args.mo2_archive_sha256,args.candidate_plugin_sha256)) and
          re.fullmatch("[0-9a-f]{40}",args.candidate_commit),"missing trusted release/build identity")
-    no_existing_mo2()
+    global_root=Path(os.environ["LOCALAPPDATA"])/"ModOrganizer"
+    no_existing_mo2(global_root)
     temp=Path(os.environ["RUNNER_TEMP"]).resolve(strict=True)
     mo=args.mo2_root.resolve(strict=True)
     need(mo.is_relative_to(temp) and mo!=temp,"upstream official expansion must be in RUNNER_TEMP")
@@ -334,10 +434,14 @@ def main():
         "published_asset_sha256":PUBLISHED_SHA256,"candidate_plugin_py_sha256":args.candidate_plugin_sha256,
         "host_files":common,"plugin_files":hashes,"observer_sha256":sha(SOURCE/"observer/__init__.py"),"fixture_game_git_blob":git_blob(game),
         "driver_sha256":sha(Path(__file__)),"quiet_seconds":QUIET,"expected_active_operations":STEPS,"ping_timeout_ms":PING_LIMIT})
+    # Match the proven native smoke's non-registering settings lookup. This is
+    # an application preference only in a fresh ephemeral Windows CI account.
+    fixture_owner=uuid.uuid4().hex
+    stage_nxm(global_root,fixture_owner)
     win=Win(); all_rows=[]
     runs=list(order())[:3] if args.preflight else order()
     for size,block,arm in runs:
-        no_existing_mo2()
+        no_existing_mo2(global_root,fixture_owner)
         td=out/f"{size}-{block}-{arm}"; td.mkdir()
         root=td/"portable"; events=td/"events"; events.mkdir()
         same_tree_copy(mo,root,common,mo_size)
@@ -347,8 +451,8 @@ def main():
         if arm!="absent":
             same_tree_copy(inputs[arm],root/"plugins/mo2_update_arsenal",hashes[arm],plugin_size)
         try:
-            all_rows.append(trial(root,events,size,block,arm,win))
-            no_existing_mo2()
+            all_rows.append(trial(root,events,size,block,arm,win,global_root,args.preflight))
+            no_existing_mo2(global_root,fixture_owner)
         except Exception as e:
             dump_new(events/"failure.json",{"status":"not qualified","error":str(e)})
             raise

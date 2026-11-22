@@ -7,15 +7,16 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import time
 
 from .scanner import nexus_project_id, version_verdict
-from .source_adapters import PUBLIC_API_PROVIDERS, REVIEW_COMPATIBILITY_STATES
+from .source_adapters import (CURRENT_PUBLIC_RELEASE_FRESHNESS, PUBLIC_API_PROVIDERS,
+                              REVIEW_COMPATIBILITY_STATES)
 from .source_registry import canonical_source_url, provider_of
 
 MAX_ITEMS = 200_000
 MAX_FACTS = 10_000
+MAX_WIRE_MILLISECONDS = (1 << 64) - 1  # Rust Watchtower reads u64 JSON integers.
 CONTEXT_KEYS = ("profileId", "profileName", "game", "gameRuntime", "executionEpoch")
 
 
@@ -24,14 +25,21 @@ def _digest(value):
                                      ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
-def _time(value):
-    return (isinstance(value, (int, float)) and not isinstance(value, bool)
-            and math.isfinite(value) and value > 0)
+def _wire_timestamp(value):
+    # Range-check before arithmetic: a syntactically valid JSON integer can
+    # exceed float conversion limits; rounded floats still need a wire check.
+    if type(value) not in (int, float) or not 0 < value <= MAX_WIRE_MILLISECONDS / 1000:
+        return None
+    millis = int(value * 1000)
+    return millis if 0 < millis <= MAX_WIRE_MILLISECONDS else None
 
 
 def collect(snapshot: dict, context: dict, *, now: float | None = None, detailed=False) -> dict:
     """Produce a complete bounded result from independently captured native state."""
     now = time.time() if now is None else now
+    now_ms = _wire_timestamp(now)
+    if now_ms is None:
+        raise ValueError("Native updater clock is unavailable")
     lease, generation = context.get("nativeLease"), context.get("nativeGeneration")
     if (not isinstance(lease, str) or len(lease) != 32
             or any(c not in "0123456789abcdef" for c in lease.lower())
@@ -56,17 +64,24 @@ def collect(snapshot: dict, context: dict, *, now: float | None = None, detailed
         source = item.get("source") or {}
         if not isinstance(update, dict) or not isinstance(source, dict):
             continue
-        checked, expires = update.get("checkedAt"), update.get("expiresAt")
         installed, latest = item.get("installedVersion"), update.get("latestVersion")
         if (update.get("verdict") != "candidate" or item.get("updateEligible") is False
                 or not isinstance(installed, str) or not isinstance(latest, str)
-                or len(installed) > 240 or len(latest) > 240
-                or version_verdict(installed, latest) != "candidate"
-                or not _time(checked) or not _time(expires) or checked > now + 300
-                or expires <= now or expires <= checked
-                or update.get("freshness") not in {"fresh", "cached", "revalidated"}
-                or update.get("error") or update.get("errors")
-                or (update.get("compatibility") or {}).get("status") in REVIEW_COMPATIBILITY_STATES):
+                or len(installed) > 240 or len(latest) > 240 or update.get("error") or update.get("errors")):
+            continue
+        freshness, compatibility = update.get("freshness"), update.get("compatibility")
+        if (not isinstance(freshness, str) or freshness not in CURRENT_PUBLIC_RELEASE_FRESHNESS
+                or (compatibility is not None and not isinstance(compatibility, dict))):
+            continue
+        compatibility_status = compatibility.get("status") if compatibility else None
+        if compatibility_status is not None and (
+                not isinstance(compatibility_status, str) or compatibility_status in REVIEW_COMPATIBILITY_STATES):
+            continue
+        checked, expires = update.get("checkedAt"), update.get("expiresAt")
+        checked_ms, expires_ms = _wire_timestamp(checked), _wire_timestamp(expires)
+        if (checked_ms is None or expires_ms is None or checked > now + 300
+                or expires_ms <= max(now_ms, checked_ms)
+                or version_verdict(installed, latest) != "candidate"):
             continue
         url = canonical_source_url(source.get("url") or "")
         if update.get("source") == "nexus-api":
@@ -92,7 +107,7 @@ def collect(snapshot: dict, context: dict, *, now: float | None = None, detailed
                  "sourceIdentity": source_identity, "installedVersion": installed,
                  "latestVersion": latest, "releaseId": str(update.get("releaseId") or "")}
         row = {**proof, "proofDigest": _digest(proof), "provider": provider,
-               "checkedAt": int(checked * 1000), "expiresAt": int(expires * 1000),
+               "checkedAt": checked_ms, "expiresAt": expires_ms,
                "kind": "newerVersionCandidate"}
         if detailed:
             row["itemName"] = str(item.get("name") or item.get("mo2InternalName") or ident)[:512]
@@ -103,7 +118,7 @@ def collect(snapshot: dict, context: dict, *, now: float | None = None, detailed
             raise ValueError("Verified updater facts exceed their complete result bound")
     return {"ok": True, **{key: context.get(key) for key in CONTEXT_KEYS},
             "nativeLease": lease, "nativeGeneration": generation,
-            "capturedAt": int(now * 1000), "facts": result}
+            "capturedAt": now_ms, "facts": result}
 
 
 def facts(service, item_id: str = "") -> dict:

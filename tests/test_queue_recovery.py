@@ -11,6 +11,7 @@ from pathlib import Path
 from mo2_update_arsenal.bridge import ArsenalService
 
 
+NOW = time.time()
 SNAP = {
     "profileId": "recovery-profile", "profileName": "Main profile",
     "game": "skyrimspecialedition", "gameRuntime": "1.5.97",
@@ -25,6 +26,7 @@ SNAP = {
          "installedVersion": "1.0", "nexusId": 0, "flags": [],
          "source": {"url": "https://github.com/project/repo", "type": "github", "verified": True},
          "update": {"source": "github-release-api", "verdict": "candidate", "latestVersion": "2.0",
+                    "freshness": "fresh", "checkedAt": NOW, "expiresAt": NOW + 900,
                     "releaseAssets": [{"assetId": 17, "name": "github-mod.zip",
                                       "url": "https://github.com/project/repo/releases/download/v2/github-mod.zip"}]}},
     ],

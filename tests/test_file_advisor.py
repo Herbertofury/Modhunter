@@ -1,6 +1,7 @@
 """Evidence-based file review. No false compatibility claims or missing files."""
 import copy
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -85,6 +86,8 @@ class AdvisorTest(unittest.TestCase):
         item = row("github", "github-release-api")
         item["nexusId"] = 0
         item["source"] = {"verified": True, "url": "https://github.com/owner/project"}
+        now = time.time()
+        item["update"].update(freshness="fresh", checkedAt=now, expiresAt=now + 900)
         item["update"]["releaseAssets"] = [{"assetId": 1, "name": "project-2.0.zip",
               "url": "https://github.com/owner/project/releases/download/v2/project-2.0.zip"}]
         snap = {"profileId": "profile-A", "items": [item]}

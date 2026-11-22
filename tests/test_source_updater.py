@@ -15,6 +15,7 @@ from mo2_update_arsenal.update_plan import PlanError, plan_updates, validate_rel
 
 ASSET = {"assetId": 555, "name": "supermod-v2.zip",
          "url": "https://github.com/owner/supermod/releases/download/v2/supermod-v2.zip", "size": 4500}
+NOW = time.time()
 PROFILE = {
     "profileId": "skyrim:p1", "profileName": "Primary", "game": "skyrimspecialedition",
     "items": [
@@ -22,6 +23,7 @@ PROFILE = {
          "source": {"type": "github", "verified": True, "url": "https://github.com/owner/supermod"},
          "nexusId": 0, "flags": ["DLL"],
          "update": {"verdict": "candidate", "source": "github-release-api",
+                    "freshness": "fresh", "checkedAt": NOW, "expiresAt": NOW + 900,
                     "provider": "github", "latestVersion": "2.0", "releaseAssets": [ASSET]}},
         {"id": "nexus-row", "name": "Nexus Mod", "installedVersion": "1.0",
          "nexusId": 101, "flags": [], "update": {"verdict": "candidate", "latestVersion": "2.0"}},

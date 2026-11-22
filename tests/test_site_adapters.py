@@ -33,9 +33,10 @@ def fixture(provider="gitlab"):
     source_url, project, release, version, url = identities[provider]
     item = {"id": "live-source", "name": "Fixture Mod", "nexusId": 0, "installedVersion": "1.0",
             "source": {"type": provider, "url": source_url, "verified": True, "kind": "project"}, "flags": []}
+    now = time.time()
     raw = {"provider": provider, "source": provider + "-release-api", "sourceUrl": source_url,
            "projectId": project, "releaseId": release, "latestVersion": version, "releaseUrl": source_url,
-           "outcome": "release", "availability": "available", "freshness": "fresh", "checkedAt": time.time(), "expiresAt": time.time() + 900,
+           "outcome": "release", "availability": "available", "freshness": "fresh", "checkedAt": now, "expiresAt": now + 900,
            "compatibility": {"status": "matched"}, "summary": "Release summary", "changelog": "Changes\n" * 1000,
            "dependencies": [{"projectId": "Dependency", "kind": "required"}],
            "publisher": {"name": "Release Publisher", "url": "https://github.com/publisher", "role": "release publisher"},
@@ -87,6 +88,42 @@ class SourceEvidenceTests(unittest.TestCase):
             with self.subTest(changed=changed):
                 update = normalize_adapter_record(item, {**raw, **changed})
                 self.assertNotIn(update["verdict"], ("candidate", "current", "newer-installed"))
+
+    def test_invalid_public_release_window_never_promotes_or_recommends_a_file(self):
+        item, raw = fixture("github")
+        raw.update(checkedAt=1000, expiresAt=1900)
+        for changes in ({"expiresAt": None}, {"expiresAt": "1900"}, {"expiresAt": True},
+                        {"expiresAt": float("nan")}, {"expiresAt": float("inf")},
+                        {"expiresAt": 10**400}, {"checkedAt": 10**400},
+                        {"checkedAt": 1000, "expiresAt": 1901},
+                        {"checkedAt": 1100, "expiresAt": 1099},
+                        {"checkedAt": 1100, "expiresAt": 1100}):
+            with self.subTest(changes=changes):
+                update = normalize_adapter_record(item, {**raw, **changes}, now=1001)
+                self.assertEqual(update["verdict"], "unknown")
+                self.assertIsNone(update["expiresAt"])
+                self.assertNotIn("versionComparison", update)
+                self.assertIsNone(choose_release_asset({**item, "update": update})[0])
+        omitted = {k: v for k, v in raw.items() if k != "expiresAt"}
+        self.assertEqual(normalize_adapter_record(item, omitted, now=1001)["verdict"], "unknown")
+        for freshness in ("fresh", "cached", "revalidated"):
+            with self.subTest(freshness=freshness):
+                update = normalize_adapter_record(item, {**raw, "freshness": freshness}, now=1001)
+                self.assertEqual(update["verdict"], "candidate")
+                self.assertEqual(update["expiresAt"], 1900)
+
+    def test_release_download_rechecks_window_but_local_install_review_retains_exact_identity(self):
+        item, _ = fixture("github")
+        request = selection(item)
+        for changes in ({"expiresAt": None}, {"expiresAt": float("nan")},
+                        {"freshness": "unavailable"},
+                        {"expiresAt": item["update"]["checkedAt"]}, {"checkedAt": None}):
+            with self.subTest(changes=changes):
+                changed = {**item, "update": {**item["update"], **changes}}
+                with self.assertRaisesRegex(PlanError, "Source evidence expired"):
+                    validate_release_asset(snapshot(changed), request)
+                reviewed = validate_release_asset(snapshot(changed), request, require_fresh=False)
+                self.assertEqual(reviewed["assetKey"], request["assetKey"])
 
     def test_hash_or_size_change_after_review_invalidates_same_asset_id(self):
         item, _ = fixture()
@@ -205,6 +242,26 @@ class RustAdapterBridgeTests(unittest.TestCase):
                        {"schemaVersion": 1, "profileId": "p", "itemRecords": {"unknown": {}}}):
             with self.subTest(result=result), self.assertRaises(RuntimeError):
                 runner._validate_result(result, request)
+
+    def test_malformed_window_does_not_abort_refresh_for_other_projects(self):
+        bad_item, bad = fixture("github")
+        good_item, good = fixture("gitlab")
+        bad_item["id"], good_item["id"] = "bad-expiry-row", "good-row"
+        bad["expiresAt"] = 10**400
+
+        class Runner:
+            available = True
+
+            def run(self, request, *, cancel_event=None):
+                return {"schemaVersion": 1, "profileId": "p", "stats": {"sourceProjects": 2},
+                        "cache": {"entries": []}, "errors": [],
+                        "itemRecords": {bad_item["id"]: bad, good_item["id"]: good}}
+
+        result = SourceScanner(runner=Runner()).scan(
+            {**snapshot(bad_item), "items": [bad_item, good_item]})
+        self.assertEqual(result["itemRecords"][bad_item["id"]]["verdict"], "unknown")
+        self.assertEqual(result["itemRecords"][good_item["id"]]["verdict"], "candidate")
+        self.assertEqual(result["sourceProjects"], 2)
 
     def test_failed_rust_engine_does_not_silently_retry_via_another_transport(self):
         item, _ = fixture()

@@ -110,7 +110,17 @@
   options($('siteFilter'),[...new Set(state.watches.map(w=>origin(w.url)))].filter(Boolean).sort(),'All sites');options($('folderFilter'),[...new Set(state.watches.map(w=>w.folder))].filter(Boolean).sort(),'All folders');
   const running=(state.work?.active||[]).length,queued=(state.work?.queued||[]).length,stalled=active.some(stopped);
   text('runStatus',running||queued?running+' checking'+(queued?' · '+queued+' queued':''):stalled?'A check stopped before its result could be saved':state.settings.backgroundChecking?'Background checks enabled · due pages only':'Manual checks · ready when you are');$('runDot').classList.toggle('busy',!!(running||queued));$('cancelAll').hidden=!(running||queued||stalled);text('cancelAll',stalled&&!running&&!queued?'Clear stopped checks':'Cancel checks');
-  const sort=$('sort').value;visible=state.watches.filter(matches);visible.sort((a,b)=>sort==='name'?displayTitle(a).localeCompare(displayTitle(b)):sort==='recent'?(b.lastSuccessAt||0)-(a.lastSuccessAt||0):sort==='due'?a.nextCheckAt-b.nextCheckAt:rank(a)-rank(b)||(b.updatedAt||0)-(a.updatedAt||0));
+  const sort=$('sort').value;visible=state.watches.filter(matches);
+  if(sort==='name'){
+   if(visible.length>1){
+    if(state.settings.hideTitles||visible.some(w=>!w.title)){
+     // Resolve host fallbacks once for this sort, not on every comparison.
+     const names=new Map();
+     for(const w of visible)names.set(w,displayTitle(w));
+     visible.sort((a,b)=>names.get(a).localeCompare(names.get(b)));
+    }else visible.sort((a,b)=>a.title.localeCompare(b.title));
+   }
+  }else visible.sort((a,b)=>sort==='recent'?(b.lastSuccessAt||0)-(a.lastSuccessAt||0):sort==='due'?a.nextCheckAt-b.nextCheckAt:rank(a)-rank(b)||(b.updatedAt||0)-(a.updatedAt||0));
   const exists=new Set(state.watches.map(w=>w.id));for(const id of selected)if(!exists.has(id))selected.delete(id);for(const id of searchIndexes.keys())if(!exists.has(id))searchIndexes.delete(id);
   reconcile($('watchList'),visible,rows,watchMarkup);
   text('resultsCount',visible.length.toLocaleString()+' of '+(filter==='removed'?removed.length:active.length).toLocaleString()+' pages');$('selectAll').checked=visible.length>0&&visible.every(w=>selected.has(w.id));$('selectAll').indeterminate=visible.some(w=>selected.has(w.id))&&!$('selectAll').checked;

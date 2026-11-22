@@ -177,3 +177,43 @@ test('MEGA navigation and changed child metadata invalidate a prior selection',(
  const f=folderFixture();f.sandbox.cfg.expected=f.run().file;f.file.s=65;f.rootNode.tb=65;assert.match(f.run().message,/exact file changed/);
  f.sandbox.location=new URL('https://mega.nz/folder/other123#'+f.key);assert.match(f.run().message,/different MEGA folder/);
 });
+
+test('watchlist name sort parses at most one display host per row and preserves stable ties',()=>{
+ const code=fs.readFileSync(path.join(root,'native/ui/watchtower.js'),'utf8');
+ const section=(from,to)=>{const start=code.indexOf(from),end=code.indexOf(to,start);assert.ok(start>=0&&end>start);return code.slice(start,end)};
+ const count=2500,fixture=Array.from({length:count},(_,i)=>({id:'watch-'+i,
+  url:'https://mods-'+String(((i*197)%1301)).padStart(4,'0')+'.example.com/release/'+i,
+  title:i%2?'Title '+((i*127)%701):'',latest:{},enabled:true,updatedAt:i,
+  lastSuccessAt:(i*173)%301,nextCheckAt:(i*139)%550,hasChanges:i%17===0}));
+ fixture[0].url='not a URL';
+ function sortPages(hideTitles,sort,input=fixture){
+  const nodes=new Map([['sort',{value:sort}]]);
+  let actual=[],parsed=0;
+  const state={settings:{hideTitles},watches:input,sessions:[],work:{}};
+  const sandbox={state,URL:class extends URL{constructor(...args){parsed++;super(...args)}},
+   filter:'all',query:'',visible:[],rows:new Map(),selected:new Set(),searchIndexes:new Map(),
+   $:id=>{if(!nodes.has(id))nodes.set(id,{value:'',classList:{toggle(){}},querySelectorAll:()=>[]});return nodes.get(id)},
+   text(){},options(){},reconcile(_node,items){actual=items.map(w=>w.id)},
+   needsAttention:()=>false,needsSession:()=>false,stopped:()=>false,working:()=>false,canMutate:()=>true};
+  vm.runInNewContext(section(' function host(',' function date(')+section(' function matches(',' function clearSelected(')+'\nrenderPages()',sandbox);
+  return {actual,parsed};
+ }
+ const title=(row,hideTitles)=>{if(!hideTitles&&row.title)return row.title;try{return new URL(row.url).host}catch{return 'Website'}};
+ for(const hideTitles of [true,false]){
+  const expected=fixture.slice().sort((a,b)=>title(a,hideTitles).localeCompare(title(b,hideTitles))).map(w=>w.id);
+  const result=sortPages(hideTitles,'name');
+  assert.deepEqual(Array.from(result.actual),expected,'localized ordering and all equal-key ties remain stable');
+  // renderPages already parses one origin per watch for the site filter.
+  const limit=count+fixture.filter(row=>hideTitles||!row.title).length;
+  assert.ok(result.parsed<=limit,`hideTitles=${hideTitles}: ${result.parsed} parses for ${count} rows; budget ${limit}`);
+ }
+ for(const [sort,compare] of Object.entries({recent:(a,b)=>b.lastSuccessAt-a.lastSuccessAt,due:(a,b)=>a.nextCheckAt-b.nextCheckAt,attention:(a,b)=>Number(b.hasChanges)-Number(a.hasChanges)||b.updatedAt-a.updatedAt})){
+  const result=sortPages(true,sort);
+  assert.deepEqual(Array.from(result.actual),fixture.slice().sort(compare).map(row=>row.id),sort);
+  assert.equal(result.parsed,count,'non-name sort does not precompute titles');
+ }
+ const titled=fixture.map(row=>({...row,title:row.title||row.id}));
+ const named=sortPages(false,'name',titled);
+ assert.deepEqual(Array.from(named.actual),titled.slice().sort((a,b)=>a.title.localeCompare(b.title)).map(w=>w.id));
+ assert.equal(named.parsed,count,'complete visible names need no host fallback');
+});

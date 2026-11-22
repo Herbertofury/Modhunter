@@ -217,3 +217,37 @@ test('watchlist name sort parses at most one display host per row and preserves 
  assert.deepEqual(Array.from(named.actual),titled.slice().sort((a,b)=>a.title.localeCompare(b.title)).map(w=>w.id));
  assert.equal(named.parsed,count,'complete visible names need no host fallback');
 });
+
+test('warm Watchtower page search tracks the currently displayed status',()=>{
+ const code=fs.readFileSync(path.join(root,'native/ui/watchtower.js'),'utf8');
+ const section=(from,to)=>{const start=code.indexOf(from),end=code.indexOf(to,start);assert.ok(start>=0&&end>start);return code.slice(start,end)};
+ const row={id:'watch-exact',title:'Texture project',notes:'Private important note',state:'baseline',
+  generation:3,enabled:true,requiresSession:false,latest:{},url:'https://mods.example.com/texture'};
+ let cacheWrites=0;
+ const searchIndexes=new class extends Map {set(key,value){cacheWrites++;return super.set(key,value)}};
+ const sandbox={row,state:{settings:{hideTitles:false}},ATTENTION:new Set(),
+  workIds:new Set(),activeIds:new Set(),sessionById:new Map(),searchIndexes,
+  filter:'all',query:'baseline saved',norm:value=>String(value).toLocaleLowerCase(),
+  $:()=>({value:''})};
+ const context=vm.createContext(sandbox);
+ vm.runInContext(section(' function working(',' function enabled(')+section(' function index(',' function rank('),context);
+ assert.equal(context.matches(row),true);
+ for(let i=0;i<25;i++){row.nextCheckAt=i;assert.equal(context.matches(row),true)}
+ assert.equal(cacheWrites,1,'unrelated changes and warm searches do not rebuild the search index');
+ for(const [change,prior,current] of [
+  [()=>sandbox.workIds.add(row.id),'baseline saved','queued'],
+  [()=>sandbox.activeIds.add(row.id),'queued','checking'],
+  [()=>{sandbox.workIds.clear();sandbox.activeIds.clear();row.enabled=false},'checking','paused'],
+  [()=>{row.enabled=true;row.requiresSession=true;row.sessionId='session'},'paused','choose a session'],
+  [()=>{sandbox.sessionById.set('session',{});row.verificationHold=true},'choose a session','account verification held'],
+  [()=>{row.verificationHold=false},'account verification held','baseline saved'],
+ ]){
+  const before=cacheWrites;change();
+  sandbox.query=current;assert.equal(context.matches(row),true,`fresh label ${current}`);
+  sandbox.query=prior;assert.equal(context.matches(row),false,`stale label ${prior}`);
+  assert.equal(cacheWrites,before+1,'exactly one rebuild for the changed effective label');
+ }
+ sandbox.query='private important';assert.equal(context.matches(row),true);
+ sandbox.state.settings.hideTitles=true;assert.equal(context.matches(row),false);
+ sandbox.query='texture';assert.equal(context.matches(row),true,'public URL stays searchable in a privacy-masked view');
+});

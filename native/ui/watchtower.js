@@ -77,9 +77,10 @@
   }
  }
  function index(w){
-  const key=[w.generation,w.title,w.url,w.folder,(w.tags||[]).join(','),w.notes,w.state,w.hasChanges,w.needsCheck,state.settings.hideTitles].join('|'),cached=searchIndexes.get(w.id);
+  const label=status(w)[0];
+  const key=[w.generation,w.title,w.url,w.folder,(w.tags||[]).join(','),w.notes,label,state.settings.hideTitles].join('|'),cached=searchIndexes.get(w.id);
   if(cached?.key===key)return cached.value;
-  const value=[state.settings.hideTitles?'':w.title,w.url,w.folder,...(w.tags||[]),state.settings.hideTitles?'':w.notes,status(w)[0]].join(' ').toLocaleLowerCase();searchIndexes.set(w.id,{key,value});return value;
+  const value=[state.settings.hideTitles?'':w.title,w.url,w.folder,...(w.tags||[]),state.settings.hideTitles?'':w.notes,label].join(' ').toLocaleLowerCase();searchIndexes.set(w.id,{key,value});return value;
  }
  function matches(w){
   if((filter==='removed')!==!!w.removedAt)return false;

@@ -501,6 +501,18 @@ class WatchtowerBrowserTests(unittest.TestCase):
         self.assertIn("Every 1 hr", row.inner_text())
         self.assertNotIn("due interval", row.inner_text())
 
+        # Native work changes independently of the saved watch generation.
+        # An already warm search must follow the status visible in the row.
+        self.page.locator("#search").fill("queued")
+        self.page.wait_for_function("document.querySelector('#watchList').children.length === 0")
+        self.page.evaluate("__WATCH_FIX__.change(s => {s.work.queued = ['watch-1']})")
+        self.assertEqual(row.locator(".badge").inner_text(), "Queued")
+        self.page.evaluate("__WATCH_FIX__.change(s => {s.work.queued = []; s.work.active = ['watch-1']})")
+        self.assertEqual(row.count(), 0)
+        self.page.locator("#search").fill("checking")
+        self.page.wait_for_function("document.querySelector('[data-watch-id=watch-1] .badge')?.textContent === 'Checking'")
+        self.assertEqual(self.calls("check"), [])
+
 
     def test_renderer_boundary(self):
         self.open(native=False)

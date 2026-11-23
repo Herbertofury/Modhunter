@@ -1,3 +1,5 @@
+mod spid_preview;
+
 use modhunter_core::{
     BridgeClient, ImportRequest, PluginAuditRequest, ProfileImporter, SourceScanRequest,
     audit_plugins, scan_sources,
@@ -172,6 +174,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .map_err(std::io::Error::other)?;
             println!("{}", serde_json::to_string(&reply)?);
         }
+        Some("spid-preview") => {
+            let [_, flag, name] = args.as_slice() else {
+                return Err(
+                    "spid-preview requires --name FILENAME_DISTR.ini and one file on stdin".into(),
+                );
+            };
+            if flag != "--name" {
+                return Err(
+                    "spid-preview requires --name FILENAME_DISTR.ini and one file on stdin".into(),
+                );
+            }
+            let report = spid_preview::run(name, std::io::stdin().lock())?;
+            println!("{}", serde_json::to_string(&report)?);
+        }
         Some("ini-compare") => {
             if !matches!(args.as_slice(), [_, left, _, right, _]
                 if (left == "--before" && right == "--after")
@@ -187,7 +203,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         Some("benchmark") => benchmark(&args)?,
         Some("--version") => println!("Modhunter Rust engine {}", env!("CARGO_PKG_VERSION")),
         None | Some("--help") | Some("help") => println!(
-            "Modhunter Rust engine\n\nimport --modlist PATH [--ini PATH] [--mods PATH] [--workers 1..32]\nprobe --endpoint http://127.0.0.1:PORT/\naudit-plugins --request PATH|-\nscan-sources --request PATH|-\narchive-review --request PATH|- (bounded original-byte review)\nduplicate-report --request PATH|- (complete ownership and reversible quarantine)\ncontent-vault --request PATH|- (explicit scoped backup/restore)\nini-compare --before PATH --after PATH (read-only selected QSettings INIs; values redacted)\nbenchmark [--mods 2500] [--rounds 5] [--workers 8]\n\nImport and plugin audits are read-only. ESL eligibility is conditional; save, dependent-mod, asset and external-reference safety is not certified. The live MO2 plugin remains responsible for downloads and FOMOD installation. Benchmark uses a generated fixture, not a user's MO2 installation."
+            "Modhunter Rust engine\n\nimport --modlist PATH [--ini PATH] [--mods PATH] [--workers 1..32]\nprobe --endpoint http://127.0.0.1:PORT/\naudit-plugins --request PATH|-\nscan-sources --request PATH|-\narchive-review --request PATH|- (bounded original-byte review)\nduplicate-report --request PATH|- (complete ownership and reversible quarantine)\ncontent-vault --request PATH|- (explicit scoped backup/restore)\nspid-preview --name FILENAME_DISTR.ini (one bounded UTF-8 file on stdin; targets only)\nini-compare --before PATH --after PATH (read-only selected QSettings INIs; values redacted)\nbenchmark [--mods 2500] [--rounds 5] [--workers 8]\n\nImport and plugin audits are read-only. ESL eligibility is conditional; save, dependent-mod, asset and external-reference safety is not certified. The live MO2 plugin remains responsible for downloads and FOMOD installation. Benchmark uses a generated fixture, not a user's MO2 installation."
         ),
         Some(command) => {
             return Err(format!("Unknown command: {command}. Run modhunter-cli --help").into());

@@ -511,6 +511,50 @@ class GalleryWorkspaceTests(unittest.TestCase):
         self.assertTrue(self.page.evaluate("document.getElementById('row-item-110')===__GALLERY_SURVIVOR__"))
         self.assertEqual(self.page.locator('#modList .mod-row').count(), 111)
 
+    def test_gallery_sort_moves_the_original_focused_control_in_the_live_dom(self):
+        self.open(count=3)
+        self.page.evaluate("""async()=>{
+          const next=structuredClone(__RESP__.catalog);
+          next.items[0].name='Zebra first by priority';
+          next.items[1].name='Middle';
+          next.items[2].name='Aardvark last by priority';
+          await __ARSENAL_QA__.setCatalog(next);
+        }""")
+        self.page.locator('#libraryGallery').click()
+        self.page.locator('#galleryGrouping').select_option('all')
+        self.page.locator('#sortSelect').select_option('priority')
+        state = self.page.evaluate("""()=>{
+          const list=document.getElementById('modList'),sort=document.getElementById('sortSelect');
+          if(typeof list.moveBefore!=='function')return {supported:false};
+          const row=document.getElementById('row-item-2'),button=row.querySelector('[data-act="inspect"]');
+          const original=list.moveBefore,shape=Array.from(list.children).map(n=>n.id);
+          const actions=[];
+          button.focus({preventScroll:true});
+          list.moveBefore=function(node,before){
+            const wasSelected=document.activeElement;
+            const result=Reflect.apply(original,this,[node,before]);
+            actions.push({id:node.id,focusContinuouslyOwned:wasSelected===button&&document.activeElement===button});
+            return result;
+          };
+          try{
+            sort.value='name';
+            sort.dispatchEvent(new Event('change',{bubbles:true}));
+            return {supported:true,shape,order:Array.from(list.children).map(n=>n.id),
+              sameRow:list.firstElementChild===row,focus:document.activeElement===button,actions};
+          }finally{delete list.moveBefore;}
+        }""")
+        if not state['supported']:
+            self.skipTest('Actual Chromium does not expose state-preserving moveBefore; fallback is contract-tested')
+        self.assertEqual(state['shape'], ['row-item-0', 'row-item-1', 'row-item-2'])
+        self.assertEqual(state['order'], ['row-item-2', 'row-item-1', 'row-item-0'])
+        self.assertTrue(state['sameRow'] and state['focus'], state)
+        self.assertEqual(state['actions'], [
+            {'id':'row-item-2','focusContinuouslyOwned':True},
+            {'id':'row-item-1','focusContinuouslyOwned':True},
+        ])
+        self.page.keyboard.press('Enter')
+        self.assertIn('Aardvark last by priority', self.page.locator('#drawerTitle').inner_text())
+
     def test_gallery_grouping_preserves_collapsed_chapters_and_sorts_all_records(self):
         self.open(count=12, group_count=3)
         self.page.locator('[data-chapter-toggle="group-0"]').click()

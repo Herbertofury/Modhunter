@@ -287,6 +287,25 @@ function takeFilteredLibraryRow(entry,owner){
  if(!prior||prior.owner!==owner||prior.html!==entry.html||prior.node.isConnected||!coldLibraryRow(prior))return null;
  return {key:entry.key,html:entry.html,node:prior.node};
 }
+// The download queue may keep identical rows across a same-profile execution
+// change. Only retain their native DOM state within the same execution epoch.
+const DOWNLOAD_ROW_EPOCHS=new WeakMap();
+function cacheRenderedRows(node,entries){
+ ROW_RENDER_CACHE.set(node,entries);
+ if(node.id==='liveDownloadList')DOWNLOAD_ROW_EPOCHS.set(entries,PROFILE_EPOCH);
+}
+function moveRenderedRow(parent,row,before,keepState){
+ if(keepState&&parent.isConnected&&row.isConnected&&row.parentElement===parent&&
+    (!before||before.parentElement===parent)&&typeof parent.moveBefore==='function'){
+  try{parent.moveBefore(row,before);return;}
+  catch(error){
+   // State-preserving move's stricter preconditions can still reject. Let
+   // the original insert path decide whether the ordinary move is allowed.
+   if(!['HierarchyRequestError','NotFoundError','NotSupportedError'].includes(error?.name))throw error;
+  }
+ }
+ parent.insertBefore(row,before);
+}
 function setRows(node,entries,empty,preserveMoves=false){
  if(!node)return;
  const previous=ROW_RENDER_CACHE.get(node),library=node.id==='modList';
@@ -297,19 +316,22 @@ function setRows(node,entries,empty,preserveMoves=false){
  const currentChildren=previous?[...node.children]:null;
  const intact=previous&&currentChildren.length===previous.length&&previous.every((entry,i)=>entry.node===currentChildren[i]);
  if(library&&previous&&!intact)clearLibraryRowCache();
- if(preserveMoves&&entries.length&&intact&&new Set(entries.map(entry=>entry.key)).size===entries.length){
+ const wantedMoves=preserveMoves&&entries.length&&intact?new Set(entries.map(entry=>entry.key)):null;
+ if(wantedMoves?.size===entries.length){
   const byKey=new Map(previous.map(entry=>[entry.key,entry])),template=document.createElement('template');
+  const keepMoves=byKey.size===previous.length&&(library?ownsPrevious:
+    node.id==='liveDownloadList'&&DOWNLOAD_ROW_EPOCHS.get(previous)===PROFILE_EPOCH);
   const next=entries.map(entry=>{
-   const prior=byKey.get(entry.key);byKey.delete(entry.key);
+   const prior=byKey.get(entry.key);
    if(prior)return prior.html===entry.html?prior:replaceRenderedRow(prior,entry,template);
    template.innerHTML=entry.html;return {...entry,node:template.content.firstElementChild};
   });
   const focused=document.activeElement;
   let cursor=node.firstElementChild;
-  for(const entry of next){if(entry.node!==cursor)node.insertBefore(entry.node,cursor);cursor=entry.node.nextElementSibling;}
-  for(const entry of byKey.values())entry.node.remove();
+  for(const entry of next){if(entry.node!==cursor)moveRenderedRow(node,entry.node,cursor,keepMoves&&byKey.get(entry.key)===entry);cursor=entry.node.nextElementSibling;}
+  for(const entry of byKey.values())if(!wantedMoves.has(entry.key))entry.node.remove();
   if(focused?.isConnected&&node.contains(focused)&&document.activeElement!==focused)focused.focus({preventScroll:true});
-  ROW_RENDER_CACHE.set(node,next);HTML_CACHE.delete(node);if(library){LIBRARY_ROW_CACHE_OWNER=owner;LIBRARY_ROW_CACHE_LIST=node;}return;
+  cacheRenderedRows(node,next);HTML_CACHE.delete(node);if(library){LIBRARY_ROW_CACHE_OWNER=owner;LIBRARY_ROW_CACHE_LIST=node;}return;
  }
  if(intact&&previous.length===entries.length&&entries.every((entry,i)=>entry.key===previous[i].key)){
   const changed=[];
@@ -353,8 +375,9 @@ function setRows(node,entries,empty,preserveMoves=false){
     const fragment=document.createDocumentFragment();for(const entry of next)fragment.append(entry.node);node.replaceChildren(fragment);
    }else{
     for(const entry of removed)entry.node.remove();
+    const keepMoves=ownsPrevious&&byKey.size===priorEntries.length;
     let cursor=node.firstElementChild;
-    for(const entry of next){if(entry.node!==cursor)node.insertBefore(entry.node,cursor);cursor=entry.node.nextElementSibling;}
+    for(const entry of next){if(entry.node!==cursor)moveRenderedRow(node,entry.node,cursor,keepMoves&&byKey.get(entry.key)===entry);cursor=entry.node.nextElementSibling;}
    }
    if(focused?.isConnected&&node.contains(focused)&&document.activeElement!==focused)focused.focus({preventScroll:true});
    ROW_RENDER_CACHE.set(node,next);HTML_CACHE.delete(node);if(library){LIBRARY_ROW_CACHE_OWNER=owner;LIBRARY_ROW_CACHE_LIST=node;}return;
@@ -364,7 +387,7 @@ function setRows(node,entries,empty,preserveMoves=false){
  setHTML(node,entries.length?entries.map(entry=>entry.html).join(''):empty);
  const children=[...node.children];
  // Do not retain an index if a host extension altered the generated structure.
- if(entries.length&&children.length===entries.length)ROW_RENDER_CACHE.set(node,entries.map((entry,i)=>({...entry,node:children[i]})));
+ if(entries.length&&children.length===entries.length)cacheRenderedRows(node,entries.map((entry,i)=>({...entry,node:children[i]})));
  else ROW_RENDER_CACHE.delete(node);
  if(library){LIBRARY_ROW_CACHE_OWNER=owner;LIBRARY_ROW_CACHE_LIST=node;}
 }

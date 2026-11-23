@@ -177,9 +177,12 @@ class ModUpdateArsenal(mobase.IPluginTool):
     # matches the deprecated per-item overload first and storms large profiles.
     def _on_mod_states_changed(self, changes):
         if self.server is not None:
-            names = list(changes) if isinstance(changes, dict) else []
-            self.server.content.invalidate(reason="target" if len(names) == 1 else "external",
-                                           mod_name=str(names[0]) if len(names) == 1 else "")
+            # The native map needs only its count and, for a single change, its key.
+            names = changes if type(changes) is dict else (
+                list(changes) if isinstance(changes, dict) else ())
+            single = len(names) == 1
+            self.server.content.invalidate(reason="target" if single else "external",
+                                           mod_name=str(next(iter(names))) if single else "")
         self._schedule_refresh()
 
     def _on_plugin_states_changed(self, changes):

@@ -67,7 +67,7 @@ OVERRIDE=r'''(() => {
   const kind=args.kind,v=args.value||{};
   const owned=['maintenance','browserChoices','prepareReview','openReview','saveReviewSelection','installReview','contentJobs','discardReview','cancelReview','cancelContentJob','diagnosticsPreview','diagnosticsCopy','diagnosticsSave','globalSettings','storage','previewDownloadCleanup','applyDownloadCleanup','duplicateScan','duplicateRecovery','contentBackups','contentRecovery','contentBatchRestore','checkAppRelease','dismissAppRelease','openAppRelease','previewAppReset','applyAppReset'];
   owned.push('readiness','scanUnattributed','unattributedInventory','cancelUnattributed','revealUnattributed','installQueue','installQueueControl');
-  owned.push('notices','refreshNotices','activateNotice','dismissNotice');
+  owned.push('notices','refreshNotices','activateNotice','dismissNotice','compareIniSnapshots');
   if(kind==='state')return {...await original(command,args),installQueueContext:clone(f.native.queueContext)};
   if(!owned.includes(kind))return original(command,args);
   f.calls.push(clone(args));
@@ -742,8 +742,15 @@ class NativeUiTests(base.WatchtowerBrowserTests):
 def main():
     suite=unittest.TestSuite(NativeUiTests(name) for name in REQUIRED)
     result=unittest.TextTestRunner(verbosity=2).run(suite)
+    # Keep the versioned release-receipt interaction list and count intact.
+    # Also exercise the INI browser scenario, which unittest discovery sees
+    # but the executable's explicit release test list does not enumerate.
+    additional=unittest.TextTestRunner(verbosity=2).run(unittest.TestSuite([
+        NativeUiTests('test_ini_snapshot_review_filters_counts_and_drops_stale_results')
+    ]))
+    ini_ok=additional.testsRun==1 and additional.wasSuccessful() and not additional.skipped
     checks=[{'name':name.removeprefix('test_'),'passed':result.testsRun>0 and not result.skipped and not any(getattr(test,'_testMethodName','')==name for test,_ in result.errors+result.failures)} for name in REQUIRED]
-    proof={'schema':1,'kind':'native-manager-ui','ok':result.wasSuccessful() and not result.skipped and bool(NativeUiTests.cjk_font_proof and NativeUiTests.cjk_font_proof.get('ok')),'realChromium':not bool(result.skipped),'scope':'Deterministic native-command bridge fixture. Separate receipts prove Windows WebView2 and real MO2.',
+    proof={'schema':1,'kind':'native-manager-ui','ok':result.wasSuccessful() and not result.skipped and ini_ok and bool(NativeUiTests.cjk_font_proof and NativeUiTests.cjk_font_proof.get('ok')),'realChromium':not bool(result.skipped),'scope':'Deterministic native-command bridge fixture. Separate receipts prove Windows WebView2 and real MO2.',
            'cjkFontProof':NativeUiTests.cjk_font_proof,
            'candidateCommit':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),'sourceDirty':bool(subprocess.check_output(['git','status','--porcelain','--untracked-files=all'],cwd=ROOT)),
            'sourceFiles':{name:hashlib.sha256((ROOT/name).read_bytes()).hexdigest() for name in SOURCES},'checks':checks,'testsRun':result.testsRun,'skipped':len(result.skipped)}

@@ -1,0 +1,562 @@
+# One isolated diagnostic carrier, not a release, install or Gallery gate.
+name: Stock MO2 2.5.2 scale (Test 2, 2000)
+
+on:
+  push:
+    branches: ['diagnostics/stock-mo2-scale-ec9']
+    paths: ['.github/workflows/stock-mo2-scale-ec9.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stock-mo2-scale-ec9
+  cancel-in-progress: false
+
+jobs:
+  stock-scale:
+    if: github.repository == 'Herbertofury/Modhunter' && github.ref == 'refs/heads/diagnostics/stock-mo2-scale-ec9' && github.event_name == 'push'
+    runs-on: windows-2025
+    timeout-minutes: 13
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Exact released Test 2 source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        env:
+          GIT_CONFIG_COUNT: '1'
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: 'false'
+        with:
+          ref: 'ec9da4a0322deb9435ac223f605e7bf1a4b2f34f'
+          path: exact-test2
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Python for disposable fixture generation only
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Verify immutable source and prepare a new temporary harness root
+        run: |
+          $Root = Join-Path $env:GITHUB_WORKSPACE 'exact-test2'
+          if ((git -C $Root rev-parse HEAD) -cne 'ec9da4a0322deb9435ac223f605e7bf1a4b2f34f') { throw 'Unexpected Test 2 source commit' }
+          if ((git -C $Root rev-parse 'HEAD^{tree}') -cne 'ccd70daae8002ec836416ffd92019d217f6c8804') { throw 'Unexpected exact Test 2 tree' }
+          New-Item -Path (Join-Path $env:RUNNER_TEMP 'mh-ec9-stock-scale-sidecar') -ItemType Directory -ErrorAction Stop | Out-Null
+      - name: Materialize reviewed observer source fixture.py
+        run: |
+          $Source = @'
+          """Disposable stock MO2 benchmark fixture and pure evidence validation."""
+          from __future__ import annotations
+
+          import hashlib
+          import json
+          import math
+          import os
+          import stat
+          from pathlib import Path
+          from typing import Any
+
+          SIZES = (2_000, 11_207)
+          PROFILE = "Modhunter Smoke"
+          GAME = "modhuntersmoke"
+          INTERVAL_MS = 10
+          MAX_TICKS = 65_536
+          TEST = "stock-mo2-large-profile"
+          VERSION = "ec9da4a0322deb9435ac223f605e7bf1a4b2f34f"
+          PACKAGE_PIN = "347e75631a09129397d4d60ef4e834161da23f4e57c8133fa8e699ab9f8d5d42"
+          REFRESH_PINS = {
+              "plugin.py": "4f822ba1aad76aff41066eec7d48094961010ab31583fd818fc13781fa7d1424",
+              "model.py": "06fe1960a47694f8f7684f9b086b3dd2a8e73258d1e6bfac3245453e01c87662",
+              "bridge.py": "b33b3b094be8f7e90a72bbf6af453683bdf7e660fa7608036f9b22510911b087",
+              "refresh_work.py": "e9faeef7f0c5e3c21f54794dd6234547e1a400d08bec3d4172f40152ee3819ee",
+              "snapshot_projection.py": "872456b27d1ae975466adbf742434e33d3e799985881a0da47554c181c261930",
+          }
+
+
+          def require(condition: bool, message: str) -> None:
+              if not condition:
+                  raise ValueError(message)
+
+
+          def own_path(path: Path, *, directory: bool) -> Path:
+              info = path.lstat()
+              require(not getattr(info, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
+                      and (stat.S_ISDIR if directory else stat.S_ISREG)(info.st_mode),
+                      "Non-regular, linked, or reparse fixture path refused")
+              return path
+
+
+          def package_digest(root: Path, *, runtime_helper: bool = False) -> str:
+              own_path(root, directory=True)
+              paths = []
+              for base, directories, files in os.walk(root, followlinks=False):
+                  for name in directories:
+                      own_path(Path(base) / name, directory=True)
+                  directories[:] = [name for name in directories if name not in {"__pycache__", "data"}]
+                  for name in files:
+                      p = own_path(Path(base) / name, directory=False)
+                      if runtime_helper and p.relative_to(root).as_posix() == "bin/modhunter-qt-bridge.dll":
+                          continue
+                      if p.suffix != ".pyc":
+                          paths.append(p)
+              digest = hashlib.sha256()
+              for path in sorted(paths, key=lambda p: p.relative_to(root).as_posix()):
+                  rel = path.relative_to(root).as_posix()
+                  require(0 < path.stat().st_size <= 32 * 1024 * 1024, "Invalid production file size")
+                  digest.update(rel.encode("utf-8") + b"\0" + hashlib.sha256(path.read_bytes()).digest())
+              return digest.hexdigest()
+
+
+          def plan(rows: int) -> dict[str, bool]:
+              require(type(rows) is int and rows in SIZES, "Expected the declared 2,000 or 11,207 rows")
+              return {f"Perf Fixture {i + 1:05d}": i % 4 != 3 for i in range(rows)}
+
+
+          def fixture_digest(expected: dict[str, bool]) -> str:
+              return hashlib.sha256(json.dumps(expected, separators=(",", ":"), sort_keys=True).encode()).hexdigest()
+
+
+          def write_new(path: Path, contents: str) -> None:
+              with path.open("x", encoding="utf-8", newline="") as handle:
+                  handle.write(contents)
+
+
+          def seed(root: Path, rows: int) -> None:
+              expected = plan(rows)
+              own_path(root, directory=True)
+              marker = own_path(root / "modhunter-smoke-fixture.json", directory=False)
+              require(marker.stat().st_size <= 4096, "Invalid stock fixture marker")
+              stock = json.loads(marker.read_text(encoding="utf-8"))
+              require(stock.get("purpose") == "isolated native MO2 CI fixture" and bool(stock.get("runId")),
+                      "Not the disposable stock smoke instance")
+              mods = own_path(root / "mods", directory=True)
+              profiles = own_path(root / "profiles", directory=True)
+              profile = own_path(profiles / PROFILE, directory=True)
+              require(not any(mods.iterdir()) and not any(profile.iterdir())
+                      and not (root / "modhunter-stock-scale.json").exists(),
+                      "Refuse existing profile or mod contents")
+              for i, name in enumerate(expected):
+                  directory = mods / name
+                  directory.mkdir()
+                  source = "" if i % 4 else f"url=https://github.com/fixture/perf-{i+1:05d}\r\n"
+                  write_new(directory / "meta.ini",
+                            f"[General]\r\ngameName={GAME}\r\nmodid=0\r\nversion=1.0.0\r\nrepository=Local\r\n"
+                            f"notes=Disposable synthetic directory {i+1:05d}\r\n{source}")
+                  write_new(directory / f"perf-fixture-{i+1:05d}.txt", "Inert benchmark file. No executable content.\r\n")
+              # MO2 profiles store higher-priority rows first on disk. Activation is
+              # independently witnessed in the returned native catalog.
+              lines = [(("+" if active else "-") + name) for name, active in reversed(expected.items())]
+              write_new(profile / "modlist.txt", "# This file was automatically generated by Mod Organizer.\r\n"
+                        + "\r\n".join(lines) + "\r\n")
+              write_new(root / "modhunter-stock-scale.json", json.dumps({
+                  "test": TEST, "source": VERSION, "rows": rows, "profile": PROFILE,
+                  "fixtureHash": fixture_digest(expected), "runId": stock["runId"],
+              }, sort_keys=True))
+
+
+          def verify_catalog(catalog: dict[str, Any], native_order: list[str], rows: int) -> dict[str, Any]:
+              expected = plan(rows)
+              require(catalog.get("profileName") == PROFILE and catalog.get("game") == GAME
+                      and bool(catalog.get("profileId")), "Wrong stock catalog identity")
+              items = catalog["items"]
+              projected = [item["mo2InternalName"] for item in items]
+              require(len(projected) == len(set(projected)) and projected == native_order
+                      and catalog.get("build", {}).get("count") == len(projected),
+                      "Stock projection is not the complete ordered native mod inventory")
+              active = {item["mo2InternalName"]: item["enabled"] for item in items}
+              require({name for name in projected if name.startswith("Perf Fixture ")} == expected.keys()
+                      and all(active.get(name) is enabled for name, enabled in expected.items()),
+                      "Stock fixture rows missing, duplicated, added or activated incorrectly")
+              order_bytes = json.dumps(projected, separators=(",", ":")).encode()
+              return {"requestedRows": rows, "fixtureRows": len(expected), "allNativeRows": len(projected),
+                      "activeFixtureRows": sum(expected.values()), "orderHash": hashlib.sha256(order_bytes).hexdigest(),
+                      "fixtureHash": fixture_digest(expected)}
+
+
+          def timing(init: int, ui: int, first_attempt: int, published: int, points: list[int]) -> dict[str, Any]:
+              require(init <= ui <= first_attempt <= published
+                      and 1 <= len(points) <= MAX_TICKS and points[-1] >= published
+                      and all(a < b for a, b in zip(points, points[1:])),
+                      "No genuine Qt timer interval through publication or inconsistent phases")
+              # Count that final real Qt heartbeat after the ready marker. MO2 can begin
+              # a fully synchronous case before even its first timer tick.
+              window = [ui, *(t for t in points if ui < t <= points[-1])]
+              require(len(window) >= 2, "Missing Qt tick after UI readiness")
+              gaps = [(b-a)/1e6 for a, b in zip(window, window[1:])]
+              true_gaps = [(b-a)/1e6 for a, b in zip(window[1:], window[2:])]
+              return {"pluginInitToPublicationMs": (published-init)/1e6, "uiReadyToPublicationMs": (published-ui)/1e6,
+                      "firstAttemptToPublicationMs": (published-first_attempt)/1e6,
+                      "publicationToNextQtTickMs": (points[-1]-published)/1e6,
+                      "firstUiReadyBoundaryToTickMs": gaps[0], "maxCoveredGapMs": max(gaps),
+                      "uiQtTickCount": len(window)-1, "intervalMs": INTERVAL_MS,
+                      "timerInterTickP95Ms": sorted(true_gaps)[math.ceil(len(true_gaps)*0.95)-1] if true_gaps else None,
+                      "qtTickOffsetsFromUiMs": [(t-ui)/1e6 for t in window[1:]]}
+          '@
+          $File = Join-Path (Join-Path $env:RUNNER_TEMP 'mh-ec9-stock-scale-sidecar') 'fixture.py'
+          [IO.File]::WriteAllText($File, ($Source.Replace("`r`n", "`n") + "`n"), [Text.UTF8Encoding]::new($false))
+          if ((Get-FileHash -Algorithm SHA256 -LiteralPath $File).Hash.ToLowerInvariant() -cne 'e6a54042cc71d10ab54e8243122a61ec9b9c3d693437374f09175da8cfa88b1a') { throw 'Observer source byte mismatch' }
+      - name: Materialize reviewed observer source runner.py
+        run: |
+          $Source = @'
+          """Test-only observer, imported by the stock 2.5.2 plugin loader."""
+          from __future__ import annotations
+
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import sys
+          import time
+
+          from PyQt6 import QtCore, QtWidgets, sip
+          import mobase
+
+          from .fixture import (GAME, INTERVAL_MS, MAX_TICKS, PACKAGE_PIN, PROFILE, REFRESH_PINS,
+                                SIZES, TEST, VERSION, own_path, package_digest, require, timing, verify_catalog)
+
+          WORK = Path(os.environ.get("MODHUNTER_NATIVE_SMOKE_INSTANCE", ""))
+          LIBS = Path(__file__).resolve().parents[2] / "modhunter-fixture-libs"
+          PACKAGE = LIBS / "mo2_update_arsenal"
+          require(sys.platform == "win32" and os.environ.get("MODHUNTER_NATIVE_SMOKE") == "1",
+                  "Requires the real disposable Windows host")
+          require(WORK.is_absolute(), "Expected an owned absolute fixture path")
+          own_path(WORK, directory=True)
+          require(package_digest(PACKAGE, runtime_helper=True) == PACKAGE_PIN, "Staged production package bytes changed")
+          helper = own_path(PACKAGE / 'bin' / 'modhunter-qt-bridge.dll', directory=False)
+          require(0 < helper.stat().st_size <= 32 * 1024 * 1024
+                  and hashlib.sha256(helper.read_bytes()).hexdigest() == os.environ.get('MODHUNTER_NATIVE_SMOKE_QT_BRIDGE_SHA256'),
+                  'Staged Qt helper does not match the orchestrator evidence')
+          sys.path.insert(0, str(LIBS))
+
+          from mo2_update_arsenal.plugin import ModUpdateArsenal
+
+
+          class NativeSmokePlugin(ModUpdateArsenal):
+              """Only observe exact production callbacks and application timer delivery."""
+
+              def __init__(self):
+                  super().__init__()
+                  self._perf_init = self._perf_ui = self._perf_start = self._perf_ready = None
+                  self._perf_ticks = []
+                  self._perf_done = False
+                  self._perf_receipt = None
+                  self._perf_rows = None
+                  self._perf_fixture = None
+                  self._perf_generation = None
+
+              def name(self):
+                  return "Modhunter Native Scale Observer"
+
+              def displayName(self):
+                  return "Modhunter Native Scale Observer (disposable fixture only)"
+
+              def description(self):
+                  return "Measures unmodified Modhunter publication and the stock MO2 Qt timer."
+
+              def init(self, organizer):
+                  self._perf_init = time.perf_counter_ns()
+                  receipt = Path(os.environ.get("MODHUNTER_NATIVE_SMOKE_RESULT", ""))
+                  require(receipt.is_absolute() and receipt.parent.resolve() == WORK.parent.resolve() / "evidence"
+                          and receipt.name == "native-receipt.json", "Expected the isolated stock receipt path")
+                  self._perf_receipt = receipt
+                  require(not receipt.exists(), "Refused an existing stock receipt")
+                  try:
+                      marker = own_path(WORK / "modhunter-stock-scale.json", directory=False)
+                      stock_marker = own_path(WORK / "modhunter-smoke-fixture.json", directory=False)
+                      require(max(marker.stat().st_size, stock_marker.stat().st_size) <= 4096, "Oversize fixture marker")
+                      fixture = json.loads(marker.read_text(encoding="utf-8"))
+                      stock = json.loads(stock_marker.read_text(encoding="utf-8"))
+                      self._perf_fixture = fixture
+                      self._perf_rows = fixture["rows"]
+                      require(fixture["source"] == VERSION and fixture["test"] == TEST
+                              and self._perf_rows in SIZES and fixture["profile"] == PROFILE
+                              and fixture["runId"] == stock["runId"] and stock["purpose"] == "isolated native MO2 CI fixture",
+                              "Wrong fixture identity")
+                      require(isinstance(organizer, mobase.IOrganizer), "Refused synthetic organizer bindings")
+                      self._owner()
+                      self._perf_timer = QtCore.QTimer()
+                      self._perf_timer.setTimerType(QtCore.Qt.TimerType.PreciseTimer)
+                      self._perf_timer.setInterval(INTERVAL_MS)
+                      self._perf_timer.timeout.connect(self._heartbeat)
+                      self._perf_timer.start()
+                      if not super().init(organizer):
+                          raise RuntimeError("Production init did not succeed")
+                      return True
+                  except Exception as exc:
+                      # Never turn a local harness exception into a stock success.
+                      QtCore.QTimer.singleShot(0, lambda error=str(exc): self._finish(False, error))
+                      return False
+
+              def _owner(self):
+                  app = QtWidgets.QApplication.instance()
+                  require(app is not None and QtCore.QThread.currentThread() == app.thread(), "Not the stock Qt owner thread")
+
+              def _on_ui_initialized(self, window):
+                  edge = time.perf_counter_ns()
+                  try:
+                      self._owner()
+                      require(self._perf_ui is None, "Duplicate native UI-ready callback")
+                      require(window is not None and not sip.ispycreated(window), "Expected the C++ main window")
+                      require(self.org.managedGame().gameName() == "Modhunter CI Fixture"
+                              and self.org.profileName() == PROFILE
+                              and Path(self.org.basePath()).resolve() == WORK.resolve()
+                              and Path(self.org.profilePath()).resolve() == (WORK / "profiles" / PROFILE).resolve(),
+                              "MO2 is not on the isolated game, base and profile")
+                      self._perf_ui = edge
+                      return super()._on_ui_initialized(window)
+                  except Exception as exc:
+                      QtCore.QTimer.singleShot(0, lambda error=str(exc): self._finish(False, error))
+
+              def _start_automatically(self):
+                  if self._perf_start is None and self._perf_ui is not None:
+                      self._perf_start = time.perf_counter_ns()
+                  return super()._start_automatically()
+
+              def _publish_diagnostics(self):
+                  super()._publish_diagnostics()
+                  if self._perf_ready is None and self.server is not None and self.server._server is not None:
+                      self._perf_ready = time.perf_counter_ns()
+                      self._perf_generation = self.server.revision()["generation"]
+                      self._perf_service = self.server
+
+              def _heartbeat(self):
+                  try:
+                      self._owner()
+                      self._perf_ticks.append(time.perf_counter_ns())
+                      require(len(self._perf_ticks) <= MAX_TICKS, "Bounded Qt timer capture exceeded")
+                      if self._perf_ready is None:
+                          return
+                      self._perf_timer.stop()
+                      # No inventory check, snapshot deepcopy, hashing or write in the
+                      # measured interval. The boundary includes the first real Qt tick
+                      # after publication, not just the production callback's return.
+                      self._finish_capture()
+                  except Exception as exc:
+                      self._finish(False, str(exc))
+
+              def _finish_capture(self):
+                  stats = timing(self._perf_init, self._perf_ui, self._perf_start, self._perf_ready, self._perf_ticks)
+                  witness = self.server.native_snapshot()
+                  require(self.server is self._perf_service and self._perf_generation == 1
+                          and self.server.revision()["generation"] == self._perf_generation,
+                          "The first live publication was replaced before its complete witness")
+                  ml = self.org.modList()
+                  ordered = []
+                  for name in ml.allModsByProfilePriority(self.org.profile()):
+                      mod = ml.getMod(name)
+                      if mod is not None and not mod.isSeparator():
+                          ordered.append(str(name))
+                  catalog = verify_catalog(witness, ordered, self._perf_rows)
+                  require(catalog["fixtureHash"] == self._perf_fixture["fixtureHash"], "Mismatched fixture provenance")
+                  checked = {}
+                  for name, pin in REFRESH_PINS.items():
+                      modulename = "mo2_update_arsenal." + Path(name).stem
+                      mod = sys.modules[modulename]
+                      shipping = own_path(PACKAGE / name, directory=False)
+                      require(Path(mod.__file__).resolve() == shipping.resolve()
+                              and hashlib.sha256(shipping.read_bytes()).hexdigest() == pin,
+                              "Unexpected native imported source")
+                      checked[name] = pin
+                  gateway = self._native_nexus
+                  sender = getattr(gateway, "_qt_sender", None)
+                  require(sender is not None and gateway.files_available and gateway._qt_bridge is not None
+                          and not sip.ispycreated(gateway._qt_bridge) and sender.path.resolve() == helper.resolve()
+                          and sender.info == {"abi": 1, "buildQt": "6.7.1", "runtimeQt": "6.7.1", "mechanism": "typed-qt-sender"},
+                          "Released Qt bridge did not load against the stock native QObject")
+                  self._finish(True, None, timing=stats, inventory=catalog, loadedSourceSha256=checked,
+                               generation=self._perf_generation, startupAttempts=self._startup_attempts,
+                               loadedQtBridgeSha256=hashlib.sha256(sender.path.read_bytes()).hexdigest(),
+                               qtBridgeBinding=sender.info)
+
+              def _finish(self, success: bool, error: str | None, **details):
+                  if self._perf_done:
+                      return
+                  self._perf_done = True
+                  timer = getattr(self, "_perf_timer", None)
+                  if timer is not None:
+                      timer.stop()
+                  outcome = {"schemaVersion": 1, "test": TEST, "source": VERSION, "ok": success,
+                             "nativeMO2": success, "error": error,
+                             "runtime": {"platform": sys.platform, "mo2": QtCore.QCoreApplication.applicationVersion(),
+                                         "qt": QtCore.qVersion(), "pyqt": QtCore.PYQT_VERSION_STR},
+                             "requiresOuterOfficialExeVersionWitness": True,
+                             "fixture": {"profile": PROFILE, "installedGame": False, "ownedProfile": False},
+                             "checks": [{"name": name, "passed": success} for name in
+                                        ("stock_isolated_fixture", "stock_large_snapshot", "stock_ui_heartbeat")],
+                             **details}
+                  temporary = self._perf_receipt.with_suffix(".tmp")
+                  with temporary.open("x", encoding="utf-8") as handle:
+                      json.dump(outcome, handle, indent=2)
+                  temporary.replace(self._perf_receipt)
+                  QtCore.QCoreApplication.exit(0 if success else 1)
+          '@
+          $File = Join-Path (Join-Path $env:RUNNER_TEMP 'mh-ec9-stock-scale-sidecar') 'runner.py'
+          [IO.File]::WriteAllText($File, ($Source.Replace("`r`n", "`n") + "`n"), [Text.UTF8Encoding]::new($false))
+          if ((Get-FileHash -Algorithm SHA256 -LiteralPath $File).Hash.ToLowerInvariant() -cne '612206874389ab75212d2fdb417d0ed861d0e388be20640179ef6c33df110038') { throw 'Observer source byte mismatch' }
+      - name: Materialize reviewed observer source stage.py
+        run: |
+          $Source = @'
+          """Prepare only: assemble a sidecar script from exact stock smoke scaffolding."""
+          from __future__ import annotations
+
+          import argparse
+          import hashlib
+          from pathlib import Path
+
+          from fixture import PACKAGE_PIN, SIZES, TEST, VERSION, own_path, package_digest, require, write_new
+
+          HERE = Path(__file__).resolve().parent
+          SCRIPT_SHA256 = "320e09da7c61e590dce05dc255ebe66c8fa0862f236990445775f1e8cfd3bb45"
+          GAME_SHA256 = "a315d7589a084d18473dc82e079fd170b119ac71368bc5fb684d32fc6cca6c71"
+          INIT_SHA256 = "43dd1b849678e1d625113e621b585f22cf9f665324eeeb97c3184edcd54a4afb"
+
+
+          def checked(path: Path, digest: str) -> bytes:
+              data = own_path(path, directory=False).read_bytes()
+              require(hashlib.sha256(data).hexdigest() == digest, f"Unexpected exact ec9 source bytes: {path.name}")
+              return data
+
+
+          def substitute(source: str, old: str, new: str) -> str:
+              require(source.count(old) == 1, "Unexpected stock scaffold shape")
+              return source.replace(old, new)
+
+
+          def replace_section(source: str, start: str, end: str, inserted: str) -> str:
+              require(source.count(start) == 1 and source.count(end) == 1, "Unexpected stock section anchors")
+              lo, hi = source.index(start), source.index(end)
+              require(lo < hi, "Unexpected stock section order")
+              return source[:lo] + inserted + source[hi:]
+
+
+          def render(source: str, rows: int) -> str:
+              require(rows in SIZES, "Unknown fixture size")
+              source = replace_section(source, '<#\n.SYNOPSIS', '[CmdletBinding()]',
+                  '<#\n.SYNOPSIS\nDisposable stock-only Modhunter scale observer. Not the tiny install/restore smoke.\n#>\n')
+              source = substitute(source,
+                  "if (!$IsWindows) { throw 'The native MO2 smoke requires Windows; it cannot pass through a mock on another OS.' }",
+                  "if (!$IsWindows) { throw 'Stock MO2 scale requires Windows; no simulated pass is accepted.' }\n"
+                  "if ($RustCliPath -or $DesktopExecutable) { throw 'Stock scale observer does not run CLI/desktop/install acceptance.' }")
+              source = substitute(source, "test = 'mo2-native-fixture-smoke-orchestrator'", f"test = '{TEST}-orchestrator'")
+              source = substitute(source, "    phase = 'preflight'", f"    phase = 'preflight'\n    source = '{VERSION}'\n    expectedFixtureRows = {rows}")
+              source = substitute(source, "native/evidence/windows-mo2-smoke", "native/evidence/windows-mo2-stock-scale")
+              source = substitute(source, "    $Summary.phase = 'extract-portable-release'",
+                  "    if ($Summary.release.sha256 -cne 'e6376efd87fd5ddd95aee959405e8f067afa526ea6c2c0c5aa03c5108bf4a815') { "
+                  "throw 'MO2 archive differs from the exact previously verified Test 2 stock receipt.' }\n"
+                  "    $Summary.release.integrity = 'Pinned official URL and size; SHA256 matches independently retained Test 2 stock smoke bytes'\n"
+                  "    $Summary.phase = 'extract-portable-release'")
+              source = replace_section(source, "    foreach ($Mod in @(", "    foreach ($ProfileFile in @(",
+                  "    $FixturePython = Get-Command 'python.exe' -ErrorAction Stop\n"
+                  "    & $FixturePython.Source (Join-Path $PSScriptRoot 'seed.py') $InstanceRoot " + str(rows) + "\n"
+                  "    if ($LASTEXITCODE -ne 0) { throw 'Disposable stock scale fixture generation failed.' }\n")
+              source = substitute(source, "@('__init__.py', 'runner.py', 'audit_probe.py', 'content_probe.py')",
+                  "@('__init__.py', 'runner.py', 'fixture.py')")
+              source = substitute(source, "    $Process = [Diagnostics.Process]::Start($StartInfo)",
+                  "    $LaunchClock = [Diagnostics.Stopwatch]::StartNew()\n    $Process = [Diagnostics.Process]::Start($StartInfo)")
+              source = replace_section(source, "    $RequiredChecks = @(", "    foreach ($RequiredCheck in $RequiredChecks)",
+                  "    $Summary['launchToObservedReceiptMs'] = [Math]::Round($LaunchClock.Elapsed.TotalMilliseconds, 2)\n"
+                  f"    if ($Receipt.test -cne '{TEST}' -or $Receipt.source -cne '{VERSION}' "
+                  f"-or $Receipt.inventory.fixtureRows -ne {rows} -or $Receipt.runtime.platform -cne 'win32') {{\n"
+                  "        throw 'Receipt is not this exact Windows stock scale session.'\n    }\n"
+                  "    $RequiredChecks = @('stock_isolated_fixture', 'stock_large_snapshot', 'stock_ui_heartbeat')\n")
+              return source
+
+
+          def stage(repo: Path, output: Path, rows: int) -> None:
+              require(rows in SIZES, "Unknown fixture size")
+              require(not output.exists() and not output.is_symlink(), "Stage destination must be new")
+              require(not output.resolve().is_relative_to(repo.resolve()), "Refuse writes in the source checkout")
+              root = repo / "native" / "scripts"
+              base = root / "mo2_smoke_plugin"
+              source = checked(root / "mo2_native_smoke.ps1", SCRIPT_SHA256).decode("utf-8")
+              game = checked(base / "game_modhunter_smoke.py", GAME_SHA256)
+              init = checked(base / "modhunter_native_smoke" / "__init__.py", INIT_SHA256)
+              require(package_digest(repo / "mo2_update_arsenal") == PACKAGE_PIN, "Not the unchanged released Test 2 package")
+              script = render(source, rows)
+              output.mkdir()
+              write_new(output / "stock_scale.ps1", script)
+              write_new(output / "seed.py", "import sys\nfrom pathlib import Path\n"
+                        "from mo2_smoke_plugin.modhunter_native_smoke.fixture import seed\n"
+                        "seed(Path(sys.argv[1]), int(sys.argv[2]))\n")
+              fixture = output / "mo2_smoke_plugin"
+              observer = fixture / "modhunter_native_smoke"
+              observer.mkdir(parents=True)
+              (fixture / "game_modhunter_smoke.py").write_bytes(game)
+              (observer / "__init__.py").write_bytes(init)
+              for name in ("fixture.py", "runner.py"):
+                  (observer / name).write_bytes((HERE / name).read_bytes())
+
+
+          def main() -> None:
+              parser = argparse.ArgumentParser(description=__doc__)
+              parser.add_argument("--repository", type=Path, required=True)
+              parser.add_argument("--output", type=Path, required=True)
+              parser.add_argument("--rows", type=int, choices=SIZES, default=SIZES[0])
+              args = parser.parse_args()
+              stage(args.repository, args.output, args.rows)
+
+
+          if __name__ == "__main__":
+              main()
+          '@
+          $File = Join-Path (Join-Path $env:RUNNER_TEMP 'mh-ec9-stock-scale-sidecar') 'stage.py'
+          [IO.File]::WriteAllText($File, ($Source.Replace("`r`n", "`n") + "`n"), [Text.UTF8Encoding]::new($false))
+          if ((Get-FileHash -Algorithm SHA256 -LiteralPath $File).Hash.ToLowerInvariant() -cne '6af8e98aa1183534b3da6925ad8bfa0bd410ecbc56d54004880e22758df9d2d1') { throw 'Observer source byte mismatch' }
+      - name: Verify pinned release bytes and extract only the shipped Qt helper
+        run: |
+          $Root = Join-Path $env:RUNNER_TEMP 'mh-ec9-stock-scale-sidecar'
+          $Zip = Join-Path $Root 'portable-test2.zip'
+          Invoke-WebRequest -Uri 'https://github.com/Herbertofury/Modhunter/releases/download/v0.12.4-test.2/Modhunter-Rust-Windows.zip' -OutFile $Zip -TimeoutSec 90
+          $Code = @'
+          import hashlib, stat, sys, zipfile
+          from pathlib import Path
+          package = Path(sys.argv[1])
+          destination = Path(sys.argv[2])
+          def require(ok, message):
+              if not ok:
+                  raise ValueError(message)
+          require(package.stat().st_size == 17112561, 'ZIP size differs from Test 2')
+          require(hashlib.sha256(package.read_bytes()).hexdigest() == '3f4414f517119b6067ace761170ed1a1714935f201a8fce32d44142a5093938d', 'ZIP digest differs from Test 2')
+          with zipfile.ZipFile(package) as bundle:
+              matches = [x for x in bundle.infolist() if x.filename == 'MO2/mo2_update_arsenal/bin/modhunter-qt-bridge.dll']
+              require(len(matches) == 1, 'Expected one exact shipped DLL member')
+              info = matches[0]
+              mode = stat.S_IFMT(info.external_attr >> 16)
+              require(info.file_size == 10752 and not info.is_dir() and mode in (0, stat.S_IFREG)
+                      and not info.flag_bits & 1 and not info.external_attr & 0x400, 'Invalid DLL member')
+              with bundle.open(info) as data:
+                  dll = data.read(10753)
+          require(len(dll) == 10752 and dll.startswith(b'MZ') and
+                  hashlib.sha256(dll).hexdigest() == '63ee1fece5202de6a78c55f626343df412cc43d5287daaa95074a0260c519949', 'Shipped DLL digest or size mismatch')
+          with destination.open('xb') as handle:
+              handle.write(dll)
+          '@
+          $HelperExtractor = Join-Path $Root 'extract_pinned_qt.py'
+          [IO.File]::WriteAllText($HelperExtractor, ($Code.Replace("`r`n", "`n") + "`n"), [Text.UTF8Encoding]::new($false))
+          python $HelperExtractor $Zip (Join-Path $Root 'modhunter-qt-bridge.dll')
+          if ($LASTEXITCODE -ne 0) { throw 'Released Qt bridge verification failed' }
+      - name: Stage the detached test without modifying production or the stock gate
+        run: |
+          $Root = Join-Path $env:RUNNER_TEMP 'mh-ec9-stock-scale-sidecar'
+          $Source = Join-Path $env:GITHUB_WORKSPACE 'exact-test2'
+          python (Join-Path $Root 'stage.py') --repository $Source --output (Join-Path $Root 'probe') --rows 2000
+          if ($LASTEXITCODE -ne 0) { throw 'Detached harness staging failed' }
+      - name: Measure stock MO2 2.5.2 on one disposable 2,000-mod profile
+        run: |
+          $Root = Join-Path $env:RUNNER_TEMP 'mh-ec9-stock-scale-sidecar'
+          $Source = Join-Path $env:GITHUB_WORKSPACE 'exact-test2'
+          & (Join-Path $Root 'probe/stock_scale.ps1') -RepositoryRoot $Source `
+              -QtBridgePath (Join-Path $Root 'modhunter-qt-bridge.dll') `
+              -WorkDirectory (Join-Path $Root 'run') `
+              -EvidenceDirectory (Join-Path $Root 'receipts') -TimeoutSeconds 240
+      - name: Keep only stock timing and setup receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: stock-mo2-scale-ec9-2000
+          path: |
+            ${{ runner.temp }}/mh-ec9-stock-scale-sidecar/receipts/native-receipt.json
+            ${{ runner.temp }}/mh-ec9-stock-scale-sidecar/receipts/result.json
+          retention-days: 7
+          if-no-files-found: warn

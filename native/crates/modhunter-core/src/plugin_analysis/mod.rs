@@ -224,6 +224,213 @@ pub struct RecordSummary {
     pub scan_complete: bool,
 }
 
+// These optional facts are only computed for an explicitly selected file.
+// The profile audit keeps its existing fields and does not collect a census.
+#[derive(Default)]
+struct InspectionExtras {
+    author: SelectedPluginText,
+    description: SelectedPluginText,
+    types: BTreeMap<String, SelectedRecordCounts>,
+}
+
+#[derive(Debug, Default, Serialize)]
+#[serde(tag = "state", content = "value", rename_all = "snake_case")]
+pub enum SelectedPluginText {
+    #[default]
+    Absent,
+    Utf8(String),
+    Unavailable,
+    Duplicate,
+}
+
+impl SelectedPluginText {
+    fn observe(&mut self, raw: &[u8], limit: usize) {
+        *self = if !matches!(self, Self::Absent) {
+            Self::Duplicate
+        } else if let Some(text) = raw
+            .strip_suffix(&[0])
+            .filter(|b| b.len() <= limit)
+            .and_then(|b| std::str::from_utf8(b).ok())
+            .filter(|s| {
+                !s.chars()
+                    .any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t'))
+            })
+        {
+            Self::Utf8(text.into())
+        } else {
+            // Without an encoding choice, do not guess an author's name.
+            Self::Unavailable
+        };
+    }
+}
+
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SelectedRecordCounts {
+    pub local_index: usize,
+    pub declared_master_index: usize,
+    pub unresolved_index: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SelectedPluginInspection {
+    pub scope: &'static str,
+    pub file_name: String,
+    pub ghost_suffix: bool,
+    pub size: u64,
+    pub sha256: Option<String>,
+    pub header: PluginHeader,
+    pub author: SelectedPluginText,
+    pub description: SelectedPluginText,
+    pub records: Option<RecordSummary>,
+    pub all_record_types: Option<BTreeMap<String, SelectedRecordCounts>>,
+    pub master_resolution: &'static str,
+    pub payload_decoding: &'static str,
+}
+
+#[cfg(windows)]
+fn selected_windows_path_syntax(path: &Path) -> bool {
+    use std::path::{Component, Prefix};
+
+    match path.components().next() {
+        Some(Component::Prefix(p)) if matches!(p.kind(), Prefix::Disk(_)) && path.is_absolute() => {
+        }
+        Some(Component::Prefix(_) | Component::RootDir) | None => return false,
+        Some(_) => {}
+    }
+    // Syntax only: ordinary relative or drive-absolute paths. This does not
+    // identify mapped drives or prove properties of an ancestor directory.
+    path.components().all(|part| match part {
+        Component::Normal(name) => name.to_str().is_some_and(|name| {
+            !name.ends_with([' ', '.'])
+                && !name
+                    .chars()
+                    .any(|c| c.is_ascii_control() || r#"<>:"|?*"#.contains(c))
+                && !reserved_windows_device_name(name)
+        }),
+        _ => true,
+    })
+}
+
+// Windows can treat legacy device names with ordinary suffixes as aliases.
+// https://learn.microsoft.com/windows/win32/fileio/naming-a-file
+#[cfg(windows)]
+fn reserved_windows_device_name(name: &str) -> bool {
+    let base = name
+        .split('.')
+        .next()
+        .unwrap_or_default()
+        .trim_end_matches(' ')
+        .to_ascii_uppercase();
+    matches!(
+        base.as_str(),
+        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+    ) || base
+        .strip_prefix("COM")
+        .or_else(|| base.strip_prefix("LPT"))
+        .is_some_and(|suffix| {
+            matches!(
+                suffix,
+                "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+            )
+        })
+}
+
+#[cfg(all(test, windows))]
+mod selected_windows_path_tests {
+    use super::*;
+
+    #[test]
+    fn selection_requires_local_syntax_without_opening_any_path() {
+        for input in [
+            r"C:\mods\Example.esp",
+            r"mods\Example.ESP",
+            r".\Example.esl",
+            r"..\Example.esm",
+            "Com10.esp",
+        ] {
+            assert!(selected_windows_path_syntax(Path::new(input)), "{input:?}");
+        }
+        for input in [
+            r"\\mock-server\mock-share\Example.esp",
+            r"\\?\UNC\mock-server\mock-share\Example.esp",
+            r"\\.\pipe\Example.esp",
+            r"\\?\C:\mods\Example.esp",
+            r"C:Example.esp",
+            r"\mods\Example.esp",
+            r"mods\Example.esp:Alternate.esp",
+            r"mods:Alternate\Example.esp",
+            r"C:\mods\NUL.esp",
+            r"mods\COM¹.esl",
+            r"mods\AUX\Example.esp",
+        ] {
+            assert!(!selected_windows_path_syntax(Path::new(input)), "{input:?}");
+        }
+    }
+}
+
+/// Inspect exactly one selected Skyrim SE-format plugin, without native/profile
+/// discovery or a second parser. The input does not prove its game or runtime.
+pub fn inspect_selected_skyrim_plugin(
+    path: &Path,
+    header_only: bool,
+) -> Result<SelectedPluginInspection, CoreError> {
+    #[cfg(windows)]
+    if !selected_windows_path_syntax(path) {
+        return Err(CoreError::Invalid(
+            "Select one plugin using an ordinary relative path or a local drive-qualified path"
+                .into(),
+        ));
+    }
+    let raw_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .filter(|n| n.len() <= 1024)
+        .ok_or_else(|| {
+            CoreError::Invalid("Supply one named Skyrim SE-format plugin file".into())
+        })?;
+    let (name, ghost_suffix) = plugin_name(raw_name)
+        .ok_or_else(|| CoreError::Invalid("Supply a named .esp, .esm or .esl plugin".into()))?;
+    const SELECTED_LIMIT: u64 = 256 * 1024 * 1024;
+    let (file, stamp) = open_regular_with_options(path, SELECTED_LIMIT, true)?;
+    let mut extras = InspectionExtras::default();
+    let parsed = records::scan(
+        file,
+        &stamp,
+        &name,
+        "skyrimspecialedition",
+        records::ScanOptions {
+            deep: !header_only,
+            cached_header: None,
+            cancelled: &|| false,
+        },
+        &mut PluginAuditStats::default(),
+        Some(&mut extras),
+    )?;
+    let after =
+        fs::symlink_metadata(path).map_err(|e| io_error("Recheck selected plugin input", e))?;
+    if is_link(&after) || Stamp::new(&after) != stamp {
+        return Err(CoreError::Invalid(
+            "Selected plugin changed while reading; no result was accepted".into(),
+        ));
+    }
+    Ok(SelectedPluginInspection {
+        scope: "one_selected_file_skyrim_se_format_assumed",
+        file_name: raw_name.into(),
+        ghost_suffix,
+        size: stamp.size,
+        sha256: parsed.sha256,
+        header: parsed.header,
+        author: extras.author,
+        description: extras.description,
+        records: parsed.records,
+        all_record_types: (!header_only).then_some(extras.types),
+        master_resolution: "declarations_only_not_resolved",
+        payload_decoding: "not_evaluated",
+    })
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileFingerprint {
@@ -756,6 +963,7 @@ impl PluginAnalyzer {
                     cancelled,
                 },
                 &mut stats,
+                None,
             )?;
             check_cancelled(cancelled)?;
             let after =
@@ -884,6 +1092,14 @@ fn is_link(meta: &Metadata) -> bool {
 }
 
 fn open_regular(path: &Path, limit: u64) -> Result<(File, Stamp), CoreError> {
+    open_regular_with_options(path, limit, false)
+}
+
+fn open_regular_with_options(
+    path: &Path,
+    limit: u64,
+    #[cfg_attr(not(unix), allow(unused_variables))] nonblocking: bool,
+) -> Result<(File, Stamp), CoreError> {
     let before =
         fs::symlink_metadata(path).map_err(|e| io_error("Inspect plugin analysis input", e))?;
     if is_link(&before) || !before.is_file() {
@@ -901,7 +1117,7 @@ fn open_regular(path: &Path, limit: u64) -> Result<(File, Stamp), CoreError> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        options.custom_flags(libc::O_NOFOLLOW);
+        options.custom_flags(libc::O_NOFOLLOW | if nonblocking { libc::O_NONBLOCK } else { 0 });
     }
     #[cfg(windows)]
     {
@@ -924,6 +1140,22 @@ fn open_regular(path: &Path, limit: u64) -> Result<(File, Stamp), CoreError> {
         ));
     }
     Ok((file, stamp))
+}
+
+#[cfg(all(test, unix))]
+#[test]
+fn nonblocking_guard_is_opt_in_for_selected_files_only() {
+    use std::os::fd::AsRawFd;
+
+    let fixture = tempfile::NamedTempFile::new().unwrap();
+    let (ordinary, _) = open_regular(fixture.path(), 1024).unwrap();
+    let (selected, _) = open_regular_with_options(fixture.path(), 1024, true).unwrap();
+    // F_GETFL reads flags from a valid local file descriptor without modifying it.
+    let flags = |file: &File| unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETFL) };
+    assert_ne!(flags(&ordinary), -1);
+    assert_ne!(flags(&selected), -1);
+    assert_eq!(flags(&ordinary) & libc::O_NONBLOCK, 0);
+    assert_ne!(flags(&selected) & libc::O_NONBLOCK, 0);
 }
 
 fn read_small(

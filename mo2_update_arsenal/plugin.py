@@ -46,6 +46,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
         self._background_refresh = None
         self._refresh_completion = None
         self._background_dirty = False
+        self._deferred_content_leases = set()
         self._runtime = "unknown"
         self._download_complete_callback = None
         self._selection_connected = False
@@ -700,7 +701,59 @@ class ModUpdateArsenal(mobase.IPluginTool):
         # every arrow-key selection. Duplicate labels deliberately select none.
         self.server.set_selected_by_label(label)
 
+    def _defer_content_lease(self, request, background):
+        # Leave Qt ownership unclaimed. Cancellation/expiry can still win
+        # while the worker retains its existing install/restore queue lock.
+        if request.state != "queued" or request in self._deferred_content_leases:
+            return
+        if request.deadline is not None and time.monotonic() >= request.deadline:
+            request.cancel_if_pending()
+            return
+        self._deferred_content_leases.add(request)
+        def resume(outcome):
+            self._deferred_content_leases.discard(request)
+            if request.state != "queued":
+                return
+            if request.deadline is not None and time.monotonic() >= request.deadline:
+                request.cancel_if_pending()
+                return
+            if self._closing:
+                request.finish({"ok": False, "error": "MO2 is closing"})
+                return
+            # A newer debounce can supersede this outcome without yet having
+            # enqueued its capture. Join it rather than starting extra work.
+            if self._pending_refresh is not None:
+                self._defer_content_lease(request, background)
+                return
+            if not outcome.get("ok") or self._background_dirty or background.busy:
+                request.finish({"ok": False, "error": outcome.get("error")
+                                or "MO2 profile did not settle; review the operation again"})
+                return
+            self._dispatch(request)  # NativeContent checks full reviewed identity and lease.
+
+        refused = background.after_settle(resume)
+        if refused is not None:
+            self._deferred_content_leases.discard(request)
+            request.finish({"ok": False, "error": refused})
+        elif self._pending_refresh is not None or not background.busy:
+            # Promote a pending debounce into owned work now. Another explicit
+            # refresh may subsume its timer, but cannot strand this listener.
+            self._queue_background_refresh()
+
     def _dispatch(self, request: UIRequest):
+        if request.cmd == "content-lease":
+            if self._closing:
+                request.finish({"ok": False, "error": "MO2 is closing"})
+                return
+            background = getattr(self, "_background_refresh", None)
+            if background is not None and (self._pending_refresh is not None or self._background_dirty or background.busy):
+                # Only an actual reviewed lease is eligible to wait. Invalid
+                # internal requests do not take a bounded settlement slot.
+                if not isinstance(request.payload.get("context"), dict) or not request.payload.get("jobId"):
+                    request.finish({"ok": False, "error": "MO2 profile is refreshing; a reviewed content lease is required"})
+                else:
+                    self._defer_content_lease(request, background)
+                return
         if not request.begin():
             return  # Expired/cancelled Qt events can never execute later.
         try:

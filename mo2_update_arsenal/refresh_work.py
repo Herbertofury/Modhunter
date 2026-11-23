@@ -79,6 +79,7 @@ class RefreshWork:
         self._pending = False
         self._force = False
         self._waiters: list[Complete] = []
+        self._settle_waiters: list[Complete] = []
         self._epoch = 0
         self._closed = False
 
@@ -110,6 +111,21 @@ class RefreshWork:
         self._force |= bool(force)
         self._start()
 
+    def after_settle(self, done):
+        """Observe the last admitted publication without claiming a native request."""
+        self._check_owner()
+        if self._closed:
+            return "MO2 is closing"
+        if len(self._settle_waiters) >= self.MAX_WAITERS:
+            return "Another native operation is waiting for profile refresh"
+        self._settle_waiters.append(done)
+
+    def _finish_settle(self, result):
+        if self._active is not None or self._pending or self._closed:
+            return
+        listeners, self._settle_waiters = self._settle_waiters, []
+        self._notify(listeners, result)
+
     @property
     def busy(self):
         self._check_owner()
@@ -126,7 +142,8 @@ class RefreshWork:
         self._check_owner()
         self._closed = True
         self.invalidate()
-        waiting, self._waiters = self._waiters, []
+        waiting, self._waiters = self._waiters + self._settle_waiters, []
+        self._settle_waiters = []
         active, self._active = self._active, None
         self._pending = self._force = False
         if active is not None:
@@ -168,9 +185,10 @@ class RefreshWork:
             if failed is not None:
                 self._close_capture(failed)
             if not self._closed:
-                self._notify(failed.waiters if failed is not None else waiters,
-                             self._error("Could not capture MO2 profile: " + type(exc).__name__))
+                result = self._error("Could not capture MO2 profile: " + type(exc).__name__)
+                self._notify(failed.waiters if failed is not None else waiters, result)
                 self._start()
+                self._finish_settle(result)
 
     def _valid(self, work):
         return (not self._closed and self._active is work and self._epoch == work.epoch
@@ -246,3 +264,4 @@ class RefreshWork:
                 self._notify(work.waiters, result)
             finally:
                 self._start()
+                self._finish_settle(result)

@@ -1,0 +1,89 @@
+# Detached proposal, not installed or dispatched.
+name: Stock MO2 source-only ABBA (Test 2 vs held 0.12.5)
+
+on:
+  push:
+    branches: ['diagnostics/stock-mo2-source-ab-ec9-89b']
+    paths:
+      - '.github/workflows/stock-mo2-source-ab-ec9-89b.yml'
+      - 'qa/stock-mo2-source-ab-ec9-89b/**'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: diagnostic-stock-mo2-source-ab-ec9-89b
+  cancel-in-progress: false
+
+jobs:
+  source-ab:
+    if: github.repository == 'Herbertofury/Modhunter' && github.ref == 'refs/heads/diagnostics/stock-mo2-source-ab-ec9-89b' && github.event_name == 'push'
+    runs-on: windows-2025
+    timeout-minutes: 19
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Exact diagnostic commit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        env:
+          GIT_CONFIG_COUNT: '1'
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: 'false'
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          path: diagnostic
+      - name: Exact original Test 2 stock scaffold (no write)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        env:
+          GIT_CONFIG_COUNT: '1'
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: 'false'
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          ref: ec9da4a0322deb9435ac223f605e7bf1a4b2f34f
+          path: exact-ec9
+      - name: Python fixture/runtime tooling only
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Materialize exact existing held artifact without granting write access
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $area = Join-Path $env:RUNNER_TEMP 'mh-source-ab-assets'
+          if (Test-Path -LiteralPath $area) { throw 'Diagnostic assets workspace not new' }
+          New-Item -Path $area -ItemType Directory | Out-Null
+          gh api --method GET repos/Herbertofury/Modhunter/actions/artifacts/14798661378/zip > (Join-Path $area 'held-0125.zip')
+          if ($LASTEXITCODE -ne 0) { throw 'Existing held input unavailable, do not substitute a source or rebuild' }
+      - name: Pin and stage exact inputs and common official stock runtime
+        run: |
+          $area = Join-Path $env:RUNNER_TEMP 'mh-source-ab-assets'
+          $stock = Join-Path $area 'stock-mo2.7z'
+          $release = Join-Path $area 'released-Test2.zip'
+          $src = Join-Path $env:GITHUB_WORKSPACE 'exact-ec9'
+          $qa = Join-Path $env:GITHUB_WORKSPACE 'diagnostic/qa/stock-mo2-source-ab-ec9-89b'
+          if ((git -C $src rev-parse HEAD) -cne 'ec9da4a0322deb9435ac223f605e7bf1a4b2f34f' -or
+              (git -C $src rev-parse 'HEAD^{tree}') -cne 'ccd70daae8002ec836416ffd92019d217f6c8804') {
+            throw 'Original stock scaffold checkout is not exact Test 2'
+          }
+          Invoke-WebRequest -Uri 'https://github.com/Herbertofury/Modhunter/releases/download/v0.12.4-test.2/Modhunter-Rust-Windows.zip' -OutFile $release -TimeoutSec 120
+          Invoke-WebRequest -Uri 'https://github.com/ModOrganizer2/modorganizer/releases/download/v2.5.2/Mod.Organizer-2.5.2.7z' -OutFile $stock -TimeoutSec 180
+          python (Join-Path $qa 'payload.py') --repository $src --baseline $release --candidate (Join-Path $area 'held-0125.zip') --host $stock --root (Join-Path $area 'staged')
+          if ($LASTEXITCODE -ne 0) { throw 'Provenance, staged bytes or stock fixture setup failed' }
+      - name: One balanced source-only sequence on the disposable Windows host
+        run: |
+          $area = Join-Path $env:RUNNER_TEMP 'mh-source-ab-assets'
+          $qa = Join-Path $env:GITHUB_WORKSPACE 'diagnostic/qa/stock-mo2-source-ab-ec9-89b'
+          & (Join-Path $qa 'pair.ps1') -StagedRoot (Join-Path $area 'staged') -PinnedStockArchive (Join-Path $area 'stock-mo2.7z')
+      - name: Only sanitized measurement and provenance summary
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: diagnostic-stock-mo2-source-ab-ec9-89b
+          path: ${{ runner.temp }}/mh-source-ab-assets/staged/comparison.json
+          if-no-files-found: error
+          retention-days: 7

@@ -1,5 +1,5 @@
 # One isolated diagnostic carrier, not a release, install or Gallery gate.
-name: Stock MO2 2.5.2 scale (Test 2, 11207)
+name: Stock MO2 2.5.2 retry trace (Test 2, 11207)
 
 on:
   push:
@@ -196,6 +196,253 @@ jobs:
           $File = Join-Path (Join-Path $env:RUNNER_TEMP 'mh-ec9-stock-scale-sidecar') 'fixture.py'
           [IO.File]::WriteAllText($File, ($Source.Replace("`r`n", "`n") + "`n"), [Text.UTF8Encoding]::new($false))
           if ((Get-FileHash -Algorithm SHA256 -LiteralPath $File).Hash.ToLowerInvariant() -cne 'e6a54042cc71d10ab54e8243122a61ec9b9c3d693437374f09175da8cfa88b1a') { throw 'Observer source byte mismatch' }
+      - name: Materialize reviewed observer source trace.py
+        run: |
+          $Source = @'
+          """Minimal stock startup trace, only in the detached test observer."""
+          from __future__ import annotations
+
+          from collections import deque
+          import sys
+          from time import perf_counter_ns
+
+          MAX_EVENTS = 96
+          EVENTS = frozenset(("attempt", "enumeration-enter", "enumeration-exit", "worker-enter",
+                              "worker-exit", "worker-delivered", "publish-enter", "publish-exit",
+                              "finish", "invalidate", "retry"))
+          FAILURES = {
+              "MO2 profile changed; refresh again": "stale-before-publish",
+              "MO2 profile changed during enumeration": "stale-during-enumeration",
+              "MO2 profile changed during capture": "stale-during-capture",
+              "MO2 is closing": "closing",
+          }
+          TYPE_CODES = {
+              "UnstableSnapshotMetadata": "unstable-metadata",
+              "SnapshotCancelled": "cancelled",
+              "RuntimeError": "runtime-error",
+              "OSError": "io-error",
+              "PermissionError": "permission-error",
+              "ValueError": "value-error",
+              "TypeError": "type-error",
+          }
+          CALLERS = {
+              "_on_plugins_refreshed": "plugin-list-refreshed",
+              "_on_plugin_states_changed": "plugin-state",
+              "_on_mod_states_changed": "mod-state",
+              "_on_profile_changed": "profile-changed",
+              "_on_mod_installed": "mod-installed",
+              "_on_mod_removed": "mod-removed",
+              "_on_mod_moved": "mod-or-plugin-moved",
+          }
+
+
+          def code(error, worker=False):
+              if error is None and worker:
+                  return "ok"
+              if not isinstance(error, str):
+                  return "unknown"
+              if worker:
+                  return TYPE_CODES.get(error, "other-type")
+              if error in FAILURES:
+                  return FAILURES[error]
+              for prefix, label in (("Could not capture MO2 profile: ", "capture"),
+                                    ("Could not refresh local metadata: ", "worker"),
+                                    ("Could not publish MO2 profile: ", "publish")):
+                  if error.startswith(prefix):
+                      return label + ":" + TYPE_CODES.get(error[len(prefix):], "other-type")
+              return TYPE_CODES.get(error, "unknown")
+
+
+          class StartupTrace:
+              def __init__(self, clock=perf_counter_ns):
+                  self.clock = clock
+                  self.events = deque(maxlen=MAX_EVENTS)
+                  self.active = None
+                  self.overflow = False
+                  self.tickets = 0
+                  self.retry = None
+
+              def record(self, ticket, edge, **payload):
+                  if len(self.events) >= MAX_EVENTS:
+                      self.overflow = True
+                      return
+                  self.events.append((self.clock(), ticket, edge, payload))
+
+              def begin(self, ordinal, epoch):
+                  self.tickets += 1
+                  self.active = ticket = self.tickets
+                  self.record(ticket, "attempt", ordinal=ordinal, epoch=epoch)
+                  return ticket
+
+              def wrap_project(self, project):
+                  def observed(*args):
+                      ticket = self.active
+                      if ticket is None:
+                          return project(*args)
+                      self.record(ticket, "worker-enter")
+                      try:
+                          return project(*args)
+                      finally:
+                          self.record(ticket, "worker-exit")
+                  return observed
+
+
+          def verify_trace(journal, *, origin, first, published, terminal_count):
+              """Output only after validation; missing/ambiguous attempts are not a pass."""
+              def check(condition, message):
+                  if not condition:
+                      raise ValueError("Incomplete startup trace: " + message)
+
+              check(not journal.overflow and 0 < len(journal.events) < MAX_EVENTS
+                    and journal.active is None and journal.retry is None, "unfinished or overflowed")
+              public = []
+              attempts = []
+              previous_finish = None
+              previous_retry = None
+              final = None
+              required_ok = ("enumeration-enter", "enumeration-exit", "worker-enter", "worker-exit",
+                             "worker-delivered", "publish-enter", "publish-exit")
+              # Owner and worker may append in a different order from their captured
+              # timestamps. Sort only after the stop edge, without a timed-path lock.
+              events = sorted(journal.events, key=lambda item:item[0])
+              for offset, ticket, edge, payload in events:
+                  check(edge in EVENTS and origin <= offset and 1 <= ticket <= journal.tickets, "invalid event")
+                  public.append({"msFromPluginInit": round((offset-origin)/1e6, 6),
+                                 "attempt": ticket, "edge": edge, **payload})
+              for ticket in range(1, journal.tickets + 1):
+                  trace = [(t, edge, x) for t, n, edge, x in events if n == ticket]
+                  edges = [edge for _, edge, _ in trace]
+                  check(edges and edges[0] == "attempt" and edges.count("finish") == 1, "missing attempt boundary")
+                  point = {edge: (t, x) for t, edge, x in trace if edge != "invalidate"}
+                  check(len(point) == len(trace)-edges.count("invalidate"), "duplicate phase")
+                  start, attempt = point["attempt"]
+                  end, outcome = point["finish"]
+                  check((previous_finish is None and first <= start or previous_finish is not None and previous_finish <= start
+                         and previous_retry is not None and previous_retry <= start)
+                        and start <= end, "invalid attempt order")
+                  phases = {edge: point[edge][0] for edge in required_ok if edge in point}
+                  check(list(phases.values()) == sorted(phases.values()) and all(start <= v <= end for v in phases.values()),
+                        "invalid phase order")
+                  for a,b in (("enumeration-enter","enumeration-exit"),("worker-enter","worker-exit"),("publish-enter","publish-exit")):
+                      check((a in point)==(b in point), "partial phase")
+                  invalidated = [(t,x) for t,edge,x in trace if edge == "invalidate"]
+                  check(outcome["epoch"] >= attempt["epoch"] and bool(invalidated) == outcome["invalidated"],
+                        "native invalidation outcome was not fully observed")
+                  for t,x in invalidated:
+                      check(start <= t <= end and attempt["epoch"] <= x["epochBefore"] < x["epochAfter"] <= outcome["epoch"]
+                            and x["callback"] in set(CALLERS.values()) | {"other"}, "invalid native invalidation")
+                  if "worker-delivered" in point:
+                      check("worker-exit" in point, "delivery before worker phase")
+                  if "publish-enter" in point:
+                      check("worker-delivered" in point, "publication without worker delivery")
+                  status=outcome["outcome"]
+                  if ticket == journal.tickets:
+                      check(status == "ok" and "retry" not in point and len(phases) == len(required_ok)
+                            and phases["publish-enter"] <= published <= phases["publish-exit"] <= end
+                            and attempt["ordinal"] == terminal_count, "missing final accepted publication")
+                      final = ticket
+                  else:
+                      check(status != "ok" and "retry" in point and point["retry"][0] >= end
+                            and point["retry"][1]["requestedMs"] == (0 if outcome["invalidated"] else 1000),
+                            "no observed production retry or incompatible delay")
+                  attempts.append({"id": ticket,"productionOrdinal":attempt["ordinal"],"outcome":status,
+                                   "durationMs":round((end-start)/1e6,6),"invalidated":outcome["invalidated"],
+                                   "startEpoch":attempt["epoch"],"finishEpoch":outcome["epoch"],
+                                   "retryRequestedMs":point["retry"][1]["requestedMs"] if "retry" in point else None})
+                  previous_finish = end
+                  previous_retry = point["retry"][0] if "retry" in point else None
+              check(final is not None and sum(1 for x in attempts if x["outcome"]=="ok")==1, "no unique accepted attempt")
+              return {"schemaVersion":1,"eventLimit":MAX_EVENTS,"attempts":attempts,"edges":public}
+
+
+          class StartupTraceMixin:
+              def __init__(self):
+                  self._scale_trace = StartupTrace()
+                  super().__init__()
+
+              def init(self, organizer):
+                  ok = super().init(organizer)
+                  if ok:
+                      j = self._scale_trace
+                      self._background_refresh._project = j.wrap_project(self._background_refresh._project)
+                  return ok
+
+              def _start_automatically(self):
+                  # Read the released guard for observation, never block the base call.
+                  if (not self._closing and self.server is None and (self._ui_initialized or self._startup_open)
+                          and not self._startup_inflight and self._startup_attempts < 5):
+                      self._scale_trace.begin(self._startup_attempts+1, self._background_refresh._epoch)
+                  return super()._start_automatically()
+
+              def _begin_background_capture(self, valid):
+                  j = self._scale_trace
+                  ticket = j.active
+                  if ticket is None:
+                      return super()._begin_background_capture(valid)
+                  j.record(ticket, "enumeration-enter")
+                  try:
+                      return super()._begin_background_capture(valid)
+                  finally:
+                      j.record(ticket, "enumeration-exit")
+
+              def _on_background_refresh_completed(self, completed):
+                  j = self._scale_trace
+                  if j.active is not None:
+                      j.record(j.active, "worker-delivered", workerOutcome=code(completed[2], worker=True))
+                  return super()._on_background_refresh_completed(completed)
+
+              def _publish_background_refresh(self, result, valid):
+                  j = self._scale_trace
+                  ticket = j.active
+                  if ticket is None:
+                      return super()._publish_background_refresh(result, valid)
+                  j.record(ticket, "publish-enter")
+                  try:
+                      return super()._publish_background_refresh(result, valid)
+                  finally:
+                      j.record(ticket, "publish-exit")
+
+              def _schedule_refresh(self):
+                  j = self._scale_trace
+                  ticket = j.active
+                  if ticket is None:
+                      return super()._schedule_refresh()
+                  epoch = self._background_refresh._epoch
+                  callback = CALLERS.get(sys._getframe(1).f_code.co_name, "other")
+                  try:
+                      return super()._schedule_refresh()
+                  finally:
+                      after = self._background_refresh._epoch
+                      if after != epoch:
+                          j.record(ticket, "invalidate", callback=callback, epochBefore=epoch, epochAfter=after)
+
+              def _finish_background_startup(self, result):
+                  j = self._scale_trace
+                  ticket = j.active
+                  if ticket is None:
+                      return super()._finish_background_startup(result)
+                  good = result.get("ok") is True
+                  j.record(ticket, "finish", outcome="ok" if good else code(result.get("error")),
+                           invalidated=bool(self._startup_invalidated), epoch=self._background_refresh._epoch)
+                  j.active = None
+                  j.retry = ticket if not good else None
+                  try:
+                      return super()._finish_background_startup(result)
+                  finally:
+                      j.retry = None
+
+              def _schedule_startup(self, delay=0):
+                  j = self._scale_trace
+                  ticket = j.retry
+                  before = self._startup_timer
+                  result = super()._schedule_startup(delay)
+                  if ticket is not None and before is None and self._startup_timer is not None:
+                      j.record(ticket, "retry", requestedMs=delay)
+                  return result
+          '@
+          $File = Join-Path (Join-Path $env:RUNNER_TEMP 'mh-ec9-stock-scale-sidecar') 'trace.py'
+          [IO.File]::WriteAllText($File, ($Source.Replace("`r`n", "`n") + "`n"), [Text.UTF8Encoding]::new($false))
+          if ((Get-FileHash -Algorithm SHA256 -LiteralPath $File).Hash.ToLowerInvariant() -cne 'd3d3c114f59d965033ce50736654468fd13dba89441175b94a3862f40c2a677d') { throw 'Observer source byte mismatch' }
       - name: Materialize reviewed observer source runner.py
         run: |
           $Source = @'
@@ -212,6 +459,7 @@ jobs:
           from PyQt6 import QtCore, QtWidgets, sip
           import mobase
 
+          from .trace import StartupTraceMixin, verify_trace
           from .fixture import (GAME, INTERVAL_MS, MAX_TICKS, PACKAGE_PIN, PROFILE, REFRESH_PINS,
                                 SIZES, TEST, VERSION, own_path, package_digest, require, timing, verify_catalog)
 
@@ -232,7 +480,7 @@ jobs:
           from mo2_update_arsenal.plugin import ModUpdateArsenal
 
 
-          class NativeSmokePlugin(ModUpdateArsenal):
+          class NativeSmokePlugin(StartupTraceMixin, ModUpdateArsenal):
               """Only observe exact production callbacks and application timer delivery."""
 
               def __init__(self):
@@ -364,7 +612,9 @@ jobs:
                           and not sip.ispycreated(gateway._qt_bridge) and sender.path.resolve() == helper.resolve()
                           and sender.info == {"abi": 1, "buildQt": "6.7.1", "runtimeQt": "6.7.1", "mechanism": "typed-qt-sender"},
                           "Released Qt bridge did not load against the stock native QObject")
-                  self._finish(True, None, timing=stats, inventory=catalog, loadedSourceSha256=checked,
+                  startup_trace = verify_trace(self._scale_trace, origin=self._perf_init, first=self._perf_start,
+                                               published=self._perf_ready, terminal_count=self._startup_attempts)
+                  self._finish(True, None, timing=stats, startupTrace=startup_trace, inventory=catalog, loadedSourceSha256=checked,
                                generation=self._perf_generation, startupAttempts=self._startup_attempts,
                                loadedQtBridgeSha256=hashlib.sha256(sender.path.read_bytes()).hexdigest(),
                                qtBridgeBinding=sender.info)
@@ -383,7 +633,7 @@ jobs:
                              "requiresOuterOfficialExeVersionWitness": True,
                              "fixture": {"profile": PROFILE, "installedGame": False, "ownedProfile": False},
                              "checks": [{"name": name, "passed": success} for name in
-                                        ("stock_isolated_fixture", "stock_large_snapshot", "stock_ui_heartbeat")],
+                                        ("stock_isolated_fixture", "stock_large_snapshot", "stock_ui_heartbeat", "stock_startup_trace")],
                              **details}
                   temporary = self._perf_receipt.with_suffix(".tmp")
                   with temporary.open("x", encoding="utf-8") as handle:
@@ -393,7 +643,7 @@ jobs:
           '@
           $File = Join-Path (Join-Path $env:RUNNER_TEMP 'mh-ec9-stock-scale-sidecar') 'runner.py'
           [IO.File]::WriteAllText($File, ($Source.Replace("`r`n", "`n") + "`n"), [Text.UTF8Encoding]::new($false))
-          if ((Get-FileHash -Algorithm SHA256 -LiteralPath $File).Hash.ToLowerInvariant() -cne '612206874389ab75212d2fdb417d0ed861d0e388be20640179ef6c33df110038') { throw 'Observer source byte mismatch' }
+          if ((Get-FileHash -Algorithm SHA256 -LiteralPath $File).Hash.ToLowerInvariant() -cne '46331e03e553f84f200f1cd16fde1e55a8db733a5ca9c76213f70ce298af38a9') { throw 'Observer source byte mismatch' }
       - name: Materialize reviewed observer source stage.py
         run: |
           $Source = @'
@@ -451,7 +701,7 @@ jobs:
                   "    & $FixturePython.Source (Join-Path $PSScriptRoot 'seed.py') $InstanceRoot " + str(rows) + "\n"
                   "    if ($LASTEXITCODE -ne 0) { throw 'Disposable stock scale fixture generation failed.' }\n")
               source = substitute(source, "@('__init__.py', 'runner.py', 'audit_probe.py', 'content_probe.py')",
-                  "@('__init__.py', 'runner.py', 'fixture.py')")
+                  "@('__init__.py', 'runner.py', 'fixture.py', 'trace.py')")
               source = substitute(source, "    $Process = [Diagnostics.Process]::Start($StartInfo)",
                   "    $LaunchClock = [Diagnostics.Stopwatch]::StartNew()\n    $Process = [Diagnostics.Process]::Start($StartInfo)")
               source = replace_section(source, "    $RequiredChecks = @(", "    foreach ($RequiredCheck in $RequiredChecks)",
@@ -459,7 +709,7 @@ jobs:
                   f"    if ($Receipt.test -cne '{TEST}' -or $Receipt.source -cne '{VERSION}' "
                   f"-or $Receipt.inventory.fixtureRows -ne {rows} -or $Receipt.runtime.platform -cne 'win32') {{\n"
                   "        throw 'Receipt is not this exact Windows stock scale session.'\n    }\n"
-                  "    $RequiredChecks = @('stock_isolated_fixture', 'stock_large_snapshot', 'stock_ui_heartbeat')\n")
+                  "    $RequiredChecks = @('stock_isolated_fixture', 'stock_large_snapshot', 'stock_ui_heartbeat', 'stock_startup_trace')\n")
               return source
 
 
@@ -484,7 +734,7 @@ jobs:
               observer.mkdir(parents=True)
               (fixture / "game_modhunter_smoke.py").write_bytes(game)
               (observer / "__init__.py").write_bytes(init)
-              for name in ("fixture.py", "runner.py"):
+              for name in ("fixture.py", "runner.py", "trace.py"):
                   (observer / name).write_bytes((HERE / name).read_bytes())
 
 
@@ -502,7 +752,7 @@ jobs:
           '@
           $File = Join-Path (Join-Path $env:RUNNER_TEMP 'mh-ec9-stock-scale-sidecar') 'stage.py'
           [IO.File]::WriteAllText($File, ($Source.Replace("`r`n", "`n") + "`n"), [Text.UTF8Encoding]::new($false))
-          if ((Get-FileHash -Algorithm SHA256 -LiteralPath $File).Hash.ToLowerInvariant() -cne '6af8e98aa1183534b3da6925ad8bfa0bd410ecbc56d54004880e22758df9d2d1') { throw 'Observer source byte mismatch' }
+          if ((Get-FileHash -Algorithm SHA256 -LiteralPath $File).Hash.ToLowerInvariant() -cne '01b5ef64c61eda09328d779ffa8dc0c89d2a69c71b10e4b4d3dac56b258803f6') { throw 'Observer source byte mismatch' }
       - name: Verify pinned release bytes and extract only the shipped Qt helper
         run: |
           $Root = Join-Path $env:RUNNER_TEMP 'mh-ec9-stock-scale-sidecar'
@@ -554,7 +804,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: stock-mo2-scale-ec9-11207
+          name: stock-mo2-scale-ec9-11207-retry-trace
           path: |
             ${{ runner.temp }}/mh-ec9-stock-scale-sidecar/receipts/native-receipt.json
             ${{ runner.temp }}/mh-ec9-stock-scale-sidecar/receipts/result.json

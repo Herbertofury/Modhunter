@@ -10,7 +10,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 from mo2_update_arsenal.bridge import ArsenalService
-from mo2_update_arsenal.model import LocalMetadataCache, take_snapshot
+from mo2_update_arsenal.model import LocalMetadataCache, call_str, take_snapshot
+from mo2_update_arsenal.refresh_work import RefreshMetadataCache, RefreshWork
+from mo2_update_arsenal.snapshot_projection import begin_snapshot_capture, capture_snapshot, project_snapshot
 from mo2_update_arsenal.plugin_intelligence import attach_native_plugin_state
 from mo2_update_arsenal.download_ids import download_id
 from mo2_update_arsenal.content_recovery import NativeContent
@@ -20,7 +22,9 @@ def plugin_type(timers):
     node=next(n for n in ast.parse(SOURCE.read_text()).body if isinstance(n,ast.ClassDef) and n.name=="ModUpdateArsenal")
     node.bases=[ast.Name(id="object",ctx=ast.Load())]
     tree=ast.fix_missing_locations(ast.Module(body=[node],type_ignores=[]))
-    scope={"time":time,"take_snapshot":take_snapshot,"attach_native_plugin_state":attach_native_plugin_state,
+    scope={"time":time,"call_str":call_str,"take_snapshot":take_snapshot,"attach_native_plugin_state":attach_native_plugin_state,
+        "RefreshMetadataCache":RefreshMetadataCache,"RefreshWork":RefreshWork,"capture_snapshot":capture_snapshot,"project_snapshot":project_snapshot,
+        "begin_snapshot_capture":begin_snapshot_capture,
         "LocalMetadataCache":LocalMetadataCache,"NativeContent":NativeContent,"mobase":SimpleNamespace(IOrganizer=object),
         "LOG":logging.getLogger("modhunter-lifecycle-test"),"parse_download_id":download_id,
         "QtCore":SimpleNamespace(QTimer=SimpleNamespace(singleShot=lambda ms,fn:timers.append((ms,fn))),
@@ -177,3 +181,103 @@ class StartupTests(unittest.TestCase):
         server.stop.assert_called_once()
 
 if __name__=="__main__":unittest.main()
+
+
+class BackgroundRefreshIntegrationTests(unittest.TestCase):
+    def setUp(self):
+        from queue import Queue
+        from threading import Event, get_ident
+        from mo2_update_arsenal.bridge import UIRequest
+        self.UIRequest = UIRequest
+        self.owner, self.go = get_ident(), Event()
+        self.port, self.entered = Queue(), Queue()
+        self.timers = []
+        kind = plugin_type(self.timers)
+        self.namespace = kind.init.__globals__
+        def dispatcher(handler):
+            return SimpleNamespace(submitted=SimpleNamespace(
+                emit=self.port.put if handler.__name__ == "_on_background_refresh_completed" else handler))
+        self.namespace["Dispatcher"] = dispatcher
+        self.namespace["attach_native_plugin_state"] = Mock()
+        self.original = self.namespace["project_snapshot"]
+        def project(*args, **kwargs):
+            self.assertNotEqual(get_ident(), self.owner)
+            self.entered.put(kwargs["force_metadata"])
+            self.go.wait(2)
+            return self.original(*args, **kwargs)
+        self.namespace["project_snapshot"] = project
+        self.profile = "Fixture A"
+        native = SimpleNamespace(name="A mod", version="1.0", nexusId=42)
+        modlist = Mock()
+        modlist.allModsByProfilePriority.side_effect = lambda _: ["A mod"]
+        modlist.getMod.return_value = native
+        modlist.priority.return_value = 0
+        modlist.state.return_value = 2
+        org = Mock()
+        org.managedGame.side_effect = lambda: SimpleNamespace(gameNexusName="skyrimspecialedition")
+        org.modList.side_effect = lambda: modlist
+        org.profileName.side_effect = lambda: self.profile
+        org.profilePath.side_effect = lambda: "/fake/profiles/" + self.profile
+        org.basePath.side_effect = lambda: "/fake"
+        org.persistent.return_value = "unknown"
+        self.plugin = kind()
+        self.plugin.init(org)
+        self.service = SimpleNamespace(set_snapshot=Mock(), content=Mock(), stop=Mock())
+        self.plugin.server = self.service
+        self.plugin._publish_diagnostics = Mock()
+        self.addCleanup(self.plugin._shutdown)
+        self.addCleanup(self.go.set)
+
+    def drain(self):
+        self.plugin._on_background_refresh_completed(self.port.get(timeout=2))
+
+    def pump_capture(self):
+        while self.timers and self.timers[0][0] == 0:
+            self.timers.pop(0)[1]()
+
+    def test_explicit_http_request_hands_off_without_blocking_owner(self):
+        request = self.UIRequest("refresh", {})
+        self.plugin._dispatch(request)
+        self.pump_capture()
+        self.assertTrue(self.entered.get(timeout=2))
+        self.assertEqual(request.state, "running")
+        self.assertFalse(request.event.is_set())
+        self.service.set_snapshot.assert_not_called()
+        guarded = self.UIRequest("download", {})
+        self.plugin._dispatch(guarded)
+        self.assertEqual(guarded.state, "completed")
+        self.assertIn("refreshing", guarded.result["error"])
+        self.plugin._content_native = SimpleNamespace(handle=Mock())
+        recovery = self.UIRequest("content-refresh", {})
+        self.plugin._dispatch(recovery)
+        self.plugin._content_native.handle.assert_called_once_with(recovery, self.namespace["QtCore"].QTimer)
+        acquired = self.UIRequest("content-lease", {})
+        self.plugin._dispatch(acquired)
+        self.assertIn("refreshing", acquired.result["error"])
+        self.go.set()
+        self.drain()
+        self.assertEqual(request.state, "completed")
+        self.assertTrue(request.result["ok"])
+        self.assertEqual(request.result["count"], 1)
+        self.assertEqual(request.result["catalog"]["items"][0]["name"], "A mod")
+        self.service.set_snapshot.assert_called_once()
+
+    def test_profile_switch_invalidates_delayed_reply_and_requeues_owned_automatic(self):
+        request = self.UIRequest("refresh", {})
+        self.plugin._dispatch(request)
+        self.pump_capture()
+        self.assertTrue(self.entered.get(timeout=2))
+        for name in ("Fixture B", "Fixture A"):
+            previous, self.profile = self.profile, name
+            self.plugin._on_profile_changed(previous, name)
+        self.assertEqual(len(self.timers), 1)
+        self.timers.pop(0)[1]()
+        self.go.set()
+        self.drain()
+        self.assertFalse(request.result["ok"])
+        self.service.set_snapshot.assert_not_called()
+        self.pump_capture()
+        self.assertFalse(self.entered.get(timeout=2))
+        self.drain()
+        self.service.set_snapshot.assert_called_once()
+        self.assertEqual(self.service.set_snapshot.call_args.args[0]["profileName"], "Fixture A")

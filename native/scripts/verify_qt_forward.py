@@ -75,6 +75,15 @@ def main() -> int:
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
     print(json.dumps({'ok': report['ok'], 'testsRun': result.testsRun, 'runtimeQt': QtCore.qVersion()}))
+    # Explicit same-repository diagnostic build only. The existing ABI
+    # receipt keeps exactly its existing format, evidence keys and checks.
+    if (report['ok'] and os.getenv('GITHUB_ACTIONS') == 'true'
+            and os.getenv('GITHUB_REPOSITORY', '').casefold() == 'herbertofury/modhunter'
+            and os.getenv('GITHUB_EVENT_NAME') == 'push'
+            and os.getenv('GITHUB_REF') == 'refs/heads/upgrade/modhunter-mo2-refresh-fast'):
+        sys.path.insert(0, str(ROOT / 'native/scripts/mo2_qt_heartbeat'))
+        from pilot import run as run_qt_heartbeat
+        run_qt_heartbeat(ROOT, commit)
     return 0 if report['ok'] else 1
 
 

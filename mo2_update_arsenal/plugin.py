@@ -15,6 +15,8 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 
 from .bridge import ArsenalService, UIRequest
 from .model import LocalMetadataCache, call_str, take_snapshot
+from .refresh_work import RefreshMetadataCache, RefreshWork
+from .snapshot_projection import begin_snapshot_capture, capture_snapshot, project_snapshot
 from .focus import navigate, find_mo2_view, name_column
 from .scanner import version_verdict
 from .native_nexus import NativeNexusGateway
@@ -41,6 +43,9 @@ class ModUpdateArsenal(mobase.IPluginTool):
         self.server = None
         self.dispatcher = None
         self._pending_refresh = None
+        self._background_refresh = None
+        self._refresh_completion = None
+        self._background_dirty = False
         self._runtime = "unknown"
         self._download_complete_callback = None
         self._selection_connected = False
@@ -87,6 +92,20 @@ class ModUpdateArsenal(mobase.IPluginTool):
     def init(self, organizer: mobase.IOrganizer) -> bool:
         self.org = organizer
         self.dispatcher = Dispatcher(self._dispatch)
+        # An independent queued Qt signal carries completed pure snapshot data
+        # back to the same owning thread. No organizer calls cross the thread.
+        self._refresh_completion = Dispatcher(self._on_background_refresh_completed)
+        background_cache = RefreshMetadataCache()
+        def project(captured, force, cancel):
+            inputs, started = captured
+            return (project_snapshot(inputs, metadata_cache=background_cache,
+                                     force_metadata=force, cancel_event=cancel), started)
+        self._background_refresh = RefreshWork(
+            context=self._background_context, capture=self._capture_background_refresh,
+            project=project, publish=self._publish_background_refresh,
+            deliver=self._refresh_completion.submitted.emit,
+            begin_capture=self._begin_background_capture,
+            schedule_capture=lambda callback: QtCore.QTimer.singleShot(0, callback))
         try:
             self._native_nexus = NativeNexusGateway(organizer)
         except Exception as exc:
@@ -272,6 +291,8 @@ class ModUpdateArsenal(mobase.IPluginTool):
 
     def _shutdown(self):
         self._closing = True
+        if self._background_refresh is not None:
+            self._background_refresh.close()
         if self.server is not None:
             self.server.stop()
             self.server = None
@@ -283,21 +304,83 @@ class ModUpdateArsenal(mobase.IPluginTool):
         try:
             existed = self.server is not None
             address = self._ensure_service()
+            if existed and self._background_refresh is not None:
+                def after_refresh(result):
+                    if self._closing:
+                        return
+                    if result.get("ok"):
+                        self._open_dashboard(address)
+                    else:
+                        QtWidgets.QMessageBox.critical(None, "Modhunter",
+                            result.get("error", "Profile refresh failed"))
+                self._queue_background_refresh(force=True, done=after_refresh)
+                return
             if existed:
                 refreshed = self._refresh_snapshot(force_metadata=True)
                 if not refreshed.get("ok"):
                     raise RuntimeError(refreshed.get("error", "Profile refresh failed"))
-            if QtGui.QDesktopServices.openUrl(QtCore.QUrl(address)) is False:
-                QtWidgets.QMessageBox.information(None, "Modhunter is ready",
-                    "The default browser did not open. Launch Modhunter.exe and choose Find MO2.")
+            self._open_dashboard(address)
         except Exception as exc:
             QtWidgets.QMessageBox.critical(None, "Modhunter", f"Could not open Modhunter: {type(exc).__name__}: {exc}")
+
+    def _open_dashboard(self, address):
+        if QtGui.QDesktopServices.openUrl(QtCore.QUrl(address)) is False:
+            QtWidgets.QMessageBox.information(None, "Modhunter is ready",
+                "The default browser did not open. Launch Modhunter.exe and choose Find MO2.")
+
+    def _background_context(self):
+        return (str(id(self.server)), call_str(self.org, "basePath"),
+                call_str(self.org, "profileName"), call_str(self.org, "profilePath"), self._runtime)
+
+    def _capture_background_refresh(self):
+        if self._closing or not self.server:
+            raise RuntimeError("MO2 profile service unavailable")
+        started = time.perf_counter()
+        return capture_snapshot(self.org, self._runtime), started
+
+    def _begin_background_capture(self, valid):
+        if self._closing or not self.server:
+            raise RuntimeError("MO2 profile service unavailable")
+        started = time.perf_counter()
+        return begin_snapshot_capture(self.org, self._runtime, is_current=valid), started
+
+    def _queue_background_refresh(self, *, force=False, done=None):
+        # Each requested capture subsumes only the callback already waiting
+        # at this instant. New native events get a fresh revision and timer.
+        self._pending_refresh = None
+        def result(outcome):
+            if not self._closing and not outcome.get("ok"):
+                self._snapshot_error = str(outcome.get("error") or "Profile refresh failed")
+                self._publish_diagnostics()
+            if done is not None:
+                done(outcome)
+        self._background_refresh.enqueue(force=force, done=result)
+
+    def _on_background_refresh_completed(self, completed):
+        if self._background_refresh is not None:
+            self._background_refresh.complete(completed)
+
+    def _publish_background_refresh(self, result, valid):
+        snapshot, started = result
+        attach_native_plugin_state(self.org, snapshot)
+        if not valid():
+            return {"ok": False, "error": "MO2 profile changed; refresh again"}
+        self.server.set_snapshot(snapshot)
+        if valid():
+            self._background_dirty = False
+        self._snapshot_error = ""
+        self._snapshot_ms = (time.perf_counter() - started) * 1000
+        self._publish_diagnostics()
+        return {"ok": True, "count": len(snapshot["items"]), "profile": snapshot["profileName"], "catalog": snapshot}
 
     def _download_state(self, did: int, state: str):
         if self.server and type(did) is int and parse_download_id(did) is not None:
             self.server.set_download_status(did, state)
 
     def _schedule_refresh(self):
+        if self.server is not None and self._background_refresh is not None and not self._closing:
+            self._background_dirty = True
+            self._background_refresh.invalidate()
         if self._pending_refresh is not None or self._closing:
             return
         if self.server is None:
@@ -310,7 +393,10 @@ class ModUpdateArsenal(mobase.IPluginTool):
         def refresh_if_pending():
             if not self._closing and self._pending_refresh is token:
                 self._pending_refresh = None
-                self._refresh_snapshot()
+                if self._background_refresh is not None:
+                    self._queue_background_refresh()
+                else:
+                    self._refresh_snapshot()
 
         QtCore.QTimer.singleShot(150, refresh_if_pending)
 
@@ -321,11 +407,15 @@ class ModUpdateArsenal(mobase.IPluginTool):
         if not self.server:
             return {"ok": False, "error": "Launch Arsenal first"}
         started = time.perf_counter()
+        if self._background_refresh is not None:
+            self._background_refresh.invalidate()
         try:
             snapshot = take_snapshot(self.org, self._runtime, metadata_cache=self._metadata_cache,
                                      force_metadata=force_metadata)
             attach_native_plugin_state(self.org, snapshot)
             self.server.set_snapshot(snapshot)
+            if self._pending_refresh is None:
+                self._background_dirty = False
             self._snapshot_error = ""
             self._snapshot_ms = (time.perf_counter() - started) * 1000
             self._publish_diagnostics()
@@ -529,6 +619,16 @@ class ModUpdateArsenal(mobase.IPluginTool):
         if not request.begin():
             return  # Expired/cancelled Qt events can never execute later.
         try:
+            background = getattr(self, "_background_refresh", None)
+            if (getattr(self, "_background_dirty", False) or
+                (background is not None and background.busy)) and (
+                # Do not interrupt a native recovery transaction that already
+                # owns its lease: it independently rechecks organizer identity
+                # and its synchronous post-install refresh must still complete.
+                request.cmd in ("download", "download-url", "install", "backup", "content-lease")
+            ):
+                request.finish({"ok": False, "error": "MO2 profile is refreshing; review the operation again"})
+                return
             if request.cmd.startswith("content-"):
                 if self.server is None:
                     raise RuntimeError("Native content service is not active")
@@ -606,6 +706,9 @@ class ModUpdateArsenal(mobase.IPluginTool):
                     self._native_nexus.request(request)
                 return
             if request.cmd == "refresh":
+                if background is not None and self.server is not None:
+                    self._queue_background_refresh(force=True, done=request.finish)
+                    return
                 result = self._refresh_snapshot(force_metadata=True)
             elif request.cmd in ("download", "download-url"):
                 # Linearize the final evidence check with the short native

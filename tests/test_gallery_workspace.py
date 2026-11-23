@@ -604,6 +604,63 @@ class GalleryWorkspaceTests(unittest.TestCase):
         self.page.locator('#row-item-0 .mod-art').click()
         self.assertTrue(self.page.locator('#detailDrawer').evaluate('e=>e.classList.contains("open")'))
 
+    def test_card_art_block_layout_matches_original_flex_geometry_and_pixels(self):
+        self.open(count=1)
+        art = self.page.locator('#row-item-0 .mod-art')
+        self.page.locator('#libraryGallery').click()
+        selector = 'body[data-layout="compact"][data-library-view="gallery"] .mod-row .mod-art'
+        self.page.evaluate("""selector=>{
+          const sheet=document.querySelector('style').sheet;
+          const index=[...sheet.cssRules].findIndex(rule=>rule.selectorText===selector
+            &&rule.style.display==='block'&&rule.style.alignContent==='center');
+          if(index<0)throw Error('Gallery block-layout candidate absent');
+          const rule=sheet.cssRules[index].cssText;
+          window.__artLayoutCompare=on=>{
+            if(on)sheet.insertRule(rule,index);else sheet.deleteRule(index);
+          };
+        }""", selector)
+
+        def snapshot():
+            pixels = art.screenshot(animations='disabled', caret='hide')
+            state = art.evaluate("""element=>{
+              const row=element.closest('.mod-row'), range=new Range(), first=element.firstChild;
+              range.selectNodeContents(first);
+              const box=r=>[r.x,r.y,r.width,r.height];
+              return {rect:box(element.getBoundingClientRect()),row:box(row.getBoundingClientRect()),
+                text:[...range.getClientRects()].map(box),
+                provider:getComputedStyle(element,'::after').content,
+                label:element.getAttribute('aria-label'),title:element.title,
+                hit:document.elementFromPoint(element.getBoundingClientRect().left+5,
+                  element.getBoundingClientRect().top+5)?.closest('button')===element};
+            }""")
+            self.assertTrue(state['text'] and state['hit'],state)
+            self.assertTrue(state['label'] and state['provider'],state)
+            return state, pixels
+
+        for width in (1440, 550):
+            self.page.set_viewport_size({'width':width,'height':900})
+            for density in ('compact', 'comfy'):
+                if self.page.locator('body').get_attribute('data-density')!=density:
+                    self.page.locator('#densityToggle').click()
+                self.page.evaluate("async()=>{await document.fonts.ready;await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame)}")
+                with self.subTest(width=width,density=density):
+                    self.assertEqual(art.evaluate("e=>getComputedStyle(e).display"),'block')
+                    candidate_state, candidate_pixels = snapshot()
+                    self.page.evaluate("window.__artLayoutCompare(false)")
+                    try:
+                        self.assertEqual(art.evaluate("e=>getComputedStyle(e).display"),'flex')
+                        original_state, original_pixels = snapshot()
+                        self.assertEqual(candidate_state, original_state)
+                        self.assertTrue(candidate_pixels==original_pixels,
+                                        'art, text, icon or provider badge pixels changed')
+                    finally:
+                        self.page.evaluate("window.__artLayoutCompare(true)")
+        art.focus()
+        self.page.keyboard.press('Enter')
+        self.assertTrue(self.page.locator('#detailDrawer').evaluate('e=>e.classList.contains("open")'))
+        inspector_art = self.page.locator('#drawerContent .mod-art-large')
+        self.assertEqual(inspector_art.evaluate("e=>getComputedStyle(e).display"),'flex')
+
     def test_thumbnail_failure_keeps_mod_and_all_actions(self):
         # Exercise genuine alpha artwork in cover-fit mode, as in the separate
         # preview fixture; this is not a provider screenshot metadata claim.

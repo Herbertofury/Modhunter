@@ -55,6 +55,10 @@ class ModUpdateArsenal(mobase.IPluginTool):
         self._ui_initialized = False
         self._closing = False
         self._startup_attempts = 0
+        self._startup_inflight = False
+        self._startup_invalidated = False
+        self._startup_timer = None
+        self._startup_open = False
         self._subscription_errors = []
         self._callbacks = []
         self._snapshot_error = ""
@@ -219,12 +223,35 @@ class ModUpdateArsenal(mobase.IPluginTool):
         self._ui_initialized = True
         # Do not read an incomplete profile in init(), and never open a browser
         # automatically. Discovery is available after MO2's UI becomes ready.
-        QtCore.QTimer.singleShot(0, self._start_automatically)
+        if self._background_refresh is not None:
+            self._schedule_startup()
+        else:
+            QtCore.QTimer.singleShot(0, self._start_automatically)
+
+    def _schedule_startup(self, delay=0):
+        if (self._closing or self.server is not None or self._startup_inflight
+                or self._startup_timer is not None or self._startup_attempts >= 5):
+            return
+        token = self._startup_timer = object()
+
+        def start_if_pending():
+            if self._startup_timer is token:
+                self._startup_timer = None
+                self._start_automatically()
+
+        QtCore.QTimer.singleShot(delay, start_if_pending)
 
     def _start_automatically(self):
-        if self._closing or not self._ui_initialized or self.server is not None:
+        if (self._closing or self.server is not None
+                or not (self._ui_initialized or self._startup_open)
+                or self._startup_inflight or self._startup_attempts >= 5):
             return
         self._startup_attempts += 1
+        if self._background_refresh is not None:
+            self._startup_inflight = True
+            self._startup_invalidated = False
+            self._background_refresh.enqueue(done=self._finish_background_startup)
+            return
         try:
             self._ensure_service()
         except Exception as exc:
@@ -234,16 +261,47 @@ class ModUpdateArsenal(mobase.IPluginTool):
             if self._startup_attempts < 5:
                 QtCore.QTimer.singleShot(1000, self._start_automatically)
 
+    def _finish_background_startup(self, result):
+        self._startup_inflight = False
+        if self._closing:
+            return
+        if result.get("ok"):
+            open_dashboard, self._startup_open = self._startup_open, False
+            if open_dashboard:
+                try:
+                    self._open_dashboard(result["address"])
+                except Exception as exc:
+                    QtWidgets.QMessageBox.critical(None, "Modhunter",
+                        f"Could not open Modhunter: {type(exc).__name__}: {exc}")
+            return
+        self._snapshot_error = str(result.get("error") or "Could not start Modhunter")
+        LOG.warning("Modhunter bridge startup attempt %d failed (%s)",
+                    self._startup_attempts, self._snapshot_error)
+        if self._startup_attempts < 5:
+            self._schedule_startup(0 if self._startup_invalidated else 1000)
+        elif self._startup_open:
+            self._startup_open = False
+            QtWidgets.QMessageBox.critical(None, "Modhunter",
+                "Could not open Modhunter: " + self._snapshot_error)
+
+    def _startup_profile_ready(self):
+        return bool(self.org.profileName() and self.org.profilePath())
+
     def _ensure_service(self):
         if self._closing:
             raise RuntimeError("MO2 is closing")
         if self.server is not None:
             return self.server.start()
-        if not self.org.profileName() or not self.org.profilePath():
+        if not self._startup_profile_ready():
             raise RuntimeError("MO2 has not finished selecting its profile")
         started = time.perf_counter()
         snap = take_snapshot(self.org, self._runtime, metadata_cache=self._metadata_cache)
+        return self._create_service(snap, started)
+
+    def _create_service(self, snap, started, *, valid=None):
         attach_native_plugin_state(self.org, snap)
+        if valid is not None and not valid():
+            raise RuntimeError("MO2 profile changed during startup")
         doc = (Path(__file__).with_name("web") / "index.html").read_text(encoding="utf-8")
         try:
             folder = Path(self.org.pluginDataPath()) / "MO2UpdateArsenal"
@@ -255,19 +313,24 @@ class ModUpdateArsenal(mobase.IPluginTool):
                 self._native_nexus_error = ""
             except Exception as exc:
                 self._native_nexus_error = type(exc).__name__
+        if valid is not None and not valid():
+            raise RuntimeError("MO2 profile changed during startup")
         service = ArsenalService(doc, folder / "nexus-cache.json", self.dispatcher.submitted.emit, snap)
         service.native_nexus_available = self._native_nexus is not None
         service.native_nexus_files_available = bool(self._native_nexus and self._native_nexus.files_available)
         service.native_nexus_files_error = self._native_nexus.files_error if self._native_nexus else self._native_nexus_error
-        self.server = service
         service.content.native_enabled = True
         service.content.launch_guard_available = bool(self._content_launch_guard)
         try:
+            if valid is not None and not valid():
+                raise RuntimeError("MO2 profile changed during startup")
             address = service.start()
+            if valid is not None and not valid():
+                raise RuntimeError("MO2 profile changed during startup")
         except Exception:
             service.stop()
-            self.server = None
             raise
+        self.server = service
         self._snapshot_error = ""
         self._snapshot_ms = (time.perf_counter() - started) * 1000
         self._bind_native_selection()
@@ -291,6 +354,8 @@ class ModUpdateArsenal(mobase.IPluginTool):
 
     def _shutdown(self):
         self._closing = True
+        self._startup_timer = None
+        self._startup_open = False
         if self._background_refresh is not None:
             self._background_refresh.close()
         if self.server is not None:
@@ -300,6 +365,12 @@ class ModUpdateArsenal(mobase.IPluginTool):
     def display(self) -> None:
         if not self.org:
             QtWidgets.QMessageBox.warning(None, "Modhunter", "MO2 has not initialized this plugin yet.")
+            return
+        if self.server is None and self._background_refresh is not None and not self._closing:
+            self._startup_open = True
+            if self._startup_attempts >= 5 and not self._startup_inflight:
+                self._startup_attempts = 0
+            self._schedule_startup()
             return
         try:
             existed = self.server is not None
@@ -339,8 +410,10 @@ class ModUpdateArsenal(mobase.IPluginTool):
         return capture_snapshot(self.org, self._runtime), started
 
     def _begin_background_capture(self, valid):
-        if self._closing or not self.server:
+        if self._closing or (self.server is None and not self._startup_inflight):
             raise RuntimeError("MO2 profile service unavailable")
+        if self.server is None and not self._startup_profile_ready():
+            raise RuntimeError("MO2 has not finished selecting its profile")
         started = time.perf_counter()
         return begin_snapshot_capture(self.org, self._runtime, is_current=valid), started
 
@@ -362,6 +435,10 @@ class ModUpdateArsenal(mobase.IPluginTool):
 
     def _publish_background_refresh(self, result, valid):
         snapshot, started = result
+        if self.server is None:
+            if not self._startup_inflight or not valid():
+                return {"ok": False, "error": "MO2 profile changed; refresh again"}
+            return {"ok": True, "address": self._create_service(snapshot, started, valid=valid)}
         attach_native_plugin_state(self.org, snapshot)
         if not valid():
             return {"ok": False, "error": "MO2 profile changed; refresh again"}
@@ -384,7 +461,15 @@ class ModUpdateArsenal(mobase.IPluginTool):
         if self._pending_refresh is not None or self._closing:
             return
         if self.server is None:
-            if self._ui_initialized:
+            if self._background_refresh is not None:
+                if self._startup_inflight:
+                    self._startup_invalidated = True
+                    self._background_refresh.invalidate()
+                elif self._ui_initialized and self._startup_timer is None:
+                    if self._startup_attempts >= 5:
+                        self._startup_attempts = 0
+                    self._schedule_startup()
+            elif self._ui_initialized:
                 self._startup_attempts = 0
                 QtCore.QTimer.singleShot(0, self._start_automatically)
             return

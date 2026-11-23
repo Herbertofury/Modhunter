@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import hashlib
 import os
+import stat
 import subprocess
 import sys
 import threading
@@ -51,6 +52,38 @@ EXPECTED_MODS = {
 
 def utc_now():
     return datetime.now(timezone.utc).isoformat()
+
+
+def loaded_refresh_source_hashes(libraries, modules):
+    """Identify the two refresh modules loaded from the isolated production copy."""
+    def regular_unlinked(path, mode):
+        meta = path.lstat()
+        return (mode(meta.st_mode)
+                and not getattr(meta, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT)
+
+    package = libraries / "mo2_update_arsenal"
+    observed = {}
+    for stem in ("refresh_work", "snapshot_projection"):
+        name = stem + ".py"
+        qualified = "mo2_update_arsenal." + stem
+        module = modules.get(qualified)
+        origin = getattr(module, "__file__", None)
+        expected = package / name
+        try:
+            if (getattr(module, "__name__", None) != qualified or not isinstance(origin, str)
+                    or Path(origin) != expected or Path(origin).name != name
+                    or not regular_unlinked(libraries, stat.S_ISDIR)
+                    or not regular_unlinked(package, stat.S_ISDIR)
+                    or not regular_unlinked(expected, stat.S_ISREG)):
+                raise RuntimeError(f"Expected loaded fixture production module: {name}")
+            with expected.open("rb") as source:
+                body = source.read(1024 * 1024 + 1)
+            if not 0 < len(body) <= 1024 * 1024:
+                raise RuntimeError(f"Invalid fixture production module size: {name}")
+            observed[name] = hashlib.sha256(body).hexdigest()
+        except OSError:
+            raise RuntimeError(f"Cannot read loaded fixture production module: {name}") from None
+    return observed
 
 
 def repository_api_metadata(organizer):
@@ -179,13 +212,18 @@ class HarnessSignals(QtCore.QObject):
 class LoopbackUrlCapture(QtCore.QObject):
     """Capture the real display() URL without opening the runner's browser."""
 
+    seen = QtCore.pyqtSignal()
+
     def __init__(self):
         super().__init__()
         self.address = ""
+        self.count = 0
 
     @QtCore.pyqtSlot(QtCore.QUrl)
     def capture(self, url):
         self.address = url.toString()
+        self.count += 1
+        self.seen.emit()
 
 
 class NativeSmokePlugin(ModUpdateArsenal):
@@ -259,7 +297,22 @@ class NativeSmokePlugin(ModUpdateArsenal):
 
     def _ui_ready(self, window):
         self._main_window = window
-        QtCore.QTimer.singleShot(0, self._begin)
+        self._capture = LoopbackUrlCapture()
+        self._capture.seen.connect(self._display_ready, QtCore.Qt.ConnectionType.QueuedConnection)
+        QtGui.QDesktopServices.setUrlHandler("http", self._capture, "capture")
+        # Accept a service that already completed before this observer ran.
+        # Otherwise wait for the same production diagnostics publication used
+        # by sync and async startup. The existing watchdog remains in force.
+        self._observe_service_ready()
+
+    def _publish_diagnostics(self):
+        super()._publish_diagnostics()
+        self._observe_service_ready()
+
+    def _observe_service_ready(self):
+        if (not self._finished and not self._begun and self._capture is not None
+                and self.server is not None and self.server._server is not None):
+            QtCore.QTimer.singleShot(0, self._begin)
 
     def _check_liveness(self):
         if self._finished:
@@ -335,7 +388,9 @@ class NativeSmokePlugin(ModUpdateArsenal):
             return
         try:
             self._check("native_bridge_autostart", self.server is not None
-                        and self._ui_initialized and self._startup_attempts == 1)
+                        and self.server._server is not None and not self.server._stopped
+                        and self._ui_initialized and self._startup_attempts == 1
+                        and self._capture.count == 0)
             self._check("native_callback_subscriptions", not self._subscription_errors,
                         warnings=list(self._subscription_errors))
             self._check("native_ui_initialized", self._on_qt_thread()
@@ -353,15 +408,19 @@ class NativeSmokePlugin(ModUpdateArsenal):
             self._check("native_mod_view_present", window is not None and view is not None
                         and view.model() is not None and view.model().rowCount() >= len(EXPECTED_MODS))
             self._begun = True
-            self._capture = LoopbackUrlCapture()
-            QtGui.QDesktopServices.setUrlHandler("http", self._capture, "capture")
-            # Run production initialization, metadata extraction, loopback server
-            # creation and native selection binding without a fake organizer.
+            # Production Tools opens the same verified bridge after its
+            # complete refresh. Observe the real URL handler, not its return.
             super().display()
-            if self._finished:
-                return  # A production error dialog may have tripped the watchdog.
+        except Exception:
+            self._finish({"ok": False, "error": traceback.format_exc()})
+
+    def _display_ready(self):
+        if self._finished or not self._begun or self._worker is not None:
+            return
+        try:
             self._check("production_display_started_bridge", self.server is not None
-                        and bool(self._capture.address))
+                        and self.server._server is not None and not self.server._stopped
+                        and self._capture.count == 1 and bool(self._capture.address))
             address = self._capture.address
             parsed = urllib.parse.urlsplit(address)
             self._check("loopback_address", parsed.scheme == "http"
@@ -516,6 +575,8 @@ class NativeSmokePlugin(ModUpdateArsenal):
             if self._installer_silent_before is not None:
                 self.org.setPluginSetting("Simple Installer", "silent", self._installer_silent_before)
             if outcome.get("ok"):
+                if self._capture is None or self._capture.count != 1:
+                    raise AssertionError("Unexpected extra or missing Tools dashboard URL")
                 required_dispatches = {"refresh", "focus"}
                 if os.environ.get("MODHUNTER_NATIVE_SMOKE_RUST_CLI"):
                     required_dispatches.add("plugin-audit-input")
@@ -528,6 +589,8 @@ class NativeSmokePlugin(ModUpdateArsenal):
                 label = (str(index.siblingAtColumn(name_column(view.model(), QtCore)).data(
                     QtCore.Qt.ItemDataRole.DisplayRole) or "") if index.isValid() else "")
                 self._check("native_view_selection", label == outcome["targetName"], selected=label)
+                self._check("native_refresh_source_attestation", True,
+                            sha256=loaded_refresh_source_hashes(_fixture_libraries, sys.modules))
             window = QtWidgets.QApplication.activeModalWidget() or self._main_window
             if window is not None:
                 saved = window.grab().save(str(self._receipt_path.with_name("mo2-fixture.png")), "PNG")

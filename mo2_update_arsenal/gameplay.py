@@ -163,7 +163,7 @@ class Chronicle:
                 pass
         return 100 + (combo - 1) * 20, combo
 
-    def record_update(self, profile_id: str, mod: dict, before: str, after: str, evidence: str, artifact: str = "") -> dict:
+    def record_update(self, profile_id: str, mod: dict, before: str, after: str, evidence: str, artifact: str = "", *, persist: bool = True) -> dict:
         """Only called from the MO2 plugin or native snapshot observer."""
         if not isinstance(mod, dict) or not str(mod.get("id", "")).startswith("live-"):
             return {"ok": False, "reason": "Not a live mod"}
@@ -206,24 +206,43 @@ class Chronicle:
                 if len(p["events"]) >= threshold and code not in p["achievements"]:
                     p["achievements"].append(code)
                     unlocks.append({"id": code, "name": name, "description": description, "glyph": glyph})
-            self._write()
+            if persist:
+                self._write()
             return {"ok": True, "event": deepcopy(event), "unlocks": unlocks}
 
     def observe(self, before: dict, after: dict) -> list[dict]:
         if before.get("profileId") != after.get("profileId"):
             return []
-        old = {m.get("id"): m for m in before.get("items", [])}
-        awards = []
-        for m in after.get("items", []):
-            prior = old.get(m.get("id"))
-            if not prior:
-                continue
-            if str(prior.get("installedVersion", "")) == str(m.get("installedVersion", "")):
-                continue
-            result = self.record_update(after["profileId"], m, str(prior.get("installedVersion", "")), str(m.get("installedVersion", "")), "version-observed")
-            if result.get("ok"):
-                awards.append(result)
-        return awards
+        profile_id = after["profileId"]
+        with self.lock:
+            old = {m.get("id"): m for m in before.get("items", [])}
+            changed = [m for m in after.get("items", [])
+                       if m.get("id") in old and str(old[m.get("id")].get("installedVersion", ""))
+                       != str(m.get("installedVersion", ""))]
+            if not changed:
+                return []
+            existed = profile_id in self.data["profiles"]
+            original = deepcopy(self.data["profiles"].get(profile_id))
+            try:
+                awards = []
+                for m in changed:
+                    prior = old.get(m.get("id"))
+                    if not prior:
+                        continue
+                    if str(prior.get("installedVersion", "")) == str(m.get("installedVersion", "")):
+                        continue
+                    result = self.record_update(after["profileId"], m, str(prior.get("installedVersion", "")), str(m.get("installedVersion", "")), "version-observed", persist=False)
+                    if result.get("ok"):
+                        awards.append(result)
+                if awards:
+                    self._write()
+                return awards
+            except Exception:
+                if existed:
+                    self.data["profiles"][profile_id] = original
+                else:
+                    self.data["profiles"].pop(profile_id, None)
+                raise
 
     def maybe_victory(self, profile_id: str, snapshot: dict, scan: dict, scanned_after_update: bool) -> dict | None:
         """Only complete fresh, authoritative *full* checks can award a ranked clear."""

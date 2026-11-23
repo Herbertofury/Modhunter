@@ -1,5 +1,6 @@
 """Pure harness contracts, never Windows timing evidence."""
 from __future__ import annotations
+import ast
 from contextlib import contextmanager
 import heapq
 from pathlib import Path
@@ -59,7 +60,7 @@ class Slot:
 
 
 class Signal:
-    def __init__(self, _): pass
+    def __init__(self, *_): pass
     def __set_name__(self, _, name): self.name = name
     def __get__(self, obj, _): return obj.__dict__.setdefault(self.name, Slot())
 
@@ -171,17 +172,23 @@ class HarnessTests(unittest.TestCase):
                     p = load_production(source)
                     receipt = measure(qt.QtCore, qt.QtWidgets, p, org)
                     out.append(receipt["phases"])
+                    if i == 1:
+                        async_first_start = hasattr(p.ModUpdateArsenal, "_finish_background_startup")
                     shutil.rmtree(f)
             self.assertEqual([a["input"] for a in out[0]], [a["input"] for a in out[1]])
             self.assertEqual([[w["name"] for w in a["nativeWindows"]] for a in out[0]],
                              [["startup"], ["synchronous"], ["synchronous"]])
             candidate_windows = [[w["name"] for w in a["nativeWindows"]] for a in out[1]]
-            self.assertEqual(candidate_windows[0], ["startup"])
-            for names in candidate_windows[1:]:
+            if not async_first_start:
+                self.assertEqual(candidate_windows[0], ["startup"])
+            for phase, names in zip(out[1][0 if async_first_start else 1:],
+                                    candidate_windows[0 if async_first_start else 1:]):
                 self.assertEqual(names[0], "native-enumeration")
                 self.assertEqual(names[-1], "native-publish")
                 self.assertTrue(names[1:-1])
                 self.assertEqual(set(names[1:-1]), {"native-slice"})
+                self.assertGreaterEqual(phase["endToEnd"]["callbackMs"],
+                                        sum(w["callbackMs"] for w in phase["nativeWindows"]) - 0.001 * len(names))
             print("FULL_NON_TIME_OUTPUT_MATCHES", n, out[0][0]["input"]["fullCatalogExceptTimestampsSha256"], flush=True)
 
     def test_hosted_only_no_linux_run_output(self):
@@ -194,6 +201,130 @@ class HarnessTests(unittest.TestCase):
             self.assertNotEqual(p.returncode,0)
             self.assertIn("Windows hosted runner only",p.stderr)
             self.assertFalse(dst.exists())
+
+
+class NativeReadinessObserverTests(unittest.TestCase):
+    """Execute the stock smoke observer methods, not an actual MO2 listener."""
+
+    def setup_observer(self, temp):
+        import urllib.parse
+        from unittest.mock import Mock
+
+        runner = Path(__file__).resolve().parent.parent / "mo2_smoke_plugin/modhunter_native_smoke/runner.py"
+        program = ast.parse(runner.read_text(encoding="utf-8"))
+        classes = [node for node in program.body if isinstance(node, ast.ClassDef)
+                   and node.name in ("LoopbackUrlCapture", "NativeSmokePlugin")]
+        clock = SimpleNamespace(now=0, monotonic=lambda: clock.now)
+        app = SimApp([])
+        service_slots = {}
+
+        class Product:
+            def __init__(self):
+                self.server = None
+                self._ui_initialized = True
+                self._startup_attempts = 1
+                self._subscription_errors = []
+                self.display_calls = 0
+                self.org = SimpleNamespace(basePath=lambda: temp, pluginSetting=lambda *_: True,
+                    setPluginSetting=Mock(), managedGame=lambda: SimpleNamespace(gameName=lambda: "fixture-game"),
+                    profileName=lambda: "ready-fixture")
+
+            def _publish_diagnostics(self):
+                pass
+
+            def display(self):
+                self.display_calls += 1  # Product completes this action asynchronously.
+
+        class Worker:
+            def __init__(self, *, target, args, **_):
+                self.args = args
+                self.starts = 0
+
+            def start(self):
+                self.starts += 1
+
+        import traceback
+        scope = dict(
+            ModUpdateArsenal=Product, time=clock, utc_now=lambda: "fixture", Path=Path,
+            os=SimpleNamespace(environ={"MODHUNTER_NATIVE_SMOKE_INSTANCE": temp}), urllib=urllib, traceback=traceback,
+            GAME_NAME="fixture-game", PROFILE_NAME="ready-fixture", EXPECTED_MODS=range(2),
+            exercise_native_nexus_binding=lambda _: {}, threading=SimpleNamespace(
+                Lock=lambda: object(), Thread=Worker),
+            QtCore=SimpleNamespace(QObject=object, pyqtSignal=Signal, QUrl=object, QTimer=SimTimer,
+                pyqtSlot=lambda *_: lambda function: function,
+                Qt=SimpleNamespace(ConnectionType=SimpleNamespace(QueuedConnection=1))),
+            QtGui=SimpleNamespace(QDesktopServices=SimpleNamespace(
+                setUrlHandler=lambda scheme, receiver, slot: service_slots.update({scheme: getattr(receiver, slot)}))),
+            QtWidgets=SimpleNamespace(QApplication=SimpleNamespace(activeModalWidget=lambda: None)),
+            find_mo2_view=lambda _: (object(), SimpleNamespace(
+                  model=lambda: SimpleNamespace(rowCount=lambda: 2))),
+        )
+        exec(compile(ast.Module(body=classes, type_ignores=[]), str(runner), "exec"), scope)
+        p = scope["NativeSmokePlugin"]()
+        p._on_qt_thread = lambda: True
+        p._native_nexus = object()
+        p._exercise_http = lambda *_: None
+        p._finish = Mock(side_effect=lambda _: setattr(p, "_finished", True))
+        self.addCleanup(setattr, SimApp, "current", None)
+        return app, p, clock, service_slots
+
+    def drain(self, app):
+        while app.queue:
+            _, _, run = heapq.heappop(app.queue)
+            run()
+
+    def test_delayed_listener_and_display_events_do_not_run_early_or_twice(self):
+        with TemporaryDirectory() as t:
+            app, smoke, clock, sink = self.setup_observer(t)
+            smoke._ui_ready(object())
+            self.assertIn("http", sink)
+            self.drain(app)
+            self.assertEqual(smoke.display_calls, 0)
+            self.assertIsNone(smoke._worker)
+            smoke.server = SimpleNamespace(_server=object(), _stopped=False, token="fixture-session-token")
+            smoke._publish_diagnostics()
+            smoke._publish_diagnostics()
+            self.drain(app)
+            self.assertEqual(smoke.display_calls, 1)
+            self.assertIsNone(smoke._worker)
+            sink["http"](SimpleNamespace(toString=lambda: "http://127.0.0.1:1234/"))
+            self.drain(app)
+            self.assertEqual(smoke._worker.starts, 1)
+            self.assertEqual(smoke._worker.args, ("http://127.0.0.1:1234/", "fixture-session-token"))
+            self.assertTrue(all(k["passed"] for k in smoke._checks))
+            smoke._finish.assert_not_called()
+
+    def test_stale_event_or_placeholder_cannot_open_and_existing_deadline_still_fails(self):
+        with TemporaryDirectory() as t:
+            app, smoke, clock, _ = self.setup_observer(t)
+            smoke._ui_ready(object())
+            smoke._publish_diagnostics()  # e.g. after a canceled startup: no listener.
+            smoke.server = SimpleNamespace(_server=None, _stopped=False)
+            smoke._publish_diagnostics()
+            self.drain(app)
+            self.assertEqual(smoke.display_calls, 0)
+            clock.now = 90
+            smoke._check_liveness()
+            smoke._finish.assert_not_called()
+            clock.now = 90.001
+            smoke._check_liveness()
+            smoke._finish.assert_called_once_with(
+                {"ok": False, "error": "Native smoke exceeded its bounded deadline"})
+
+    def test_ready_retry_or_automatic_browser_still_fails_before_manual_action(self):
+        for attempts, auto_url in ((2, False), (1, True)):
+            with self.subTest(attempts=attempts, auto_url=auto_url), TemporaryDirectory() as t:
+                app, smoke, _, sink = self.setup_observer(t)
+                smoke._ui_ready(object())
+                if auto_url:
+                    sink["http"](SimpleNamespace(toString=lambda: "http://127.0.0.1:1234/"))
+                smoke._startup_attempts = attempts
+                smoke.server = SimpleNamespace(_server=object(), _stopped=False, token="ignored")
+                smoke._publish_diagnostics()
+                self.drain(app)
+                self.assertEqual(smoke.display_calls, 0)
+                self.assertIsNone(smoke._worker)
+                self.assertIn("native_bridge_autostart", smoke._finish.call_args.args[0]["error"])
 
 
 if __name__ == "__main__":

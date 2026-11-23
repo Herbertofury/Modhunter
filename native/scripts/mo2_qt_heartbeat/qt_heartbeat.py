@@ -94,13 +94,21 @@ def measure(QtCore, QtWidgets, production, fixture, *, discovery_root=None):
     app = QtWidgets.QApplication([])
     zero = time.perf_counter_ns()
     clock = lambda: time.perf_counter_ns() - zero
-    ticks, records, windows = [], [], []
+    ticks, records, windows, completion_edges, dashboard_opens = [], [], [], [], []
     phase, requested, previous = 0, None, 0
     failure = request = None
     discovery_seen = False
     heartbeat = QtCore.QTimer()
     heartbeat.setTimerType(QtCore.Qt.TimerType.PreciseTimer)
     heartbeat.setInterval(PERIOD_MS)
+
+    def completion_edge(observer):
+        if requested is None or observer.server is None or observer.server._server is None:
+            return
+        if observer.server.revision()["generation"] != previous + 1:
+            return
+        if phase != 2 or (request and request.state == "completed" and request.result.get("ok")):
+            completion_edges.append(clock())
 
     class Observer(production.ModUpdateArsenal):
         def bracket(self, name, action):
@@ -110,9 +118,24 @@ def measure(QtCore, QtWidgets, production, fixture, *, discovery_root=None):
             finally:
                 windows.append((name, t, clock()))
         def _ensure_service(self):
-            return self.bracket("startup", super()._ensure_service)
+            result = self.bracket("startup", super()._ensure_service)
+            completion_edge(self)
+            return result
         def _refresh_snapshot(self, *, force_metadata=False):
-            return self.bracket("synchronous", lambda: super(Observer, self)._refresh_snapshot(force_metadata=force_metadata))
+            result = self.bracket("synchronous", lambda: super(Observer, self)._refresh_snapshot(force_metadata=force_metadata))
+            completion_edge(self)
+            return result
+        def _dispatch(self, received):
+            super()._dispatch(received)
+            if phase == 2 and received is request and not hasattr(production.ModUpdateArsenal, "_capture_background_refresh"):
+                # The released synchronous refresh returns before dispatch
+                # resolves the authenticated request.
+                completion_edge(self)
+        def _on_background_refresh_completed(self, result):
+            super()._on_background_refresh_completed(result)
+            completion_edge(self)
+        def _open_dashboard(self, address):
+            dashboard_opens.append(address)  # No browser; any such call fails the trial.
         def _capture_background_refresh(self):
             return self.bracket("native-capture", super()._capture_background_refresh)
         def _begin_background_capture(self, valid):
@@ -138,6 +161,7 @@ def measure(QtCore, QtWidgets, production, fixture, *, discovery_root=None):
         nonlocal requested, request, phase_calls, capture_completed
         phase_calls = fixture.calls.copy()
         capture_completed = None
+        completion_edges.clear()
         requested = clock()
         try:
             if phase == 0:
@@ -174,6 +198,8 @@ def measure(QtCore, QtWidgets, production, fixture, *, discovery_root=None):
                     (request and request.state == "completed" and request.result.get("ok"))):
                 return
             if capture_completed is None:
+                check(len(completion_edges) == 1 and requested < completion_edges[0] <= now,
+                      "Published generation lacks one complete callback edge")
                 capture_completed = now
                 if phase == 0 and discovery_root is not None:
                     files = list(discovery_root.glob("*.json"))
@@ -190,9 +216,10 @@ def measure(QtCore, QtWidgets, production, fixture, *, discovery_root=None):
                   and calls["pluginNames"] == 1 and calls["resolvePath"] == fixture.expected_plugins,
                   "Phase did not capture exactly one complete fixture")
             check(not p._snapshot_error and not service.intelligence.runner.available, "Unexpected runtime or helper error")
+            check(len(completion_edges) == 1 and not dashboard_opens, "Duplicate completion or automatic dashboard open")
             selected = [item for item in windows if requested <= item[1]]
             names = [s[0] for s in selected]
-            if phase == 0:
+            if phase == 0 and not hasattr(production.ModUpdateArsenal, "_finish_background_startup"):
                 expected = ["startup"]
             elif hasattr(production.ModUpdateArsenal, "_begin_background_capture"):
                 check(len(names) >= 3 and names[0] == "native-enumeration"
@@ -204,7 +231,7 @@ def measure(QtCore, QtWidgets, production, fixture, *, discovery_root=None):
                 expected = ["native-capture", "native-publish"] if hasattr(
                     production.ModUpdateArsenal, "_capture_background_refresh") else ["synchronous"]
             check(names == expected, "Wrong actual Qt call sequence")
-            records.append((PHASES[phase], requested, capture_completed, selected, service._snapshot, calls))
+            records.append((PHASES[phase], requested, completion_edges[0], selected, service._snapshot, calls))
             previous = generation
             phase += 1
             requested = None

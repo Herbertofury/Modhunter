@@ -180,7 +180,6 @@ class StartupTests(unittest.TestCase):
         capture.assert_not_called()
         server.stop.assert_called_once()
 
-if __name__=="__main__":unittest.main()
 
 
 class BackgroundRefreshIntegrationTests(unittest.TestCase):
@@ -281,3 +280,236 @@ class BackgroundRefreshIntegrationTests(unittest.TestCase):
         self.drain()
         self.service.set_snapshot.assert_called_once()
         self.assertEqual(self.service.set_snapshot.call_args.args[0]["profileName"], "Fixture A")
+
+class BackgroundStartupIntegrationTests(unittest.TestCase):
+    """Exact plugin/coordinator/metadata methods; controlled Qt/Mobase and bridge sockets."""
+
+    def setUp(self):
+        from queue import Queue
+        from threading import Event, get_ident
+        self.owner = get_ident()
+        self.result_port, self.entered = Queue(), Queue()
+        self.timers = []
+        self.release_worker = Event()
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        root = Path(self.temp.name)
+        (root / "web").mkdir()
+        (root / "web" / "index.html").write_text("<main>Fixture dashboard</main>", encoding="utf-8")
+        mod = root / "real metadata"
+        mod.mkdir()
+        (mod / "meta.ini").write_text("[General]\nurl=https://github.com/example/owned-fixture\n",
+                                     encoding="utf-8")
+        kind = plugin_type(self.timers)
+        ns = kind.init.__globals__
+        self.address = "http://127.0.0.1:12345/"
+        self.messages = Mock()
+        self.service = SimpleNamespace(start=Mock(return_value=self.address), stop=Mock(), content=Mock(),
+                                       set_snapshot=Mock())
+        self.created = Mock(return_value=self.service)
+
+        def dispatcher(handler):
+            return SimpleNamespace(submitted=SimpleNamespace(
+                emit=self.result_port.put if handler.__name__ == "_on_background_refresh_completed" else handler))
+
+        def project(capture, **kwargs):
+            self.assertNotEqual(get_ident(), self.owner)
+            self.entered.put(capture)
+            if not self.release_worker.wait(3):
+                raise AssertionError("test did not release snapshot worker")
+            return project_snapshot(capture, **kwargs)
+
+        self.attach = Mock(side_effect=lambda org, snap: self.assertEqual(get_ident(), self.owner))
+        ns.update(Dispatcher=dispatcher, project_snapshot=project, __file__=str(root / "plugin.py"), Path=Path,
+                  ArsenalService=self.created, attach_native_plugin_state=self.attach,
+                  QtWidgets=SimpleNamespace(QMessageBox=self.messages),
+                  NativeNexusGateway=lambda _: SimpleNamespace(files_available=False, files_error="fixture",
+                                                               file_transport="unavailable"),
+                  VERSION="fixture-version")
+        ns["QtCore"].qVersion = lambda: "fixture"
+        self.opened = Mock()
+        self.synchronous = Mock(side_effect=AssertionError("production startup must not use synchronous metadata"))
+        ns["take_snapshot"] = self.synchronous
+        self.profile = "Fixture A"
+        self.rows = [f"Row {i}" for i in range(128)]
+        self.org = Mock()
+        self.org.profileName.side_effect = lambda: self.profile
+        self.org.profilePath.side_effect = lambda: "/test/profile/" + self.profile if self.profile else ""
+        self.org.basePath.side_effect = lambda: "/test"
+        self.org.persistent.return_value = "unknown"
+        self.org.pluginDataPath.return_value = str(root)
+        self.org.managedGame.side_effect = lambda: SimpleNamespace(gameNexusName="skyrimspecialedition")
+        ml = self.org.modList.return_value
+        ml.allModsByProfilePriority.side_effect = lambda _: self.rows
+        ml.getMod.side_effect = lambda name: SimpleNamespace(name=name, absolutePath=str(mod), version="1.0")
+        ml.priority.return_value = 0
+        ml.state.return_value = 2
+        self.plugin = kind()
+        self.plugin.init(self.org)
+        self.plugin._open_dashboard = self.opened
+        self.plugin._bind_native_selection = Mock()
+        self.addCleanup(self.plugin._shutdown)
+        self.addCleanup(self.release_worker.set)
+
+    def tick(self, delay=0):
+        self.assertEqual(self.timers[0][0], delay)
+        self.timers.pop(0)[1]()
+
+    def pump_capture(self):
+        while self.timers and self.timers[0][0] == 0:
+            self.tick()
+
+    def deliver(self):
+        self.plugin._on_background_refresh_completed(self.result_port.get(timeout=3))
+
+    def test_auto_start_yields_and_admits_complete_catalog_once_without_opening_browser(self):
+        self.plugin._on_ui_initialized(object())
+        self.plugin._on_plugins_refreshed()  # The queued startup absorbs it.
+        self.assertEqual(len(self.timers), 1)
+        self.tick()
+        self.assertIsNone(self.plugin.server)
+        self.assertEqual(self.org.modList.return_value.getMod.call_count, 0)
+        self.tick()
+        self.assertEqual(self.org.modList.return_value.getMod.call_count, 64)
+        self.attach.assert_not_called()
+        self.created.assert_not_called()
+        self.pump_capture()
+        self.assertEqual(len(self.entered.get(timeout=3).mods), 128)
+        self.assertIsNone(self.plugin.server)
+        self.created.assert_not_called()
+        self.release_worker.set()
+        self.deliver()
+        self.assertIs(self.plugin.server, self.service)
+        snapshot = self.created.call_args.args[3]
+        self.assertEqual([r["name"] for r in snapshot["items"]], self.rows)
+        self.assertTrue(all(r["source"]["url"] == "https://github.com/example/owned-fixture" for r in snapshot["items"]))
+        self.service.start.assert_called_once()
+        self.attach.assert_called_once_with(self.org, snapshot)
+        self.synchronous.assert_not_called()
+        self.opened.assert_not_called()
+        self.assertEqual(self.plugin._startup_attempts, 1)
+        self.assertEqual(self.timers, [])
+
+    def test_first_tools_action_joins_auto_start_and_opens_exact_valid_address_once(self):
+        self.plugin._on_ui_initialized(object())
+        self.pump_capture()
+        self.entered.get(timeout=3)
+        self.plugin.display()
+        self.plugin.display()
+        self.created.assert_not_called()
+        self.opened.assert_not_called()
+        self.release_worker.set()
+        self.deliver()
+        self.service.start.assert_called_once()
+        self.opened.assert_called_once_with(self.address)
+        self.assertEqual(self.timers, [])
+
+    def test_manual_start_before_ui_ready_uses_same_async_path(self):
+        self.plugin.display()
+        self.pump_capture()
+        self.entered.get(timeout=3)
+        self.release_worker.set()
+        self.deliver()
+        self.opened.assert_called_once_with(self.address)
+        self.service.start.assert_called_once()
+        self.synchronous.assert_not_called()
+
+    def test_a_b_a_during_worker_invalidates_first_start_without_losing_menu_intent(self):
+        self.plugin._on_ui_initialized(object())
+        self.pump_capture()
+        captured = self.entered.get(timeout=3)
+        self.plugin.display()
+        for target in ("Fixture B", "Fixture A"):
+            before, self.profile = self.profile, target
+            self.plugin._on_profile_changed(before, target)
+        self.rows = ["New committed A"]
+        self.release_worker.set()
+        with self.assertLogs("modhunter-lifecycle-test", level="WARNING"):
+            self.deliver()
+        self.created.assert_not_called()
+        self.opened.assert_not_called()
+        self.assertIsNone(self.plugin.server)
+        self.pump_capture()
+        ready = self.entered.get(timeout=3)
+        self.assertEqual(captured.profile_id, ready.profile_id)
+        self.deliver()
+        self.assertEqual(self.created.call_args.args[3]["items"][0]["name"], "New committed A")
+        self.service.start.assert_called_once()
+        self.opened.assert_called_once_with(self.address)
+
+    def test_attach_reentrancy_checks_epoch_before_starting_and_shutdown_drops_success(self):
+        self.rows = ["Stable"]
+        self.plugin._on_ui_initialized(object())
+        self.plugin.display()
+        self.pump_capture()
+        self.entered.get(timeout=3)
+        self.release_worker.set()
+
+        def stale_attach(*args):
+            self.plugin._on_profile_changed("Fixture A", "Fixture B")
+            self.plugin._on_profile_changed("Fixture B", "Fixture A")
+
+        self.attach.side_effect = stale_attach
+        with self.assertLogs("modhunter-lifecycle-test", level="WARNING"):
+            self.deliver()
+        self.created.assert_not_called()
+        self.attach.side_effect = None
+        self.pump_capture()
+        self.entered.get(timeout=3)
+        self.plugin._shutdown()
+        self.deliver()
+        self.service.start.assert_not_called()
+        self.opened.assert_not_called()
+        self.assertIsNone(self.plugin.server)
+
+    def test_retry_budget_is_five_and_new_manual_intent_can_try_again(self):
+        self.profile = ""
+        self.plugin._on_ui_initialized(object())
+        self.plugin.display()
+        delays = []
+        with self.assertLogs("modhunter-lifecycle-test", level="WARNING") as failures:
+            while self.timers:
+                delays.append(self.timers[0][0])
+                self.tick(delays[-1])
+        self.assertEqual(delays, [0, 1000, 1000, 1000, 1000])
+        self.assertEqual(len(failures.output), 5)
+        self.assertEqual(self.plugin._startup_attempts, 5)
+        self.messages.critical.assert_called_once()
+        self.created.assert_not_called()
+        self.opened.assert_not_called()
+        self.profile = "Fixture A"
+        self.plugin.display()
+        self.pump_capture()
+        self.entered.get(timeout=3)
+        self.release_worker.set()
+        self.deliver()
+        self.opened.assert_called_once_with(self.address)
+        self.assertEqual(self.plugin._startup_attempts, 1)
+        self.service.start.assert_called_once()
+
+    def test_failed_listener_does_not_publish_or_open_and_retries_on_owner(self):
+        self.rows = ["Stable"]
+        bad = SimpleNamespace(start=Mock(side_effect=OSError("Owned test listener failure")),
+                              stop=Mock(), content=Mock())
+        self.created.side_effect = [bad, self.service]
+        self.plugin.display()
+        self.pump_capture()
+        self.entered.get(timeout=3)
+        self.release_worker.set()
+        with self.assertLogs("modhunter-lifecycle-test", level="WARNING"):
+            self.deliver()
+        bad.stop.assert_called_once()
+        self.assertIsNone(self.plugin.server)
+        self.opened.assert_not_called()
+        self.tick(1000)
+        self.pump_capture()
+        self.entered.get(timeout=3)
+        self.deliver()
+        self.assertIs(self.plugin.server, self.service)
+        self.service.start.assert_called_once()
+        self.opened.assert_called_once_with(self.address)
+        self.assertEqual(self.plugin._startup_attempts, 2)
+
+
+if __name__ == "__main__":
+    unittest.main()

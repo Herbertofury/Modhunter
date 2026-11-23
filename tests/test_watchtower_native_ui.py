@@ -120,7 +120,7 @@ OVERRIDE=r'''(() => {
   if(kind==='compareIniSnapshots'){
    if(Object.keys(v).length)throw Error('The UI may request pickers only');
    if(f.defer[kind])await new Promise(resolve=>f.pending.push({kind,resolve}));
-   return finish({comparison:{schemaVersion:1,comparison:'qsettingsIni',orderEvidence:'callerSupplied',profileIdentity:'notVerified',editorAttribution:'unknown',values:'notIncluded',
+   return finish({comparison:f.native.iniComparison??{schemaVersion:1,comparison:'qsettingsIni',orderEvidence:'callerSupplied',profileIdentity:'notVerified',editorAttribution:'unknown',values:'notIncluded',
     byteIdentical:false,effectiveSettingsEqual:false,beforeSettings:4,afterSettings:5,changes:{changed:2,added:2,removed:1},unlabeledChanges:{changed:1,added:1,removed:0},
     labeledChanges:[{setting:'modsDirectory',kind:'changed'},{setting:'gameRuntimeVersion',kind:'added'},{setting:'instanceBaseDirectory',kind:'removed'}]}});
   }
@@ -370,6 +370,62 @@ class NativeUiTests(base.WatchtowerBrowserTests):
         self.page.wait_for_function("!document.getElementById('globalIniCompare').disabled")
         self.assertTrue(report.is_hidden())
         self.assertEqual(self.page.locator('#iniReviewRows li').count(),0)
+        self.assert_explicit_ini_summary_lifetime()
+
+    def assert_explicit_ini_summary_lifetime(self):
+        existing_calls = len(self.calls('compareIniSnapshots'))
+        compare = self.page.locator('#globalIniCompare')
+        keep = self.page.locator('#iniKeepSummary')
+        trail = self.page.locator('#iniTrailPanel')
+        report = self.page.locator('#iniReviewResult')
+        compare.click()
+        report.wait_for(state='visible')
+        self.assertTrue(trail.is_hidden())
+        keep.focus()
+        keep.press('Enter')
+        self.assertEqual(trail.locator('ol button').all_text_contents(), ['Open comparison 1'])
+        self.assertTrue(keep.is_disabled())
+        self.assertTrue(trail.get_by_role('button', name='Open comparison 1').evaluate(
+            'button => button === document.activeElement'))
+
+        self.page.evaluate("""()=>{__WATCH_FIX__.native.iniComparison={
+          schemaVersion:1,comparison:'qsettingsIni',orderEvidence:'callerSupplied',profileIdentity:'notVerified',
+          editorAttribution:'unknown',values:'notIncluded',byteIdentical:true,effectiveSettingsEqual:true,
+          beforeSettings:4,afterSettings:4,changes:{changed:0,added:0,removed:0},
+          unlabeledChanges:{changed:0,added:0,removed:0},labeledChanges:[],
+          owner:'PRIVATE_TEST_ONLY',path:'C:/PRIVATE_TEST_ONLY/unrelated.ini'};}""")
+        compare.click()
+        report.wait_for(state='visible')
+        self.assertIn('byte-identical', report.inner_text())
+        keep.click()
+        self.page.locator('#iniReviewFilter').select_option('changed')
+        trail.get_by_role('button', name='Open comparison 1').click()
+        self.assertEqual(self.page.locator('#iniReviewFilter').input_value(), 'all')
+        self.assertIn('Mods directory · Changed',report.locator('#iniReviewRows li').all_text_contents())
+        trail.get_by_role('button', name='Open comparison 2').click()
+        self.assertIn('byte-identical',report.inner_text())
+        self.assertNotIn('PRIVATE_TEST_ONLY', self.page.locator('#settingsView').inner_text())
+        self.assertEqual([x['value'] for x in self.calls('compareIniSnapshots')[existing_calls:]], [{}, {}])
+
+        trail.get_by_role('button', name='Clear kept summaries').click()
+        self.assertTrue(trail.is_hidden())
+        self.assertTrue(report.is_hidden())
+        self.assertTrue(compare.evaluate('button=>document.activeElement===button'))
+        compare.click()
+        report.wait_for(state='visible')
+        keep.click()
+        self.page.evaluate("__WATCH_FIX__.defer.compareIniSnapshots=true")
+        compare.click()
+        self.page.wait_for_function("__WATCH_FIX__.pending.some(x=>x.kind==='compareIniSnapshots')")
+        self.assertTrue(trail.get_by_role('button', name='Open comparison 1').is_disabled())
+        self.navigate('history')
+        self.navigate('settings')
+        self.page.evaluate("__WATCH_FIX__.release('compareIniSnapshots')")
+        self.page.wait_for_function("!document.getElementById('globalIniCompare').disabled")
+        self.assertTrue(trail.is_hidden())
+        self.assertTrue(report.is_hidden())
+        self.assertEqual(trail.locator('ol button').count(), 0)
+        self.assertEqual([x['value'] for x in self.calls('compareIniSnapshots')[existing_calls:]], [{}, {}, {}, {}])
 
     def test_support_export_uses_the_exact_preview_identity(self):
         self.open_native();self.navigate('settings');self.page.locator('#globalSupport').click();self.page.wait_for_selector('#supportReportDialog[open]');self.assertNotIn('mods.example',self.page.locator('#supportReportText').inner_text())

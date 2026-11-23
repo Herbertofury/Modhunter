@@ -2,6 +2,7 @@
 (() => {
  const api=()=>window.ModhunterWatchtower,$=id=>document.getElementById(id);
  let current=null,dirty=false,generation=0,reportId=null,cleanup=null,release=null,iniReview=null,iniBusy=false,iniView=0,disposed=false;
+ const iniTrail=[],iniTrailLimit=4;
  async function call(kind,value={}){const result=await api().command(kind,value,true);if(!result?.ok)throw new Error(result?.error||result?.message||'The action could not be completed.');return result}
  function task(action){Promise.resolve().then(action).catch(error=>api().showToast(error.message||String(error),null,'Undo',true))}
  const bytes=n=>Number.isFinite(n)?n<1048576?(n/1024).toFixed(1)+' KiB':n<1073741824?(n/1048576).toFixed(1)+' MiB':(n/1073741824).toFixed(2)+' GiB':'Unknown';
@@ -21,7 +22,7 @@
  <p id="globalPreferencesStatus" role="status">Preferences apply across the native desktop.</p><button id="globalPreferencesSave" type="submit" class="primary">Save app preferences</button></form>
  <hr><h3>About Modhunter</h3><p id="globalReleaseStatus" role="status"></p><div class="row-actions"><button id="globalCheckRelease">Check for app updates</button><button id="globalOpenRelease" disabled>Open release</button><button id="globalDismissRelease" disabled>Dismiss this version</button><button id="globalLicenses">Licenses</button><button id="globalSupport">Support report</button></div>
  <hr><section aria-labelledby="iniReviewTitle"><h3 id="iniReviewTitle">Review INI changes</h3>
- <p>Choose a Before and an After copy of the same QSettings INI. This does not read a live profile or save a history entry.</p>
+ <p>Choose a Before and an After copy of the same QSettings INI. This does not read a live profile or save a history entry to disk.</p>
  <button id="globalIniCompare" type="button">Choose two saved copies</button><p id="iniReviewStatus" role="status"></p>
  <div id="iniReviewResult" hidden>
  <div class="form-grid"><label>Show change type<select id="iniReviewFilter"><option value="all">All changes</option><option value="changed">Changed</option><option value="added">Added</option><option value="removed">Removed</option></select></label></div>
@@ -30,7 +31,11 @@
  <p id="iniReviewEquivalence"></p>
  <table class="ini-review-table"><thead><tr><th scope="col">Change type</th><th scope="col">All settings</th><th scope="col">Unrecognized settings</th></tr></thead><tbody id="iniReviewCounts"></tbody></table>
  <h4>Recognized settings</h4><p id="iniReviewEmpty" hidden>No recognized changes in this view.</p><ul id="iniReviewRows"></ul>
- </div></section>
+ <button id="iniKeepSummary" type="button" disabled aria-describedby="iniTrailHelp">Keep this redacted summary</button>
+ </div>
+ <p id="iniTrailHelp">You can keep up to four summaries while you stay in Preferences. Nothing is saved to disk.</p>
+ <p id="iniTrailStatus" role="status"></p>
+ <div id="iniTrailPanel" hidden><h4>Kept for this visit</h4><ol id="iniTrailList"></ol><button id="iniTrailClear" type="button">Clear kept summaries</button></div></section>
  <hr><h3>Storage</h3><p>Review owned downloads, prepared reviews and browser data. Content snapshots remain available in Recovery.</p><div class="row-actions"><button id="globalStorage">Inspect storage</button><button id="globalCleanupPreview">Preview download cleanup</button><button id="globalClearBrowserCache">Clear site browsing data</button><button id="globalResetPreview" class="quiet danger-text">Remove application data…</button></div><div id="globalStorageResult"></div><p id="globalCleanupResult"></p><details id="globalResetCompletion" hidden><summary>Last application cleanup result</summary><pre id="globalResetCompletionText" class="native-result"></pre></details><button id="globalCleanupApply" hidden>Delete previewed downloads</button>`;
  $('settingsView').append(panel);
  const dialogs=document.createElement('div');dialogs.innerHTML=`<dialog id="supportReportDialog" class="native-wide-dialog" aria-labelledby="supportReportTitle"><div class="dialog-head"><h2 id="supportReportTitle">Support report preview</h2><button data-maint-close="supportReportDialog" aria-label="Close support report">×</button></div><div class="dialog-body"><p>Review these exact bytes before copying or saving. Source names, URLs, accounts, credentials and private paths are excluded.</p><pre id="supportReportText" class="native-result"></pre></div><footer class="dialog-footer"><button data-maint-close="supportReportDialog">Close</button><button id="supportReportCopy">Copy preview</button><button id="supportReportSave" class="primary">Save preview</button></footer></dialog>
@@ -80,6 +85,42 @@
   iniReview=null;$('iniReviewResult').hidden=true;$('iniReviewStatus').textContent='';$('iniReviewEquivalence').textContent='';
   $('iniReviewCounts').replaceChildren();$('iniReviewRows').replaceChildren();$('iniReviewFilter').value='all';
  }
+ function iniTrailActions(){
+  $('iniKeepSummary').disabled=iniBusy||disposed||!iniReview||iniTrail.length>=iniTrailLimit||iniTrail.includes(iniReview);
+  for(const button of $('iniTrailList').querySelectorAll('button'))button.disabled=iniBusy||disposed;
+ }
+ function renderIniTrail(){
+  $('iniTrailList').replaceChildren(...iniTrail.map((summary,index)=>{
+   const li=document.createElement('li'),button=document.createElement('button');
+   button.type='button';button.textContent='Open comparison '+(index+1);
+   button.onclick=()=>{
+    if(iniBusy||disposed||$('settingsView').hidden||iniTrail[index]!==summary)return;
+    iniReview=summary;$('iniReviewStatus').textContent='';$('iniReviewFilter').value='all';renderIni();iniTrailActions();
+    $('iniTrailStatus').textContent='Showing kept comparison '+(index+1)+'.';
+   };
+   li.append(button);return li;
+  }));
+  $('iniTrailPanel').hidden=iniTrail.length===0;iniTrailActions();
+ }
+ function dropIniTrail(){
+  iniTrail.length=0;$('iniTrailStatus').textContent='';renderIniTrail();
+ }
+ $('iniKeepSummary').onclick=()=>{
+  if(iniBusy||disposed||$('settingsView').hidden||!iniReview||iniTrail.length>=iniTrailLimit||iniTrail.includes(iniReview))return;
+  // Keep only the existing allowlisted projection, never the native response.
+  const returnFocus=document.activeElement===$('iniKeepSummary');
+  iniTrail.push(iniReview);renderIniTrail();
+  // The Keep button is disabled once a summary is retained; preserve keyboard
+  // continuity by moving focus to the exact new comparison, without scrolling.
+  if(returnFocus)$('iniTrailList').querySelectorAll('button')[iniTrail.length-1]?.focus({preventScroll:true});
+  const status=$('iniTrailStatus');status.textContent=iniTrail.length===iniTrailLimit?'Four summaries kept. Clear them to make room.':'Redacted summary kept for this visit.';
+ };
+ $('iniTrailClear').onclick=()=>{
+  if(disposed||$('settingsView').hidden||!iniTrail.length)return;
+  if(iniTrail.includes(iniReview))clearIni();
+  dropIniTrail();$('iniTrailStatus').textContent='Kept summaries cleared.';
+  if(!$('globalIniCompare').disabled)$('globalIniCompare').focus();
+ };
  function renderIni(){
   if(!iniReview)return;
   const filter=$('iniReviewFilter').value,section=Object.keys(iniKinds).filter(kind=>filter==='all'||kind===filter);
@@ -100,7 +141,7 @@
  $('globalIniCompare').onclick=async()=>{
   if(iniBusy||disposed||$('settingsView').hidden)return;
   const view=iniView,owns=()=>!disposed&&view===iniView&&!$('settingsView').hidden;
-  iniBusy=true;clearIni();$('globalIniCompare').disabled=true;$('globalIniCompare').setAttribute('aria-busy','true');
+  iniBusy=true;clearIni();iniTrailActions();$('iniTrailStatus').textContent='';$('globalIniCompare').disabled=true;$('globalIniCompare').setAttribute('aria-busy','true');
   $('iniReviewStatus').textContent='Select the Before copy first, then the After copy.';
   try{
    const result=await call('compareIniSnapshots',{});
@@ -110,10 +151,10 @@
    if(!iniReview)throw Error('Unrecognized comparison');
    renderIni();$('iniReviewStatus').textContent='Review ready. No files were changed.';
   }catch(_error){if(owns())$('iniReviewStatus').textContent='Could not compare these copies. Choose two readable, unambiguous QSettings INIs.'}
-  finally{iniBusy=false;if(!disposed){$('globalIniCompare').disabled=false;$('globalIniCompare').setAttribute('aria-busy','false')}}
+  finally{iniBusy=false;if(!disposed){iniTrailActions();$('globalIniCompare').disabled=false;$('globalIniCompare').setAttribute('aria-busy','false')}}
  };
- window.addEventListener('modhunter-watchtower-view',event=>{if(event.detail!=='settings'){iniView++;clearIni()}});
- window.addEventListener('beforeunload',()=>{disposed=true;iniView++;clearIni()},{once:true});
+ window.addEventListener('modhunter-watchtower-view',event=>{if(event.detail!=='settings'){iniView++;clearIni();dropIniTrail()}});
+ window.addEventListener('beforeunload',()=>{disposed=true;iniView++;clearIni();dropIniTrail()},{once:true});
  $('globalLicenses').onclick=()=>task(async()=>{const result=await call('licenses');const rows=[];for(const item of result.licenses){if(item.name==='Third-party components'){let index;try{index=JSON.parse(item.text)}catch{index=null}if(index){for(const pkg of index.packages)rows.push({name:pkg.name+' '+pkg.version,text:'Declared license: '+(pkg.license||'See supplied notice')+'\n'+(pkg.repository||'')+'\n\n'+pkg.texts.map(t=>t.file+'\n'+t.text).join('\n\n')});continue}}rows.push(item)}$('licenseComponent').replaceChildren(...rows.map((r,i)=>{const o=document.createElement('option');o.value=i;o.textContent=r.name;return o}));$('licenseComponent').onchange=()=>{$('licenseText').textContent=rows[Number($('licenseComponent').value)].text};$('licenseComponent').onchange();dialog('licensesDialog')});
  document.addEventListener('click',event=>{const button=event.target.closest('[data-maint-close]');if(button)close(button.dataset.maintClose)});
  async function initialize(){try{fill((await call('maintenance')).maintenance);const result=await call('browserChoices');$('globalBrowserStatus').textContent=result.browsers.length?'Found: '+result.browsers.map(b=>b.label).join(', '):'No supported private browser was detected.';}catch(error){$('globalPreferencesStatus').textContent=error.message}}

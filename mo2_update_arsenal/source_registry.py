@@ -127,17 +127,23 @@ def discover_local_source(mod_directory: Path, notes: str = "") -> dict:
     metadata_notes = ""
     try:
         if ini.is_file() and ini.stat().st_size <= 65536:
-            parser = configparser.ConfigParser(interpolation=None, strict=False)
-            parser.read_string(ini.read_text(encoding="utf-8-sig", errors="replace"))
-            general = next((section for section in parser.sections() if section.lower() == "general"), None)
-            if general:
-                value = parser.get(general, "hascustomurl", fallback="").strip().lower()
-                custom_enabled = False if value in ("false", "0") else True if value in ("true", "1") else None
-                metadata_notes = parser.get(general, "notes", fallback="")
-            for section in parser.sections():
-                for key in ("url", "customurl", "modurl", "updateurl", "homepage", "website", "source"):
-                    if parser.has_option(section, key):
-                        candidates.append((parser.get(section, key), "MO2 meta.ini"))
+            text = ini.read_text(encoding="utf-8-sig", errors="replace")
+            # With interpolation disabled, parsing can only preserve a URL's
+            # literal scheme separator (continuations add a newline). Without
+            # any separator or custom-URL switch, metadata cannot affect the
+            # result. Always keep the independent organizer notes fallback.
+            if "://" in text or "hascustomurl" in text.lower():
+                parser = configparser.ConfigParser(interpolation=None, strict=False)
+                parser.read_string(text)
+                general = next((section for section in parser.sections() if section.lower() == "general"), None)
+                if general:
+                    value = parser.get(general, "hascustomurl", fallback="").strip().lower()
+                    custom_enabled = False if value in ("false", "0") else True if value in ("true", "1") else None
+                    metadata_notes = parser.get(general, "notes", fallback="")
+                for section in parser.sections():
+                    for key in ("url", "customurl", "modurl", "updateurl", "homepage", "website", "source"):
+                        if parser.has_option(section, key):
+                            candidates.append((parser.get(section, key), "MO2 meta.ini"))
     except (OSError, UnicodeError, configparser.Error):
         pass
     for url, origin in candidates if custom_enabled is not False else []:

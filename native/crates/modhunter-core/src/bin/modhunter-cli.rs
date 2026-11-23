@@ -1,5 +1,7 @@
 mod bsa_directory;
+mod kid_preview;
 mod mcp_stdio;
+mod nif_metadata;
 mod plugin_order_preview;
 #[path = "../plugin_template/skyrim_se.rs"]
 mod skyrim_se_plugin_template;
@@ -236,6 +238,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             println!("{}", serde_json::to_string(&report)?);
         }
         Some("plugin-order-preview") => plugin_order_preview::run(&args[1..])?,
+        Some("kid-preview") => {
+            let [_, flag, name] = args.as_slice() else {
+                return Err(
+                    "kid-preview requires --name FILENAME_KID.ini and one file on stdin".into(),
+                );
+            };
+            if flag != "--name" {
+                return Err(
+                    "kid-preview requires --name FILENAME_KID.ini and one file on stdin".into(),
+                );
+            }
+            let report = kid_preview::run(name, std::io::stdin().lock())?;
+            println!("{}", serde_json::to_string(&report)?);
+        }
+        Some("nif-info") => nif_metadata::run(&args[1..])?,
         Some("ini-compare") => {
             if !matches!(args.as_slice(), [_, left, _, right, _]
                 if (left == "--before" && right == "--after")
@@ -251,7 +268,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         Some("benchmark") => benchmark(&args)?,
         Some("--version") => println!("Modhunter Rust engine {}", env!("CARGO_PKG_VERSION")),
         None | Some("--help") | Some("help") => println!(
-            "Modhunter Rust engine\n\nimport --modlist PATH [--ini PATH] [--mods PATH] [--workers 1..32]\nprobe --endpoint http://127.0.0.1:PORT/\naudit-plugins --request PATH|-\nplugin-file-info --file PATH [--header-only] (selected Skyrim SE-format file; no load-order claims)\nplugin-template [--author TEXT] [--description TEXT] (empty Skyrim SE full ESP candidate bytes on stdout; no file writes)\nscan-sources --request PATH|-\narchive-review --request PATH|- (bounded original-byte review)\nbsa-directory --archive PATH (named PC BSA 103–105, metadata only)\nbsa-compare --left PATH --right PATH (directory names only; no winner or payload check)\nduplicate-report --request PATH|- (complete ownership and reversible quarantine)\ncontent-vault --request PATH|- (explicit scoped backup/restore)\nspid-preview --name FILENAME_DISTR.ini (one bounded UTF-8 file on stdin; targets only)\nmcp-stdio [--legacy-2025-11-25] [--bsa ALIAS PATH] (read-only stdio; optional launcher BSA snapshot)\nplugin-order-preview capture|preview (explicit snapshot JSON on stdin; never applies a change)\nini-compare --before PATH --after PATH (read-only selected QSettings INIs; values redacted)\nbenchmark [--mods 2500] [--rounds 5] [--workers 8]\n\nImport and plugin audits are read-only. ESL eligibility is conditional; save, dependent-mod, asset and external-reference safety is not certified. The live MO2 plugin remains responsible for downloads and FOMOD installation. Benchmark uses a generated fixture, not a user's MO2 installation."
+            "Modhunter Rust engine\n\nimport --modlist PATH [--ini PATH] [--mods PATH] [--workers 1..32]\nprobe --endpoint http://127.0.0.1:PORT/\naudit-plugins --request PATH|-\nplugin-file-info --file PATH [--header-only] (selected Skyrim SE-format file; no load-order claims)\nplugin-template [--author TEXT] [--description TEXT] (empty Skyrim SE full ESP candidate bytes on stdout; no file writes)\nscan-sources --request PATH|-\narchive-review --request PATH|- (bounded original-byte review)\nbsa-directory --archive PATH (named PC BSA 103–105, metadata only)\nbsa-compare --left PATH --right PATH (directory names only; no winner or payload check)\nduplicate-report --request PATH|- (complete ownership and reversible quarantine)\ncontent-vault --request PATH|- (explicit scoped backup/restore)\nspid-preview --name FILENAME_DISTR.ini (one bounded UTF-8 file on stdin; targets only)\nkid-preview --name FILENAME_KID.ini (one bounded UTF-8 file on stdin; declaration preview only)\nmcp-stdio [--legacy-2025-11-25] [--bsa ALIAS PATH] [--plugin ALIAS PATH] (read-only stdio; optional launch-time file snapshots)\nplugin-order-preview capture|preview (explicit snapshot JSON on stdin; never applies a change)\nnif-info --file PATH (selected Skyrim SE NIF block inventory and limited DDS slots)\nini-compare --before PATH --after PATH (read-only selected QSettings INIs; values redacted)\nbenchmark [--mods 2500] [--rounds 5] [--workers 8]\n\nImport and plugin audits are read-only. ESL eligibility is conditional; save, dependent-mod, asset and external-reference safety is not certified. The live MO2 plugin remains responsible for downloads and FOMOD installation. Benchmark uses a generated fixture, not a user's MO2 installation."
         ),
         Some(command) => {
             return Err(format!("Unknown command: {command}. Run modhunter-cli --help").into());

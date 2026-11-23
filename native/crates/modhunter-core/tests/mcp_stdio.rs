@@ -280,7 +280,7 @@ fn archive_call(arguments: Value) -> Value {
 }
 
 #[test]
-fn absent_launcher_archive_is_neither_listed_nor_callable() {
+fn absent_launch_files_are_neither_listed_nor_callable() {
     let mut client = Client::start(&[]);
     let listed = client.exchange(modern(1, "tools/list", json!({})));
     assert_eq!(listed["result"]["tools"].as_array().unwrap().len(), 1);
@@ -291,6 +291,13 @@ fn absent_launcher_archive_is_neither_listed_nor_callable() {
     ));
     assert_eq!(refused["error"]["code"], -32602);
     assert!(refused["result"].is_null());
+    let no_plugin = client.exchange(modern(
+        3,
+        "tools/call",
+        plugin_call(json!({"pluginAlias":"example"})),
+    ));
+    assert_eq!(no_plugin["error"]["code"], -32602);
+    assert!(no_plugin["result"].is_null());
     client.shutdown();
 }
 
@@ -410,5 +417,273 @@ fn invalid_startup_selectors_refuse_without_starting_stdio() {
         assert!(!run.status.success());
         assert!(run.stdout.is_empty());
         assert!(!String::from_utf8_lossy(&run.stderr).contains("Private "));
+    }
+}
+
+fn plugin_fixture(masters: &[String], flags: u32) -> Vec<u8> {
+    fn field(tag: &[u8; 4], data: &[u8]) -> Vec<u8> {
+        [tag.as_slice(), &(data.len() as u16).to_le_bytes(), data].concat()
+    }
+    let mut payload = field(
+        b"HEDR",
+        &[
+            1.7_f32.to_le_bytes(),
+            41_u32.to_le_bytes(),
+            0x800_u32.to_le_bytes(),
+        ]
+        .concat(),
+    );
+    for master in masters {
+        payload.extend(field(b"MAST", &[master.as_bytes(), &[0]].concat()));
+        payload.extend(field(b"DATA", &[0; 8]));
+    }
+    payload.extend(field(b"CNAM", b"private-author-marker\0"));
+    payload.extend(field(b"SNAM", b"private-description-marker\0"));
+    [
+        b"TES4".as_slice(),
+        &(payload.len() as u32).to_le_bytes(),
+        &flags.to_le_bytes(),
+        &[0; 8],
+        &44_u16.to_le_bytes(),
+        &[0; 2],
+        &payload,
+        // Structurally not 41 framed records. Header-only must not deep-parse,
+        // count or report this payload.
+        b"private-payload-marker",
+    ]
+    .concat()
+}
+
+fn plugin_call(arguments: Value) -> Value {
+    json!({"name":"plugin_header", "arguments":arguments})
+}
+
+#[test]
+fn launcher_plugin_snapshot_composes_with_bsa_and_is_immutable_on_modern_transport() {
+    let temp = tempfile::tempdir().unwrap();
+    let selected = temp.path().join("private-file-name.esp");
+    let archive = temp.path().join("private-archive-name.bsa");
+    let masters = ["Named second.esm".to_owned(), "Named first.esp".to_owned()];
+    std::fs::write(&selected, plugin_fixture(&masters, 0x201)).unwrap();
+    std::fs::write(&archive, bsa_fixture(1)).unwrap();
+    let mut client = Client::start(&[
+        "--plugin",
+        "PluginFixture",
+        selected.to_str().unwrap(),
+        "--bsa",
+        "ArchiveFixture",
+        archive.to_str().unwrap(),
+    ]);
+    let listed = client.exchange(modern(1, "tools/list", json!({})));
+    let tools = listed["result"]["tools"].as_array().unwrap();
+    assert_eq!(tools.len(), 3);
+    assert_eq!(tools[0]["name"], "spid_preview");
+    assert_eq!(tools[1]["name"], "bsa_directory_page");
+    assert_eq!(tools[2]["name"], "plugin_header");
+    assert_eq!(tools[2]["inputSchema"]["additionalProperties"], false);
+    assert_eq!(
+        tools[2]["inputSchema"]["properties"],
+        json!({
+            "pluginAlias":{"type":"string","enum":["PluginFixture"]}
+        })
+    );
+    assert_eq!(tools[2]["annotations"]["readOnlyHint"], true);
+
+    #[cfg(target_os = "linux")]
+    {
+        let opened = std::fs::read_dir(format!("/proc/{}/fd", client.process.id()))
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter_map(|handle| std::fs::read_link(handle.path()).ok())
+            .collect::<Vec<_>>();
+        assert!(!opened.contains(&selected.canonicalize().unwrap()));
+        assert!(!opened.contains(&archive.canonicalize().unwrap()));
+    }
+    std::fs::remove_file(&selected).unwrap();
+    let replacement = plugin_fixture(&["Unselected.esm".into()], 0);
+    std::fs::write(&selected, &replacement).unwrap();
+    std::fs::remove_file(&archive).unwrap();
+
+    let received = client.exchange(modern(
+        2,
+        "tools/call",
+        plugin_call(json!({"pluginAlias":"PluginFixture"})),
+    ));
+    assert_eq!(received["result"]["resultType"], "complete");
+    assert_eq!(received["result"]["isError"], false);
+    let report = &received["result"]["structuredContent"];
+    assert_eq!(
+        report,
+        &json!({
+            "scope":"launch-time-skyrim-se-format-header-assumed",
+            "pluginAlias":"PluginFixture","headerFlags":513,
+            "headerVersion":f64::from(1.7_f32),"formVersion":44,
+            "masterFlag":true,"lightFlag":true,"declaredRecordAndGroupCount":41,
+            "declaredMasters":masters,
+            "masterResolution":"declarations_only_not_resolved","payloadDecoding":"not_evaluated"
+        })
+    );
+    let legacy_text: Value =
+        serde_json::from_str(received["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(&legacy_text, report);
+    for private in [
+        "private-file-name",
+        "private-author-marker",
+        "private-description-marker",
+        "private-payload-marker",
+        "Unselected.esm",
+    ] {
+        assert!(!received.to_string().contains(private));
+        assert!(!listed.to_string().contains(private));
+    }
+    let replacement_bsa = client.exchange(modern(
+        3,
+        "tools/call",
+        archive_call(json!({"archiveAlias":"ArchiveFixture"})),
+    ));
+    assert_eq!(
+        replacement_bsa["result"]["structuredContent"]["entryCount"],
+        1
+    );
+
+    let bad_case = client.exchange(modern(
+        4,
+        "tools/call",
+        plugin_call(json!({"pluginAlias":"pluginfixture"})),
+    ));
+    assert_eq!(bad_case["result"]["isError"], true);
+    assert!(bad_case["result"]["structuredContent"].is_null());
+    for (id, arguments) in [
+        (
+            5,
+            json!({"pluginAlias":"PluginFixture","path":"private-client-path"}),
+        ),
+        (
+            6,
+            json!({"pluginAlias":"PluginFixture","resolveMasters":true}),
+        ),
+        (
+            7,
+            json!({"pluginAlias":"PluginFixture","outputPath":"private-client-path"}),
+        ),
+        (8, json!({"pluginAlias":9})),
+    ] {
+        let refused = client.exchange(modern(id, "tools/call", plugin_call(arguments)));
+        assert_eq!(refused["error"]["code"], -32602);
+        assert!(!refused.to_string().contains("private-client-path"));
+    }
+    assert_eq!(std::fs::read(&selected).unwrap(), replacement);
+    assert_eq!(std::fs::read_dir(temp.path()).unwrap().count(), 1);
+    client.shutdown();
+}
+
+#[test]
+fn launcher_plugin_snapshot_works_in_legacy_mode_with_largest_allowed_declaration_set() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("private legacy plugin.esm");
+    let archive = temp.path().join("private legacy archive.bsa");
+    let names: Vec<_> = (0..256)
+        .map(|i| format!("{}-{i:03}.esm", "X".repeat(247)))
+        .collect();
+    assert_eq!(names[0].len(), 255);
+    std::fs::write(&source, plugin_fixture(&names, 1)).unwrap();
+    std::fs::write(&archive, bsa_fixture(1)).unwrap();
+    let mut client = Client::start(&[
+        "--legacy-2025-11-25",
+        "--bsa",
+        "LegacyArchive",
+        archive.to_str().unwrap(),
+        "--plugin",
+        "LegacyPlugin",
+        source.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        client.exchange(json!({"jsonrpc":"2.0","id":1,"method":"tools/list"}))["error"]["code"],
+        -32002
+    );
+    let hello = client.exchange(json!({"jsonrpc":"2.0","id":2,"method":"initialize","params":{
+        "protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"fixture","version":"1"}
+    }}));
+    assert_eq!(hello["result"]["protocolVersion"], "2025-11-25");
+    client.send(json!({"jsonrpc":"2.0","method":"notifications/initialized"}));
+    let tools = client.exchange(json!({"jsonrpc":"2.0","id":3,"method":"tools/list"}));
+    assert_eq!(tools["result"]["tools"][1]["name"], "bsa_directory_page");
+    assert_eq!(tools["result"]["tools"][2]["name"], "plugin_header");
+    std::fs::remove_file(&source).unwrap();
+    let received = client.exchange(json!({"jsonrpc":"2.0","id":4,"method":"tools/call",
+        "params":plugin_call(json!({"pluginAlias":"LegacyPlugin"}))}));
+    assert_eq!(received["result"]["isError"], false);
+    assert!(received["result"]["resultType"].is_null());
+    assert_eq!(
+        received["result"]["structuredContent"]["declaredMasters"],
+        json!(names)
+    );
+    assert!(received.to_string().len() < 140_000);
+    assert!(!received.to_string().contains("private legacy plugin"));
+    client.shutdown();
+}
+
+#[test]
+fn malformed_or_oversized_plugin_launch_selections_never_start_stdio_or_echo_paths() {
+    let temp = tempfile::tempdir().unwrap();
+    let selected = temp.path().join("private valid.esp");
+    let malformed = temp.path().join("private malformed.esp");
+    let oversized = temp.path().join("private too-many.esp");
+    let wide = temp.path().join("private wide.esp");
+    let unicode = temp.path().join("private encoded.esp");
+    std::fs::write(&selected, plugin_fixture(&[], 0)).unwrap();
+    std::fs::write(&malformed, b"not a header").unwrap();
+    let many: Vec<_> = (0..257).map(|i| format!("Master-{i}.esm")).collect();
+    std::fs::write(&oversized, plugin_fixture(&many, 0)).unwrap();
+    std::fs::write(
+        &wide,
+        plugin_fixture(&[format!("{}.esp", "x".repeat(252))], 0),
+    )
+    .unwrap();
+    std::fs::write(&unicode, plugin_fixture(&["Nonascii-é.esm".into()], 0)).unwrap();
+    let path = selected.to_str().unwrap();
+    let archive = temp.path().join("private archive.bsa");
+    std::fs::write(&archive, bsa_fixture(1)).unwrap();
+    let ids = [
+        vec!["--plugin", "private/wrong", path],
+        vec!["--plugin", "Alias", path, "--plugin", "Second", path],
+        vec![
+            "--plugin",
+            "Alias",
+            path,
+            "--bsa",
+            "ALIAS",
+            archive.to_str().unwrap(),
+        ],
+        vec!["--plugin", "Alias"],
+        vec!["--plugin", "Alias", malformed.to_str().unwrap()],
+        vec!["--plugin", "Alias", oversized.to_str().unwrap()],
+        vec!["--plugin", "Alias", wide.to_str().unwrap()],
+        vec!["--plugin", "Alias", unicode.to_str().unwrap()],
+    ];
+    let run = |args: &[&str]| {
+        let result = Command::new(env!("CARGO_BIN_EXE_modhunter-cli"))
+            .arg("mcp-stdio")
+            .args(args)
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert!(!result.status.success(), "{args:?}");
+        assert!(result.stdout.is_empty(), "{args:?}");
+        let error = String::from_utf8_lossy(&result.stderr);
+        assert!(!error.is_empty());
+        assert!(
+            !error.contains("private"),
+            "path or metadata leaked: {error}"
+        );
+    };
+    for args in ids {
+        run(&args);
+    }
+    #[cfg(unix)]
+    {
+        let link = temp.path().join("private link.esp");
+        std::os::unix::fs::symlink(&selected, &link).unwrap();
+        run(&["--plugin", "Alias", link.to_str().unwrap()]);
     }
 }

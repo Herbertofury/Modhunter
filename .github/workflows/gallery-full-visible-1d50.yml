@@ -1,0 +1,105 @@
+name: Detached full-visible Gallery behavior (stock Edge)
+"on":
+  push:
+    branches: ['diagnostics/gallery-full-visible-1d50']
+    paths: ['.github/workflows/gallery-full-visible-1d50.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: detached-gallery-full-visible-1d50
+  cancel-in-progress: false
+
+jobs:
+  behavior:
+    if: github.repository == 'Herbertofury/Modhunter' && github.event_name == 'push' && github.ref == 'refs/heads/diagnostics/gallery-full-visible-1d50' && github.run_attempt == 1
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        env:
+          GIT_CONFIG_COUNT: '1'
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: 'false'
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Validate and run one owned sandboxed browser fixture
+        shell: pwsh
+        env:
+          MODHUNTER_FULL_VISIBLE_CARRIER: reviewed-owned-fixture
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $parent = '1d50b1ddb4c9ec1268994664f0e6b95249a67517'
+          $tree = 'f1e0257f59ca5f31a692ee4394645a53bfe4cef8'
+          $area = Join-Path $env:RUNNER_TEMP 'modhunter-gallery-full-visible'
+          if (Test-Path $area) { throw 'Unexpected existing disposable scope' }
+          New-Item -ItemType Directory -Path $area | Out-Null
+          $report = Join-Path $area 'report.json'
+          $phase = 'exact-provenance'
+          try {
+            if ($env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or $env:RUNNER_ARCH -cne 'X64') { throw 'Unsupported runner' }
+            $head = git rev-parse HEAD
+            if ($LASTEXITCODE -ne 0 -or $head -cne $env:GITHUB_SHA) { throw 'Unexpected head' }
+            $parents = git show -s --format=%P HEAD
+            if ($LASTEXITCODE -ne 0 -or $parents -cne $parent) { throw 'Expected one frozen parent' }
+            $parentTree = git rev-parse "$parent^{tree}"
+            if ($LASTEXITCODE -ne 0 -or $parentTree -cne $tree) { throw 'Unexpected parent tree' }
+            $fixture = '.github/diagnostics/gallery-full-visible'
+            $hashes = @{
+              'FROZEN_INPUTS.tsv' = 'd58e222df9c86f2ebc242d73072ee6599f4fc92976a5bca407c44628b8276526'
+              'full-visible-browser-proof.js' = '68c095f20ded5c4b34b89184f92fc24f3389ecf2cb089970c396c24f4120799a'
+              'gallery_behavior.py' = '7f563f46d67f17446b9e2a907a98370f6de9339475685334a625d7da995944bb'
+              'owned_edge.py' = 'a5277eeebfdce6399b3fbcd0c4ee77d9f48589394a9803e1c6d784c6e6c97036'
+              'windows-cp312-wheels.txt' = '6d906ba8062ca1a22d944294fc3c5f0d66e04ab7cdb1eb00390915667c100699'
+            }
+            $changes = @('A' + [char]9 + '.github/workflows/gallery-full-visible-1d50.yml')
+            foreach ($file in $hashes.Keys) {
+              if ((Get-FileHash -Algorithm SHA256 -LiteralPath "$fixture/$file").Hash.ToLowerInvariant() -cne $hashes[$file]) { throw 'Unbound fixture input' }
+              $changes += 'A' + [char]9 + "$fixture/$file"
+            }
+            $actual = @(git diff --name-status --no-renames $parent HEAD)
+            if ($LASTEXITCODE -ne 0 -or $actual.Count -ne $changes.Count -or @(Compare-Object $changes $actual -CaseSensitive).Count -ne 0) { throw 'Unexpected changed paths' }
+            $phase = 'preinstalled-python'
+            if (!$env:RUNNER_TOOL_CACHE) { throw 'Hosted preinstalled tool cache unavailable' }
+            $stockPython = Join-Path $env:RUNNER_TOOL_CACHE 'Python/3.12.10/x64/python.exe'
+            if (!(Test-Path $stockPython -PathType Leaf)) { throw 'Preinstalled exact CPython unavailable' }
+            & $stockPython -I -B -c "import sys; assert sys.platform=='win32' and sys.version_info[:3]==(3,12,10) and sys.maxsize==2**63-1" *> $null
+            if ($LASTEXITCODE -ne 0) { throw 'Preinstalled supported CPython unavailable' }
+            $env:TEMP = Join-Path $area 'browser-temp'
+            $env:TMP = $env:TEMP
+            New-Item -ItemType Directory -Path $env:TEMP | Out-Null
+            & $stockPython -I -B -m venv "$area/client" *> $null
+            if ($LASTEXITCODE -ne 0) { throw 'Ephemeral client environment unavailable' }
+            $python = Join-Path $area 'client/Scripts/python.exe'
+            $phase = 'locked-official-wheels'
+            & $python -I -m pip --isolated --disable-pip-version-check install --require-hashes --no-index --no-deps --only-binary=:all: --no-cache-dir --retries 0 --timeout 30 -r "$fixture/windows-cp312-wheels.txt" *> $null
+            if ($LASTEXITCODE -ne 0) { throw 'Locked isolated wheels unavailable' }
+            & $python -I -m pip --isolated --disable-pip-version-check check *> $null
+            if ($LASTEXITCODE -ne 0) { throw 'Pinned client dependencies incomplete' }
+            $phase = 'browser-proof-unavailable'
+            # Fresh venv; script resolves only its own fixture module.
+            & $python -I -B -c "import pathlib,runpy,sys; script=pathlib.Path(sys.argv[1]).resolve();sys.path.insert(0,str(script.parent));sys.argv=sys.argv[1:];runpy.run_path(str(script),run_name='__main__')" "$fixture/owned_edge.py" $report *> $null
+            $result = $LASTEXITCODE
+            if (!(Test-Path $report) -or (Get-Item $report).Length -gt 2048) { throw 'No bounded receipt' }
+            if ($result -ne 0) { throw 'Detached product behavior unproven' }
+          } catch {
+            if (!(Test-Path $report) -or (Get-Item $report).Length -gt 2048) {
+              [ordered]@{schema=1; scope='full-visible-owned-gallery-only'; base=$parent; head=$env:GITHUB_SHA; run=$env:GITHUB_RUN_ID; attempt=1; status='unusable'; phase=$phase; passedCases=0; edgeLaunchChecked=$false} |
+                ConvertTo-Json -Compress | Set-Content -LiteralPath $report -Encoding utf8NoBOM
+            }
+            Write-Output 'Detached full-visible acceptance unusable; see the categorical receipt only.'
+            exit 1
+          }
+      - name: Retain only bounded categorical proof
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: full-visible-gallery-result
+          path: ${{ runner.temp }}/modhunter-gallery-full-visible/report.json
+          retention-days: 3
+          if-no-files-found: error

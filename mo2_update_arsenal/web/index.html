@@ -2795,8 +2795,14 @@ function prepareLibraryLayoutChange(next){
  // Only bulk view/theme changes need this guard. Startup, empty libraries,
  // reduced motion and density-only changes retain their existing paths.
  if(document.body.dataset.layout!=='compact'||matchMedia('(prefers-reduced-motion: reduce)').matches||!list?.isConnected||!list.querySelector(':scope > .mod-row')){cancelLibraryLayoutChange();return}
+ // A fresh List → Gallery change uses the old list width. Read it before
+ // arming the transition-only marker; no read is needed with that entire
+ // set of row styles invalidated. Native theme/active batches keep order.
+ const galleryEntryWidth=!LIBRARY_LAYOUT_CHANGE&&list.dataset.layoutChange===undefined&&
+  previous.view==='list'&&document.body.dataset.libraryView==='list'&&next.view==='gallery'&&
+  previous.theme===next.theme?list.clientWidth:undefined;
  cancelLibraryLayoutChange();
- const pending={list,token:String(++LIBRARY_LAYOUT_GENERATION),context:profileContext(),frame:null};
+ const pending={list,token:String(++LIBRARY_LAYOUT_GENERATION),context:profileContext(),frame:null,galleryEntryWidth};
  LIBRARY_LAYOUT_CHANGE=pending;list.dataset.layoutChange=pending.token;
  pending.frame=requestAnimationFrame(()=>{
   if(LIBRARY_LAYOUT_CHANGE!==pending)return;
@@ -3267,9 +3273,11 @@ function updateGalleryColumns(width){
  list.dataset.galleryGeometry=key;
 }
 function applyLibraryAppearance(){
- // Read one existing container width before changing the view. The outer
- // gallery wraps complete cards instead of sizing thousands of grid tracks.
- updateGalleryColumns();
+ // The fresh transition's old width is same-task, one-use, never cached
+ // across resize, a new click, theme updates or a profile replacement.
+ const pending=LIBRARY_LAYOUT_CHANGE,width=pending?.galleryEntryWidth;
+ if(width!==undefined)pending.galleryEntryWidth=undefined;
+ updateGalleryColumns(width);
  setBodyPreference('libraryView',STORE.prefs.libraryView==='gallery'?'gallery':'list');
  setBodyPreference('galleryGrouping',STORE.prefs.galleryGrouping==='chapters'?'chapters':'all');
  if($('galleryGrouping'))$('galleryGrouping').value=document.body.dataset.galleryGrouping;

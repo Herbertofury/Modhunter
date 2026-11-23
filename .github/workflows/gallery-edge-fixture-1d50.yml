@@ -1,0 +1,102 @@
+name: Detached Gallery fixture (stock Edge only)
+"on":
+  push:
+    branches: ['diagnostics/gallery-edge-fixture-1d50']
+    paths: ['.github/workflows/gallery-edge-fixture-1d50.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: modhunter-gallery-edge-fixture-1d50
+  cancel-in-progress: false
+
+jobs:
+  fixture:
+    if: github.repository == 'Herbertofury/Modhunter' && github.event_name == 'push' && github.ref == 'refs/heads/diagnostics/gallery-edge-fixture-1d50' && github.run_attempt == 1
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        env:
+          GIT_CONFIG_COUNT: '1'
+          GIT_CONFIG_KEY_0: core.autocrlf
+          GIT_CONFIG_VALUE_0: 'false'
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Validate exact detached source and run once without browser downloads
+        shell: pwsh
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+          MODHUNTER_DETACHED_BROWSER_ACCEPTANCE: explicit-authorized-disposable-host
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $temp = Join-Path $env:RUNNER_TEMP 'modhunter-gallery-edge-fixture'
+          if (Test-Path $temp) { throw 'Disposable output directory already exists' }
+          New-Item -ItemType Directory -Path $temp | Out-Null
+          $report = Join-Path $temp 'report.json'
+          $scope = 'synthetic-headless-Edge-acceptance-only'
+          $stage = 'bound-checkout'
+          try {
+            $head = git rev-parse HEAD
+            if ($LASTEXITCODE -ne 0 -or $head -cne $env:GITHUB_SHA) { throw 'expected exact checked-out head' }
+            $parent = git show -s --format=%P HEAD
+            if ($LASTEXITCODE -ne 0 -or $parent -cne '1d50b1ddb4c9ec1268994664f0e6b95249a67517') { throw 'expected one frozen exact parent' }
+            $fixture = '.github/diagnostics/gallery-edge-fixture'
+            $hashes = @{
+              'accept.cjs' = '687bd3706f8d801b178c4df84c7423a82e2620e0451ec26bd3f6aa8f026ea9f7'
+              'accept.test.cjs' = '63b297b3cdb53e50e7676f6e111d473888e5118b014003a01dece7716e45c6bf'
+              'carrier.cjs' = '0adc9249cf50a1344aca78394a6f1160074a996bec9e6fcdd48aabee3e8a6d87'
+              'edge-boundary.cjs' = '1398dee52916a7bea012f1434d1a1ebbf46cb8509600e0d1dce956f81e386b45'
+              'edge-boundary.test.cjs' = 'e4baec4c057454ade1051ff9739c82842da9129255c00147840863d46170b2cf'
+              'fixture.css' = 'a043df54591f9e01748cc25b8005075b8a0226c66a9876eb7529dedf5339e5dc'
+              'fixture.html' = '6026a29c3d7fac2feff8f76132e45c83aecff3f1c3f575c1f836fb85e49a09b6'
+              'fixture.mjs' = 'c5cb2ff7a66c91fc1941e357330a8d1c353dd90cba4653618dff8ceb748a7ded'
+              'package-lock.json' = '2979622ff7c025a54a5ab981782ad807cb5e4df0ba06661bba7d86ac83eed4c2'
+              'package.json' = 'cc2e100627969d71ba3a4b54a5fae111504efd7a2fe06485c15e039e315e2cb0'
+              'warm-geometry.mjs' = 'e93d1c1776ac1d473f7c3785c6949e17c432d13f290d1b96767baff4ab16e40e'
+            }
+            $expected = @('A' + [char]9 + '.github/workflows/gallery-edge-fixture-1d50.yml')
+            foreach ($name in $hashes.Keys) {
+              $source = Join-Path $fixture $name
+              if ((Get-FileHash -Algorithm SHA256 $source).Hash.ToLowerInvariant() -cne $hashes[$name]) { throw 'input bytes differ' }
+              $expected += 'A' + [char]9 + "$fixture/$name"
+            }
+            $actual = @(git -c core.quotePath=false diff --name-status $parent HEAD)
+            if ($LASTEXITCODE -ne 0 -or $actual.Count -ne $expected.Count -or @(Compare-Object $expected $actual -CaseSensitive).Count -ne 0) { throw 'unexpected checkout diff' }
+            $stage = 'bundled-node-preflight'
+            $version = node -p "process.platform + ' ' + process.arch + ' ' + process.versions.node.split('.')[0]"
+            if ($LASTEXITCODE -ne 0 -or $version -notmatch '^win32 x64 2[2-6]$') { throw 'supported preinstalled Node unavailable' }
+            $deps = Join-Path $temp 'deps'
+            New-Item -ItemType Directory -Path $deps | Out-Null
+            Copy-Item "$fixture/package.json", "$fixture/package-lock.json" -Destination $deps
+            $stage = 'official-client-only'
+            npm ci --prefix $deps --registry=https://registry.npmjs.org/ --strict-ssl=true --ignore-scripts --omit=optional --fetch-retries=0 --fetch-timeout=60000 --no-audit --no-fund --no-progress *> $null
+            if ($LASTEXITCODE -ne 0) { throw 'pinned npm client unavailable' }
+            $env:NODE_PATH = Join-Path $deps 'node_modules'
+            $stage = 'static-test-preflight'
+            node --test "$fixture/accept.test.cjs" "$fixture/edge-boundary.test.cjs" *> $null
+            if ($LASTEXITCODE -ne 0) { throw 'detached unit failure' }
+            $stage = 'edge-harness-preflight-or-timeout'
+            node "$fixture/accept.cjs" *> $null
+            $result = $LASTEXITCODE
+            if (!(Test-Path $report) -or (Get-Item $report).Length -gt 32768) { throw 'bounded report not available' }
+            if ($result -ne 0) { throw 'detached check unproven' }
+          } catch {
+            if (!(Test-Path $report) -or (Get-Item $report).Length -gt 32768) {
+              [ordered]@{schema=1; scope=$scope; commit=$env:GITHUB_SHA; run=$env:GITHUB_RUN_ID; attempt=1; status='unusable'; stage=$stage} |
+                ConvertTo-Json -Compress | Set-Content -LiteralPath $report -Encoding utf8NoBOM
+            }
+            Write-Output 'Detached fixture incomplete or unusable; see only the bounded JSON receipt.'
+            exit 1
+          }
+      - name: Retain only synthetic result metadata
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: Modhunter-Gallery-Edge-Fixture-Only
+          path: ${{ runner.temp }}/modhunter-gallery-edge-fixture/report.json
+          retention-days: 3
+          if-no-files-found: error

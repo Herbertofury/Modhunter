@@ -1,4 +1,5 @@
 mod bsa_directory;
+mod mcp_stdio;
 mod spid_preview;
 
 use modhunter_core::{
@@ -85,6 +86,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes);
             let request: PluginAuditRequest = serde_json::from_slice(bytes)?;
             println!("{}", serde_json::to_string(&audit_plugins(&request)?)?);
+        }
+        Some("plugin-file-info") => {
+            let (path, header_only) = match args.as_slice() {
+                [_, flag, path] if flag == "--file" => (path, false),
+                [_, flag, path, mode] if flag == "--file" && mode == "--header-only" => {
+                    (path, true)
+                }
+                _ => return Err("plugin-file-info requires --file PATH [--header-only]".into()),
+            };
+            let result = modhunter_core::plugin_analysis::inspect_selected_skyrim_plugin(
+                std::path::Path::new(path),
+                header_only,
+            )?;
+            println!("{}", serde_json::to_string(&result)?);
         }
         Some("scan-sources") => {
             let path = value(&args, "--request")?
@@ -177,6 +192,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 .map_err(std::io::Error::other)?;
             println!("{}", serde_json::to_string(&reply)?);
         }
+        Some("mcp-stdio") => mcp_stdio::run(&args[1..])?,
         Some("spid-preview") => {
             let [_, flag, name] = args.as_slice() else {
                 return Err(
@@ -206,7 +222,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         Some("benchmark") => benchmark(&args)?,
         Some("--version") => println!("Modhunter Rust engine {}", env!("CARGO_PKG_VERSION")),
         None | Some("--help") | Some("help") => println!(
-            "Modhunter Rust engine\n\nimport --modlist PATH [--ini PATH] [--mods PATH] [--workers 1..32]\nprobe --endpoint http://127.0.0.1:PORT/\naudit-plugins --request PATH|-\nscan-sources --request PATH|-\narchive-review --request PATH|- (bounded original-byte review)\nbsa-directory --archive PATH (named PC BSA 103–105, metadata only)\nbsa-compare --left PATH --right PATH (directory names only; no winner or payload check)\nduplicate-report --request PATH|- (complete ownership and reversible quarantine)\ncontent-vault --request PATH|- (explicit scoped backup/restore)\nspid-preview --name FILENAME_DISTR.ini (one bounded UTF-8 file on stdin; targets only)\nini-compare --before PATH --after PATH (read-only selected QSettings INIs; values redacted)\nbenchmark [--mods 2500] [--rounds 5] [--workers 8]\n\nImport and plugin audits are read-only. ESL eligibility is conditional; save, dependent-mod, asset and external-reference safety is not certified. The live MO2 plugin remains responsible for downloads and FOMOD installation. Benchmark uses a generated fixture, not a user's MO2 installation."
+            "Modhunter Rust engine\n\nimport --modlist PATH [--ini PATH] [--mods PATH] [--workers 1..32]\nprobe --endpoint http://127.0.0.1:PORT/\naudit-plugins --request PATH|-\nplugin-file-info --file PATH [--header-only] (selected Skyrim SE-format file; no load-order claims)\nscan-sources --request PATH|-\narchive-review --request PATH|- (bounded original-byte review)\nbsa-directory --archive PATH (named PC BSA 103–105, metadata only)\nbsa-compare --left PATH --right PATH (directory names only; no winner or payload check)\nduplicate-report --request PATH|- (complete ownership and reversible quarantine)\ncontent-vault --request PATH|- (explicit scoped backup/restore)\nspid-preview --name FILENAME_DISTR.ini (one bounded UTF-8 file on stdin; targets only)\nmcp-stdio [--legacy-2025-11-25] [--bsa ALIAS PATH] (read-only stdio; optional launcher BSA snapshot)\nini-compare --before PATH --after PATH (read-only selected QSettings INIs; values redacted)\nbenchmark [--mods 2500] [--rounds 5] [--workers 8]\n\nImport and plugin audits are read-only. ESL eligibility is conditional; save, dependent-mod, asset and external-reference safety is not certified. The live MO2 plugin remains responsible for downloads and FOMOD installation. Benchmark uses a generated fixture, not a user's MO2 installation."
         ),
         Some(command) => {
             return Err(format!("Unknown command: {command}. Run modhunter-cli --help").into());

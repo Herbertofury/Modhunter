@@ -51,8 +51,10 @@ fn folder_path(raw: &[u8]) -> Result<String, &'static str> {
     let raw = raw
         .strip_suffix(b"\0")
         .ok_or("Folder name is not terminated")?;
-    if raw.is_empty() {
-        return Ok(String::new()); // Canonical root directory if explicitly stored.
+    // Some PC packers write a sole dot as the archive's root marker.
+    // Accept it only for the whole directory name, never inside a path.
+    if raw.is_empty() || raw == b"." {
+        return Ok(String::new());
     }
     let name = std::str::from_utf8(raw).map_err(|_| "Archive name encoding is unsupported")?;
     if !name.split(['/', '\\']).all(safe_component) {
@@ -261,9 +263,7 @@ pub(super) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     if mode != "--archive" {
         return Err(USAGE.into());
     }
-    let mut archive = Selection::open(Path::new(path))?;
-    let directory = archive.read()?;
-    archive.recheck()?;
+    let directory = snapshot(Path::new(path))?;
     write_report(&Report {
         scope: "named-bsa-directory-only",
         version: directory.version,
@@ -271,6 +271,14 @@ pub(super) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         entry_count: directory.paths.len(),
         paths: directory.paths,
     })
+}
+
+/// Snapshot one human-selected archive; the read handle is closed on return.
+pub(super) fn snapshot(path: &Path) -> Result<Directory, &'static str> {
+    let mut archive = Selection::open(path)?;
+    let directory = archive.read()?;
+    archive.recheck()?;
+    Ok(directory)
 }
 
 struct Selection<'a> {

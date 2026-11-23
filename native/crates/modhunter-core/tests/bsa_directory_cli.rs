@@ -129,6 +129,25 @@ fn known_empty_and_fully_named_root_are_supported() {
 }
 
 #[test]
+fn whole_folder_dot_is_a_root_marker_but_dot_components_are_not_paths() {
+    for revision in [103, 104, 105] {
+        let (root, _) = fixture(revision, 3, &[(".", &["root.txt"])]);
+        assert_eq!(
+            bsa_directory::inventory(&root[..], root.len() as u64)
+                .unwrap()
+                .paths,
+            ["root.txt"]
+        );
+        for unsafe_path in ["./subdir", "subdir/.", "subdir/../other", ".."] {
+            let (bad, _) = fixture(revision, 3, &[(unsafe_path, &["root.txt"])]);
+            assert!(bsa_directory::inventory(&bad[..], bad.len() as u64).is_err());
+        }
+        let (duplicate, _) = fixture(revision, 3, &[("", &["root.txt"]), (".", &["ROOT.TXT"])]);
+        assert!(bsa_directory::inventory(&duplicate[..], duplicate.len() as u64).is_err());
+    }
+}
+
+#[test]
 fn unsupported_versions_encodings_and_ambiguity_are_not_empty_successes() {
     for (rev, flags, folders) in [
         (106, 3, vec![("meshes", &["body.nif"][..])]),

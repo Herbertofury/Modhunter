@@ -7,6 +7,7 @@ fallback. Outputs are not release nor installed-profile evidence.
 from __future__ import annotations
 
 import argparse
+from contextlib import ExitStack
 import hashlib
 import json
 import os
@@ -14,8 +15,10 @@ from pathlib import Path, PurePosixPath
 import subprocess
 import sys
 import tempfile
+from threading import Lock, get_ident
 import time
 from types import ModuleType, SimpleNamespace
+from unittest.mock import patch
 
 from fixture import ACTIVE, Organizer, PERIOD_MS, SIZES, interval_metrics, semantic_witness
 
@@ -90,10 +93,84 @@ def load_production(staged):
     return plugin
 
 
+class StageTrace:
+    """Fixed diagnostic stages only. No Qt calls, no identifiers or payloads."""
+    def __init__(self, clock):
+        self._clock = clock
+        self._owner = get_ident()
+        self._lock = Lock()
+        self._spans = []
+
+    def wrap(self, name, function, *, owner=True):
+        def observed(*args, **kwargs):
+            check((get_ident() == self._owner) == owner, f"Wrong telemetry thread: {name}")
+            entered = self._clock()
+            try:
+                return function(*args, **kwargs)
+            finally:
+                exited = self._clock()
+                with self._lock:
+                    self._spans.append((name, "qt-owner" if owner else "worker", entered, exited))
+        return observed
+
+    def snapshot(self):
+        with self._lock:
+            return tuple(self._spans)
+
+
+def phase_substages(name, begin, end, native, spans):
+    """Bind measured nested wall times to one phase without adding to totals."""
+    phase = [(label, lane, a, b) for label, lane, a, b in spans if a < end and b > begin]
+    check(all(begin <= a < b <= end for _, _, a, b in phase), "Stage crosses phase boundary")
+    owner = [(label, a, b) for label, lane, a, b in phase if lane == "qt-owner"]
+    workers = [(label, a, b) for label, lane, a, b in phase if lane == "worker"]
+    check(len(phase) == len(owner) + len(workers), "Unknown telemetry lane")
+
+    expected = (["native-attach", "service-construction", "service-start"]
+                if name == "startup" else ["native-attach", "service-commit"])
+    check([row[0] for row in owner] == expected, "Missing, out-of-order or duplicate owner substage")
+    parent_label, parent_start, parent_end = native[-1]
+    check(all(parent_start <= a < b <= parent_end for _, a, b in owner),
+          "Owner substage escaped its parent Qt window")
+    check(all(left[2] <= right[1] for left, right in zip(owner, owner[1:])),
+          "Overlapping owner substages")
+    if parent_label == "native-publish":
+        check(len(workers) == 1 and workers[0][0] == "worker-projection",
+              "Missing or duplicate worker projection")
+        _, a, b = workers[0]
+        check(len(native) >= 2 and native[-2][2] <= a < b <= parent_start,
+              "Worker projection overlapped native capture or publication")
+    else:
+        check(parent_label in {"startup", "synchronous"} and not workers,
+              "Legacy synchronous phase unexpectedly ran a projection worker")
+
+    def describe(row):
+        label, a, b = row
+        return {"name": label, "enterNs": a - begin, "exitNs": b - begin, "wallNs": b - a}
+    # These are wall-clock brackets. Do not attribute heartbeat gaps to both
+    # a parent and its children, nor add nested duration to endToEnd.
+    return {"ownerParentWindow": parent_label,
+            "owner": [describe(row) for row in owner], "worker": [describe(row) for row in workers]}
+
+
 def measure(QtCore, QtWidgets, production, fixture, *, discovery_root=None):
+    with ExitStack() as instrumentation:
+        return _measure(QtCore, QtWidgets, production, fixture, discovery_root, instrumentation)
+
+
+def _measure(QtCore, QtWidgets, production, fixture, discovery_root, instrumentation):
     app = QtWidgets.QApplication([])
     zero = time.perf_counter_ns()
     clock = lambda: time.perf_counter_ns() - zero
+    substage_trace = StageTrace(clock)
+    instrumentation.enter_context(patch.object(
+        production, "attach_native_plugin_state",
+        substage_trace.wrap("native-attach", production.attach_native_plugin_state)))
+    service_type = production.ArsenalService
+    for attribute, label in (("__init__", "service-construction"), ("start", "service-start"),
+                             ("set_snapshot", "service-commit")):
+        instrumentation.enter_context(patch.object(
+            service_type, attribute, substage_trace.wrap(label, getattr(service_type, attribute))))
     ticks, records, windows, completion_edges, dashboard_opens = [], [], [], [], []
     phase, requested, previous = 0, None, 0
     failure = request = None
@@ -154,6 +231,10 @@ def measure(QtCore, QtWidgets, production, fixture, *, discovery_root=None):
     p = Observer()
     check(p.init(fixture) and not p._subscription_errors, "Could not wire actual callbacks")
     check(p.server is None, "Service started before UI-ready signal")
+    coordinator = getattr(p, "_background_refresh", None)
+    if coordinator is not None:
+        instrumentation.enter_context(patch.object(
+            coordinator, "_project", substage_trace.wrap("worker-projection", coordinator._project, owner=False)))
     phase_calls = fixture.calls.copy()
     capture_completed = None
 
@@ -251,10 +332,12 @@ def measure(QtCore, QtWidgets, production, fixture, *, discovery_root=None):
     check(len(records) == len(PHASES) and len(ticks) >= 20 and p._startup_attempts == 1,
           "Missing complete phases or startup retried")
     report = []
+    spans = substage_trace.snapshot()
     for name, begin, end, pieces, snapshot, calls in records:
         report.append({"name": name, "endToEnd": interval_metrics(ticks, begin, end),
                        "nativeWindows": [{"name": t, **interval_metrics(ticks, a, b)} for t,a,b in pieces],
-                       "input": semantic_witness(snapshot, fixture), "calls": dict(calls)})
+                       "input": semantic_witness(snapshot, fixture), "calls": dict(calls),
+                       "substageTelemetry": phase_substages(name, begin, end, pieces, spans)})
     check(all(r["input"] == report[0]["input"] for r in report), "Capture changed complete normalized output")
     return {"phases": report, "heartbeatPeriodMs": PERIOD_MS, "nativeMO2": False, "nativeMobase": False,
             "auditHelperUsed": False, "startupClock": "UI-ready callback; not process start",

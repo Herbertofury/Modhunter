@@ -2,6 +2,7 @@
 from __future__ import annotations
 import ast
 from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor
 import heapq
 from pathlib import Path
 import os
@@ -13,7 +14,7 @@ import unittest
 from unittest.mock import patch
 
 from fixture import Organizer, interval_metrics, semantic_witness
-from qt_heartbeat import PHASES, stage_verified_python, load_production, measure
+from qt_heartbeat import PHASES, StageTrace, stage_verified_python, load_production, measure, phase_substages
 
 
 class SimApp:
@@ -111,6 +112,79 @@ class HarnessTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 interval_metrics(wrong,2,110_000_000)
 
+    def test_substage_brackets_are_relative_and_nested_not_counted_twice(self):
+        parent = [("native-enumeration", 20, 25), ("native-slice", 26, 30), ("native-publish", 75, 99)]
+        spans = [
+            ("native-attach", "qt-owner", 5, 8),  # another phase
+            ("worker-projection", "worker", 31, 73),
+            ("native-attach", "qt-owner", 76, 82),
+            ("service-commit", "qt-owner", 83, 96),
+        ]
+        self.assertEqual(phase_substages("forced", 10, 100, parent, spans), {
+            "ownerParentWindow": "native-publish",
+            "owner": [{"name": "native-attach", "enterNs": 66, "exitNs": 72, "wallNs": 6},
+                      {"name": "service-commit", "enterNs": 73, "exitNs": 86, "wallNs": 13}],
+            "worker": [{"name": "worker-projection", "enterNs": 21, "exitNs": 63, "wallNs": 42}],
+        })
+
+    def test_substage_counts_reject_duplicate_overlap_or_unbounded_worker(self):
+        parent = [("native-enumeration", 20, 25), ("native-slice", 26, 30), ("native-publish", 75, 99)]
+        worker = ("worker-projection", "worker", 31, 73)
+        attach = ("native-attach", "qt-owner", 76, 82)
+        commit = ("service-commit", "qt-owner", 83, 96)
+        for rows, reasoning in (
+            ([worker, attach, commit, commit], "duplicate owner"),
+            ([worker, worker, attach, commit], "duplicate worker"),
+            ([attach, commit], "worker projection"),
+            ([worker, attach, ("service-commit", "qt-owner", 80, 96)], "Overlapping owner"),
+            ([worker, attach, ("service-commit", "qt-owner", 83, 101)], "crosses phase"),
+            ([worker, ("native-attach", "qt-owner", 74, 82), commit], "escaped"),
+            ([("worker-projection", "worker", 25, 70), attach, commit], "overlapped"),
+            ([("worker-projection", "worker", 31, 76), attach, commit], "overlapped"),
+        ):
+            with self.subTest(reasoning=reasoning), self.assertRaisesRegex(ValueError, reasoning):
+                phase_substages("forced", 10, 100, parent, rows)
+
+    def test_legacy_substages_have_no_worker_and_startup_is_not_commit(self):
+        parent = [("startup", 10, 90)]
+        rows = [("native-attach", "qt-owner", 35, 40),
+                ("service-construction", "qt-owner", 55, 60),
+                ("service-start", "qt-owner", 65, 89)]
+        got = phase_substages("startup", 2, 98, parent, rows)
+        self.assertEqual(got["worker"], [])
+        self.assertEqual(got["ownerParentWindow"], "startup")
+        self.assertEqual([w["name"] for w in got["owner"]],
+                         ["native-attach", "service-construction", "service-start"])
+        with self.assertRaisesRegex(ValueError, "unexpectedly ran"):
+            phase_substages("startup", 2, 98, parent, rows+[("worker-projection", "worker", 20, 29)])
+
+    def test_substage_wrappers_preserve_thread_returns_and_never_run_on_wrong_thread(self):
+        clock = iter((101, 107, 115, 132, 150, 160)).__next__
+        trace = StageTrace(clock)
+        called = []
+        def actual(value):
+            called.append(value)
+            if value == "raise":
+                raise RuntimeError("original error")
+            return value
+        on_owner = trace.wrap("native-attach", actual)
+        on_worker = trace.wrap("worker-projection", actual, owner=False)
+        self.assertEqual(on_owner("owner"), "owner")
+        with self.assertRaisesRegex(ValueError, "Wrong telemetry thread: worker-projection"):
+            on_worker("wrong")
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            with self.assertRaisesRegex(ValueError, "Wrong telemetry thread: native-attach"):
+                pool.submit(on_owner, "also-wrong").result(timeout=2)
+            self.assertEqual(pool.submit(on_worker, "worker").result(timeout=2), "worker")
+            with self.assertRaisesRegex(RuntimeError, "original error"):
+                pool.submit(on_worker, "raise").result(timeout=2)
+        self.assertEqual(called, ["owner", "worker", "raise"])
+        self.assertEqual(trace.snapshot(), (
+            ("native-attach", "qt-owner", 101, 107),
+            ("worker-projection", "worker", 115, 132),
+            ("worker-projection", "worker", 150, 160),
+        ))
+
     def test_static_real_fixture_inputs(self):
         for n, c in ((40, 4), (11207,934)):
             with TemporaryDirectory() as tmp:
@@ -170,12 +244,30 @@ class HarnessTests(unittest.TestCase):
                     stage_verified_python(root, source)
                     org = Organizer(f,n)
                     p = load_production(source)
+                    originals = (p.attach_native_plugin_state, p.ArsenalService.set_snapshot,
+                                 p.ArsenalService.__init__, p.ArsenalService.start)
                     receipt = measure(qt.QtCore, qt.QtWidgets, p, org)
+                    self.assertEqual(originals, (p.attach_native_plugin_state, p.ArsenalService.set_snapshot,
+                                                 p.ArsenalService.__init__, p.ArsenalService.start))
                     out.append(receipt["phases"])
                     if i == 1:
                         async_first_start = hasattr(p.ModUpdateArsenal, "_finish_background_startup")
                     shutil.rmtree(f)
             self.assertEqual([a["input"] for a in out[0]], [a["input"] for a in out[1]])
+            for arm in out:
+                for i, phase in enumerate(arm):
+                    telemetry = phase["substageTelemetry"]
+                    parent = phase["nativeWindows"][-1]
+                    self.assertEqual(telemetry["ownerParentWindow"], parent["name"])
+                    self.assertEqual([w["name"] for w in telemetry["owner"]],
+                                     (["native-attach", "service-construction", "service-start"]
+                                      if not i else ["native-attach", "service-commit"]))
+                    self.assertEqual([w["name"] for w in telemetry["worker"]],
+                                     ["worker-projection"] if parent["name"] == "native-publish" else [])
+                    self.assertLessEqual(sum(w["wallNs"] for w in telemetry["owner"])/1e6,
+                                         parent["callbackMs"] + 0.001)
+                    self.assertTrue(all("intersectingGapsMs" not in w
+                                        for w in telemetry["owner"]+telemetry["worker"]))
             self.assertEqual([[w["name"] for w in a["nativeWindows"]] for a in out[0]],
                              [["startup"], ["synchronous"], ["synchronous"]])
             candidate_windows = [[w["name"] for w in a["nativeWindows"]] for a in out[1]]

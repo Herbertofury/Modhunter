@@ -1,5 +1,5 @@
 # One isolated diagnostic carrier, not a release, install or Gallery gate.
-name: Stock MO2 2.5.2 scale (Test 2, 2000)
+name: Stock MO2 2.5.2 scale (Test 2, 11207)
 
 on:
   push:
@@ -540,9 +540,9 @@ jobs:
         run: |
           $Root = Join-Path $env:RUNNER_TEMP 'mh-ec9-stock-scale-sidecar'
           $Source = Join-Path $env:GITHUB_WORKSPACE 'exact-test2'
-          python (Join-Path $Root 'stage.py') --repository $Source --output (Join-Path $Root 'probe') --rows 2000
+          python (Join-Path $Root 'stage.py') --repository $Source --output (Join-Path $Root 'probe') --rows 11207
           if ($LASTEXITCODE -ne 0) { throw 'Detached harness staging failed' }
-      - name: Measure stock MO2 2.5.2 on one disposable 2,000-mod profile
+      - name: Measure stock MO2 2.5.2 on one disposable 11,207-mod profile
         run: |
           $Root = Join-Path $env:RUNNER_TEMP 'mh-ec9-stock-scale-sidecar'
           $Source = Join-Path $env:GITHUB_WORKSPACE 'exact-test2'
@@ -554,7 +554,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: stock-mo2-scale-ec9-2000
+          name: stock-mo2-scale-ec9-11207
           path: |
             ${{ runner.temp }}/mh-ec9-stock-scale-sidecar/receipts/native-receipt.json
             ${{ runner.temp }}/mh-ec9-stock-scale-sidecar/receipts/result.json

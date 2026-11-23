@@ -751,6 +751,22 @@ fn manual_sources_preserve_gates_without_network_or_fake_check_times() {
     }
 }
 #[test]
+fn curseforge_preserves_exact_official_page_and_explains_distribution_gate() {
+    let original = "https://www.curseforge.com/minecraft/mc-mods/example/files/123";
+    let mock = Mock::new();
+    let result = scan_sources_with(&request(original), &mock, NOW).unwrap();
+    let row = &result.item_records["row"];
+    assert_eq!(mock.count(), 0);
+    assert_eq!(row["sourceUrl"], original);
+    assert_eq!(row["outcome"], "manual");
+    assert_eq!(row["availability"], "api-key-required");
+    assert_eq!(row["releaseAssets"], json!([]));
+    let reason = row["reason"].as_str().unwrap();
+    assert!(reason.contains("opt out"));
+    assert!(reason.contains("browser login does not enable API access"));
+    assert!(reason.contains("exact original project"));
+}
+#[test]
 fn duplicate_row_ids_and_excessive_work_are_rejected_before_requests() {
     let mut req = request("https://github.com/owner/mod");
     req.items.push(req.items[0].clone());

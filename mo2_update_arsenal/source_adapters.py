@@ -79,7 +79,7 @@ def adapter_capabilities(provider: str, *, helper_available=True) -> dict:
             reason = "Install the matching Modhunter Rust helper to enable this provider's public API checks."
     elif provider == "curseforge":
         mode, auth = "api-key", "api-key"
-        reason = "CurseForge API access requires a provider-issued key; this build retains the original page and does not claim a configured API session."
+        reason = "CurseForge API access requires a provider-issued key and permits authors to opt out of third-party distribution. This build has no configured API session; browser login does not enable API access. Open the exact original project on CurseForge for its official download workflow, not a guessed CDN link."
     elif provider == "bethesda":
         auth = "provider"
         reason = "Creations use Bethesda's own entitlement and installation workflow; review updates in the official client."

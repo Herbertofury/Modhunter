@@ -184,6 +184,27 @@ class SourceEvidenceTests(unittest.TestCase):
         self.assertEqual(update["verdict"], "unverified")
         self.assertFalse(update["capabilities"]["reviewedDownload"])
 
+    def test_curseforge_explains_distribution_without_enabling_archive_install(self):
+        cap = adapter_capabilities("curseforge")
+        self.assertFalse(cap["reviewedDownload"])
+        self.assertIn("opt out", cap["reason"])
+        self.assertIn("browser login does not enable API access", cap["reason"])
+        self.assertIn("exact original project", cap["reason"])
+        item, raw = fixture()
+        original = "https://www.curseforge.com/minecraft/mc-mods/example/files/123"
+        item["source"].update(url=original, verified=True, type="curseforge")
+        raw.update(provider="curseforge", source="curseforge-release-api",
+                   sourceUrl=original, projectId="456", releaseId="123")
+        # Fabricated API/CDN evidence must not turn an unsupported source into
+        # an installable file, even with exact IDs and a plausible archive URL.
+        raw["releaseAssets"][0].update(provider="curseforge", projectId="456",
+            releaseId="123", assetKey="curseforge:456:123", name="Example.zip",
+            url="https://edge.forgecdn.net/files/123/456/Example.zip")
+        update = normalize_adapter_record(item, raw, now=raw["checkedAt"])
+        self.assertEqual(update["sourceUrl"], original)
+        self.assertFalse(update["capabilities"]["reviewedDownload"])
+        self.assertFalse(update["releaseAssets"][0]["installable"])
+
     def test_advisory_dependency_link_is_not_a_project_match(self):
         item, raw = fixture()
         item["source"].update(verified=False, kind="advisory")

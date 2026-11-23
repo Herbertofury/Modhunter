@@ -522,6 +522,61 @@ test('cached source badges, search and update controls follow expiry without a n
  assert.match(h.nodes.get('workshopResults').innerHTML,/data-workshop-act="quick"/);
 });
 
+test('checklist search preserves typed and literal results, freshness and profile-owned rows',async()=>{
+ const h=harness();await h.settle();h.state.now=1000*1000;
+ const data=catalog('a');
+ const first=data.items[0],second=data.items[1],third=data.items[2];
+ Object.assign(first,{name:'Åmber detail:Blue variant',group:'Éléments rares',author:'Élodie',flags:['ESL'],screenshotNote:'Original hint',
+  source:{type:'github',verified:true,url:'https://github.com/example/project'},
+  update:{provider:'github',verdict:'candidate',latestVersion:'2.0',freshness:'fresh',expiresAt:1002,retryAt:1001,author:{name:'Release Team'}},
+  localAnalysis:{depth:'records',plugins:[{name:'Example.esl',eligibility:{status:'already-light'}}]}});
+ second.name='Åmber secondary';
+ third.name='Separate mod';
+ h.state.catalog=data;await h.qa.setCatalog(data);
+ const items=h.qa.getCatalog().items;
+ const expectRows=(query,...expected)=>{
+  h.api.setQuery(query);
+  const actual=h.api.filtered();
+  assert.equal(actual.length,expected.length,query);
+  for(let i=0;i<actual.length;i++)assert.strictEqual(actual[i],expected[i],query);
+ };
+ const [original,sibling,other]=items;
+ expectRows('ÅMBER',original,sibling);
+ expectRows('detail:blue',original); // Unrecognized keys remain literal text.
+ expectRows(':blue',original);
+ expectRows('"author:release team" section:éléments version:1.0 flag:esl',original);
+ expectRows('group:rares esl:example',original);
+ expectRows('provider:cooldown',original);
+ h.state.now=1001*1000;
+ expectRows('source:cooldown');
+ expectRows('"provider:fresh api"',original);
+ h.state.now=1002*1000;
+ expectRows('"provider:fresh api"');
+ expectRows('"source:refresh needed" "refresh needed"',original);
+ original.update={...original.update,expiresAt:2000,latestVersion:'3.1-new'};
+ expectRows('"refresh needed"');
+ expectRows('3.1-new',original);
+ h.api.setRow(original.id,{note:'User-only phrase',installed:'Local 4.2',status:'done'},false);
+ expectRows('"note:original hint" "user-only phrase" "local 4.2" status:done',original);
+ expectRows('version:local');
+ h.api.setRow(original.id,{note:'Replacement note',installed:'Local 5.0',status:'review'},false);
+ expectRows('note:user-only');
+ expectRows('"local 4.2"');
+ expectRows('note:replacement status:review',original);
+ expectRows(' ',original,sibling,other);
+ h.api.updatePrefs({provider:'github'});
+ expectRows('åmber',original);
+ h.api.updatePrefs({provider:'all'});
+ const replacement=catalog('b');
+ replacement.items[0].name='Åmber in profile B';
+ h.state.catalog=replacement;await h.qa.setCatalog(replacement);
+ const replacementRow=h.qa.getCatalog().items[0];
+ assert.notStrictEqual(replacementRow,original);
+ expectRows('åmber',replacementRow);
+ expectRows('note:replacement');
+ expectRows('detail:blue');
+});
+
 test('same-profile execution changes cancel old UI work and keep unsynced notes',async()=>{
  const h=harness();await h.settle();const before=catalog('a');before.executionEpoch=1;
  h.state.catalog=before;await h.qa.setCatalog(before);

@@ -511,6 +511,33 @@ class GalleryWorkspaceTests(unittest.TestCase):
         self.assertTrue(self.page.evaluate("document.getElementById('row-item-110')===__GALLERY_SURVIVOR__"))
         self.assertEqual(self.page.locator('#modList .mod-row').count(), 111)
 
+    def test_flat_gallery_header_only_switch_keeps_focused_rows_and_hover(self):
+        self.install_motion_probe('no-preference')
+        self.open(count=36)
+        before=self.motion_endpoint()
+        state=self.page.evaluate("""() => {
+          const list=document.getElementById('modList'),rows=[...list.querySelectorAll(':scope > .mod-row')];
+          const button=rows[0].querySelector('.inspect-btn'),header=list.querySelector(':scope > .chapterbar');
+          const nativeChildren=Object.getOwnPropertyDescriptor(Element.prototype,'children').get;
+          let wholeCollectionReads=0;
+          Object.defineProperty(list,'children',{configurable:true,get(){wholeCollectionReads++;return nativeChildren.call(this)}});
+          try{
+            button.focus({preventScroll:true});
+            document.getElementById('libraryGallery').click();
+            const next=[...list.querySelectorAll(':scope > .mod-row')];
+            return {wholeCollectionReads,hadHeader:!!header,headerRemoved:header&&!header.isConnected,
+              sameCards:next.length===rows.length&&next.every((row,i)=>row===rows[i]),
+              sameFocusedButton:document.activeElement===button};
+          }finally{delete list.children}
+        }""")
+        self.assertEqual(state,{'wholeCollectionReads':0,'hadHeader':True,'headerRemoved':True,
+                                'sameCards':True,'sameFocusedButton':True})
+        self.assert_motion_endpoint(self.motion_endpoint(),[f'item-{i}' for i in range(36)],before['transition'])
+        self.page.keyboard.press('Enter')
+        self.assertTrue(self.page.locator('#detailDrawer').evaluate("drawer=>drawer.classList.contains('open')"))
+        self.page.keyboard.press('Escape')
+        self.assert_live_row_hover()
+
     def test_gallery_grouping_preserves_collapsed_chapters_and_sorts_all_records(self):
         self.open(count=12, group_count=3)
         self.page.locator('[data-chapter-toggle="group-0"]').click()

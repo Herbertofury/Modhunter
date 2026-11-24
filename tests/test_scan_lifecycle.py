@@ -177,6 +177,100 @@ class ScanOwnershipTests(unittest.TestCase):
                 self.assertEqual(self.service.scan_state()["state"], "completed")
         self.assertEqual(calls, ["deep", "deep"])
 
+    def test_exact_scan_records_avoid_reparsing_without_losing_source_proof(self):
+        from mo2_update_arsenal.scanner import nexus_project_id
+        from mo2_update_arsenal.source_registry import canonical_source_url
+
+        native = "https://www.nexusmods.com/skyrimspecialedition/mods/7"
+        original = "https://github.com/old-owner/project"
+        manual = "https://github.com/current-owner/project"
+        changed = copy.deepcopy(PROFILE)
+        changed["items"] = [
+            dict(PROFILE["items"][0], id=item_id, nexusId=7,
+                 source={"url": url, "type": "nexus" if url == native else "github",
+                         "verified": True, "kind": "project"})
+            for item_id, url in [("exact", native), ("fallback", native),
+                                 ("wrong-source", original), ("override", original)]
+        ]
+        self.service.set_snapshot(changed)
+        self.service.set_key("fixture-api-key")
+        self.assertTrue(self.service.save_progress({
+            "profileId": "A", "rows": {"override": {"url": manual}}, "prefs": {}
+        })["ok"])
+        authorized = {"verdict": "candidate", "latestVersion": "2.0", "source": "nexus-api"}
+        self.assertEqual(self.service.snapshot()["items"][3]["source"]["url"], manual)
+        seen = []
+
+        def resolve(item, game):
+            seen.append(item.get("id"))
+            return nexus_project_id(item, game)
+
+        def scan(snapshot, mode, progress, *, cancel_event):
+            self.assertEqual(mode, "deep")
+            canon.reset_mock()  # Exclude normal preparation of the owned scan input.
+            version_two = {"verdict": "candidate", "source": "github"}
+            records = {"exact": authorized, "override": version_two}
+            progress({"checked": 1, "total": 2, "itemRecords": records})
+            return {"records": {"7": dict(authorized, latestVersion="9.0")},
+                    "itemRecords": records, "queried": 2, "errors": []}
+
+        with patch("mo2_update_arsenal.bridge.canonical_source_url", wraps=canonical_source_url) as canon, \
+             patch("mo2_update_arsenal.bridge.nexus_project_id", side_effect=resolve), \
+             patch("mo2_update_arsenal.bridge.UpdateScanner", return_value=SimpleNamespace(scan=scan)):
+            index = len(self.threads)
+            self.assertTrue(self.service.begin_scan("deep", "A")["ok"])
+            self.threads[index].join(2)
+            self.assertFalse(self.threads[index].is_alive())
+            calls = [args.args[0] for args in canon.call_args_list]
+
+        self.assertEqual(self.service.scan_state()["state"], "completed")
+        self.assertEqual(seen, ["fallback", "wrong-source"])
+        self.assertEqual(calls, [manual, original, manual, original])
+        rows = {row["id"]: row for row in self.service.snapshot(source_details=True)["items"]}
+        self.assertEqual(rows["exact"]["update"], authorized)
+        self.assertEqual(rows["fallback"]["update"]["latestVersion"], "9.0")
+        self.assertNotIn("update", rows["wrong-source"])
+        self.assertEqual(rows["override"]["update"]["sourceUrl"], manual)
+        self.assertEqual(changed["items"][3]["source"]["url"], original)
+
+    def test_malformed_equal_raw_urls_do_not_bypass_real_nexus_admission(self):
+        changed = copy.deepcopy(PROFILE)
+        changed["items"] = [
+            dict(PROFILE["items"][0], id=item_id, nexusId=7,
+                 source={"type": "nexus", "url": url, "verified": True, "kind": "project"})
+            for item_id, url in [
+                ("valid", "https://www.nexusmods.com/skyrimspecialedition/mods/7"),
+                ("noncanonical", "https://www.nexusmods.com/SkyrimSpecialEdition/mods/7/"),
+                ("native-id-without-url", None),
+                ("insecure", "http://www.nexusmods.com/skyrimspecialedition/mods/7"),
+                ("untrusted", "https://example.invalid/skyrimspecialedition/mods/7"),
+                ("different-project", "https://www.nexusmods.com/skyrimspecialedition/mods/8"),
+            ]
+        ]
+        self.service.set_snapshot(changed)
+        self.service.native_nexus_available = True
+        calls = []
+
+        def native(request):
+            calls.append((request.cmd, request.payload.copy()))
+            request.finish({"ok": True, "meta": {"version": "2.0", "status": "published"}})
+
+        self.service.ui_call = native
+        index = len(self.threads)
+        self.assertTrue(self.service.begin_scan("deep", "A")["ok"])
+        self.threads[index].join(2)
+        self.assertFalse(self.threads[index].is_alive())
+        self.assertEqual(self.service.scan_state()["state"], "completed")
+        self.assertEqual(calls, [("nexus-metadata", {"game": "skyrimspecialedition", "modId": 7})])
+        rows = {row["id"]: row for row in self.service.snapshot(source_details=True)["items"]}
+        for item_id in ("valid", "noncanonical", "native-id-without-url"):
+            with self.subTest(item=item_id):
+                self.assertEqual(rows[item_id]["update"]["latestVersion"], "2.0")
+                self.assertNotIn("sourceUrl", rows[item_id]["update"])
+        for item_id in ("insecure", "untrusted", "different-project"):
+            with self.subTest(item=item_id):
+                self.assertNotIn("update", rows[item_id])
+
     def test_native_nexus_deep_scan_reaches_actual_scanner_with_authenticated_callback(self):
         changed = copy.deepcopy(PROFILE)
         changed["items"][0]["nexusId"] = 7

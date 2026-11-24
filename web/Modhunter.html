@@ -2643,11 +2643,40 @@ function takeFilteredLibraryRow(entry,owner){
  if(!prior||prior.owner!==owner||prior.html!==entry.html||prior.node.isConnected||!coldLibraryRow(prior))return null;
  return {key:entry.key,html:entry.html,node:prior.node};
 }
+// The ordinary List -> flat Gallery action often changes only its chapter
+// headers. Recognize that exact ordered subsequence before doing the general
+// keyed reconciliation. Prove against live DOM first: no partial mutation on
+// rows whose content changed, filters, host mutations or collapsed groups.
+function removeGalleryChapterHeaders(list,previous,entries){
+ const removedCount=previous.length-entries.length;
+ if(!entries.length||!previous[0]?.key.startsWith('group:')||removedCount<=0||
+   removedCount>Math.max(32,previous.length/3))return null;
+ const retained=new Array(entries.length),headers=[];
+ let cursor=list.firstElementChild,i=0;
+ for(const prior of previous){
+  if(!cursor||prior.node!==cursor)return null;
+  cursor=cursor.nextElementSibling;
+  if(prior.key.startsWith('group:')){headers.push(prior.node);continue;}
+  const entry=entries[i];
+  if(!entry||!prior.key.startsWith('mod:')||prior.key!==entry.key||prior.html!==entry.html)return null;
+  retained[i++]=prior;
+ }
+ if(cursor||i!==entries.length||headers.length!==removedCount)return null;
+ for(const header of headers)header.remove();
+ return retained;
+}
 function setRows(node,entries,empty,preserveMoves=false){
  if(!node)return;
  const previous=ROW_RENDER_CACHE.get(node),library=node.id==='modList';
  const owner=library?libraryRowCacheOwner():'',ownsPrevious=library&&LIBRARY_ROW_CACHE_LIST===node&&LIBRARY_ROW_CACHE_OWNER===owner;
  if(library&&!ownsPrevious)LIBRARY_DETACHED_ROWS.clear();
+ if(ownsPrevious&&previous&&!preserveMoves&&!LIBRARY_DETACHED_ROWS.size&&ITEM_MAP.size===DATA.items.length&&flatGallery()){
+  const retained=removeGalleryChapterHeaders(node,previous,entries);
+  if(retained){
+   ROW_RENDER_CACHE.set(node,retained);HTML_CACHE.delete(node);
+   return;
+  }
+ }
  // Download status changes can reorder tickets. Retain their controls through
  // moves as well as replacements, so a background poll cannot steal focus.
  const currentChildren=previous?[...node.children]:null;
@@ -2903,6 +2932,15 @@ function sortMods(items,scope){
  scopes.set(scope,{items,keys,sorted});
  return sorted;
 }
+function libraryOriginalSourceCount(){
+ // A direct view/filter action refreshes this footer without rendering the
+ // dashboard. It needs one exact catalog-wide metric, not every status,
+ // compatibility, expiry and bookmark calculation.
+ if(RENDER_COUNTS)return RENDER_COUNTS.total-RENDER_COUNTS.unlinked;
+ let count=0;
+ for(const mod of DATA.items)if(getSrc(mod).verified)count++;
+ return count;
+}
 function renderList(){
  refreshGalleryLabelStyles();
  const visible=filtered(),byGroup=new Map();for(const m of visible){if(!byGroup.has(m.groupId))byGroup.set(m.groupId,[]);byGroup.get(m.groupId).push(m)}
@@ -2924,7 +2962,7 @@ function renderList(){
  // in both local imports and the live dashboard without relaxing that policy.
  for(const chapter of chapterPaint){const node=$('section-'+chapter.id);if(!node)continue;node.style.setProperty('--chapter-color',chapter.color);const fill=node.querySelector('.chapter-mini-progress>i');if(fill)fill.style.width=chapter.pct+'%'}
  VISIBLE_ROW_IDS=renderedIds;
- const listCounts=counts(),sourceCount=listCounts.total-listCounts.unlinked,parts=[visible.length+' of '+DATA.items.length+(DATA.items.length===1?' mod':' mods'),byGroup.size+(byGroup.size===1?' chapter':' chapters')];if(STORE.prefs.query)parts.push('query: '+STORE.prefs.query);SET('resultsMeta',parts.join(' · '));SET('listFooter',`YOU'VE REACHED THE END · ${visible.length} MATCHING MOD${visible.length===1?'':'S'} · ${sourceCount} EXACT ORIGINAL SOURCE${sourceCount===1?'':'S'}`);$('sortSelect').value=STORE.prefs.sort;const provider=$('providerFilter');if(provider)provider.value=STORE.prefs.provider||'all';
+ const sourceCount=libraryOriginalSourceCount(),parts=[visible.length+' of '+DATA.items.length+(DATA.items.length===1?' mod':' mods'),byGroup.size+(byGroup.size===1?' chapter':' chapters')];if(STORE.prefs.query)parts.push('query: '+STORE.prefs.query);SET('resultsMeta',parts.join(' · '));SET('listFooter',`YOU'VE REACHED THE END · ${visible.length} MATCHING MOD${visible.length===1?'':'S'} · ${sourceCount} EXACT ORIGINAL SOURCE${sourceCount===1?'':'S'}`);$('sortSelect').value=STORE.prefs.sort;const provider=$('providerFilter');if(provider)provider.value=STORE.prefs.provider||'all';
 }
 function render(){renderProviderFilter();if(SEARCH_FRAME!==null){cancelAnimationFrame(SEARCH_FRAME);SEARCH_FRAME=null}RENDER_COUNTS=counts();try{groupProgress();renderStats();renderList();renderChapters();renderQuest();paintNativeSelection();renderWorkshop();renderInsightToolbar();renderSourceCoverage();renderWorkspace()}finally{RENDER_COUNTS=null}}
 function renderSearch(){SEARCH_FRAME=null;renderList();paintNativeSelection()}

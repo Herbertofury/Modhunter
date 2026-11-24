@@ -884,3 +884,25 @@ test('unchanged catalog order is reused without recollation, while filters, ties
  h.api.importOfflineCatalog(other);h.api.updatePrefs({libraryView:'gallery',sort:'name'});
  assert.deepEqual(renderIds(),['item-1','item-0']);
 });
+
+test('direct Gallery switch counts exact sources without recomputing dashboard risk',async()=>{
+ const h=harness({live:false});await h.settle();
+ const data=catalog('footer-sources',3);data.offline=true;data.items[1].name='Paperlark';
+ data.items[2].nexusId=0;
+ data.items[2].source={type:'lookup',verified:false,url:''};
+ h.api.importOfflineCatalog(data);
+ const liveItems=h.qa.getCatalog().items;
+ const originalSome=Array.prototype.some;
+ let riskWalks=0;
+ for(const item of liveItems){
+  Object.defineProperty(item.flags,'some',{configurable:true,get(){riskWalks++;return originalSome}});
+ }
+ h.api.updatePrefs({libraryView:'gallery'});
+ assert.equal(riskWalks,0,'Gallery view-only changes do not recount dashboard risk');
+ assert.match(h.nodes.get('listFooter').textContent,/3 MATCHING MODS · 2 EXACT ORIGINAL SOURCE/);
+ h.api.setRow('item-2',{url:'https://github.com/example/actual-mod'});
+ h.api.updatePrefs({libraryView:'list'});
+ assert.match(h.nodes.get('listFooter').textContent,/3 MATCHING MODS · 3 EXACT ORIGINAL SOURCE/);
+ h.api.updatePrefs({query:'Paperlark'});
+ assert.match(h.nodes.get('listFooter').textContent,/1 MATCHING MOD · 3 EXACT ORIGINAL SOURCE/);
+});

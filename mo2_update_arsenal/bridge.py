@@ -111,6 +111,18 @@ class UIRequest:
         return self._complete(data)
 
 
+def _bind_scan_result(item: dict, scanned_item: dict | None, update: dict) -> None:
+    bound = item["update"] = dict(update)
+    # This comparison only binds provenance to the scanned row; the scanners
+    # already validated the source. Most rows retain the identical raw URL.
+    scanned_url = ((scanned_item or {}).get("source") or {}).get("url", "")
+    current_url = (item.get("source") or {}).get("url", "")
+    if not (type(scanned_url) is str and type(current_url) is str and scanned_url == current_url):
+        source_url = canonical_source_url(scanned_url)
+        if source_url != canonical_source_url(current_url):
+            bound["sourceUrl"] = source_url
+
+
 class ArsenalService:
     def __init__(self, app_html: str, cache_path: Path, ui_call: Callable[[UIRequest], None], snapshot: dict,
                  *, discovery_directory: Path | None = None):
@@ -614,10 +626,7 @@ class ArsenalService:
                 scanned_item = from_source.get(str(item_key))
                 if item is None or scanned_item is None or not isinstance(update, dict):
                     continue
-                item["update"] = dict(update)
-                source_url = canonical_source_url((scanned_item.get("source") or {}).get("url", ""))
-                if source_url != canonical_source_url((item.get("source") or {}).get("url", "")):
-                    item["update"]["sourceUrl"] = source_url
+                _bind_scan_result(item, scanned_item, update)
                 changed = True
             if changed:
                 self._generation += 1
@@ -716,19 +725,19 @@ class ArsenalService:
                 with self._guard:
                     if not is_current():
                         return  # A superseded worker may never alter another scan's state.
-                    from_source = {str(i.get("id")): i for i in snapshot.get("items", [])}
+                    exact_records = result.get("itemRecords", {})
+                    project_records = result.get("records", {})
+                    game = snapshot.get("game", "")
                     for item in self._snapshot.get("items", []):
                         item_key = str(item.get("id", ""))
                         scanned_item = from_source.get(item_key)
-                        update = result.get("itemRecords", {}).get(item_key)
-                        native_project = nexus_project_id(scanned_item or {}, snapshot.get("game", ""))
-                        if update is None and native_project:
-                            update = result.get("records", {}).get(str(native_project))
+                        update = exact_records.get(item_key)
+                        if update is None and project_records:
+                            native_project = nexus_project_id(scanned_item or {}, game)
+                            if native_project:
+                                update = project_records.get(str(native_project))
                         if update:
-                            item["update"] = dict(update)
-                            source_url = canonical_source_url(((scanned_item or {}).get("source") or {}).get("url", ""))
-                            if source_url != canonical_source_url((item.get("source") or {}).get("url", "")):
-                                item["update"]["sourceUrl"] = source_url
+                            _bind_scan_result(item, scanned_item, update)
                     self._scan = {"state": "partial" if result.get("errors") else "completed", "mode": effective_mode, **result, "checked": result.get("queried", 0), "total": result.get("queried", 0), "jobId": job_epoch}
                     # A full audit is required, following the latest verified install.
                     # Local / cached and quick activity checks cannot crown a profile.

@@ -69,8 +69,9 @@ impl BridgeClient {
             return Err(CoreError::NativeRejected("Protected install unavailable: this MO2 installer cannot enforce a fixed destination and disabled state. Nothing was dispatched.".into()));
         }
         let method = match route {
-            "snapshot" | "agent-mods" | "notification-facts" | "install-queue"
-            | "content-context" | "content-jobs" | "content-backups" | "duplicates" => "GET",
+            "snapshot" | "agent-evidence" | "agent-mods" | "notification-facts"
+            | "install-queue" | "content-context" | "content-jobs" | "content-backups"
+            | "duplicates" => "GET",
             "agent-set-enabled"
             | "content-install"
             | "content-cancel"

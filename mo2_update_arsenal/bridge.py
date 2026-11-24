@@ -15,6 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
 
+from .agent_evidence import evidence_page
 from .download_ids import download_id as parse_download_id
 from .scanner import Cache, MissingAuth, NexusClient, NexusError, UpdateScanner, local_mo2_candidates, nexus_project_id
 from .gameplay import Chronicle
@@ -242,6 +243,18 @@ class ArsenalService:
                     "game": self._snapshot.get("game"), "revision": revision, "total": len(rows),
                     "offset": offset, "nextOffset": end if end < len(rows) else None,
                     "items": [{key: row[key] for key in fields if key in row} for row in rows[offset:end]]}
+
+    def agent_evidence(self, query: dict) -> dict:
+        with self._guard:
+            profile = self._snapshot.get("profileId")
+            revision = self.agent_revision()
+            if self._stopped or not profile or query.get("profileId") != [profile] or query.get("revision") != [revision]:
+                return {"ok": False, "error": "The live profile or revision changed. Read mo2_mods again."}
+            item_ids = query.get("itemId", [])
+            if len(item_ids) != 1 or item_ids[0] not in self._items_by_id:
+                return {"ok": False, "error": "Unknown mod in this profile."}
+            snapshot = self.selection_snapshot(item_ids)
+            return evidence_page(snapshot, revision, query)
 
     def snapshot_response(self) -> dict:
         # The catalog and its revision must describe the same state even when
@@ -1934,10 +1947,11 @@ class ArsenalService:
                     return self.wfile.write(output)
                 if not self._authorize():
                     return
-                if uri.path == "/api/agent-mods":
+                if uri.path in {"/api/agent-mods", "/api/agent-evidence"}:
                     if not self._native_client():
                         return self._reply({"ok": False, "error": "Native client required."}, 403)
-                    return self._reply(service.agent_mods(urllib.parse.parse_qs(uri.query)))
+                    read = service.agent_mods if uri.path == "/api/agent-mods" else service.agent_evidence
+                    return self._reply(read(urllib.parse.parse_qs(uri.query)))
                 if uri.path == "/api/content-context":
                     query = urllib.parse.parse_qs(uri.query)
                     return self._reply(service.content.capture(query.get("itemId", [""])[0], query.get("targetName", [""])[0], native=self._native_client(), backup_id=query.get("backupId", [""])[0]))

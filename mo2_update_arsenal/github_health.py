@@ -351,6 +351,16 @@ class GitHubAdvisories:
             record["securityAdvisories"] = evaluate(shared[project], item)
 
 
+def published_findings(notices):
+    # A publisher can expressly retract the finding in the advisory summary while
+    # GitHub retains a published state, severity and package ranges (Express GHSA-pj86-cfqh-vqx6).
+    for notice in notices:
+        if re.match(r"^\s*(?:REJECTED|WITHDRAWN)\s*\(not a vulnerability\)", str(notice.get("title") or ""), re.I):
+            yield {**notice, "applicability": "publisher-retracted", "installedPackageVersion": None}
+        else:
+            yield notice
+
+
 def evaluate(observation, item):
     local = item.get("installedPackage") or {}
     findings = []
@@ -376,4 +386,4 @@ def evaluate(observation, item):
                 else None,
             }
         )
-    return {**observation, "findings": findings}
+    return {**observation, "findings": list(published_findings(findings))}

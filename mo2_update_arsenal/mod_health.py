@@ -769,11 +769,13 @@ def build_mod_health(item: dict, *, game: str = "", now: float | None = None,
         add("refresh-health", "info", "Refresh health evidence", detail, "refresh-health", evidence="Observation timestamps")
     advisory = (item.get("update") or {}).get("securityAdvisories")
     if provider == "github" and isinstance(advisory, dict):
-        from .github_health import repository
+        from .github_health import published_findings, repository
         if advisory.get("repository") and advisory.get("repository") == repository(source):
             report = deepcopy(advisory)
             if report.get("state") == "checked" and freshness(report.get("checkedAt"), now, 4 * 3600)["state"] != "fresh":
                 report["state"] = "stale"
+            if "findings" in report:
+                report["findings"] = list(published_findings(report["findings"]))
             affected = {n.get("id"): n for n in report.get("findings", []) if n.get("applicability") == "affected"}
             report["affectedCount"] = len(affected) if "findings" in report else int(report.get("affectedCount") or 0)
             result["securityAdvisories"] = report

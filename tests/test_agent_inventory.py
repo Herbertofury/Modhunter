@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import time
 import tempfile
 import unittest
 from types import SimpleNamespace
@@ -12,6 +13,9 @@ from unittest.mock import Mock, patch
 from mo2_update_arsenal.agent_control import set_enabled
 
 from mo2_update_arsenal.bridge import ArsenalService
+from mo2_update_arsenal.file_advisor import NexusFileIndex
+from mo2_update_arsenal.model import installed_file_fields
+from mo2_update_arsenal.scanner import summary_from_metadata
 
 
 class AgentInventoryTests(unittest.TestCase):
@@ -48,8 +52,51 @@ class AgentInventoryTests(unittest.TestCase):
                   {"profileId": ["target"], "offset": ["1"]}, dict(params, offset=["-1"])):
             self.assertFalse(self.service.agent_mods(q)["ok"])
 
+    def test_public_advisories_page_without_leaking_private_row_fields(self):
+        row = self.service._items_by_id["1"]
+        checked = time.time()
+        findings = [{"id": "GHSA-%04d-bbbb-cccc" % n, "severity": "moderate", "title": "Public finding",
+                     "url": "https://github.com/team/test/security/advisories/GHSA-%04d-bbbb-cccc" % n,
+                     "package": "test", "affectedRange": "< 2.0.0", "applicability": "affected" if n == 0 else "unverified",
+                     "privateDebug": "private comment"} for n in range(73)]
+        findings[-1].update(title="REJECTED (not a vulnerability): retained public notice", applicability="affected")
+        row.update(source={"type": "github", "url": "https://github.com/team/test", "verified": True},
+                   update={"securityAdvisories": {"repository": "team/test", "state": "checked", "checkedAt": checked,
+                                                  "findings": findings}})
+        params = {"profileId": ["target"], "itemId": ["1"], "revision": [self.service.agent_revision()]}
+        page = self.service.agent_evidence(params)
+        self.assertTrue(page["ok"])
+        self.assertEqual(page["health"]["securityAdvisories"]["affectedCount"], 1)
+        self.assertEqual(page["nextOffset"], 64)
+        rows = list(page["evidence"])
+        later = dict(params, offset=["64"], evidenceRevision=[page["evidenceRevision"]])
+        tail = self.service.agent_evidence(later)
+        self.assertIsNone(tail["nextOffset"])
+        rows.extend(tail["evidence"])
+        self.assertEqual(len(rows), page["total"])
+        self.assertEqual(sum(entry["kind"] == "advisory" for entry in rows), len(findings))
+        self.assertEqual(next(n for n in rows if n.get("id") == findings[-1]["id"])["applicability"], "publisher-retracted")
+        self.assertEqual(self.service.snapshot()["items"][1]["modHealth"]["securityAdvisories"]["affectedCount"], 1)
+        self.assertNotIn("private comment", json.dumps([page,tail]))
+        findings[65]["severity"] = "high"
+        self.assertFalse(self.service.agent_evidence(later)["ok"])
+        for invalid in (dict(params, revision=["wrong"]), dict(params,itemId=["absent"]),
+                        dict(params,profileId=["other"]), dict(params,offset=["-1"]),dict(params,offset=["64"])):
+            self.assertFalse(self.service.agent_evidence(invalid)["ok"])
+
+    def test_explicit_mo2_archive_statuses(self):
+        for status in (0, 1, 1000):
+            with self.subTest(status=status):
+                self.assertEqual(installed_file_fields({"status":str(status)}, "", "skyrimspecialedition", "skyrimse")["mo2FileStatus"], status)
+        self.assertNotIn("mo2FileStatus", installed_file_fields({}, "", "skyrimspecialedition", "skyrimse"))
+
     @unittest.skipUnless(os.environ.get("MODHUNTER_CONTENT_CLI"), "set MODHUNTER_CONTENT_CLI to built CLI")
     def test_real_mcp_lists_service_and_rejects_profile_change_and_writes(self):
+        row = self.service._items_by_id["0"]
+        row.update(nexusId=50307, installedFiles=[[50307, 252976]], installedVersion="2.6.0.0",
+                   source={"type": "nexus", "verified": True, "url": "https://www.nexusmods.com/skyrimspecialedition/mods/50307"})
+        files = NexusFileIndex({"files":[{"fileId":252976,"version":"2.6","name":"Bone Wolf","category":1}], "file_updates":[]})
+        row["update"] = summary_from_metadata(row, {"version":"4.1"}, time.time(), files)
         endpoint = f"http://127.0.0.1:{self.service._server.server_port}/"
         with subprocess.Popen([os.environ["MODHUNTER_CONTENT_CLI"], "mcp-stdio", "--legacy-2025-11-25",
                                "--mo2", "target", endpoint], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -73,9 +120,21 @@ class AgentInventoryTests(unittest.TestCase):
                 args = {"name": "mo2_mods", "arguments": {}}
                 page = call("tools/call", args, 3)["result"]["structuredContent"]
                 self.assertEqual(page["total"], len(self.rows))
+                tool = next(t for t in tools if t["name"]=="mo2_mod_evidence")
+                self.assertTrue(tool["annotations"]["readOnlyHint"])
+                evidence = {"name":"mo2_mod_evidence", "arguments":{"itemId":"0", "revision":page["revision"]}}
+                result = call("tools/call",evidence,6)["result"]["structuredContent"]
+                self.assertEqual(result["installed"]["installedVersion"], "2.6.0.0")
+                decision = result["updateDecision"]
+                self.assertEqual((decision["verdict"],decision["targetFileId"],decision["latestVersion"],decision["projectVersion"]),
+                                 ("current",252976,"2.6","4.1"))
+                self.assertTrue(decision["fileUrl"].endswith("file_id=252976"))
+                self.assertFalse(decision["expired"])
+                self.assertNotIn("private comment",json.dumps(result))
                 self.service.set_snapshot(dict(self.catalog, profileId="different"))
                 args["arguments"] = {"offset":page["nextOffset"], "revision":page["revision"]}
                 self.assertTrue(call("tools/call", args, 4)["result"]["isError"])
+                self.assertTrue(call("tools/call", evidence, 7)["result"]["isError"])
                 self.assertIn("error", call("tools/call", {"name":"set_mod_enabled", "arguments":{}}, 5))
             finally:
                 cli.stdin.close()

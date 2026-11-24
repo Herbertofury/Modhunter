@@ -2,11 +2,15 @@
 
 The Modhunter CLI exposes Skyrim inspection over MCP stdio. Launch it with `mcp-stdio --legacy-2025-11-25` for clients using initialization and the 2025-11-25 protocol, including compatible Codex and Claude Code clients. For example, a client configuration can set its command to the absolute path to `modhunter-cli.exe` and its arguments to `["mcp-stdio", "--legacy-2025-11-25"]`. A client using the 2026-07-28 protocol can omit the legacy flag.
 
-### Live MO2 inventory
+### Live MO2 inventory and per-mod evidence
 
 Append `--mo2 PROFILE_ID http://127.0.0.1:PORT/` to the command when the Modhunter plugin is installed. The plugin publishes its profile ID and endpoint in a descriptor under `%LOCALAPPDATA%\Modhunter\mo2-sessions`. Choose the descriptor for the intended running instance and profile. The CLI obtains its native session on the loopback connection.
 
 Call `mo2_mods` with empty arguments. Each page includes the profile, revision, total and rows with their Mod Organizer names, state, priority, version and available Nexus ID. Pass the returned `revision` and `nextOffset` (as `offset`) for the next page. A null next offset marks completion. A profile switch, revision change or plugin restart invalidates the cursor. Start a new traversal to obtain a consistent inventory. The plugin builds each page directly from the live inventory. Raw notes and session tokens stay out of the MCP output.
+
+Call `mo2_mod_evidence` with a row's `itemId` and the inventory `revision`. Its update decision includes the installed and matched Nexus file IDs when known, the matched file version, the project version, the reason, and the available check and expiration times. Its health results include available source and Bugs-page observations, published GitHub advisory ranges and their installed-package applicability, and suggested actions. Follow `nextOffset` with the same `evidenceRevision` to read every receipt, advisory and action for that row. If the observations change, start the row again. This query reads cached observations without issuing provider requests.
+
+In the mod library, **File review** shows rows where the installed archive, provider release history or version needs review. **Security advisories** shows mods with a current published advisory observation whose affected range includes the installed package version. Open **Details** to see the matched Nexus file alongside the project's version, or inspect the repository notice and affected range.
 
 The local tools also accept `--bsa ALIAS PATH` and `--plugin ALIAS PATH` to expose selected launch-time BSA directory and plugin header snapshots. `spid_preview` parses text supplied by the caller. These inspection tools operate independently of a running MO2 connection.
 

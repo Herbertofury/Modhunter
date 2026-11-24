@@ -261,7 +261,7 @@ test('earlier stop in matching preserves complete summary decisions with live ev
 test('published advisories retain source, applicability and freshness in the inspector', () => {
   const url='https://github.com/fixture/arc/security/advisories/GHSA-aaaa-bbbb-cccc';
   const row={id:'test',name:'Arc',source:{type:'github',verified:true,url:'https://github.com/fixture/arc'},
-    modHealth:{securityAdvisories:{repository:'fixture/arc',state:'checked',affectedCount:1,findings:[{
+    modHealth:{securityAdvisories:{repository:'fixture/arc',state:'checked',checkedAt:Date.now()/1000,affectedCount:1,findings:[{
       id:'GHSA-aaaa-bbbb-cccc',url,title:'<script>unsafe</script>',applicability:'affected',
       package:'arc',affectedRange:'< 2.0.0',patchedVersions:'2.0.0'}]}}};
   const html=insights.details(row);
@@ -272,4 +272,17 @@ test('published advisories retain source, applicability and freshness in the ins
   assert.ok(insights.chips(row).includes('Security advisory'));
   row.modHealth.securityAdvisories.state='stale';
   assert.ok(!insights.chips(row).includes('Security advisory'));
+});
+test('the installed-file inspector identifies a different project version and links only its own verified source',()=>{
+ const row={id:'bone',nexusId:50307,source:{url:'https://www.nexusmods.com/skyrimspecialedition/mods/50307',verified:true},installedVersion:'2.6.0.0',latestKnownVersion:'2.6.0.0',update:{evidenceScope:'exact-file',verdict:'current',installedFileId:252976,targetFileId:252976,latestVersion:'2.6',projectVersion:'4.1',reason:'Provider file 252976 is current.'}};
+ const html=insights.details(row,{game:'skyrimspecialedition'});
+ assert.match(html,/Installed Nexus file/);
+ assert.match(html,/Matched file version<\/dt><dd>2.6</);
+ assert.match(html,/Project version<\/dt><dd>4.1</);
+ assert.match(html,/file_id=252976/);
+ assert.equal(insights.matches(row,'file-review'),false);
+ row.update.verdict='review';assert.equal(insights.matches(row,'file-review'),true);
+ assert.ok(insights.chips(row).includes('Review installed file'));
+ row.source.url='https://www.nexusmods.com/skyrimspecialedition/mods/99';
+ assert.ok(!insights.details(row).includes('file_id=252976'));
 });

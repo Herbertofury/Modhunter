@@ -64,7 +64,7 @@ def summary_from_metadata(item: dict, meta: dict, checked_at: float, files: Nexu
     if files is not None:
         summary.update(files.resolve(item))
     else:
-        summary.update(verdict="review", latestVersion="",
+        summary.update(verdict="review", evidenceScope="project-only", latestVersion="",
                        reason="Project metadata alone cannot identify the installed Nexus file.")
     if summary["verdict"] == "review" and item.get("latestKnownVersion"):
         summary["mo2Comparison"] = compare_versions(item.get("installedVersion"), item["latestKnownVersion"])
@@ -508,7 +508,7 @@ class UpdateScanner:
 
 
 def incomplete_file_record():
-    return {"verdict": "review", "source": "mo2-file-receipt",
+    return {"verdict": "review", "source": "mo2-file-receipt", "evidenceScope": "file-identity",
             "reason": "The installed MO2 file identities are incomplete. Review the installation archive and merged files."}
 
 

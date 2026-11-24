@@ -115,7 +115,7 @@ def installed_file_fields(receipt, native_archive, game, short_game):
     saved_game = str(receipt.get("game") or "").casefold()
     if saved_game and saved_game not in (game, short_game):
         fields["updateEligible"] = False
-    if receipt.get("status") in {"1", "2", "3", "4", "5", "6", "7"}:
+    if receipt.get("status") in {"0", "1", "2", "3", "4", "5", "6", "7", "1000"}:
         fields["mo2FileStatus"] = int(receipt["status"])
     return fields
 

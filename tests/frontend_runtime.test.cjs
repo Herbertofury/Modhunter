@@ -1180,3 +1180,18 @@ test('older revision poll cannot repaint over a newer native focus observation',
  await h.api.pollLiveBridge();
  assert.deepEqual(events,['reveal:row-item-1','select:row-item-0']);
 });
+test('dashboard counts and filters identify the exact installed-file review and current affected advisory',async()=>{
+ const h=harness();await h.settle();const data=catalog('a',4),now=Date.now()/1000;
+ data.items[0].update={verdict:'review',evidenceScope:'exact-file',reason:'The file label changed',checkedAt:now};
+ for(const [index,checkedAt] of [[1,now],[2,now-15000]]){
+  data.items[index].source={type:'github',url:'https://github.com/example/project',verified:true};
+  data.items[index].modHealth={provider:'github',securityAdvisories:{state:'checked',affectedCount:1,checkedAt}};
+ }
+ await h.qa.setCatalog(data);
+ assert.equal(h.nodes.get('detectedFileReview').textContent,'1');
+ assert.equal(h.nodes.get('detectedSecurity').textContent,'1');
+ h.api.updatePrefs({filter:'security'});
+ assert.deepEqual(Array.from(h.api.filtered(),m=>m.id),['item-1']);
+ h.api.updatePrefs({filter:'file-review'});
+ assert.deepEqual(Array.from(h.api.filtered(),m=>m.id),['item-0']);
+});

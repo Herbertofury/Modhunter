@@ -23,6 +23,7 @@ const PLUGIN_TOOL: &str = "plugin_header";
 const PLUGIN_MASTER_LIMIT: usize = 256;
 const PLUGIN_MASTER_NAME_LIMIT: usize = 255;
 const ENABLE_TOOL: &str = "mo2_set_enabled";
+const EVIDENCE_TOOL: &str = "mo2_mod_evidence";
 const LIVE_TOOL: &str = "mo2_mods";
 const USAGE: &str = "mcp-stdio [--legacy-2025-11-25] [--bsa ALIAS PATH] [--plugin ALIAS PATH] [--mo2 PROFILE_ID LOOPBACK_URL] [--allow-mod PROFILE_ID INTERNAL_NAME] [--housecarl EXE DIRECTORIES_JSON]";
 
@@ -270,6 +271,16 @@ struct LivePage {
     revision: Option<String>,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct EvidencePage {
+    item_id: String,
+    revision: String,
+    #[serde(default)]
+    offset: usize,
+    evidence_revision: Option<String>,
+}
+
 #[derive(Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 struct SetEnabled {
@@ -284,6 +295,7 @@ enum ToolRequest {
     SetEnabled(SetEnabled),
     Skyrim(housecarl::Query),
     Live(LivePage),
+    Evidence(EvidencePage),
     Spid(DeclarationRequest),
     Bsa(ArchivePageRequest),
     Plugin(PluginRequest),
@@ -439,6 +451,18 @@ fn list(mode: Mode, selections: &Selections) -> Value {
     }
     if selections.live.is_some() {
         result["tools"].as_array_mut().expect("tools array").push(json!({
+            "name":EVIDENCE_TOOL,
+            "title":"Inspect one installed mod's update decision and health evidence",
+            "description":"Use a row ID and revision from mo2_mods. Returns the installed file, matching provider file, project version, freshness, health actions and published advisory applicability already observed. Follow nextOffset with evidenceRevision for subsequent pages.",
+            "inputSchema":{"type":"object","additionalProperties":false,"required":["itemId","revision"],"properties":{
+                "itemId":{"type":"string","minLength":1,"maxLength":256},
+                "revision":{"type":"string","minLength":1,"maxLength":64},
+                "offset":{"type":"integer","minimum":0},
+                "evidenceRevision":{"type":"string","maxLength":64}
+            }},
+            "annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false}
+        }));
+        result["tools"].as_array_mut().expect("tools array").push(json!({
             "name":LIVE_TOOL,
             "title":"Read the running MO2 profile's mods",
             "description":"Page through the live inventory selected at launch. Start with empty arguments, then pass nextOffset as offset and the same revision until nextOffset is null. Restart traversal if the inventory changes.",
@@ -514,6 +538,23 @@ fn execute(mode: Mode, request: ToolRequest, selections: &Selections) -> Value {
                 live.client
                     .native_content(&live.endpoint, "agent-set-enabled", &body)
                     .map_err(|e| e.to_string())
+            }),
+        ToolRequest::Evidence(page) => selections
+            .live
+            .as_ref()
+            .ok_or_else(|| "No live MO2 profile was selected".to_owned())
+            .and_then(|live| {
+                if page.item_id.is_empty() || page.item_id.len() > 256 || page.revision.is_empty() || page.revision.len() > 64 {
+                    return Err("Invalid row identity or inventory revision".to_owned());
+                }
+                let mut query = json!({"profileId":live.profile_id, "itemId":page.item_id, "revision":page.revision, "offset":page.offset.to_string()});
+                if let Some(revision) = page.evidence_revision {
+                    if revision.len() != 64 {
+                        return Err("Invalid evidence revision".to_owned());
+                    }
+                    query["evidenceRevision"] = json!(revision);
+                }
+                live.client.native_content(&live.endpoint, "agent-evidence", &query).map_err(|e| e.to_string())
             }),
         ToolRequest::Live(page) => selections
             .live
@@ -704,6 +745,9 @@ fn handle<W: Write>(
                         .is_some_and(|live| !live.permitted_names.is_empty()) =>
                 {
                     serde_json::from_value(arguments).map(ToolRequest::SetEnabled)
+                }
+                Some(EVIDENCE_TOOL) if selections.live.is_some() => {
+                    serde_json::from_value(arguments).map(ToolRequest::Evidence)
                 }
                 Some(LIVE_TOOL) if selections.live.is_some() => {
                     serde_json::from_value(arguments).map(ToolRequest::Live)

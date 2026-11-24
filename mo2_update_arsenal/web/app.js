@@ -150,7 +150,7 @@ function detectedStatus(mod){
  const checking=LIVE_SCAN?.state==='running',context=[u,mod.localAnalysis,mod.modHealth,source.url,source.verified,getRow(mod.id).compat,phase,checking,BRIDGE.active,LIVE_CONNECTED,CATALOG_RENDER_REVISION];
  const cached=DETECTED_CACHE.get(mod);if(cached&&context.every((v,i)=>Object.is(v,cached.context[i])))return cached.value;
  const capabilities=u.capabilities||mod.sourceCapabilities||{},provider=SOURCES?.provider(mod)||source.type;
- const health=INSIGHTS?.summary(mod)||{},maintenance=Boolean(health.stale||health.masterIssues||health.invalid||['hold','avoid','ae-only'].includes(getAudit(mod).verdict));
+ const health=INSIGHTS?.summary(mod)||{},maintenance=Boolean(health.security||health.stale||health.masterIssues||health.invalid||['hold','avoid','ae-only'].includes(getAudit(mod).verdict));
  let kind='not-checked',label='Not checked',reason=u.reason||'No completed source check for this installed mod.';
  const unavailable=['unavailable','not-found','deleted','blocked','error'].includes(u.availability)||u.outcome==='unavailable';
  const manual=['manual','api-key'].includes(capabilities.checkMode)||(!['nexus','github','gitlab','modrinth','thunderstore'].includes(provider)&&source.verified);
@@ -171,10 +171,10 @@ function detectedStatus(mod){
  else if(checking&&BRIDGE.active){kind='checking';label='Checking'}
  else if(!BRIDGE.active){kind='offline';label='Read-only';reason='Connect MO2 for remote update and live maintenance checks.'}
  else if(!LIVE_CONNECTED){kind='offline';label='Disconnected';reason='Last known profile. Reconnect MO2 to verify updates.'}
- const value={kind,label,reason,maintenance,updateAvailable:kind==='update',current:kind==='current',attention:['not-checked','source-needed','sign-in','blocked','manual','stale','review','offline'].includes(kind)};
+ const value={kind,label,reason,maintenance,security:Boolean(health.security),fileReview:Boolean(health.fileReview),updateAvailable:kind==='update',current:kind==='current',attention:['not-checked','source-needed','sign-in','blocked','manual','stale','review','offline'].includes(kind)};
  DETECTED_CACHE.set(mod,{context,value});return value;
 }
-function detectedMarkup(mod){const d=detectedStatus(mod);return '<span class="detected-status '+d.kind+'" title="'+escapeHTML(d.reason)+'">'+escapeHTML(d.label)+'</span>'+(d.maintenance?'<button class="maintenance-status" type="button" data-act="inspect" data-id="'+escapeHTML(mod.id)+'" title="Detected plugin, conversion, master or explicit compatibility issue. Open Details for evidence.">Maintenance</button>':'')}
+function detectedMarkup(mod){const d=detectedStatus(mod);return '<span class="detected-status '+d.kind+'" title="'+escapeHTML(d.reason)+'">'+escapeHTML(d.label)+'</span>'+(d.maintenance?'<button class="maintenance-status" type="button" data-act="inspect" data-id="'+escapeHTML(mod.id)+'" title="Review the detected plugin, security advisory or compatibility issue. Open Details for evidence.">Maintenance</button>':'')}
 function selectWorkspace(panel){
  if(!['mods','updates','downloads','history','tools','extras'].includes(panel))return;
  document.body.dataset.workspace=panel;
@@ -184,8 +184,8 @@ function selectWorkspace(panel){
  if(panel==='downloads')void refreshDownloads();if(panel==='history')void refreshActivity();
 }
 function renderWorkspace(){
- const aggregate={all:DATA.items.length,updates:0,maintenance:0,attention:0,current:0};
- for(const mod of DATA.items){const d=detectedStatus(mod);aggregate.updates+=Number(d.updateAvailable);aggregate.maintenance+=Number(d.maintenance);aggregate.attention+=Number(d.attention);aggregate.current+=Number(d.current)}
+ const aggregate={all:DATA.items.length,updates:0,maintenance:0,security:0,fileReview:0,attention:0,current:0};
+ for(const mod of DATA.items){const d=detectedStatus(mod);aggregate.updates+=Number(d.updateAvailable);aggregate.maintenance+=Number(d.maintenance);aggregate.security+=Number(d.security);aggregate.fileReview+=Number(d.fileReview);aggregate.attention+=Number(d.attention);aggregate.current+=Number(d.current)}
  for(const [key,value] of Object.entries(aggregate))SET('detected'+key[0].toUpperCase()+key.slice(1),value.toLocaleString());
  SET('workspaceProfile',LIVE_CATALOG?LIVE_CATALOG.profileName+' / '+(LIVE_CATALOG.game||'MO2')+' / '+DATA.items.length.toLocaleString()+(DATA.items.length===1?' mod':' mods'):DATA.offline?(DATA.profileName||'Imported profile')+' / read only':'Demo library / not your installed mods');
  const state=LIVE_SCAN?.state,active=state==='running',starting=SCAN_START_BUSY,connected=BRIDGE.active&&LIVE_CONNECTED;
@@ -234,7 +234,7 @@ function setHTML(node,html){if(node&&HTML_CACHE.get(node)!==html){node.innerHTML
 // A catalog replacement invalidates all presentation metadata. Local row edits
 // and asynchronously replaced analysis objects invalidate only their own row.
 // Provider deadlines remain live even when no response or object has changed.
-function sourceTimePhase(mod){const update=mod.update||{},now=Date.now()/1000;return(Number(update.expiresAt)>0&&Number(update.expiresAt)<=now?1:0)|(Number(update.retryAt)>now?2:0)}
+function sourceTimePhase(mod){const update=mod.update||{},now=Date.now()/1000;return(Number(update.expiresAt)>0&&Number(update.expiresAt)<=now?1:0)|(Number(update.retryAt)>now?2:0)|(mod.modHealth?.securityAdvisories&&INSIGHTS?.advisoryState(mod.modHealth.securityAdvisories,now)==='stale'?4:0)}
 function cachedMarkup(cache,key,dependencies,build){
  const cached=cache.get(key);
  if(cached&&cached.dependencies.length===dependencies.length&&dependencies.every((value,index)=>Object.is(value,cached.dependencies[index])))return cached.html;
@@ -513,7 +513,7 @@ function tokenizeQuery(raw){const out=[];const re=/"([^"]+)"|(\S+)/g;let m;while
 function healthFilterMatches(mod,filter){return filter==='all'||(filter.startsWith('source-')?Boolean(SOURCES?.matches(mod,filter)):!INSIGHTS||INSIGHTS.matches(mod,filter))}
 function textMatches(m,query,terms){if(!query)return true;const dependencies=[CATALOG_RENDER_REVISION,m.localAnalysis,m.modHealth,m.update,sourceTimePhase(m)],cached=SEARCH_CACHE.get(m);let base=cached&&dependencies.every((value,index)=>Object.is(value,cached.dependencies[index]))?cached.base:null;if(!base){base={text:[m.name,m.installedVersion,m.screenshotNote,m.author,m.group,m.priority,(m.flags||[]).join(' '),INSIGHTS?.searchText(m)||'',SOURCES?.searchText(m)||''].join(' ').toLowerCase(),author:txt(m.author).toLowerCase(),group:txt(m.group).toLowerCase(),flags:(m.flags||[]).join(' ').toLowerCase(),version:txt(m.installedVersion).toLowerCase()};SEARCH_CACHE.set(m,{dependencies,base})}const row=getRow(m.id),str=base.text+' '+txt(row.note).toLowerCase()+' '+txt(row.installed).toLowerCase();return(terms||tokenizeQuery(query)).every(part=>{const ix=part.indexOf(':');if(ix>0){const p=part.slice(0,ix),v=part.slice(ix+1);if(p==='health'||p==='esl')return (INSIGHTS?.searchText(m)||'').includes(v);if(p==='source'||p==='provider')return (SOURCES?.searchText(m)||'').includes(v);if(p==='author')return (base.author+' '+(SOURCES?.searchText(m)||'')).includes(v);if(p==='section'||p==='group')return base.group.includes(v);if(p==='flag')return base.flags.includes(v);if(p==='priority')return txt(m.priority).includes(v);if(p==='status')return getStatus(m).includes(v);if(p==='version')return base.version.includes(v);if(p==='note')return (m.screenshotNote+' '+txt(getRow(m.id).note)).toLowerCase().includes(v);}return str.includes(part)})}
 function filtered(){const f=STORE.prefs.filter,terms=tokenizeQuery(STORE.prefs.query);return DATA.items.filter(m=>healthFilterMatches(m,STORE.prefs.insight||'all')&&((STORE.prefs.provider||'all')==='all'||getSrc(m).type===STORE.prefs.provider)&&textMatches(m,STORE.prefs.query,terms)&&(
- f==='all'||(f==='maintenance'&&detectedStatus(m).maintenance)||(f==='attention'&&detectedStatus(m).attention)||(f==='current'&&detectedStatus(m).current)||(f==='pending'&&getStatus(m)==='pending')||(f==='done'&&isDone(m))||(f==='review'&&isReview(m))||(f==='risky'&&isRisk(m))||(f==='unlinked'&&!getSrc(m).verified)||(f==='favorites'&&isFav(m))||(f==='updates'&&isUpdate(m))));}
+ f==='all'||(f==='security'&&detectedStatus(m).security)||(f==='file-review'&&detectedStatus(m).fileReview)||(f==='maintenance'&&detectedStatus(m).maintenance)||(f==='attention'&&detectedStatus(m).attention)||(f==='current'&&detectedStatus(m).current)||(f==='pending'&&getStatus(m)==='pending')||(f==='done'&&isDone(m))||(f==='review'&&isReview(m))||(f==='risky'&&isRisk(m))||(f==='unlinked'&&!getSrc(m).verified)||(f==='favorites'&&isFav(m))||(f==='updates'&&isUpdate(m))));}
 function classFor(m){const s=getStatus(m);return s==='done'?'done':s==='review'?'needs-review':s==='skipped'?'skipped':''}
 function assessmentHTML(m){const audit=getAudit(m),out=[];
  const profileMode=Boolean(BRIDGE.active||DATA.offline);const map={'safe-file':[profileMode?'✓ FILE LISTED':'✓ SE FILE','safe-file'],hold:['⚠ HOLD','hold'],avoid:[profileMode?'⛔ AVOID':'⛔ AE ONLY','avoid'],check:['? VERIFY','check'],compatible:['✓ COMPATIBLE','compatible'],'ae-only':[profileMode?'⛔ WRONG RUNTIME':'⛔ AE ONLY','ae-only']};

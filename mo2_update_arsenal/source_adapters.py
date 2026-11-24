@@ -346,7 +346,8 @@ def compact_source_update(update: dict) -> dict:
     advisory = update.get("securityAdvisories")
     if isinstance(advisory, dict):
         result["securityAdvisories"] = {key: advisory[key] for key in ("repository", "state", "checkedAt") if key in advisory}
-        result["securityAdvisories"]["affectedCount"] = len({row["id"] for row in advisory.get("findings", [])
+        from .github_health import published_findings
+        result["securityAdvisories"]["affectedCount"] = len({row["id"] for row in published_findings(advisory.get("findings", []))
                                                              if row.get("applicability") == "affected"})
     result["summary"] = str(update.get("summary") or "")[:300]
     provider = str(update.get("provider") or "")

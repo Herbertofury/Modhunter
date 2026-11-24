@@ -334,6 +334,20 @@ class ArsenalService:
         with self._guard:
             return mod_id in self._nexus_ids
 
+    def try_publish_native_selection(self, label: str) -> bool:
+        # Qt invokes selection callbacks synchronously while its proxy filters
+        # the mod tree. The GUI must never wait for a full catalog operation.
+        if not self._guard.acquire(blocking=False):
+            return False
+        try:
+            if label:
+                self.set_selected_by_label(label)
+            else:
+                self.set_selected("")
+            return True
+        finally:
+            self._guard.release()
+
     def set_selected_by_label(self, label: str) -> None:
         with self._guard:
             ids = self._labels_to_ids.get(label, [])

@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from queue import Queue
 from tempfile import TemporaryDirectory
-from threading import Thread
+from threading import Event, Thread
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -368,6 +368,27 @@ class FocusGenerationTests(unittest.TestCase):
             self.assertFalse(result["ok"])
         self.assertTrue(self.owner.empty())
         self.assertEqual(self.model.label_reads, 0)
+
+    def test_filter_selection_does_not_wait_for_an_active_catalog_reader(self):
+        locked, release = Event(), Event()
+        def reader():
+            with self.service._guard:
+                locked.set()
+                release.wait(3)
+        worker = Thread(target=reader)
+        worker.start()
+        try:
+            self.assertTrue(locked.wait(2))
+            self.observe_native_row(8)
+            self.observe_native_row(9)
+            self.assertTrue(worker.is_alive())
+            self.assertTrue(self.plugin._selection_retry_pending)
+            self.assertEqual(len(self.timers), 1)
+        finally:
+            release.set()
+            worker.join()
+        self.timers.pop()[1]()
+        self.assertFalse(self.plugin._selection_retry_pending)
 
     def test_native_model_reset_clears_stale_selected_id(self):
         self.observe_native_row(12)

@@ -54,6 +54,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
         self._download_check_pending = False
         self._download_check_offset = 0
         self._download_directory_index = None
+        self._selection_retry_pending = False
         self._selection_connected = False
         self._focus_navigating = False
         self._native_nexus = None
@@ -787,7 +788,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
         if self._focus_navigating or not self.server:
             return
         if not current.isValid():
-            self.server.set_selected("")
+            self._publish_native_selection("")
             return
         _, view = find_mo2_view(QtWidgets)
         if view is None:
@@ -796,7 +797,19 @@ class ModUpdateArsenal(mobase.IPluginTool):
         label = str(current.siblingAtColumn(name_col).data(QtCore.Qt.ItemDataRole.DisplayRole) or "")
         # Exact, indexed matching avoids a full health-decorated snapshot on
         # every arrow-key selection. Duplicate labels deliberately select none.
-        self.server.set_selected_by_label(label)
+        self._publish_native_selection(label)
+
+    def _publish_native_selection(self, label):
+        if self.server.try_publish_native_selection(label) or self._selection_retry_pending:
+            return
+        self._selection_retry_pending = True
+        def retry():
+            self._selection_retry_pending = False
+            if self.server and not self._closing:
+                # A new filter, click, or profile may have superseded this
+                # observation. Read Qt's current index on the GUI thread.
+                self._on_native_model_reset()
+        QtCore.QTimer.singleShot(16, retry)
 
     def _defer_content_lease(self, request, background):
         # Leave Qt ownership unclaimed. Cancellation/expiry can still win

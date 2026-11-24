@@ -256,9 +256,50 @@
  }
  function withScheme(value){const input=String(value||'').trim();return /^[a-z][a-z\d+.-]*:/i.test(input)?input:'https://'+input}
  function validPage(value){const url=new URL(withScheme(value));if(url.protocol!=='https:'||url.username||url.password)throw new Error('Enter a public HTTPS page without a username or password in its address.');url.hash='';return url.href}
+ function projectPages(value){
+  let url;
+  try { url=new URL(validPage(value)); } catch { return null; }
+  if(url.port)return null;
+  const path=url.pathname.replace(/\/$/,'');
+  const segments=path.split('/').slice(1);
+  const [owner,repo,section]=segments;
+  if(url.hostname==='github.com' && /^[a-z0-9-]+$/i.test(owner||'') &&
+     /^[a-z0-9_.-]+$/i.test(repo||'') && !['.','..'].includes(repo) &&
+     !['about','account','apps','collections','contact','enterprise','enterprises','events','explore',
+       'features','login','marketplace','new','notifications','orgs','organizations',
+       'pricing','search','security','settings','site','sponsors','topics','users'].includes(owner.toLowerCase()) &&
+     (!section || ['releases','releases.atom','issues','pull','pulls','tree','blob','security','discussions','tags','commits','wiki'].includes(section))){
+   const base=url.origin+'/'+owner+'/'+repo.replace(/\.git$/i,'');
+   return {label:'GitHub repository',pages:[
+    ['feed','Release feed',base+'/releases.atom'],['issues','Project issues',base+'/issues'],
+    ['advisories','Published advisories',base+'/security/advisories']]};
+  }
+  if(['nexusmods.com','www.nexusmods.com'].includes(url.hostname) && segments.length===3 &&
+     /^[a-z0-9]+$/i.test(owner||'') && repo==='mods' && /^\d+$/.test(section)){
+   const base=url.origin+path;
+   return {label:'Nexus mod project',pages:[['files','Project files',base+'?tab=files'],
+    ['bugs','Bug reports',base+'?tab=bugs'],['logs','Project changelog',base+'?tab=logs']]};
+  }
+  return null;
+ }
+ function identifyPage(){
+  const label=projectPages($('pageUrl').value)?.label;
+  text('pageIdentity',label||'');
+  $('pageIdentity').hidden=!label;
+ }
+ function relatedPages(w){
+  if(w.removedAt)return '';
+  const project=projectPages(w.url);
+  if(!project)return '';
+  const choices=project.pages.filter(([, ,url])=>url!==w.url);
+  if(!choices.length)return '';
+  return '<section class="detail-section"><h3>Related pages to check</h3><div class="detail-actions">'+
+   choices.map(([key,label])=>button('related-'+key,w.id,label,'quiet',!canMutate())).join('')+'</div></section>';
+ }
  function openPageForm(w=null,prefill=null){
   pageFormGeneration++;editWatch=w?{...w}:null;const source=w||prefill||{};text('pageDialogTitle',w?'Edit tracked page':'Add a page');text('savePage',w?'Save changes':'Save page');
   for(const [id,value] of Object.entries({pageUrl:source.url||'',pageTitle:source.title||'',pageFolder:source.folder||'',pageTags:(source.tags||[]).join(', '),pageSelector:source.selector||'',pageIgnore:(source.ignoreSelectors||[]).join('\n'),pageNotes:source.notes||''}))$(id).value=value;
+  identifyPage();
   setChoice($('pageInterval'),source.intervalMinutes||state.settings.defaultIntervalMinutes||60);$('pageEnabled').checked=source.enabled!==false;$('checkAfterSave').checked=!w;sessionChoices(source.sessionId||'');
   const association=source.association||((source.profileId&&source.itemId)?{profileId:source.profileId,itemId:source.itemId,name:source.title||'',sourceUrl:source.url||''}:null);if(!w&&association)editWatch={association};
   $('associationNote').hidden=!association;text('associationNote',association?'Linked to '+(association.name||'a mod')+' in its MO2 profile. Page changes remain separate from reviewed update files.':'');
@@ -365,13 +406,19 @@
   const actions=(w.removedAt?button('restore',w.id,'Restore','primary',!canMutate()):button('edit',w.id,'Edit page','',!canMutate())+(isBusy||stopped(w)?button('cancel',w.id,stopped(w)?'Clear stopped check':'Cancel check','quiet',!canMutate()):button('check',w.id,'Check now','primary',!canMutate()||!w.enabled||w.muted||needsSession(w)))+button('pause',w.id,w.enabled?'Pause':'Resume','quiet',!canMutate())+button('remove',w.id,'Remove','quiet danger-text',!canMutate()))+button('open',w.id,'Open in app','quiet',!ready)+button('files',w.id,'Find files','',!canMutate()||needsSession(w)||!!w.removedAt)+button('external',w.id,'External browser','quiet',!ready)+button('private',w.id,'Open privately','quiet',!ready)+button('copy-link',w.id,'Copy link','quiet',!ready)+(w.hasChanges&&latest?button('seen',w.id,'Mark this change seen','primary',!canMutate(),latest.id):'')+(w.sessionId&&['signInRequired','challenge'].includes(w.state)?button('session-open',w.sessionId,'Open sign-in / verify','primary',!canMutate()):'');
   const fields=[['Status',label[0]],['Page',privacy?origin(w.url):w.url],['Read using',session?session.label:'Public browser'],['Folder',w.folder||'None'],['Region',w.selector||'Readable page text'],['Ignore',(w.ignoreSelectors||[]).join(', ')||'None'],['Interval',interval(w.intervalMinutes)],['Last attempt',date(w.lastAttemptAt)],['Last success',date(w.lastSuccessAt)],['Next due',w.enabled&&!w.muted?date(Math.max(w.nextCheckAt||0,w.retryAt||0)):'Paused']];
   let html='<div class="detail-actions">'+actions+'</div><section class="detail-section"><h3>Tracking details</h3><dl>'+fields.map(([k,v])=>'<dt>'+esc(k)+'</dt><dd'+(['Page','Folder','Region','Ignore'].includes(k)||(k==='Read using'&&session)?' data-no-translate':'')+'>'+esc(v)+'</dd>').join('')+'</dl>'+(w.lastError?'<p class="row-detail error">'+esc(w.lastError)+'</p>':'')+(!privacy&&w.notes?'<p data-no-translate>'+esc(w.notes)+'</p>':'')+(w.association?'<p>Linked mod: '+esc(privacy?'Name hidden':w.association.name||w.association.itemId)+'. Use the Update Workshop for release/file review.</p>':'')+'</section>';
-  html+=sourceDetails(w);
+  html+=sourceDetails(w)+relatedPages(w);
   if(latest){html+='<section class="detail-section"><h3>Latest successful observation</h3><p>'+esc(date(latest.checkedAt))+' · '+Number(latest.textBytes||0).toLocaleString()+' bytes compared'+(latest.previewTruncated?' · preview shortened; the accepted full text was compared.':'.')+'</p>'+(privacy?'<p>Page content is hidden by your privacy preference.</p>':'<pre class="capture-preview">'+esc(latest.textPreview||'No preview stored.')+'</pre>')+'</section>'}
   const history=[...(w.history||[])].reverse();html+='<section class="detail-section"><h3>Page change history</h3>'+(history.length?history.map(entry=>'<details class="change-entry"><summary>'+esc(entry.kind==='baseline'?'First baseline':entry.summary||'Observed page change')+'<small>'+esc(date(entry.checkedAt))+'</small></summary>'+(privacy?'<p>Change text is hidden.</p>':((entry.added||[]).length?'<p>Added</p><pre class="change-lines added">'+esc(entry.added.join('\n'))+'</pre>':'')+((entry.removed||[]).length?'<p>Removed</p><pre class="change-lines removed">'+esc(entry.removed.join('\n'))+'</pre>':'')+(!(entry.added||[]).length&&!(entry.removed||[]).length?'<p>The accepted content fingerprint changed. Compare the page itself for details outside the retained preview.</p>':''))+'</details>').join(''):'<p>History begins with the first successful check.</p>')+'</section>';
   const content=$('detailBody'),scroll=content.scrollTop,focus=document.activeElement,action=content.contains(focus)?focus.dataset.action:null;content.innerHTML=html;content.scrollTop=scroll;if(action)[...content.querySelectorAll('[data-action]')].find(n=>n.dataset.action===action)?.focus({preventScroll:true});
  }
  async function action(kind,id,observationId){
   const w=watchById.get(id),s=sessionById.get(id);
+  if(kind.startsWith('related-')&&w&&!w.removedAt&&canMutate()){
+   const choice=projectPages(w.url)?.pages.find(([key])=>'related-'+key===kind);
+   if(choice)openPageForm(null,{url:choice[2],folder:w.folder,tags:w.tags,intervalMinutes:w.intervalMinutes,
+     sessionId:choice[0]==='feed'?null:w.sessionId});
+   return;
+  }
   if(kind==='source-options'&&w){openSourceForm(w);return}
   if(kind==='source-add'&&w?.association){openPageForm(null,{association:w.association,folder:w.folder});return}
   if(kind==='source-forget-file'){
@@ -448,7 +495,7 @@
  $('creatorDialog').addEventListener('close',()=>{if(creatorDraft?.sourceId&&sourceDraft?.id===creatorDraft.sourceId&&watchById.has(sourceDraft.id))openDialog('sourceDialog')});
  for(const id of ['sourceGame','sourceRuntime','sourceVariant'])$(id).addEventListener('input',()=>{$('sourceCompatibility').checked=false});
  $('sourceForm').onsubmit=saveSourceChoices;$('creatorForm').onsubmit=saveCreatorChoices;$('sourceAssociation').onchange=()=>{sourceCreatorChoices('');$('sourceCompatibility').checked=false;$('sourcePreferred').checked=false};$('sourceCreator').onchange=()=>updateCreatorButton();$('manageCreator').onclick=openCreatorChoices;
- $('pageForm').onsubmit=savePage;$('sessionForm').onsubmit=saveSession;$('pageUrl').addEventListener('input',()=>sessionChoices());$('pageSession').addEventListener('change',()=>{if(editWatch)editWatch.requiresSession=false});
+ $('pageForm').onsubmit=savePage;$('sessionForm').onsubmit=saveSession;$('pageUrl').addEventListener('input',()=>{sessionChoices();identifyPage()});$('pageSession').addEventListener('change',()=>{if(editWatch)editWatch.requiresSession=false});
  for(const button of document.querySelectorAll('[data-close-dialog]'))button.onclick=()=>closeDialog(button.dataset.closeDialog);
  $('confirmProceed').onclick=()=>finishConfirm(true);$('confirmCancel').onclick=()=>finishConfirm(false);$('confirmDialog').addEventListener('cancel',event=>{event.preventDefault();finishConfirm(false)});
  $('importOpen').onclick=openImport;$('previewImport').onclick=()=>previewImport();$('applyImport').onclick=applyImport;$('importText').addEventListener('input',()=>{importGeneration++;importDocument=null;importRevision=null;$('applyImport').disabled=true;$('importPreview').hidden=true});

@@ -202,6 +202,25 @@ class WatchtowerBrowserTests(unittest.TestCase):
         self.assertEqual(self.page.locator("#navChanged").inner_text(), "0")
         self.screenshot("watchtower-pages.png")
 
+    def test_related_project_pages_require_review(self):
+        state = snapshot(1)
+        state["watches"][0]["url"] = "https://github.com/Herbertofury/Modhunter/releases?x=private"
+        self.open(state)
+        self.page.locator("#watchList [data-action='detail']").first.click()
+        self.page.locator("#detailBody [data-action='related-feed']").click()
+        self.assertEqual(self.page.locator("#pageUrl").input_value(),
+                         "https://github.com/Herbertofury/Modhunter/releases.atom")
+        self.assertEqual(self.page.locator("#pageFolder").input_value(), "Skyrim releases")
+        self.assertEqual(self.calls("saveWatch"), [])
+        self.assertEqual(self.calls("check"), [])
+        self.assertEqual(self.page.locator("#pageSession").input_value(), "")
+        self.page.locator("#pageUrl").fill("https://www.nexusmods.com/skyrimspecialedition/mods/50307")
+        self.assertEqual(self.page.locator("#pageIdentity").inner_text(), "Nexus mod project")
+        for address in ["https://github.com.attacker.invalid/foo/bar", "https://github.com/settings/profile",
+                        "https://nexusmods.com.invalid/game/mods/1", "https://github.com/a/b/unknown"]:
+            self.page.locator("#pageUrl").fill(address)
+            self.assertTrue(self.page.locator("#pageIdentity").is_hidden())
+
     def test_sessions_and_reset(self):
         self.open()
         self.navigate("sessions")

@@ -572,7 +572,16 @@
     "Select the Before copy first, then the After copy.": "Selecciona primero la copia anterior y luego la posterior.",
     "Comparison canceled or view changed. No files were changed.": "Se canceló la comparación o cambió la vista. No se modificó ningún archivo.",
     "Review ready. No files were changed.": "Revisión lista. No se modificó ningún archivo.",
-    "Could not compare these copies. Choose two readable, unambiguous QSettings INIs.": "No se pudieron comparar estas copias. Elige dos archivos INI de QSettings legibles y sin ambigüedades."
+    "Could not compare these copies. Choose two readable, unambiguous QSettings INIs.": "No se pudieron comparar estas copias. Elige dos archivos INI de QSettings legibles y sin ambigüedades.",
+    "GitHub repository": "Repositorio de GitHub",
+    "Nexus mod project": "Proyecto de mod en Nexus",
+    "Related pages to check": "Páginas relacionadas para revisar",
+    "Release feed": "Feed de versiones",
+    "Project issues": "Incidencias del proyecto",
+    "Published advisories": "Avisos publicados",
+    "Project files": "Archivos del proyecto",
+    "Bug reports": "Informes de errores",
+    "Project changelog": "Registro de cambios del proyecto"
   },
   "it": {
     "Preferences": "Preferenze",
@@ -1147,7 +1156,16 @@
     "Select the Before copy first, then the After copy.": "Seleziona prima la copia precedente e poi quella successiva.",
     "Comparison canceled or view changed. No files were changed.": "Confronto annullato o vista cambiata. Nessun file è stato modificato.",
     "Review ready. No files were changed.": "Verifica pronta. Nessun file è stato modificato.",
-    "Could not compare these copies. Choose two readable, unambiguous QSettings INIs.": "Non è stato possibile confrontare le copie. Scegli due INI QSettings leggibili e non ambigui."
+    "Could not compare these copies. Choose two readable, unambiguous QSettings INIs.": "Non è stato possibile confrontare le copie. Scegli due INI QSettings leggibili e non ambigui.",
+    "GitHub repository": "Repository GitHub",
+    "Nexus mod project": "Progetto mod Nexus",
+    "Related pages to check": "Pagine correlate da verificare",
+    "Release feed": "Feed delle versioni",
+    "Project issues": "Segnalazioni del progetto",
+    "Published advisories": "Avvisi pubblicati",
+    "Project files": "File del progetto",
+    "Bug reports": "Segnalazioni di bug",
+    "Project changelog": "Registro modifiche del progetto"
   },
   "zh-TW": {
     "Preferences": "偏好設定",
@@ -1722,7 +1740,16 @@
     "Select the Before copy first, then the After copy.": "先選擇變更前副本，再選擇變更後副本。",
     "Comparison canceled or view changed. No files were changed.": "比較已取消或檢視已變更。沒有修改任何檔案。",
     "Review ready. No files were changed.": "檢閱已就緒。沒有修改任何檔案。",
-    "Could not compare these copies. Choose two readable, unambiguous QSettings INIs.": "無法比較這些副本。請選擇兩個可讀取且無歧義的 QSettings INI。"
+    "Could not compare these copies. Choose two readable, unambiguous QSettings INIs.": "無法比較這些副本。請選擇兩個可讀取且無歧義的 QSettings INI。",
+    "GitHub repository": "GitHub 存放庫",
+    "Nexus mod project": "Nexus 模組專案",
+    "Related pages to check": "可檢查的相關頁面",
+    "Release feed": "版本發佈動態",
+    "Project issues": "專案議題",
+    "Published advisories": "已發佈的安全公告",
+    "Project files": "專案檔案",
+    "Bug reports": "錯誤回報",
+    "Project changelog": "專案變更記錄"
   },
   "en": {
     "Preferences": "Preferences",
@@ -2297,6 +2324,15 @@
     "Select the Before copy first, then the After copy.": "Select the Before copy first, then the After copy.",
     "Comparison canceled or view changed. No files were changed.": "Comparison canceled or view changed. No files were changed.",
     "Review ready. No files were changed.": "Review ready. No files were changed.",
-    "Could not compare these copies. Choose two readable, unambiguous QSettings INIs.": "Could not compare these copies. Choose two readable, unambiguous QSettings INIs."
+    "Could not compare these copies. Choose two readable, unambiguous QSettings INIs.": "Could not compare these copies. Choose two readable, unambiguous QSettings INIs.",
+    "GitHub repository": "GitHub repository",
+    "Nexus mod project": "Nexus mod project",
+    "Related pages to check": "Related pages to check",
+    "Release feed": "Release feed",
+    "Project issues": "Project issues",
+    "Published advisories": "Published advisories",
+    "Project files": "Project files",
+    "Bug reports": "Bug reports",
+    "Project changelog": "Project changelog"
   }
 }

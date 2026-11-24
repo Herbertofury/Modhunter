@@ -680,7 +680,7 @@ fn active_order_and_master_issues_come_from_profile_files() {
     .unwrap();
     let data = f.root.path().join("Data");
     fs::create_dir(&data).unwrap();
-    for name in ["Disabled.esm", "Late.esm"] {
+    for name in ["Disabled.esm", "Late.esm", "Implicit.esm"] {
         fs::write(data.join(name), plugin(1, 1.7, &[], &[])).unwrap();
     }
     f.request.game_data_path = Some(data);
@@ -692,12 +692,20 @@ fn active_order_and_master_issues_come_from_profile_files() {
     fs::write(&plugins, bytes).unwrap();
     fs::write(
         &order,
-        "\u{feff}# order\nExample.esp\nLate.esm\nDisabled.esm\n",
+        "\u{feff}# order\nExample.esp\nLate.esm\nDisabled.esm\nImplicit.esm\n",
     )
     .unwrap();
     f.request.plugins_path = Some(plugins);
     f.request.loadorder_path = Some(order);
     let result = PluginAnalyzer::new().audit(&f.request).unwrap();
+    let implicit = &result
+        .plugins
+        .iter()
+        .find(|p| p.copy.name == "Implicit.esm")
+        .unwrap()
+        .copy;
+    assert_eq!(implicit.load_order, Some(3));
+    assert_eq!(implicit.active, None);
     let p = &result.mods["Source"].plugins[0];
     let issues: Vec<_> = p
         .master_issues

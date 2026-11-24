@@ -598,8 +598,7 @@ impl PluginAnalyzer {
             ..Default::default()
         };
         let mut warnings = Vec::new();
-        let (states, activation_source, _activation_known) =
-            read_states(request, &game, &mut stats, &mut warnings)?;
+        let states = read_states(request, &game, &mut stats, &mut warnings)?;
         let mut roots = request.mods.clone();
         add_root(
             &mut roots,
@@ -738,14 +737,15 @@ impl PluginAnalyzer {
             // master. Only a complete native MO2 state list proves absence.
             resolve_winner(
                 copies,
-                states.get(key),
+                states.activation.get(key),
+                states.order_only.get(key).copied(),
                 request.plugin_states.is_some(),
                 &mut warnings,
             );
         }
         apply_master_facts(
             &mut by_name,
-            &states,
+            &states.activation,
             complete && game_data_scanned,
             request.plugin_states.is_some(),
             cancelled,
@@ -796,7 +796,7 @@ impl PluginAnalyzer {
             checked_at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
             depth: if request.deep { "records" } else { "header" }.into(),
             inventory_complete: complete,
-            activation_source,
+            activation_source: states.activation_source,
             mods,
             plugins,
             stats,
@@ -1185,12 +1185,18 @@ fn read_small(
     Ok(bytes)
 }
 
+struct ProfilePluginStates {
+    activation: BTreeMap<String, PluginState>,
+    activation_source: String,
+    order_only: BTreeMap<String, i64>,
+}
+
 fn read_states(
     request: &PluginAuditRequest,
     game: &str,
     stats: &mut PluginAuditStats,
     warnings: &mut Vec<String>,
-) -> Result<(BTreeMap<String, PluginState>, String, bool), CoreError> {
+) -> Result<ProfilePluginStates, CoreError> {
     if let Some(states) = &request.plugin_states {
         if states.len() > MAX_PLUGINS {
             return Err(CoreError::Invalid(
@@ -1213,9 +1219,14 @@ fn read_states(
                 ));
             }
         }
-        return Ok((result, "mo2-native".into(), true));
+        return Ok(ProfilePluginStates {
+            activation: result,
+            activation_source: "mo2-native".into(),
+            order_only: BTreeMap::new(),
+        });
     }
     let mut states = BTreeMap::new();
+    let mut order_only = BTreeMap::new();
     let mut known = false;
     if let Some(path) = &request.plugins_path {
         match read_small(path, TEXT_LIMIT, stats).and_then(|b| decode_text(&b)) {
@@ -1290,24 +1301,28 @@ fn read_states(
                         );
                         continue;
                     }
-                    if let Some(state) = states.get_mut(&name.to_lowercase()) {
+                    let key = name.to_lowercase();
+                    if let Some(state) = states.get_mut(&key) {
                         state.load_order = Some(order as i64);
+                    } else {
+                        order_only.insert(key, order as i64);
                     }
                 }
             }
             Err(error) => warnings.push(format!("Plugin order could not be read: {error}")),
         }
     }
-    Ok((
-        states,
-        if known { "plugins.txt" } else { "unknown" }.into(),
-        known,
-    ))
+    Ok(ProfilePluginStates {
+        activation: states,
+        activation_source: if known { "plugins.txt" } else { "unknown" }.into(),
+        order_only,
+    })
 }
 
 fn resolve_winner(
     copies: &mut [PluginCopy],
     state: Option<&PluginState>,
+    order_only: Option<i64>,
     activation_known: bool,
     warnings: &mut Vec<String>,
 ) {
@@ -1370,7 +1385,7 @@ fn resolve_winner(
                 .map(|s| s.active)
                 .or(if activation_known { Some(false) } else { None })
         };
-        copy.load_order = state.and_then(|s| s.load_order);
+        copy.load_order = state.and_then(|s| s.load_order).or(order_only);
         copy.light_override = copy.enabled
             && !copy.winner
             && winner_light == Some(true)

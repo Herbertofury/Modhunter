@@ -34,11 +34,28 @@ function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={
    get children(){return id==='.pagefooter'?[node(id+'-first'),node(id+'-second')]:[]},get firstElementChild(){return node(id+'-first')},
   };
  }
- function node(id){if(!nodes.has(id))nodes.set(id,element(id));return nodes.get(id)}
+ function node(id){if(!nodes.has(id))nodes.set(id,id==='mo2To'||id==='mo2From'?select(id):element(id));return nodes.get(id)}
+ function select(id){
+  const el=element(id),options=[];
+  let index=-1;
+  return Object.defineProperties(Object.assign(el,{options,appends:0,resets:0,
+   add(option){if(options.length)options.at(-1).nextElementSibling=option;options.push(option);this.appends++;if(index===-1)index=0},
+   replaceChildren(){this.resets++;options.length=0;index=-1},
+  }),{
+   value:{get:()=>options[index]?.value||'',set:value=>{index=options.findIndex(option=>option.value===String(value))}},
+   selectedIndex:{get:()=>index,set:value=>{index=value}},
+   childNodes:{get:()=>options},
+   childElementCount:{get:()=>options.length},
+   firstElementChild:{get:()=>options[0]||null},
+  });
+ }
+ class Option{
+  constructor(text,value){this.tagName='OPTION';this.textContent=String(text);this.value=String(value);this.nextElementSibling=null;}
+ }
  document.body=element('body');node('embeddedCatalog').textContent=JSON.stringify(state.catalog);node('workshopFilter').value='candidate';
  const local=new Map([['mo2-update-arsenal:v2:a',JSON.stringify({rows:storedRows,prefs:{}})]]);
  class FixtureDate extends Date{static now(){return state.now??Date.now()}}
- const context={Date:FixtureDate,console:{log(){},warn(){},error(){}},document,structuredClone,URL,AbortController,Blob,
+ const context={Date:FixtureDate,Option,console:{log(){},warn(){},error(){}},document,structuredClone,URL,AbortController,Blob,
   innerWidth:1440,innerHeight:900,devicePixelRatio:1,performance:{now:()=>0},navigator:{},matchMedia:()=>({matches:true}),
   localStorage:{getItem:k=>local.get(k)||null,setItem:(k,v)=>local.set(k,v)},
   setTimeout(fn,ms){const id=++timerId;timers.set(id,{fn,ms});return id},clearTimeout:id=>timers.delete(id),
@@ -1122,4 +1139,72 @@ test('direct Gallery switch counts exact sources without recomputing dashboard r
  assert.match(h.nodes.get('listFooter').textContent,/3 MATCHING MODS · 3 EXACT ORIGINAL SOURCE/);
  h.api.updatePrefs({query:'Paperlark'});
  assert.match(h.nodes.get('listFooter').textContent,/1 MATCHING MOD · 3 EXACT ORIGINAL SOURCE/);
+});
+
+
+test('MO2 source matching retains the exact destination options and selection when editing a folder query',async()=>{
+ const h=harness({live:false}),n=id=>h.context.document.getElementById(id);
+ vm.runInContext('const originalNormalize=String.prototype.normalize;window.matcherNormalizations=0;String.prototype.normalize=function(...args){window.matcherNormalizations++;return originalNormalize.apply(this,args)};',h.context);
+ const data=catalog('ambiguous-source-import',40);
+ data.offline=true;
+ for(const m of data.items){m.nexusId=0;m.source={};}
+ data.items[4].name='  Hé🍂  spacing  ';
+ h.api.importOfflineCatalog(data);n('mo2Btn').onclick();
+ const mods=[{name:'Årea  One—Optional',modId:'917'},{name:'Another Årea—Variant',modId:'320'},{name:'Different folder',modId:'257'}];
+ await n('mo2File').onchange({target:{files:[{text:async()=>JSON.stringify({format:'MO2 Mod Update Arsenal Sources',mods})}]}});
+ const target=n('mo2To'),lookup=n('mo2Lookup'),from=n('mo2From');
+ const labels=()=>target.options.map(o=>[o.value,o.textContent]);
+ assert.deepEqual(labels(),data.items.map(m=>[m.id,'#'+m.priority+'  '+m.name]));
+ target.value='item-4';target.onchange();
+ const retained=target.options.slice(),writes=[target.appends,target.resets];
+ lookup.focus();
+ const normalizations=h.context.matcherNormalizations;
+ for(const q of ['Å','A\u030Area','Årea one','Årea one—optional','other å','impossible','different']){
+  lookup.value=q;lookup.oninput();assert.equal(h.context.document.activeElement,lookup);
+  assert.equal(target.value,'item-4');assert.deepEqual(labels(),data.items.map(m=>[m.id,'#'+m.priority+'  '+m.name]));
+ }
+ assert.deepEqual([target.appends,target.resets],writes,'A folder keystroke must not reconstruct an unchanged destination');
+ assert.ok(target.options.every((option,i)=>option===retained[i]));
+ assert.equal(h.context.matcherNormalizations-normalizations,7,'Normalize only the current query, not unchanged imported folder names');
+ assert.deepEqual(from.options.map(o=>[o.value,o.textContent]),[['folder-2','Different folder  →  Nexus #257']]);
+ assert.match(n('mo2MatchPreview').textContent,/Nexus #257.*Hé🍂/);
+ assert.equal(n('mo2Bind').disabled,false);
+ n('mo2Close').onclick();n('mo2Btn').onclick();
+ assert.deepEqual([target.appends,target.resets],writes);
+ // A changed source, name, priority, order or no-current-selection state must
+ // behave just as a fresh draw, even if the existing option count did not change.
+ h.api.setRow('item-1',{url:'https://www.nexusmods.com/skyrimspecialedition/mods/999'});
+ lookup.oninput();
+ assert.ok(!target.options.some(o=>o.value==='item-1'));
+ assert.equal(target.value,'item-4');
+ data.items[3].name='Renamed outside the matcher';data.items[3].priority=222;
+ lookup.oninput();assert.ok(target.options.some(o=>o.value==='item-3'&&o.textContent==='#222  Renamed outside the matcher'));
+ target.selectedIndex=-1;lookup.oninput();assert.equal(target.value,'item-0');
+ target.value='item-4';target.onchange();n('mo2Bind').onclick();
+ assert.match(n('mo2Results').textContent,/Linked .*Hé🍂.*Nexus #257/);
+ assert.ok(!target.options.some(o=>o.value==='item-4'));
+ assert.equal(target.value,'item-0');assert.match(h.api.getSrc(data.items[4]).url,/\/257\?tab=files$/);
+});
+
+
+test('MO2 source matcher preserves newly changed catalog order and the all-linked option',async()=>{
+ const h=harness({live:false}),n=id=>h.context.document.getElementById(id),data=catalog('matcher-order',3);
+ data.offline=true;
+ for(const m of data.items){m.nexusId=0;m.source={};}
+ h.api.importOfflineCatalog(data);n('mo2Btn').onclick();
+ const mods=[{name:'Ａmbiguous ﬁle',modId:'17',_nameKey:'incorrect imported key'}];
+ await n('mo2File').onchange({target:{files:[{text:async()=>JSON.stringify({format:'MO2 Mod Update Arsenal Sources',mods})}]}});
+ const target=n('mo2To'),lookup=n('mo2Lookup'),from=n('mo2From');
+ lookup.value='ambiguous file';lookup.oninput();
+ assert.equal(from.options[0].textContent,'Ａmbiguous ﬁle  →  Nexus #17');
+ target.value='item-1';data.items.reverse();lookup.oninput();
+ assert.deepEqual(target.options.map(o=>o.value),['item-2','item-1','item-0']);
+ assert.equal(target.value,'item-1');
+ for(const m of data.items)h.api.setRow(m.id,{url:'https://www.nexusmods.com/skyrimspecialedition/mods/'+(m.priority+1)});
+ lookup.oninput();
+ const allLinked=target.options[0];
+ assert.deepEqual(target.options.map(o=>[o.value,o.textContent]),[['','Every visible mod now has a link']]);
+ assert.equal(n('mo2Bind').disabled,true);
+ const writes=target.appends;target.selectedIndex=-1;lookup.oninput();
+ assert.equal(target.options[0],allLinked);assert.equal(target.appends,writes);assert.equal(target.selectedIndex,0);
 });

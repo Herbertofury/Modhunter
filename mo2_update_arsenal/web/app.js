@@ -851,18 +851,37 @@ function mo2ApplyLink(m,input){const id=txt(input.modId).trim();if(!mo2ValidId(i
 }
 function drawMO2Matcher(){const panel=$('mo2Resolver');panel.hidden=!MO2_PENDING.length;if(panel.hidden)return;
  const q=mo2Key($('mo2Lookup').value);$('mo2PendingCount').textContent=MO2_PENDING.length+' folder'+(MO2_PENDING.length===1?'':'s')+' need review';
- const sources=q?MO2_PENDING.filter(x=>mo2Key(x.name).includes(q)):[];
+ const sources=q?MO2_PENDING.filter(x=>x._nameKey.includes(q)):[];
  const from=$('mo2From'),oldFrom=from.value;from.replaceChildren();
  const add=(sel,val,label)=>{const opt=new Option(label,val);sel.add(opt)};
  if(!q)add(from,'','Search above to choose a folder');
  else if(!sources.length)add(from,'','No matching imported folders');
  else for(const input of sources)add(from,input._key,input.name+'  →  Nexus #'+input.modId);
  if(sources.some(x=>x._key===oldFrom))from.value=oldFrom;
- const target=$('mo2To'),oldTarget=target.value;target.replaceChildren();
- const unresolved=DATA.items.filter(x=>!getSrc(x).verified);
- if(!unresolved.length)add(target,'','Every visible mod now has a link');
- else for(const m of unresolved)add(target,m.id,'#'+m.priority+'  '+m.name);
- if(unresolved.some(x=>x.id===oldTarget))target.value=oldTarget;
+ const target=$('mo2To'),oldTarget=target.value,unresolved=DATA.items.filter(x=>!getSrc(x).verified);
+ const allLinked='Every visible mod now has a link';
+ // The folder query affects the source select, not the destination catalog.
+ // Compare its complete current options, so a new source link, reordered
+ // profile or renamed mod still refreshes normally without a stale cache.
+ let same=target.childNodes.length===Math.max(1,unresolved.length),firstMatch=-1;
+ if(same){
+  let option=target.firstElementChild;
+  if(!unresolved.length)same=option?.tagName==='OPTION'&&option.value===''&&option.textContent===allLinked;
+  else for(let i=0;i<unresolved.length;i++,option=option.nextElementSibling){
+   const m=unresolved[i];
+   if(option?.tagName!=='OPTION'||option.value!==m.id||option.textContent!=='#'+m.priority+'  '+m.name){same=false;break}
+   if(firstMatch<0&&m.id===oldTarget)firstMatch=i;
+  }
+ }
+ if(same){
+  const selection=Math.max(0,firstMatch);
+  if(target.selectedIndex!==selection)target.selectedIndex=selection;
+ }else{
+  target.replaceChildren();
+  if(!unresolved.length)add(target,'',allLinked);
+  else for(const m of unresolved)add(target,m.id,'#'+m.priority+'  '+m.name);
+  if(unresolved.some(x=>x.id===oldTarget))target.value=oldTarget;
+ }
  mo2UpdatePreview();
 }
 function mo2UpdatePreview(){const entry=MO2_PENDING.find(x=>x._key===$('mo2From').value),m=ITEM_MAP.get($('mo2To').value);
@@ -877,9 +896,9 @@ async function importMO2(file){if(!file)return;try{
  let linked=0,present=0,unmatched=0,missingId=0,ambiguous=0;
  MO2_PENDING=[];
  for(const input of data.mods){if(!input||typeof input.name!=='string')continue;
-  const found=names.get(mo2Key(input.name))||[];
+  const nameKey=mo2Key(input.name),found=names.get(nameKey)||[];
   const id=txt(input.modId).trim();
-  if(!found.length){unmatched++;if(mo2ValidId(id))MO2_PENDING.push({...input,_key:'folder-'+MO2_PENDING.length,modId:id});continue}
+  if(!found.length){unmatched++;if(mo2ValidId(id))MO2_PENDING.push({...input,_key:'folder-'+MO2_PENDING.length,_nameKey:nameKey,modId:id});continue}
   if(found.length!==1){ambiguous++;continue}
   if(!mo2ValidId(id)){missingId++;continue}
   const m=found[0];if(getRow(m.id).url||m.source.verified){present++;continue}

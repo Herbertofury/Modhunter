@@ -35,6 +35,8 @@ GitHub and GitLab release details show all validated archives in the file picker
 
 The live scanner checks repeated references to the same verified project once and compares each installed version separately. Its cache can retain a complete provider response within the existing total cache budget. A source response that exceeds the transport byte budget or misses its deadline stays marked for review or recheck.
 
+A public release check on November 24, 2026 accounted for all 453 entries in Iosevka v34.9.1 and all 991 entries in the Python standalone build release. The Iosevka check matched all 452 archive IDs to GitHub and validated the final entry in the file picker. [Release inventory and equivalent-workload measurements](../native/evidence/provider-release-inventory-2026-11-24.json)
+
 ## One-click MO2 updates (default experience)
 
 1. Open Modhunter from **MO2 → Tools → Update Arsenal**, using your normal active profile and Nexus login. Run **Check all mod sources** or your preferred fast audit. The current MO2 game/profile/installed versions remain authoritative.

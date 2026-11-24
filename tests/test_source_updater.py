@@ -96,6 +96,9 @@ class SourceRegistryTests(unittest.TestCase):
         self.assertEqual(result["itemRecords"]["gitlab-row"]["verdict"], "candidate")
         self.assertEqual(result["itemRecords"]["patreon-row"]["verdict"], "unverified")
         self.assertEqual(len(result["itemRecords"]["github-row"]["releaseAssets"]), 1)
+        manual = result["itemRecords"]["github-row"]["manualFiles"]
+        self.assertEqual([(f["assetId"], f["name"]) for f in manual], [(556, "disguised.zip")])
+        self.assertNotIn("url", manual[0])
 
     def test_missing_nexus_source_never_overrides_authoritative_nexus_result(self):
         snap = {"profileId": "p1", "items": [

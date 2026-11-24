@@ -1,0 +1,183 @@
+{
+  "date": "2026-11-24",
+  "implementation": "f69580fc203346c92fffdcaae3ec681fd923531e",
+  "platform": "Windows x64",
+  "python": "3.13.15",
+  "build": "Rust dev build, locked Cargo dependencies",
+  "observedProviders": {
+    "iosevka": {
+      "source": "https://api.github.com/repos/be5invis/Iosevka/releases/latest",
+      "release": "https://github.com/be5invis/Iosevka/releases/tag/v34.9.1",
+      "tag": "v34.9.1",
+      "providerCount": 453,
+      "reviewable": 452,
+      "manual": 1,
+      "cachedArchiveIdentitiesEqual": true,
+      "manualIdentitiesVerified": 1,
+      "lastArchiveName": "SuperTTC-SGr-IosevkaTermSS18-34.9.1.zip",
+      "lastArchiveId": 672531252,
+      "lastArchiveProof": "4c8b165cbf9cfc84f4b81dc687e7b5e529929b2b187f089ab4077e1073d3c9a1",
+      "pinnedApi": "https://api.github.com/repos/be5invis/Iosevka/releases/tags/v34.9.1"
+    },
+    "python": {
+      "source": "https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest",
+      "release": "https://github.com/astral-sh/python-build-standalone/releases/tag/20261124",
+      "tag": "20261124",
+      "providerCount": 991,
+      "reviewable": 0,
+      "manual": 991,
+      "cachedArchiveIdentitiesEqual": true,
+      "manualIdentitiesVerified": 991,
+      "pinnedApi": "https://api.github.com/repos/astral-sh/python-build-standalone/releases/tags/20261124"
+    },
+    "coldSeconds": 2.0273154000751674,
+    "warmSeconds": [
+      0.29861330008134246,
+      0.3184864999493584,
+      0.24470949999522418,
+      0.24739529995713383
+    ],
+    "cacheHits": 2,
+    "coldRequests": 2,
+    "warmRequests": 0
+  },
+  "rendered": {
+    "archivalPickerButtons": 452,
+    "manualRendered": true,
+    "manualCount": 991,
+    "firstManualCount": 1,
+    "lastSelectable": true,
+    "containsLastManual": true,
+    "htmlBytes": [
+      377250,
+      4766,
+      150719
+    ]
+  },
+  "equivalentWorkload": {
+    "scope": "Five fresh Python processes per strategy, previously observed provider cache and warm OS/filesystem; no network. Each scan returns 96 independently addressable rows and all 43,392 reviewed archive identities. Control uses identical product source with only per-URL request/normalization sharing disabled. Wall covers SourceScanner.scan. CPU/RSS sampled across process tree during full program startup through receipt verification; 20 ms sampling.",
+    "runs": {
+      "unshared": [
+        {
+          "seconds": 5.993002000031993,
+          "fingerprint": "d38dfe19491af3817979a2710b97a1c2c4fe6341bbd10beb40c50eaf1e428945",
+          "rows": 96,
+          "archiveRows": 43392,
+          "lookups": 96,
+          "providerRequests": 0,
+          "sampledPeakProcessTreeMiB": 220.21875,
+          "sampledProcessTreeCPUSeconds": 4.140625
+        },
+        {
+          "seconds": 6.036000599968247,
+          "fingerprint": "d38dfe19491af3817979a2710b97a1c2c4fe6341bbd10beb40c50eaf1e428945",
+          "rows": 96,
+          "archiveRows": 43392,
+          "lookups": 96,
+          "providerRequests": 0,
+          "sampledPeakProcessTreeMiB": 210.03125,
+          "sampledProcessTreeCPUSeconds": 4.5
+        },
+        {
+          "seconds": 5.777943400084041,
+          "fingerprint": "d38dfe19491af3817979a2710b97a1c2c4fe6341bbd10beb40c50eaf1e428945",
+          "rows": 96,
+          "archiveRows": 43392,
+          "lookups": 96,
+          "providerRequests": 0,
+          "sampledPeakProcessTreeMiB": 220.96875,
+          "sampledProcessTreeCPUSeconds": 4.640625
+        },
+        {
+          "seconds": 12.892860999912955,
+          "fingerprint": "d38dfe19491af3817979a2710b97a1c2c4fe6341bbd10beb40c50eaf1e428945",
+          "rows": 96,
+          "archiveRows": 43392,
+          "lookups": 96,
+          "providerRequests": 0,
+          "sampledPeakProcessTreeMiB": 220.87890625,
+          "sampledProcessTreeCPUSeconds": 9.015625
+        },
+        {
+          "seconds": 10.422198300017044,
+          "fingerprint": "d38dfe19491af3817979a2710b97a1c2c4fe6341bbd10beb40c50eaf1e428945",
+          "rows": 96,
+          "archiveRows": 43392,
+          "lookups": 96,
+          "providerRequests": 0,
+          "sampledPeakProcessTreeMiB": 211.48046875,
+          "sampledProcessTreeCPUSeconds": 6.859375
+        }
+      ],
+      "shared": [
+        {
+          "seconds": 0.6008053999394178,
+          "fingerprint": "d38dfe19491af3817979a2710b97a1c2c4fe6341bbd10beb40c50eaf1e428945",
+          "rows": 96,
+          "archiveRows": 43392,
+          "lookups": 1,
+          "providerRequests": 0,
+          "sampledPeakProcessTreeMiB": 62.42578125,
+          "sampledProcessTreeCPUSeconds": 0.3125
+        },
+        {
+          "seconds": 0.4812291000271216,
+          "fingerprint": "d38dfe19491af3817979a2710b97a1c2c4fe6341bbd10beb40c50eaf1e428945",
+          "rows": 96,
+          "archiveRows": 43392,
+          "lookups": 1,
+          "providerRequests": 0,
+          "sampledPeakProcessTreeMiB": 63.32421875,
+          "sampledProcessTreeCPUSeconds": 0.375
+        },
+        {
+          "seconds": 0.833159500034526,
+          "fingerprint": "d38dfe19491af3817979a2710b97a1c2c4fe6341bbd10beb40c50eaf1e428945",
+          "rows": 96,
+          "archiveRows": 43392,
+          "lookups": 1,
+          "providerRequests": 0,
+          "sampledPeakProcessTreeMiB": 62.76953125,
+          "sampledProcessTreeCPUSeconds": 0.40625
+        },
+        {
+          "seconds": 0.6478538999799639,
+          "fingerprint": "d38dfe19491af3817979a2710b97a1c2c4fe6341bbd10beb40c50eaf1e428945",
+          "rows": 96,
+          "archiveRows": 43392,
+          "lookups": 1,
+          "providerRequests": 0,
+          "sampledPeakProcessTreeMiB": 62.69140625,
+          "sampledProcessTreeCPUSeconds": 0.390625
+        },
+        {
+          "seconds": 0.7888643000042066,
+          "fingerprint": "d38dfe19491af3817979a2710b97a1c2c4fe6341bbd10beb40c50eaf1e428945",
+          "rows": 96,
+          "archiveRows": 43392,
+          "lookups": 1,
+          "providerRequests": 0,
+          "sampledPeakProcessTreeMiB": 63.01953125,
+          "sampledProcessTreeCPUSeconds": 0.609375
+        }
+      ]
+    },
+    "summary": {
+      "unshared": {
+        "medianSeconds": 6.036000599968247,
+        "maxSeconds": 12.892860999912955,
+        "medianSampledCPUSeconds": 4.640625,
+        "peakSampledProcessTreeMiB": 220.96875,
+        "medianArchiveAssociationsPerSecond": 7188.866084643575
+      },
+      "shared": {
+        "medianSeconds": 0.6478538999799639,
+        "maxSeconds": 0.833159500034526,
+        "medianSampledCPUSeconds": 0.390625,
+        "peakSampledProcessTreeMiB": 63.32421875,
+        "medianArchiveAssociationsPerSecond": 66978.06403780541
+      }
+    }
+  },
+  "scope": "Public GitHub metadata from two software releases with large file lists. Product scanner, file-picker renderer, and exact-asset preflight were exercised without downloading an asset. Repeated-row timing uses a fixture inventory over the actual public Iosevka release. Full source and asset coverage was compared before timing conclusions. The network timing is a two-project run using an empty product cache; the duplicate-row benchmark reuses captured provider state without network access. The five runs describe this machine and sample."
+}

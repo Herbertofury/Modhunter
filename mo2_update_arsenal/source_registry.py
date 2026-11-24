@@ -311,10 +311,13 @@ def _github_assets(project: str, data: dict) -> list[dict]:
         try:
             aid = int(file.get("id") or 0)
             url = str(file.get("browser_download_url") or "")
-            name = str(file.get("name") or "")[:190]
-            if aid > 0 and url.startswith(prefix) and name.lower().endswith(ARCHIVE_SUFFIXES):
-                assets.append({"assetId": aid, "name": name, "url": url,
-                               "size": max(0, int(file.get("size") or 0))})
+            name = str(file.get("name") or "")
+            if aid > 0 and url.startswith(prefix) and len(name) <= 240 and name.lower().endswith(ARCHIVE_SUFFIXES):
+                entry = {"assetId": aid, "name": name, "url": url, "size": max(0, int(file.get("size") or 0))}
+                digest = file.get("digest")
+                if isinstance(digest, str) and re.fullmatch(r"sha256:[a-fA-F0-9]{64}", digest):
+                    entry["hashes"] = {"sha256": digest[7:].lower()}
+                assets.append(entry)
         except (TypeError, ValueError, OverflowError):
             continue
     return assets
@@ -347,6 +350,16 @@ def release_verdict(item: dict, data: Any, provider: str, project: str) -> dict:
               "projectId": project, "releaseId": str(data.get("id") or version), "outcome": "release", "freshness": "fresh",
               "availability": "available", "changelog": str((data.get("body") if provider == "github" else data.get("description")) or "")[:24000],
               "publishedAt": str(data.get("published_at") or data.get("released_at") or "")[:80]}
+    listed = data.get("assets")
+    if provider == "gitlab":
+        listed = listed.get("links") if isinstance(listed, dict) else None
+    if isinstance(listed, list):
+        reviewed = {asset["assetId"] for asset in result["releaseAssets"]}
+        result["manualFiles"] = [
+            {"name": str(entry.get("name") or ""), "assetId": entry.get("id") if type(entry.get("id")) is int else None,
+             "size": entry.get("size") if type(entry.get("size")) is int and entry["size"] >= 0 else None}
+            for entry in listed if isinstance(entry, dict) and not (type(entry.get("id")) is int and entry["id"] in reviewed)]
+        result["manualAssetCount"] = len(result["manualFiles"])
     author = data.get("author")
     if isinstance(author, dict):
         result["publisher"] = {"name": str(author.get("name") or author.get("login") or author.get("username") or "")[:180],

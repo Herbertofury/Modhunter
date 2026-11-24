@@ -132,7 +132,11 @@ class NexusFileIndex:
         installed = item.get("installedVersion")
         comparison = compare_versions(installed, target.get("version"))
         verdict = comparison["verdict"]
-        if target["fileId"] != fid and verdict == "current":
+        if target["fileId"] == fid and verdict in ("candidate", "newer-installed"):
+            verdict = "review"
+            reason = (f"MO2 records the same Nexus archive {fid} as the active file. Its provider and installed "
+                      "version labels disagree. Review the local metadata or modifications before taking action.")
+        elif target["fileId"] != fid and verdict == "current":
             verdict = "review"
             reason = "The provider replaced the archive without changing its version. Review the replacement."
         elif fid != target["fileId"] and verdict == "newer-installed":

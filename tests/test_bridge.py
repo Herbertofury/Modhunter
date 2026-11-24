@@ -58,9 +58,9 @@ class BridgeTests(unittest.TestCase):
   self.assertEqual(snap[1]['update']['verdict'],'unverified')
  def test_deduplicated_nexus_projects_keep_per_item_verdict(self):
   profile=copy.deepcopy(PROFILE)
-  for item in profile['items']: item['installedFiles']=[[77,9]]
+  for i, item in enumerate(profile['items']): item['installedFiles']=[[77,8+i]]
   def fetch(path):
-   if path.endswith('/files.json'): return {'files':[{'file_id':9,'name':'Mod','version':'2.0','category_id':1}], 'file_updates':[]}
+   if path.endswith('/files.json'): return {'files':[{'file_id':9,'name':'Mod','version':'2.0','category_id':1}], 'file_updates':[{'old_file_id':8,'new_file_id':9}]}
    return {'version':'2.0','status':'published'}
   result=UpdateScanner(Cache(Path(self.tmp.name)/'dupes.json'),NexusClient('fake',request_json=fetch)).scan(profile,'deep')
   self.assertEqual(result['queried'],1)

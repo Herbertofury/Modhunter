@@ -93,10 +93,10 @@ class VersionEvidenceTests(unittest.TestCase):
         self.assertIn('channel', legacy['reason'])
 
     def test_provider_summary_explains_strategy_without_mutating_identity(self):
-        item = {'id': 'installed-mod', 'nexusId': 42, 'installedVersion': 'Build 99', 'installedFiles': [[42,91]]}
+        item = {'id': 'installed-mod', 'nexusId': 42, 'installedVersion': 'Build 99', 'installedFiles': [[42,90]]}
         original = copy.deepcopy(item)
         index = NexusFileIndex({"files":[{"fileId":91,"fileName":"mod.zip","name":"Mod","version":"build 100","category":1}],
-                                "file_updates":[]})
+                                "file_updates":[{"old_file_id":90,"new_file_id":91}]})
         evidence = summary_from_metadata(item, {'version': 'build 999', 'status': 'published'}, 123, index)
         self.assertEqual(evidence['versionComparison']['strategy'], 'build')
         self.assertEqual(evidence['verdict'], 'candidate')

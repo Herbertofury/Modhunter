@@ -46,10 +46,10 @@ class StartupScannerTests(unittest.TestCase):
                 self.assertEqual(len(calls),1);self.assertEqual(result['fromCache'],0)
     def test_shared_project_compares_each_installed_version_and_requests_once(self):
         data=profile();data['items'][1]['nexusId']=1;data['items'][1]['installedVersion']='2.0';data['items'][1]['source']=copy.deepcopy(data['items'][0]['source'])
-        for row in data['items']: row['installedFiles']=[[1,9]]
+        for i,row in enumerate(data['items']): row['installedFiles']=[[1,8+i]]
         def fetch(path):
             if path.endswith('/files.json'):
-                return {'files':[{'file_id':9,'name':'Mod','version':'2.0','category_id':1}], 'file_updates':[]}
+                return {'files':[{'file_id':9,'name':'Mod','version':'2.0','category_id':1}], 'file_updates':[{'old_file_id':8,'new_file_id':9}]}
             return {'version':'9.9'}
         result=UpdateScanner(self.cache,NexusClient('fixture',fetch)).scan(data,'startup')
         self.assertEqual(result['queried'],1)

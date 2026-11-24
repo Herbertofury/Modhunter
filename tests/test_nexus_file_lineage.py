@@ -36,10 +36,10 @@ class ExactFileTests(unittest.TestCase):
             def fetch(path):
                 calls.append(path)
                 if path.endswith("/files.json"):
-                    return {"files":[PATCH,MAIN], "file_updates":[]}
+                    return {"files":[PATCH,MAIN], "file_updates":[edge(99,MAIN["fileId"])]}
                 return {"mod_id":MID, "domain_name":GAME, "version":"4.1.0", "status":"published"}
             scan = UpdateScanner(Cache(root/"cache.json"), NexusClient("fixture", fetch))
-            main = {**ITEM, "id":"main", "installationArchive":"", "installedFiles":[[MID,MAIN["fileId"]]]}
+            main = {**ITEM, "id":"main", "installationArchive":"", "installedFiles":[[MID,99]]}
             profile = {"game":GAME, "items":[{**ITEM, **identity}, main]}
             result = scan.scan(profile, "deep")["itemRecords"]
             self.assertEqual(len(calls), 2)
@@ -49,6 +49,14 @@ class ExactFileTests(unittest.TestCase):
             self.assertEqual(result["main"]["verdict"], "candidate")
             self.assertEqual(scan.scan(profile, "startup")["itemRecords"], result)
             self.assertEqual(len(calls), 2)
+
+    def test_same_active_archive_with_disagreeing_labels_has_no_verified_update_or_downgrade(self):
+        index = NexusFileIndex({"files":[PATCH, MAIN], "file_updates":[]})
+        for label, expected_comparison in [("2.5","candidate"),("2.7","newer-installed")]:
+            result = index.resolve({**ITEM, "installedVersion": label})
+            self.assertEqual(result["verdict"], "review")
+            self.assertEqual(result["versionComparison"]["verdict"], expected_comparison)
+            self.assertEqual(result["installedFileId"],result["targetFileId"])
 
     def test_mo2_ignored_release_is_visible_but_not_an_actionable_update(self):
         from mo2_update_arsenal.scanner import summary_from_metadata

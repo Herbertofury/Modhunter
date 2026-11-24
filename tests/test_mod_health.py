@@ -334,9 +334,9 @@ class HealthEvaluationTests(unittest.TestCase):
 
     def test_nexus_inspector_candidate_expires_at_the_same_boundary_as_watchtower(self):
         from mo2_update_arsenal.file_advisor import NexusFileIndex
-        target = item(id="live-inspected", installedFiles=[[MID, 91]])
+        target = item(id="live-inspected", installedFiles=[[MID, 90]])
         files = NexusFileIndex({"files":[{"fileId":91, "name":"Mod", "version":"2.0", "category":1}],
-                                "file_updates":[]})
+                                "file_updates":[{"old_file_id":90,"new_file_id":91}]})
         target["update"] = summary_from_metadata(target, {"version": "2.0", "status": "published"},
                                                  NOW - STARTUP_CACHE_SECONDS, files)
         expires = target["update"]["expiresAt"]

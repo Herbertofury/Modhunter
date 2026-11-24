@@ -275,7 +275,7 @@ class ScanOwnershipTests(unittest.TestCase):
     def test_native_nexus_deep_scan_reaches_actual_scanner_with_authenticated_callback(self):
         changed = copy.deepcopy(PROFILE)
         changed["items"][0]["nexusId"] = 7
-        changed["items"][0]["installedFiles"] = [[7,9]]
+        changed["items"][0]["installedFiles"] = [[7,8]]
         changed["items"][0]["source"] = {"type":"nexus", "verified":True, "url":"https://www.nexusmods.com/skyrimspecialedition/mods/7"}
         self.service.set_snapshot(changed)
         self.service.native_nexus_available = True
@@ -283,7 +283,7 @@ class ScanOwnershipTests(unittest.TestCase):
         def native(request):
             calls.append((request.cmd, request.payload.copy()))
             if request.cmd == "nexus-files":
-                request.finish({"ok":True,"files":[{"fileId":9,"name":"Mod","version":"2.0","category":1}],"file_updates":[]})
+                request.finish({"ok":True,"files":[{"fileId":9,"name":"Mod","version":"2.0","category":1}],"file_updates":[{"old_file_id":8,"new_file_id":9}]})
             else:
                 request.finish({"ok": True, "meta": {"version": "4.0", "status": "published"}})
         self.service.ui_call = native

@@ -132,7 +132,7 @@ def discover_local_source(mod_directory: Path, notes: str = "") -> dict:
             lower = text.lower()
             # A source-less INI can still own the archive and project receipts.
             if "://" in text or any(field in lower for field in (
-                    "hascustomurl", "installationfile", "[installedfiles]", "gamename", "nexusfilestatus")):
+                    "hascustomurl", "installationfile", "[installedfiles]", "gamename", "nexusfilestatus", "ignoredversion")):
                 parser = configparser.ConfigParser(interpolation=None, strict=False)
                 parser.read_string(text)
                 general = next((section for section in parser.sections() if section.lower() == "general"), None)
@@ -150,7 +150,8 @@ def discover_local_source(mod_directory: Path, notes: str = "") -> dict:
                                 receipts.append([parser.get(installed, index + "\\modid", fallback=""), value])
                     file_identity = {"installationArchive": archive, "installedFiles": receipts,
                                      "game": parser.get(general, "gameName", fallback=""),
-                                     "status": parser.get(general, "nexusFileStatus", fallback="")}
+                                     "status": parser.get(general, "nexusFileStatus", fallback=""),
+                                     "ignoredVersion": parser.get(general, "ignoredVersion", fallback="")}
                 if not any(file_identity.values()):
                     file_identity = {}
                 for section in parser.sections():

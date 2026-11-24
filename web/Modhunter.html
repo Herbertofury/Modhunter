@@ -2562,6 +2562,7 @@ function detectedStatus(mod){
  else if(unavailable){kind='blocked';label='Check failed'}
  else if(manual){kind='manual';label=capabilities.checkMode==='api-key'?'Provider key needed':'Page review';reason=u.reason||'This source needs page tracking or original-page review; an automatic release API is not available.'}
  else if(phase&1){kind=checking?'checking':'stale';label=checking?'Rechecking':'Recheck needed';reason='Previous source evidence expired. '+reason}
+ else if(u.verdict==='ignored'){kind='ignored';label='Ignored in MO2';reason=u.reason||'MO2 records this release version as ignored.'}
  else if(u.verdict==='candidate'){kind='update';label=remote?'Update available':'Update hinted';reason=u.reason||'A newer project version was found. Review its exact files and requirements.'}
  else if(remote&&u.verdict==='current'){kind='current';label='Up to date';reason=u.reason||'Installed version matches current provider evidence.'}
  else if(u.source==='mo2-cached-metadata'&&u.mo2Verdict==='current'){kind='current';label='Current in MO2';reason='MO2 last recorded this active file at the installed version.'}

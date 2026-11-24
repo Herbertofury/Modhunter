@@ -50,6 +50,18 @@ class ExactFileTests(unittest.TestCase):
             self.assertEqual(scan.scan(profile, "startup")["itemRecords"], result)
             self.assertEqual(len(calls), 2)
 
+    def test_mo2_ignored_release_is_visible_but_not_an_actionable_update(self):
+        from mo2_update_arsenal.scanner import summary_from_metadata
+        old = {**ITEM, "installedFiles":[[MID,12]], "installationArchive":"", "installedVersion":"2.0"}
+        index = NexusFileIndex({"files":[PATCH,MAIN], "file_updates":[edge(12,252976)]})
+        for ignored, expected in [("2.6.0.0","ignored"),("2.5","candidate"),("4.1.0","candidate")]:
+            result = summary_from_metadata({**old, "ignoredVersion":ignored}, {"version":"4.1.0"}, time.time(), index)
+            self.assertEqual(result["verdict"],expected)
+            self.assertEqual(result["targetFileId"],252976)
+            if expected == "ignored":
+                self.assertEqual(result["availableVerdict"],"candidate")
+                self.assertIsNone(choose_nexus_file({**old,"update":result},[PATCH, MAIN])[0])
+
     def test_archived_filename_and_successor_through_unlisted_intermediate(self):
         old = {**ITEM, "installedFiles":[], "installationArchive":"prior.zip", "installedVersion":"2.4"}
         catalog = {"files":[MAIN, PATCH], "file_updates":[edge(17,18,"prior.zip"),edge(18,252976)]}

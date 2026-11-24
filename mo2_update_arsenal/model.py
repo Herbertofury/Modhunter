@@ -107,6 +107,8 @@ def installed_file_fields(receipt, native_archive, game, short_game):
         fields["installationArchive"] = archive
     if receipt.get("installedFiles"):
         fields["installedFiles"] = receipt["installedFiles"]
+    if receipt.get("ignoredVersion"):
+        fields["ignoredVersion"] = receipt["ignoredVersion"]
     saved_game = str(receipt.get("game") or "").casefold()
     if saved_game and saved_game not in (game, short_game):
         fields["updateEligible"] = False

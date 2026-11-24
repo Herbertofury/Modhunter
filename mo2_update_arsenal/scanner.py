@@ -44,6 +44,15 @@ def version_verdict(installed: str, latest: str) -> str:
     return compare_versions(installed, latest)["verdict"]
 
 
+def respect_ignored_version(item, result):
+    ignored = item.get("ignoredVersion")
+    if (result.get("verdict") == "candidate" and ignored
+            and compare_versions(ignored, result.get("latestVersion"))["verdict"] == "current"):
+        result["availableVerdict"] = "candidate"
+        result["verdict"] = "ignored"
+        result["reason"] += " MO2 records this specific release version as ignored."
+
+
 def summary_from_metadata(item: dict, meta: dict, checked_at: float, files: NexusFileIndex | None = None) -> dict[str, Any]:
     if not isinstance(meta, dict) or not meta:
         return {"verdict": "unknown", "checkedAt": checked_at, "reason": "No Nexus metadata"}
@@ -61,6 +70,7 @@ def summary_from_metadata(item: dict, meta: dict, checked_at: float, files: Nexu
         summary["mo2Comparison"] = compare_versions(item.get("installedVersion"), item["latestKnownVersion"])
         if summary["mo2Comparison"]["verdict"] == "current":
             summary["reason"] += " MO2's last known version matches your installation."
+    respect_ignored_version(item, summary)
     from .source_adapters import preview_image_url
     image = preview_image_url(meta.get("picture_url"), "nexus")
     if image:
@@ -508,6 +518,7 @@ def local_mo2_candidates(snapshot: dict) -> dict:
         info={"verdict": verdict, "latestVersion": latest, "source": "mo2-cached-metadata", "reason": "Cached MO2 metadata only. Connect Nexus for a verified current check."}
         if latest and item.get("mo2FileStatus") in (1, 2, 3, 5):
             info["mo2Verdict"] = version_verdict(item.get("installedVersion", ""), latest)
+        respect_ignored_version(item, info)
         if str(mid) in output:
             output[str(mid)] = {"verdict": "review", "reason": "Several installed rows share this project."}
         else:

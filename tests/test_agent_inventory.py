@@ -59,6 +59,9 @@ class AgentInventoryTests(unittest.TestCase):
         revision = first["revision"]
         selection = dict(profile, itemId=["0"], revision=[revision])
         initial = self.service.agent_evidence(selection)
+        self.assertEqual(initial["updateDecision"]["verdict"], "unknown")
+        self.assertIn("No update decision has been recorded", initial["updateDecision"]["reason"])
+        self.assertNotIn("checkedAt", initial["updateDecision"])
         published, finish = threading.Event(), threading.Event()
         def scan(snapshot, mode, progress, *, cancel_event):
             record = {"verdict": "review", "reason": "Source observed during inventory traversal"}

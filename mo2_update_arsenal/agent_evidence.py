@@ -25,7 +25,9 @@ def evidence_page(snapshot, revision, query):
     decision = _fields(update, ("verdict", "reason", "source", "evidenceScope", "installedFileId", "targetFileId",
                                 "latestVersion", "projectVersion", "checkedAt", "expiresAt", "mo2Verdict",
                                 "availability", "availableVerdict", "retryAt"))
-    decision.setdefault("verdict", "unknown")
+    if "verdict" not in decision:
+        decision["verdict"] = "unknown"
+        decision.setdefault("reason", "No update decision has been recorded for this installed row in the current live catalog.")
     expiry = decision.get("expiresAt")
     if isinstance(expiry, (int, float)):
         decision["expired"] = time.time() >= expiry

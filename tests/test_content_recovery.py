@@ -813,7 +813,7 @@ class ActualRustContentTests(unittest.TestCase):
         data["resolvedArchive"]["review"] = review
         before = FixtureRunner.tree(f.mod)
         def install():
-            self.assertEqual(Path(f.installs[-1][0]), Path(prepared["path"]))
+            self.assertTrue(Path(f.installs[-1][0]).samefile(prepared["path"]))
             with zipfile.ZipFile(f.installs[-1][0]) as archive:
                 archive.extractall(f.mod)
             f.version = "2.0"

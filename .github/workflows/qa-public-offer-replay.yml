@@ -50,3 +50,52 @@ jobs:
             public-evidence/*.json
             public-evidence/*.jsonl
           retention-days: 14
+  local-service-download:
+    runs-on: windows-2022
+    timeout-minutes: 8
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 45469730451
+          name: Modhunter-Rust-Windows
+          path: frozen
+      - name: Replay the frozen localhost authenticated downloads with receipt evidence
+        shell: pwsh
+        run: |
+          $Installer = (Get-ChildItem frozen -Recurse -Filter Modhunter_0.12.6_x64-setup.exe -File).FullName
+          if ((Get-FileHash -LiteralPath $Installer).Hash -cne '350CDDA7D02537AB956EFD1A6FF60507F60D484044CB67D64DD9D606D5683753') { throw 'Frozen identity mismatch' }
+          $Dest = Join-Path $env:RUNNER_TEMP 'watchtower-frozen'
+          & 7z x $Installer "-o$Dest" 'Modhunter.exe' -y
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($N in 1..4) {
+            $Dir = New-Item -ItemType Directory "$PWD/owned-evidence/$N"
+            $Info = [Diagnostics.ProcessStartInfo]::new((Join-Path $Dest 'Modhunter.exe'))
+            $Info.UseShellExecute = $false
+            $Info.CreateNoWindow = $true
+            $Info.ArgumentList.Add("--watchtower-smoke-output=$(Join-Path $Dir 'smoke.json')")
+            $Proc = [Diagnostics.Process]::Start($Info)
+            $Journal = $null
+            $Last = ''
+            while (!$Proc.WaitForExit(40)) {
+              if (!$Journal) { $Journal = Get-ChildItem "$Dir/watchtower-fixture-*/data/watchtower-acquisitions/receipts.json" -File -ErrorAction SilentlyContinue | Select-Object -First 1 }
+              if ($Journal) {
+                try {
+                  $File = [IO.File]::Open($Journal.FullName, 'Open', 'Read', [IO.FileShare]'ReadWrite,Delete')
+                  try { $Text = [IO.StreamReader]::new($File).ReadToEnd() } finally { $File.Dispose() }
+                  $Summary = ConvertTo-Json -InputObject @(($Text | ConvertFrom-Json).jobs | Select-Object id,state,message,bytes,received,total) -Compress
+                  if ($Summary -ne $Last) { Add-Content (Join-Path $Dir 'states.jsonl') -Value $Summary -Encoding utf8NoBOM; $Last = $Summary }
+                } catch [IO.FileNotFoundException] { }
+              }
+            }
+            $Result = Get-Content -Raw (Join-Path $Dir 'smoke.json') | ConvertFrom-Json
+            Write-Output "trial=$N ok=$($Result.ok) error=$($Result.error)"
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frozen-authenticated-transfer-outcomes
+          path: |
+            owned-evidence/*/*.json
+            owned-evidence/*/*.jsonl
+          retention-days: 14

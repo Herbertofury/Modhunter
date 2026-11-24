@@ -83,7 +83,8 @@ def run_public_fomod(api, root, profile, before, cli, arm, disarm, *, history=Fa
         selected, count = SELECTED, 10
         source = "https://github.com/3pvxiozkua/skyrim-tiered-casters/releases/expanded_assets/v1.0.0"
     name = new_fixture_name(
-        json.loads((root / "modhunter-smoke-fixture.json").read_text("utf-8-sig"))
+        json.loads((root / "modhunter-smoke-fixture.json").read_text("utf-8-sig")),
+        "Chairrows" if history else "TieredCasters",
     )
     output = root / "public-acquisition"
     proof = json.loads((output / "managed.json").read_text("utf-8"))

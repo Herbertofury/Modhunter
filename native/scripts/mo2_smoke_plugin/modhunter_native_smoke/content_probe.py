@@ -128,9 +128,10 @@ def exercise_content_recovery(api, instance_root, profile_id, fixture_rows, *, t
             "scope": "Shipped Rust helper, actual MO2 Qt capture/refresh and disposable fixture mod bytes; no user files or live-game installation"}
 
 
-def new_fixture_name(marker):
+def new_fixture_name(marker, package="native"):
     require(marker.get("purpose") == "isolated native MO2 CI fixture", "Expected isolated MO2 fixture")
-    return "MODHUNTER_QA__native__" + uuid.UUID(marker["runId"]).hex
+    require(package in {"native", "TieredCasters", "Chairrows"}, "Unknown native acceptance package")
+    return f"MODHUNTER_QA__{package}__" + uuid.UUID(marker["runId"]).hex
 
 
 def exercise_native_install(api, instance_root, profile_id, fixture_rows, arm, disarm,

@@ -183,6 +183,7 @@ pub fn scan_sources_with(
                     "changelog",
                     "media",
                     "releaseAssets",
+                    "manualFiles",
                     "dependencies",
                     "publisher",
                     "author",

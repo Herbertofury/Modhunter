@@ -2195,7 +2195,7 @@ function hashes(asset){return Object.entries(asset.hashes||{}).filter(([algorith
 function assetIdentity(asset){const id=Number(asset.assetId);return {assetKey:typeof asset.assetKey==='string'?asset.assetKey:'',assetProof:/^[a-f0-9]{64}$/i.test(asset.assetProof||'')?asset.assetProof:'',...(Number.isSafeInteger(id)&&id>0?{assetId:id}:{})}}
 function assetCards(mod){
  const u=mod.update||{},p=provider(mod);
- return list(u.releaseAssets).slice(0,256).map(asset=>{
+ return list(u.releaseAssets).map(asset=>{
   const identity=assetIdentity(asset),digest=hashes(asset),size=number(asset.size);
   if(!identity.assetKey&&!identity.assetId)return'';
   const evidence=[label(asset.provider||p),size===null?'Size unavailable':new Intl.NumberFormat().format(size)+' bytes'];
@@ -2218,12 +2218,15 @@ function details(mod,{live=false,loading=false,error=''}={}){
  const media=list(u.media).filter(x=>x&&safeURL(x.url));
  if(u.iconUrl||media.length)html+='<details class="source-disclosure" data-source-section="media"><summary>Project images & media</summary><div class="insight-links">'+link(u.iconUrl,'Project icon')+media.slice(0,6).map((x,i)=>link(x.url,x.caption||'Project '+(x.type||'media')+' '+(i+1))).join('')+'</div></details>';
  const compatibility=u.compatibility||{};
- if(compatibility.status||compatibility.reason)html+='<div class="source-compatibility"><strong>'+esc(compatibilityLabels[compatibility.status]||'Compatibility review')+'</strong><p>'+esc(compatibility.reason||'Review the exact file for this profile.')+'</p>'+(list(compatibility.gameVersions).length?'<p>Game versions: '+list(compatibility.gameVersions).slice(0,40).map(esc).join(', ')+'</p>':'')+(list(compatibility.loaders).length?'<p>Loaders: '+list(compatibility.loaders).slice(0,20).map(esc).join(', ')+'</p>':'')+'</div>';
+ if(compatibility.status||compatibility.reason)html+='<div class="source-compatibility"><strong>'+esc(compatibilityLabels[compatibility.status]||'Compatibility review')+'</strong><p>'+esc(compatibility.reason||'Review the exact file for this profile.')+'</p>'+(list(compatibility.gameVersions).length?'<p>Game versions: '+list(compatibility.gameVersions).map(esc).join(', ')+'</p>':'')+(list(compatibility.loaders).length?'<p>Loaders: '+list(compatibility.loaders).map(esc).join(', ')+'</p>':'')+'</div>';
  const dependencies=list(u.dependencies);
- if(dependencies.length)html+='<details class="source-disclosure" data-source-section="dependencies"><summary>'+dependencies.length+' declared dependenc'+(dependencies.length===1?'y':'ies')+'</summary><ul>'+dependencies.slice(0,128).map(d=>'<li><strong>'+(link(d.url,d.name||d.projectId||d.versionId||'Dependency')||esc(d.name||d.projectId||d.versionId||'Unresolved dependency'))+'</strong><span>'+esc(d.kind||'Requirement')+(d.versionId?' · version '+esc(d.versionId):'')+'</span></li>').join('')+'</ul><p class="insight-note">These are provider declarations. They do not establish installed versions or satisfy plugin-master checks.</p></details>';
+ if(dependencies.length)html+='<details class="source-disclosure" data-source-section="dependencies"><summary>'+dependencies.length+' declared dependenc'+(dependencies.length===1?'y':'ies')+'</summary><ul>'+dependencies.map(d=>'<li><strong>'+(link(d.url,d.name||d.projectId||d.versionId||'Dependency')||esc(d.name||d.projectId||d.versionId||'Unresolved dependency'))+'</strong><span>'+esc(d.kind||'Requirement')+(d.versionId?' · version '+esc(d.versionId):'')+'</span></li>').join('')+'</ul><p class="insight-note">These are provider declarations. They do not establish installed versions or satisfy plugin-master checks.</p></details>';
  else if(s.dependencies)html+='<p class="insight-note">'+s.dependencies+' declared dependencies; open details to inspect them.</p>';
  if(u.changelog)html+='<details class="source-disclosure" data-source-section="changelog"><summary>Release notes / changelog</summary><pre class="source-changelog">'+esc(text(u.changelog).slice(0,24000))+'</pre><p class="insight-note">Text supplied by the provider. Open the release for the original formatting and full content.</p></details>';
- if(s.assets)html+='<p class="insight-note">'+s.assets+' published file'+(s.assets===1?'':'s')+' in this release.</p>';
+ if(s.assets)html+='<p class="insight-note">'+s.assets+' release file'+(s.assets===1?'':'s')+' listed for review.</p>';
+ const manual=list(u.manualFiles);
+ if(manual.length)html+='<details class="source-disclosure" data-source-section="manual-files"><summary>'+manual.length+' original-release '+(manual.length===1?'entry':'entries')+'</summary><ul>'+manual.map(a=>'<li><strong>'+esc(a.name||'Name unavailable')+'</strong><span>'+esc([a.assetId?'File '+a.assetId:'',number(a.size)!==null?new Intl.NumberFormat().format(a.size)+' bytes':''].filter(Boolean).join(' · '))+'</span></li>').join('')+'</ul><p class="insight-note">Open the original release page to review these entries.</p></details>';
+ else if(number(u.manualAssetCount)>0)html+='<p class="insight-note">'+esc(u.manualAssetCount)+' additional release '+(u.manualAssetCount===1?'entry requires':'entries require')+' review on the original release page.</p>';
  html+='<div class="insight-links">'+link(u.releaseUrl,'Release & changelog')+link(mod.source?.url,'Original project')+'</div>';
  if(live)html+='<div class="insight-actions"><button type="button" data-source-act="scan" data-id="'+esc(mod.id)+'">Check mod sources</button>'+(canReview(mod)?'<button type="button" data-source-act="files" data-id="'+esc(mod.id)+'">Review release files</button>':'')+'</div>';
  if(!live)html+='<p class="insight-note">Connect the MO2 plugin for source checks and reviewed downloads.</p>';
@@ -2250,7 +2253,7 @@ function matches(mod,filter){
  if(filter==='source-dependencies')return (number(u.dependencyCount)??list(u.dependencies).length)>0;
  return filter==='source-incompatible'&&Boolean(compatibilityAlerts[u.compatibility?.status]);
 }
-function searchText(mod){const u=mod.update||{},s=state(mod);return [s.provider,label(s.provider),s.status,u.latestVersion,u.releaseId,u.availability,u.compatibility?.status,u.author?.name,u.publisher?.name,...list(u.dependencies).slice(0,128).map(d=>d.name||d.projectId||d.versionId)].map(text).join(' ').toLowerCase()}
+function searchText(mod){const u=mod.update||{},s=state(mod);return [s.provider,label(s.provider),s.status,u.latestVersion,u.releaseId,u.availability,u.compatibility?.status,u.author?.name,u.publisher?.name,...list(u.dependencies).map(d=>d.name||d.projectId||d.versionId)].map(text).join(' ').toLowerCase()}
 const csvHeaders=['Release provider','Release version','Release ID','Release URL','Release published at','Source checked at','Source expires at','Source freshness','Source availability','Adapter mode','Provider compatibility','Declared dependencies','Release files'];
 function csv(mod){const u=mod.update||{},s=state(mod);return [s.provider,u.latestVersion||'',u.releaseId||'',safeURL(u.releaseUrl),u.publishedAt||'',u.checkedAt||'',u.expiresAt||'',u.freshness||'',u.availability||'',s.caps.checkMode||'',u.compatibility?.status||'',s.dependenciesKnown?s.dependencies:'',s.assetsKnown?s.assets:'']}
 const api={provider,label,checked,state,hasAssets,canReview,chips,details,coverage,searchText,matches,csv,csvHeaders,assetCards,assetIdentity,safeURL};

@@ -457,8 +457,29 @@ class SourceScanner:
                    "items": [{"id": str(i.get("id") or ""), "installedVersion": str(i.get("installedVersion") or ""),
                               "source": {**(i.get("source") or {}), "url": canonical_source_url((i.get("source") or {}).get("url") or "")}}
                              for i in items]}
+        # The Rust fetch and parser depend on profile context and verified source,
+        # while installed-version comparison belongs to each Python catalog row.
+        # Send one representative of an identical source across the process boundary.
+        representatives, owners, seen_ids, lookup_items = {}, {}, set(), []
+        for item in request["items"]:
+            source = item["source"]
+            key = source["url"]
+            if item["id"] in seen_ids or not item["id"]:
+                # Preserve the helper's validation of missing or duplicate native row IDs.
+                lookup_items = request["items"]
+                owners = {}
+                break
+            seen_ids.add(item["id"])
+            if source.get("verified") is True and source.get("kind") != "advisory" and provider_of(key) in PUBLIC_API_PROVIDERS:
+                if key in representatives:
+                    owners[item["id"]] = representatives[key]
+                    continue
+                representatives[key] = item["id"]
+            lookup_items.append(item)
+        request["items"] = lookup_items
         if progress:
             progress({"phase": "checking-source-adapters", "checked": 0, "total": len(items), "sourceEngine": "rust"})
+        deadline = time.monotonic() + request["budgetMs"] / 1000
         try:
             result = self.runner.run(request, cancel_event=cancel_event)
         except (RuntimeError, ValueError, OSError, TypeError) as exc:
@@ -468,13 +489,29 @@ class SourceScanner:
             return {"records": {}, "itemRecords": records, "mode": "sources", "sourceEngine": "rust",
                     "sourceProjects": 0, "manualSources": 0, "queried": 0,
                     "errors": ["Rust source check failed; existing observations were not promoted to current."], "checkedAt": time.time()}
+        self._complete_release_details(request, result, cancel_event, deadline, epoch)
         if not self._save_cache(result.get("cache") or {}, epoch=epoch, cancel_event=cancel_event):
             return cancelled_result
-        records = {}
+        records, normalized = {}, {}
+        shared = set(owners.values())
+        checked_now = time.time()
         for item in items:
-            raw = result["itemRecords"].get(str(item.get("id")))
-            records[str(item.get("id"))] = normalize_adapter_record(item, raw) if isinstance(raw, dict) else self._unavailable(item, "Adapter did not return this exact source; retry the check.")
+            item_id = str(item.get("id") or "")
+            owner = owners.get(item_id, item_id)
+            raw = result["itemRecords"].get(owner)
+            if not isinstance(raw, dict):
+                records[item_id] = self._unavailable(item, "Adapter did not return this exact source; retry the check.")
+                continue
+            key = (owner, str(item.get("installedVersion") or ""))
+            if key in normalized:
+                # Consumers may attach row-specific health evidence or mutate nested metadata.
+                records[item_id] = deepcopy(normalized[key])
+            else:
+                records[item_id] = normalize_adapter_record(item, raw, now=checked_now)
+                if owner in shared:
+                    normalized[key] = records[item_id]
         stats = result.get("stats") if isinstance(result.get("stats"), dict) else {}
+        stats.update(items=len(items), providerLookupRows=len(lookup_items))
         queried = int(stats.get("queried") or stats.get("requests") or 0)
         projects = int(stats.get("sourceProjects") or len({(r.get("provider"), r.get("projectId")) for r in records.values() if r.get("projectId")}))
         if progress:
@@ -482,6 +519,54 @@ class SourceScanner:
         return {"records": {}, "itemRecords": records, "mode": "sources", "sourceEngine": "rust",
                 "sourceProjects": projects, "manualSources": sum(r.get("outcome") in {"manual", "unsupported"} for r in records.values()),
                 "queried": queried, "adapterStats": stats, "errors": [str(x)[:300] for x in result.get("errors", [])[:100]], "checkedAt": time.time()}
+
+    def _complete_release_details(self, request, result, cancel_event, deadline, epoch):
+        """Recover rows compacted by the native helper's aggregate response byte budget."""
+        records = result["itemRecords"]
+        partial = {key for key, raw in records.items() if isinstance(raw, dict) and raw.get("detailsTruncated")}
+        if not partial:
+            return
+        complete = {}
+        for raw in records.values():
+            if isinstance(raw, dict) and not raw.get("detailsTruncated") and raw.get("sourceUrl") and raw.get("outcome") == "release":
+                complete[raw["sourceUrl"]] = raw
+        for item in request["items"]:
+            key = item["id"]
+            if key not in partial:
+                continue
+            source = item["source"]["url"]
+            if not source or records[key].get("sourceUrl") != source:
+                continue
+            if source not in complete:
+                remaining = int((deadline - time.monotonic()) * 1000)
+                if remaining < 100 or cancel_event.is_set():
+                    break
+                with self._cache_lock:
+                    if self._scan_epoch != epoch:
+                        break
+                # A single project cannot lose details behind unrelated records.
+                # Reuse the latest provider cache and backoff, including earlier retries.
+                retry = dict(request, items=[item], force=False, budgetMs=min(remaining, request["budgetMs"]),
+                             cache=result.get("cache") or {"entries":[]})
+                try:
+                    single = self.runner.run(retry, cancel_event=cancel_event)
+                except (RuntimeError, ValueError, TypeError, OSError):
+                    complete[source] = None
+                    continue
+                candidate = single.get("itemRecords", {}).get(key)
+                complete[source] = candidate if isinstance(candidate, dict) and candidate.get("sourceUrl") == source else None
+                if isinstance(single.get("cache"), dict):
+                    result["cache"] = single["cache"]
+                totals = result.setdefault("stats", {})
+                extra = single.get("stats") or {}
+                for name in ("queried","cacheHits","revalidated","rateLimited"):
+                    if type(extra.get(name)) is int:
+                        totals[name] = int(totals.get(name) or 0) + extra[name]
+                totals["elapsedMs"] = (time.monotonic() - deadline + request["budgetMs"] / 1000) * 1000
+                result.setdefault("errors", []).extend(single.get("errors") or [])
+            recovered = complete[source]
+            if recovered is not None:
+                records[key] = recovered
 
     def _unavailable(self, item: dict, reason: str) -> dict:
         source = item.get("source") or {}

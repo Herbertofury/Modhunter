@@ -29,6 +29,12 @@ a changed scope or duplicate provider ID leaves the evidence unknown. If Nexus
 does not return the recorded ID, the picker does not substitute a matching
 name or version or claim the file was removed.
 
+### Published release files
+
+GitHub and GitLab release details show all validated archives in the file picker and list other published entries in **Original-release entries**. The latter can be inspected on the publisher's release page. The inspector shows every dependency declaration returned by a supported source and records the individual archive identity and published hashes when you review a download.
+
+The live scanner checks repeated references to the same verified project once and compares each installed version separately. Its cache can retain a complete provider response within the existing total cache budget. A source response that exceeds the transport byte budget or misses its deadline stays marked for review or recheck.
+
 ## One-click MO2 updates (default experience)
 
 1. Open Modhunter from **MO2 → Tools → Update Arsenal**, using your normal active profile and Nexus login. Run **Check all mod sources** or your preferred fast audit. The current MO2 game/profile/installed versions remain authoritative.

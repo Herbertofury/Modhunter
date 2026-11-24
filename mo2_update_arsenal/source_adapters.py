@@ -184,11 +184,20 @@ def normalize_adapter_record(item: dict, raw: dict, *, now=None) -> dict:
     if not same_source:
         result.update(outcome="unavailable", verdict="unknown", reason="Source identity changed or the adapter result does not match the selected project.")
         return result
+    if raw.get("detailsTruncated") is True:
+        result.update(detailsTruncated=True, outcome="review", verdict="review",
+                      reason=str(raw.get("detailReason") or "Full release details are unavailable. Recheck this source."))
+        return result
     for field in ("projectId", "releaseId", "latestVersion", "publishedAt", "releaseName", "channel", "publisherId", "projectTeamId", "teamId", "title", "projectStatus", "moderationStatus"):
         if isinstance(raw.get(field), (str, int, float)) and not isinstance(raw.get(field), bool):
             result[field] = str(raw[field])[:240]
     if type(raw.get("manualAssetCount")) is int and raw["manualAssetCount"] >= 0:
         result["manualAssetCount"] = raw["manualAssetCount"]
+    if isinstance(raw.get("manualFiles"), list):
+        result["manualFiles"] = [
+            {"name": str(entry.get("name") or ""), "assetId": entry.get("assetId") if type(entry.get("assetId")) is int else None,
+             "size": entry.get("size") if type(entry.get("size")) is int and entry["size"] >= 0 else None}
+            for entry in raw["manualFiles"] if isinstance(entry, dict)]
     result["releaseUrl"] = _safe_url(raw.get("releaseUrl") or source_url)
     for field, limit in (("summary", 4000), ("changelog", 24000)):
         if isinstance(raw.get(field), str):
@@ -209,13 +218,13 @@ def normalize_adapter_record(item: dict, raw: dict, *, now=None) -> dict:
         result["dependencies"] = [{key: str(value)[:300] for key, value in dep.items()
                                    if key in {"id", "projectId", "versionId", "name", "kind", "type", "version", "url"}
                                    and isinstance(value, (str, int)) and not isinstance(value, bool)}
-                                  for dep in raw["dependencies"][:150] if isinstance(dep, dict)]
+                                  for dep in raw["dependencies"] if isinstance(dep, dict)]
     for field in ("retryAt", "rateLimitRemaining", "rateLimitReset"):
         value = raw.get(field)
         if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
             result[field] = value
     result["releaseAssets"] = []
-    for asset in raw.get("releaseAssets", [])[:200] if isinstance(raw.get("releaseAssets"), list) else []:
+    for asset in raw["releaseAssets"] if isinstance(raw.get("releaseAssets"), list) else []:
         if not isinstance(asset, dict):
             continue
         safe = {k: str(asset[k])[:1800 if k == "url" else 300] for k in
@@ -338,7 +347,7 @@ def compact_source_update(update: dict) -> dict:
         return deepcopy(update)
     fields = {"provider", "source", "sourceUrl", "projectId", "releaseId", "releaseUrl", "releaseName",
               "verdict", "latestVersion", "checkedAt", "expiresAt", "retryAt", "availability", "freshness",
-              "outcome", "reason", "capabilities", "sourceEngine", "publishedAt", "manualAssetCount", "channel", "moderationStatus"}
+              "outcome", "reason", "capabilities", "sourceEngine", "publishedAt", "manualAssetCount", "detailsTruncated", "channel", "moderationStatus"}
     result = {key: deepcopy(value) for key, value in update.items() if key in fields}
     compatibility = update.get("compatibility")
     if isinstance(compatibility, dict):
@@ -362,7 +371,8 @@ def compact_source_update(update: dict) -> dict:
     for field in ("author", "publisher"):
         if person := _person(update.get(field)):
             result[field] = person
-    result["releaseAssetCount"] = len(update.get("releaseAssets") or [])
-    result["dependencyCount"] = len(update.get("dependencies") or [])
+    if not update.get("detailsTruncated"):
+        result["releaseAssetCount"] = len(update.get("releaseAssets") or [])
+        result["dependencyCount"] = len(update.get("dependencies") or [])
     result["detailsAvailable"] = True
     return result

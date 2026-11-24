@@ -125,3 +125,21 @@ test('the coverage table retains the first adapter and exact counts without walk
  assert.match(html,/<th scope="row">Original website<\/th><td>1<\/td><td>Check sources to establish support<\/td><td>Original provider page<\/td>/);
  assert.equal(reads,0);
 });
+
+test('all release archives and dependency declarations reach the inspector and file picker',()=>{
+ const mod=row();
+ const asset=mod.update.releaseAssets[0];
+ mod.update.releaseAssets=Array.from({length:452},(_,i)=>({...asset,name:'Archive-'+i+'.zip',assetKey:'gitlab:group/project:v2:'+i}));
+ mod.update.dependencies=Array.from({length:401},(_,i)=>({projectId:'required-'+i,kind:'required'}));
+ mod.update.manualAssetCount=1;
+ const cards=sources.assetCards(mod);
+ assert.equal((cards.match(/data-asset-key=/g)||[]).length,452);
+ assert.ok(cards.includes('Archive-451.zip'));
+ assert.ok(sources.details(mod).includes('required-400'));
+ assert.ok(sources.searchText(mod).includes('required-400'));
+ assert.ok(sources.details(mod).includes('additional release entry requires'));
+ mod.update.manualFiles=[{name:'<unknown>.exe',assetId:2,size:800}];
+ const html=sources.details(mod);
+ assert.ok(html.includes('&lt;unknown&gt;.exe'));
+ assert.ok(!html.includes('<unknown>.exe'));
+});

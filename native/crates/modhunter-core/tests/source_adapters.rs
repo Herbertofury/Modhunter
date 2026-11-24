@@ -844,3 +844,41 @@ fn service_retry_after_accepts_http_dates_and_bounds_excessive_delays() {
         assert_eq!(result.item_records["row"]["retryAt"], expected, "{header}");
     }
 }
+
+#[test]
+fn complete_large_provider_release_has_every_admitted_asset_and_a_warm_cache() {
+    let mut data = gh();
+    let mut files = Vec::new();
+    for id in 1..=401 {
+        let mut asset = data["assets"][0].clone();
+        let name = format!("Archive-{id}.zip");
+        asset["id"] = id.into();
+        asset["name"] = json!(name);
+        asset["browser_download_url"] = json!(format!(
+            "https://github.com/owner/mod/releases/download/v2.0/{name}"
+        ));
+        files.push(asset);
+    }
+    let mut manual = files[0].clone();
+    manual["id"] = 999.into();
+    manual["name"] = "release-notes.txt".into();
+    files.push(manual);
+    data["assets"] = files.into();
+    let mock = Mock::new();
+    mock.reply(GH, 200, data, &[]);
+    let mut scan = request("https://github.com/owner/mod");
+    let first = scan_sources_with(&scan, &mock, NOW).unwrap();
+    let row = &first.item_records["row"];
+    assert_eq!(row["releaseAssets"].as_array().unwrap().len(), 401);
+    assert_eq!(row["releaseAssets"][400]["assetId"], 401);
+    assert_eq!(row["manualAssetCount"], 1);
+    assert_eq!(row["manualFiles"][0]["name"], "release-notes.txt");
+    scan.cache = first.cache;
+    let next = scan_sources_with(&scan, &mock, NOW + 1).unwrap();
+    assert_eq!(next.stats["cacheHits"], 1);
+    assert_eq!(
+        next.item_records["row"]["releaseAssets"],
+        row["releaseAssets"]
+    );
+    assert_eq!(mock.count(), 1);
+}

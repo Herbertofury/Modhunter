@@ -77,14 +77,11 @@ fn person(
     );
     json!({"name":name,"url":profile_url,"avatarUrl":avatar,"role":role})
 }
-fn string_list(value: &Value, key: &str, max: usize) -> Result<Vec<String>, String> {
+fn string_list(value: &Value, key: &str) -> Result<Vec<String>, String> {
     let list = value
         .get(key)
         .and_then(Value::as_array)
         .ok_or_else(|| format!("Missing {key}"))?;
-    if list.len() > max {
-        return Err(format!("Excessive {key}"));
-    }
     list.iter()
         .map(|v| {
             v.as_str()
@@ -125,6 +122,17 @@ fn filename(name: &str) -> bool {
             .any(|c| c.is_control() || matches!(c, '/' | '\\'))
         && name != "."
         && name != ".."
+}
+// Preserve the full published inventory, including entries that cannot be bound
+// to a reviewed MO2 download. URLs from those records never become download actions.
+fn manual_entries(list: &[Value], admitted: &[Value]) -> Vec<Value> {
+    let reviewed: HashSet<_> = admitted
+        .iter()
+        .filter_map(|a| a["assetId"].as_u64())
+        .collect();
+    list.iter().filter(|a|!a["id"].as_u64().is_some_and(|id|reviewed.contains(&id))).map(|a|{
+        json!({"name":text(a,"name",512),"assetId":a["id"].as_u64(),"size":a["size"].as_u64()})
+    }).collect()
 }
 fn base(id: &ProjectIdentity, observation: &Observation) -> Value {
     json!({"outcome":"release","provider":id.provider,"projectId":id.project_id,
@@ -186,9 +194,6 @@ pub fn github(id: &ProjectIdentity, observation: &Observation, now: u64) -> Resu
         .get("assets")
         .and_then(Value::as_array)
         .ok_or("Missing release assets")?;
-    if items.len() > 300 {
-        return Err("Too many release assets for one bounded review".into());
-    }
     let mut assets = Vec::new();
     let mut seen = HashSet::new();
     for item in items {
@@ -255,6 +260,9 @@ pub fn github(id: &ProjectIdentity, observation: &Observation, now: u64) -> Resu
         "github.com",
         "release publisher",
     );
+    let manual = manual_entries(items, &assets);
+    result["manualAssetCount"] = manual.len().into();
+    result["manualFiles"] = manual.into();
     result["releaseAssets"] = assets.into();
     result["channel"] = "stable".into();
     Ok(result)
@@ -304,9 +312,6 @@ pub fn gitlab(id: &ProjectIdentity, observation: &Observation, now: u64) -> Resu
     let links = data["assets"]["links"]
         .as_array()
         .ok_or("Missing GitLab release asset links")?;
-    if links.len() > 300 {
-        return Err("Too many GitLab assets for one bounded review".into());
-    }
     let mut assets = Vec::new();
     let mut seen = HashSet::new();
     for link in links {
@@ -366,7 +371,9 @@ pub fn gitlab(id: &ProjectIdentity, observation: &Observation, now: u64) -> Resu
         "gitlab.com",
         "release publisher",
     );
-    result["manualAssetCount"] = (links.len().saturating_sub(assets.len())).into();
+    let manual = manual_entries(links, &assets);
+    result["manualAssetCount"] = manual.len().into();
+    result["manualFiles"] = manual.into();
     result["releaseAssets"] = assets.into();
     result["channel"] = "stable".into();
     Ok(result)
@@ -414,9 +421,6 @@ pub fn modrinth(
         .value
         .as_array()
         .ok_or("Missing Modrinth version list")?;
-    if list.len() > 1000 {
-        return Err("Version list exceeds the bounded review limit".into());
-    }
     let mut seen = HashSet::new();
     let mut stable = Vec::new();
     for version in list {
@@ -440,8 +444,8 @@ pub fn modrinth(
         let Ok(date) = published(version, "date_published", now) else {
             continue;
         };
-        let loaders = string_list(version, "loaders", 100)?;
-        let games = string_list(version, "game_versions", 400)?;
+        let loaders = string_list(version, "loaders")?;
+        let games = string_list(version, "game_versions")?;
         let date_key = chrono::DateTime::parse_from_rfc3339(&date)
             .expect("already checked timestamp")
             .timestamp();
@@ -472,9 +476,6 @@ pub fn modrinth(
         .get("files")
         .and_then(Value::as_array)
         .ok_or("Missing Modrinth files")?;
-    if files.len() > 100 {
-        return Err("Too many files for one Modrinth version".into());
-    }
     let mut primary = 0;
     let mut names = HashSet::new();
     let mut assets = Vec::new();
@@ -529,9 +530,6 @@ pub fn modrinth(
         .get("dependencies")
         .and_then(Value::as_array)
         .ok_or("Missing Modrinth dependency list")?;
-    if dependencies.len() > 300 {
-        return Err("Too many Modrinth dependencies".into());
-    }
     let mut dep_records = Vec::new();
     for dependency in dependencies {
         let kind = required(dependency, "dependency_type", 20)?;
@@ -654,9 +652,6 @@ pub fn thunderstore(
         .get("community_listings")
         .and_then(Value::as_array)
         .ok_or("Missing Thunderstore community bindings")?;
-    if listings.len() > 300 {
-        return Err("Too many Thunderstore community listings for one bounded review".into());
-    }
     let matching_listings: Vec<_> = listings
         .iter()
         .filter(|listing| {
@@ -679,7 +674,7 @@ pub fn thunderstore(
         game_key(&request.game) != "unknown" && game_key(&request.game) == game_key(community)
     });
     let mut dependencies = Vec::new();
-    for dep in string_list(latest, "dependencies", 300)? {
+    for dep in string_list(latest, "dependencies")? {
         let parts: Vec<_> = dep.split('-').collect();
         if parts.len() != 3 || !parts.iter().all(|s| segment(s)) {
             return Err("Ambiguous Thunderstore dependency identity".into());

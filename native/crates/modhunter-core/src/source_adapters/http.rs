@@ -17,7 +17,8 @@ use std::time::{Duration, Instant};
 
 pub const BODY_LIMIT: usize = 2 * 1024 * 1024;
 const CACHE_LIMIT: usize = 4 * 1024 * 1024;
-const ENTRY_LIMIT: usize = 128 * 1024;
+// One complete provider record may occupy the same byte budget as a response.
+const ENTRY_LIMIT: usize = BODY_LIMIT;
 const TTL: u64 = 900;
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -560,14 +561,10 @@ impl<'a> HttpContext<'a> {
             retry_at: 0,
             last_status: 200,
         };
-        if serde_json::to_vec(&entry).is_ok_and(|v| v.len() <= ENTRY_LIMIT) {
-            self.cache
-                .lock()
-                .expect("cache mutex")
-                .insert(url.into(), entry);
-        } else {
-            self.cache.lock().expect("cache mutex").remove(url);
-        }
+        self.cache
+            .lock()
+            .expect("cache mutex")
+            .insert(url.into(), entry);
         Ok(Observation {
             value,
             checked_at: self.now,
@@ -618,16 +615,7 @@ impl<'a> HttpContext<'a> {
             .cloned()
             .collect();
         entries.sort_by_key(|e| std::cmp::Reverse(e.checked_at.max(e.retry_at)));
-        let mut total = 0;
-        entries.retain(|e| {
-            let size = serde_json::to_vec(e).map_or(CACHE_LIMIT + 1, |v| v.len());
-            let keep = total + size <= CACHE_LIMIT;
-            if keep {
-                total += size;
-            }
-            keep
-        });
-        entries.truncate(256);
+        // CacheStore::insert maintains these byte and entry limits for all inserts.
         SourceCache { entries }
     }
 }

@@ -35,6 +35,44 @@ class SourceCacheOwnershipTests(unittest.TestCase):
         self.runner = Runner()
         self.scanner = SourceScanner(runner=self.runner, cache_path=self.path)
 
+    def test_full_evidence_shared_and_retried_after_native_response_compaction(self):
+        from mo2_update_arsenal.source_adapters import compact_source_update, normalize_adapter_record
+        import time
+        row = PROFILE["items"][0]
+        urls = [row["source"]["url"], "https://github.com/other/release"]
+        items = [dict(row,id=str(i),source=dict(row["source"],url=url)) for i,url in enumerate((urls[0],urls[0],urls[1],urls[1]))]
+        items[1]["installedVersion"] = "3.0"
+        stamp = time.time()
+        base = dict(provider="github",outcome="release",freshness="fresh",checkedAt=stamp,expiresAt=stamp+900,latestVersion="2.0",
+                    dependencies=[{"projectId":str(n),"kind":"required"} for n in range(401)])
+        partial = dict(outcome="release",provider="github",detailsTruncated=True)
+        def run(request, **kwargs):
+            ids = [i["id"] for i in request["items"]]
+            self.runner.calls += 1
+            if self.runner.calls == 1:
+                self.assertEqual(ids,["0","2"])
+                records = {i["id"]:dict(base if i["id"]=="0" else partial,sourceUrl=i["source"]["url"]) for i in request["items"]}
+            else:
+                self.assertEqual(ids,["2"])
+                self.assertFalse(request["force"])
+                records = {"2":dict(base,sourceUrl=urls[1])}
+            return {"itemRecords":records,"cache":{"entries":[]},"stats":{"queried":1},"errors":[]}
+        self.runner.run = run
+        result = self.scanner.scan(dict(PROFILE,items=items))
+        self.assertEqual(self.runner.calls,2)
+        self.assertEqual(result["queried"],2)
+        self.assertEqual(result["adapterStats"]["items"],4)
+        self.assertEqual(result["adapterStats"]["providerLookupRows"],2)
+        self.assertEqual(result["itemRecords"]["0"]["verdict"],"candidate")
+        self.assertEqual(result["itemRecords"]["1"]["verdict"],"newer-installed")
+        self.assertIsNot(result["itemRecords"]["2"]["dependencies"],result["itemRecords"]["3"]["dependencies"])
+        for record in result["itemRecords"].values():
+            self.assertEqual(compact_source_update(record)["dependencyCount"],401)
+            self.assertEqual(record["dependencies"][-1]["projectId"],"400")
+        unavailable = normalize_adapter_record(row,dict(partial,sourceUrl=urls[0]))
+        self.assertEqual(unavailable["verdict"],"review")
+        self.assertNotIn("dependencyCount",compact_source_update(unavailable))
+
     def delayed_write(self, cancel_old):
         paused, release = threading.Event(), threading.Event()
         self.addCleanup(release.set)

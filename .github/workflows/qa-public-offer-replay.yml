@@ -1,0 +1,52 @@
+name: Replay frozen public Skyrim downloads
+on:
+  push:
+    branches: [upgrade/real-fomod-acceptance-20261124]
+    paths: ['.github/workflows/qa-public-offer-replay.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  replay:
+    runs-on: windows-2022
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Retrieve the reviewed candidate installer
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 45468052949
+          name: Modhunter-Rust-Windows
+          path: frozen
+      - name: Verify and exercise the exact public manager bytes
+        shell: pwsh
+        run: |
+          $Installer = (Get-ChildItem frozen -Recurse -Filter Modhunter_0.12.6_x64-setup.exe -File).FullName
+          if ((Get-FileHash -LiteralPath $Installer).Hash -cne '9C6D92DDC3A3E660163F8383416A8F8351591160D48A4F1DE930F786945298FB') { throw 'Frozen installer identity changed.' }
+          $ExeRoot = Join-Path $env:RUNNER_TEMP 'frozen-public-desktop'
+          & 7z x $Installer "-o$ExeRoot" 'Modhunter.exe' -y
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $Evidence = New-Item -ItemType Directory "$PWD/public-evidence"
+          $Args = [Diagnostics.ProcessStartInfo]::new((Join-Path $ExeRoot 'Modhunter.exe'))
+          $Args.UseShellExecute = $false
+          $Args.ArgumentList.Add("--watchtower-smoke-output=$(Join-Path $Evidence 'managed.json')")
+          $Args.ArgumentList.Add('--verify-public-skyrim-offers')
+          $Proc = [Diagnostics.Process]::Start($Args)
+          if (!$Proc.WaitForExit(120000)) { $Proc.Kill(); throw 'Public acquisition exceeded deadline.' }
+          if (Test-Path public-evidence/managed.json) {
+            $Proof = Get-Content -Raw public-evidence/managed.json | ConvertFrom-Json
+            Write-Output "ok=$($Proof.ok) error=$($Proof.error)"
+          }
+          exit $Proc.ExitCode
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frozen-public-release-acquisition
+          path: |
+            public-evidence/*.json
+            public-evidence/*.jsonl
+          retention-days: 14

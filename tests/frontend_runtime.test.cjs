@@ -50,7 +50,9 @@ function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={
  };
  context.window=context;context.__MODHUNTER_NATIVE_WATCHTOWER__=nativeWatch;context.location={assign:value=>nativeNavigations.push(value)};
  context.fetch=async(url,options={})=>{
-  const endpoint=String(url).slice(5),method=options.method||'GET',key=method+' '+endpoint;
+  const endpoint=String(url).slice(5),method=options.method||'GET';
+  const n=endpoint==='focus'?(state.focusCounter=(state.focusCounter||0)+1):0;
+  const key=method+' '+endpoint+(n?' #'+n:'');
   const body=JSON.parse(options.body||'{}'),c=structuredClone(state.catalog);
   calls.push({endpoint,method,body});active.set(key,(active.get(key)||0)+1);maximum.set(key,Math.max(maximum.get(key)||0,active.get(key)));
   try{
@@ -58,7 +60,8 @@ function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={
    if(endpoint==='snapshot'){
     if(state.failSnapshots-- >0)throw Error('Organizer unavailable');
     value={ok:true,catalog:c,generation:state.generation};
-   }else if(endpoint==='revision')value={ok:true,profileId:c.profileId,generation:state.generation};
+   }else if(endpoint==='revision')value={ok:true,profileId:c.profileId,generation:state.generation,...state.revisionReply};
+   else if(endpoint==='focus')value={ok:true,selectionRevision:n,...state.focusReplies?.[n-1]};
    else if(endpoint==='game?compact=1')value={ok:true,profileId:c.profileId,score:state.score,updates:0,feed:[]};
    else if(endpoint==='progress'&&method==='GET'&&state.progressReadFailures-- >0)throw Error('Fixture progress read failed');
    else if(endpoint==='progress'&&method==='POST'&&state.progressError)throw Error(state.progressError);
@@ -85,7 +88,7 @@ function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={
    return{ok:true,json:async()=>value};
   }finally{active.set(key,active.get(key)-1)}
  };
- const instrument='window.__RUNTIME__={setRows,libraryRowCacheOwner,clearLibraryRowCache,rememberFilteredLibraryRows,takeFilteredLibraryRow,cacheMap:()=>LIBRARY_DETACHED_ROWS,importJSON,attachNativeTracking,trackPageIntent,trackModPage,getSrc,modHTML,renderWorkshop,sourceLinksPending,requestLiveCatalog,bridgeRequest,scanLive,fastUpdateAll,refreshWorkshop,refreshDownloads,nextWorkshopCandidate,pollLiveBridge,updatePrefs,save,counts,filtered,render,importOfflineCatalog,scheduleSearchRender,analyzePlugins,refreshModHealth,drawInspector,loadModInsights,loadSourceDetails,sourceDetailMod,openFilePicker,closeFilePicker,exportWorkshop,state:()=>({connected:LIVE_CONNECTED,quick:QUICK_RUNNING,profileEpoch:PROFILE_EPOCH}),setRow:(id,value,invalidatePlan=true)=>{markSourceEdit(getRow(id).url,value.url);STORE.rows[id]=value;save(invalidatePlan)},setQuery:q=>{STORE.prefs.query=q;scheduleSearchRender()}};';
+ const instrument='window.__RUNTIME__={setRows,libraryRowCacheOwner,clearLibraryRowCache,rememberFilteredLibraryRows,takeFilteredLibraryRow,cacheMap:()=>LIBRARY_DETACHED_ROWS,importJSON,attachNativeTracking,trackPageIntent,trackModPage,getSrc,modHTML,renderWorkshop,sourceLinksPending,requestLiveCatalog,bridgeRequest,scanLive,fastUpdateAll,refreshWorkshop,refreshDownloads,nextWorkshopCandidate,pollLiveBridge,locateInMO2,updatePrefs,save,counts,filtered,render,importOfflineCatalog,scheduleSearchRender,analyzePlugins,refreshModHealth,drawInspector,loadModInsights,loadSourceDetails,sourceDetailMod,openFilePicker,closeFilePicker,exportWorkshop,state:()=>({connected:LIVE_CONNECTED,quick:QUICK_RUNNING,profileEpoch:PROFILE_EPOCH}),setRow:(id,value,invalidatePlan=true)=>{markSourceEdit(getRow(id).url,value.url);STORE.rows[id]=value;save(invalidatePlan)},setQuery:q=>{STORE.prefs.query=q;scheduleSearchRender()}};';
  const source=APP.replace('/*__POWERSHELL__*/','""').replace(/\}\)\(\);\s*$/,instrument+'\n})();');
  vm.createContext(context);vm.runInContext(SOURCES,context,{filename:'source_insights.js'});vm.runInContext(INSIGHTS,context,{filename:'mod_insights.js'});vm.runInContext(source,context,{filename:'app.js'});
  return{context,state,nodes,timers,calls,active,maximum,pending,nativeNavigations,api:context.__RUNTIME__,qa:context.__ARSENAL_QA__,
@@ -1122,4 +1125,58 @@ test('direct Gallery switch counts exact sources without recomputing dashboard r
  assert.match(h.nodes.get('listFooter').textContent,/3 MATCHING MODS · 3 EXACT ORIGINAL SOURCE/);
  h.api.updatePrefs({query:'Paperlark'});
  assert.match(h.nodes.get('listFooter').textContent,/1 MATCHING MOD · 3 EXACT ORIGINAL SOURCE/);
+});
+
+
+test('newer reveal owns effects and controls despite out-of-order same-row and different-row replies',async()=>{
+ const h=harness();await h.settle();
+ const [a,b]=h.qa.getCatalog().items, events=[];
+ h.context.AetherFX={reveal:node=>events.push(node.id),config(){}};
+ const button=h.context.document.getElementById('same-button');
+ for(const [oldMod,newMod,first] of [[a,b,1],[b,b,3]]){
+  h.state.defer.add('POST focus #'+first);h.state.defer.add('POST focus #'+(first+1));
+  const old=h.api.locateInMO2(oldMod,button),latest=h.api.locateInMO2(newMod,button);
+  await h.settle();
+  const sent=h.calls.filter(x=>x.endpoint==='focus').slice(-2).map(x=>x.body);
+  assert.equal(sent[0].generation,sent[1].generation);
+  assert.deepEqual(sent.map(x=>x.id),[oldMod.id,newMod.id]);
+  assert.ok(sent.every(x=>!('intent' in x)&&!('client' in x)&&!('sequence' in x)));
+  h.release('POST focus #'+(first+1));await latest;
+  assert.equal(button.disabled,false);
+  const length=events.length;
+  h.release('POST focus #'+first);await old;
+  assert.equal(events.length,length);
+  assert.equal(events.at(-1),'row-'+newMod.id);
+ }
+ assert.deepEqual(events,['row-item-1','row-item-1']);
+});
+
+test('same-profile generation replacement refuses a late successful reveal and current button recovers',async()=>{
+ const h=harness();await h.settle();const [a]=h.qa.getCatalog().items;
+ const events=[],button=h.context.document.getElementById('button');
+ h.context.AetherFX={reveal:node=>events.push(node.id),config(){}};
+ h.state.defer.add('POST focus #1');
+ const delayed=h.api.locateInMO2(a,button);await h.settle();
+ h.state.generation=2;
+ const replacement=await h.api.requestLiveCatalog();await replacement.ready;
+ h.release('POST focus #1');await delayed;
+ assert.equal(events.length,0);
+ assert.equal(button.disabled,false);
+});
+
+test('older revision poll cannot repaint over a newer native focus observation',async()=>{
+ const h=harness();await h.settle();const [a,b]=h.qa.getCatalog().items;
+ const events=[];
+ h.context.AetherFX={reveal:node=>events.push('reveal:'+node.id),select:node=>events.push('select:'+node.id)};
+ h.state.revisionReply={selectedModId:a.id,selectionRevision:3};
+ h.state.defer.add('GET revision');
+ const olderSinceBeforeFocus=h.api.pollLiveBridge();await h.settle();
+ h.state.focusReplies=[{selectionRevision:5}];
+ await h.api.locateInMO2(b,h.context.document.getElementById('focus-now'));
+ h.release('GET revision');await olderSinceBeforeFocus;
+ assert.deepEqual(events,['reveal:row-item-1']);
+ assert.equal(h.context.document.getElementById('row-item-1').classList.contains('native-selected'),true);
+ h.state.revisionReply={selectedModId:a.id,selectionRevision:6};
+ await h.api.pollLiveBridge();
+ assert.deepEqual(events,['reveal:row-item-1','select:row-item-0']);
 });

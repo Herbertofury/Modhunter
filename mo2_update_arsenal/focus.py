@@ -50,7 +50,11 @@ def find_mo2_view(qtwidgets):
     return None, None
 
 
-def navigate(organizer, mod_name: str, qtcore, qtwidgets):
+def navigate(organizer, mod_name: str, qtcore, qtwidgets, *, still_current=None):
+    is_current = still_current or (lambda: True)
+    superseded = {"ok": False, "error": "A newer MO2 selection superseded this navigation"}
+    if not is_current():
+        return superseded
     if not organizer.modList().getMod(mod_name):
         return {"ok": False, "error": "The requested mod is no longer installed"}
     window, view = find_mo2_view(qtwidgets)
@@ -64,24 +68,36 @@ def navigate(organizer, mod_name: str, qtcore, qtwidgets):
     if not matches:
         text_filter = window.findChild(qtwidgets.QLineEdit, "modFilterEdit")
         if text_filter is not None and text_filter.text():
+            if not is_current():
+                return superseded
             # A deliberate reveal request may clear MO2's text-only filter;
             # category filters and the user's sort/order remain intact.
             text_filter.clear()
             cleared_filter = True
+            if not is_current():
+                return superseded
             matches = find_exact_indices(model, display, column, qtcore)
     if len(matches) != 1:
         return {"ok": False, "error": "Mod is hidden by MO2's category filter or its display name is ambiguous. Clear the category filter or select this mod in MO2 manually." if matches == [] else "Several MO2 rows have this display name. Refusing to select the wrong mod.", "matchedRows": len(matches)}
+    if not is_current():
+        return superseded
     index = matches[0]
     ancestor = index.parent()
     while ancestor.isValid():
         view.expand(ancestor)
         ancestor = ancestor.parent()
+    if not is_current():
+        return superseded
     selection = view.selectionModel()
     if selection is None:
         return {"ok": False, "error": "MO2 selection model is unavailable"}
     flags = qtcore.QItemSelectionModel.SelectionFlag.ClearAndSelect | qtcore.QItemSelectionModel.SelectionFlag.Rows
     selection.select(index, flags)
+    if not is_current():
+        return superseded
     view.setCurrentIndex(index)
+    if not is_current():
+        return superseded
     view.scrollTo(index, qtwidgets.QAbstractItemView.ScrollHint.PositionAtCenter)
     if window.isMinimized():
         window.showNormal()

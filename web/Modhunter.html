@@ -3896,9 +3896,24 @@ $('workshopResults').addEventListener('click',e=>{
 function renderLiveStats(){if(!BRIDGE.active||!LIVE_CATALOG)return;const items=DATA.items;const found=items.filter(isUpdate).length;const reviewed=items.filter(m=>m.update?.verdict==='review').length;SET('liveUpdateCount',found+' update candidates');SET('liveCached',reviewed+' need version review · not installation approval');}
 let PAINTED_NATIVE='',PAINTED_TARGET='';
 function paintNativeSelection(){const target=focusedRowId||NATIVE_SELECTED;for(const id of new Set([PAINTED_NATIVE,PAINTED_TARGET,NATIVE_SELECTED,target])){const row=id&&$('row-'+id);if(row){row.classList.toggle('native-selected',BRIDGE.active&&id===NATIVE_SELECTED);row.classList.toggle('aether-target',Boolean(target&&id===target))}}PAINTED_NATIVE=NATIVE_SELECTED;PAINTED_TARGET=target}
-async function locateInMO2(m,el){if(!BRIDGE.active||!LIVE_CATALOG){toast('Open from MO2 to reveal a mod.');return}const profile=LIVE_CATALOG.profileId;el.disabled=true;
- try{const r=await bridgeRequest('POST','focus',{id:m.id,profileId:profile});if(LIVE_CATALOG?.profileId!==profile)return;NATIVE_SELECTED=m.id;paintNativeSelection();window.AetherFX?.reveal($('row-'+m.id));toast('⌖ '+(r.message||'MO2 jumped to '+m.name));}
- catch(ex){toast('MO2 navigation: '+ex.message)}finally{el.disabled=false}}
+let MO2_FOCUS_SEQUENCE=0,NATIVE_SELECTION_CLOCK=null,MO2_FOCUS_BUTTONS;
+function acceptNativeSelectionRevision(revision){
+ if(!Number.isSafeInteger(revision))return true; // Older plugin protocol.
+ if(NATIVE_SELECTION_CLOCK?.generation===LIVE_GENERATION&&revision<NATIVE_SELECTION_CLOCK.revision)return false;
+ NATIVE_SELECTION_CLOCK={generation:LIVE_GENERATION,revision};return true;
+}
+async function locateInMO2(m,el){
+ if(!BRIDGE.active||!LIVE_CATALOG){toast('Open from MO2 to reveal a mod.');return}
+ const context=profileContext(),generation=LIVE_GENERATION,sequence=++MO2_FOCUS_SEQUENCE;
+ const stillCurrent=()=>sequence===MO2_FOCUS_SEQUENCE&&generation===LIVE_GENERATION&&contextIsCurrent(context);
+ (MO2_FOCUS_BUTTONS??=new WeakMap()).set(el,sequence);el.disabled=true;
+ try{
+  const r=await bridgeRequest('POST','focus',{id:m.id,profileId:context.profile,generation});
+  if(!stillCurrent()||!acceptNativeSelectionRevision(r.selectionRevision))return;
+  NATIVE_SELECTED=m.id;paintNativeSelection();window.AetherFX?.reveal($('row-'+m.id));toast('⌖ '+(r.message||'MO2 jumped to '+m.name));
+ }catch(ex){if(stillCurrent())toast('MO2 navigation: '+ex.message)}
+ finally{if(MO2_FOCUS_BUTTONS.get(el)===sequence){MO2_FOCUS_BUTTONS.delete(el);el.disabled=false}}
+}
 function questRank(score){if(score>=20000)return'LEGENDARY DRAGONBORN';if(score>=9000)return'ARCHMAGE OF THE FORGE';if(score>=3500)return'EBONY SENTINEL';if(score>=1000)return'SKYFORGE KNIGHT';if(score>=250)return'IRON VANGUARD';return'NOVICE ADVENTURER'}
 function renderQuest(){if(!$('gameBoard'))return;const c=counts(),isLive=Boolean(BRIDGE.active&&LIVE_CATALOG),score=isLive?Number(GAME?.score||0):c.done*10,updates=isLive?Number(GAME?.updates||0):c.done;
  SET('questLevel',isLive?(GAME?.level||1):(1+Math.floor(c.done/15)));SET('questRank',questRank(score));SET('questScore',score.toLocaleString()+' XP');SET('questUpdates',isLive?`${updates} verified MO2 updates`:`${updates} practice checklist clears`);SET('questRankHint',isLive?'NATIVE MO2 VERIFICATION · PERSISTENT':'PRACTICE ONLY · NO VERIFIED SCORE');SET('questCombo',isLive?(GAME?.bestCombo||0)+' ×':'0 ×');SET('questCrowns',isLive?(GAME?.victories||0)+' ♛':'0 ♛');
@@ -3970,7 +3985,7 @@ async function pollLiveBridge(){
   if(!contextIsCurrent(context))return;
   if(revision.generation!==LIVE_GENERATION||revision.profileId!==LIVE_CATALOG.profileId){const snap=await requestLiveCatalog();if(!snap)return;SET('liveSync','Profile synchronized');}
   if(!contextIsCurrent(context))return;
-  if(revision.profileId===LIVE_CATALOG?.profileId&&NATIVE_SELECTED!==revision.selectedModId){NATIVE_SELECTED=revision.selectedModId||'';paintNativeSelection();if(NATIVE_SELECTED)window.AetherFX?.select($('row-'+NATIVE_SELECTED),{source:'mo2'})}
+  if(revision.profileId===LIVE_CATALOG?.profileId&&revision.generation===LIVE_GENERATION&&acceptNativeSelectionRevision(revision.selectionRevision)&&NATIVE_SELECTED!==revision.selectedModId){NATIVE_SELECTED=revision.selectedModId||'';paintNativeSelection();if(NATIVE_SELECTED)window.AetherFX?.select($('row-'+NATIVE_SELECTED),{source:'mo2'})}
   // Each endpoint coalesces concurrent readers. The next poll is scheduled only
   // after this turn completes, so a slow MO2 callback cannot pile up requests.
   if(!PROGRESS_READY)await hydrateProgress(LIVE_CATALOG.profileId);

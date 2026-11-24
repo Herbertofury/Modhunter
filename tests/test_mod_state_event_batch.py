@@ -46,7 +46,7 @@ class ModStateEventBatchTests(unittest.TestCase):
 
     def test_live_bulk_event_cancels_active_capture_and_preserves_one_followup(self):
         plugin = self.plugin
-        plugin.server = SimpleNamespace(content=Mock(), stop=Mock())
+        plugin.server = SimpleNamespace(content=Mock(), stop=Mock(), invalidate_focus_profile=Mock())
         plugin._publish_diagnostics = Mock()
         captured, projected, published, deliveries, slices = [], [], [], [], []
         context = ["Profile A"]
@@ -92,6 +92,8 @@ class ModStateEventBatchTests(unittest.TestCase):
             plugin._on_profile_changed("Profile B", "Profile A")
             plugin._on_plugin_states_changed({"Plugin": 1})
 
+            plugin.server.invalidate_focus_profile.assert_called()
+            self.assertEqual(plugin.server.invalidate_focus_profile.call_count, 2)
             self.assertTrue(old.cancel.is_set())
             self.assertEqual(bg._epoch, old_epoch + 4)
             self.assertEqual([ms for ms, _ in self.timers], [150])

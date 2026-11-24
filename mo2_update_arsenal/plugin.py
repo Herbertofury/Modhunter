@@ -50,6 +50,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
         self._runtime = "unknown"
         self._download_complete_callback = None
         self._selection_connected = False
+        self._focus_navigating = False
         self._native_nexus = None
         self._native_nexus_error = ''
         self._metadata_cache = LocalMetadataCache()
@@ -190,6 +191,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
 
     def _on_profile_changed(self, previous, current):
         if self.server is not None:
+            self.server.invalidate_focus_profile()
             self.server.content.invalidate(reason="profile")
         self._schedule_refresh()
 
@@ -672,13 +674,30 @@ class ModUpdateArsenal(mobase.IPluginTool):
         return {"ok": False, "error": "Connection dialog canceled"}
 
     def _focus_mod(self, payload: dict) -> dict:
-        snapshot = self.server.native_selection_snapshot([str(payload.get("modId") or "")])
-        if payload.get("profileId") != snapshot.get("profileId") or self.org.profileName() != snapshot.get("profileName"):
+        service = self.server
+        if service is None:
+            return {"ok": False, "error": "Modhunter service is not running"}
+        target = service.native_focus_target(payload, since_intent=True)
+        if not target["ok"]:
+            return target
+        if self.org.profileName() != target["profileName"]:
             return {"ok": False, "error": "MO2 profile changed during navigation; refresh Arsenal"}
-        mod = next((m for m in snapshot.get("items", []) if m.get("id") == payload.get("modId") and m.get("mo2InternalName") == payload.get("name")), None)
-        if not mod:
-            return {"ok": False, "error": "Exact mod target no longer matches MO2"}
-        return navigate(self.org, mod["mo2InternalName"], QtCore, QtWidgets)
+
+        def still_current():
+            return (self.server is service and self.org.profileName() == target["profileName"]
+                    and service.native_focus_target(payload)["ok"])
+
+        prior_focus = self._focus_navigating
+        self._focus_navigating = True
+        try:
+            result = navigate(self.org, target["name"], QtCore, QtWidgets, still_current=still_current)
+        finally:
+            self._focus_navigating = prior_focus
+        if result.get("ok") and not still_current():
+            return {"ok": False, "error": "A newer MO2 selection superseded this navigation"}
+        # This acknowledgement is also proof for the HTTP worker. A later
+        # organizer selection or catalog can supersede it before delivery.
+        return service.acknowledge_native_focus(payload, result)
 
     def _bind_native_selection(self):
         if self._selection_connected:
@@ -693,7 +712,10 @@ class ModUpdateArsenal(mobase.IPluginTool):
             pass
 
     def _on_native_selection(self, current, _previous):
-        if not self.server or not current.isValid():
+        # The owner's verified reveal acknowledges its exact native target
+        # explicitly. Its synchronous focus/filter signals are not newer
+        # user actions and cannot invalidate a queued subsequent reveal.
+        if self._focus_navigating or not self.server or not current.isValid():
             return
         _, view = find_mo2_view(QtWidgets)
         if view is None:

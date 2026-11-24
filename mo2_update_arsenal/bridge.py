@@ -133,6 +133,9 @@ class ArsenalService:
         self.chronicle = Chronicle(cache_path.with_name("chronicle.json"))
         self.chronicle.set_profile_name(snapshot.get("profileId", ""), snapshot.get("profileName", "Default"))
         self.selected_mod_id = ""
+        self._selection_revision = 0
+        self._focus_order = 0
+        self._focus_profile_pending = False
         self.api_key = ""  # Volatile: never persisted, sent to the browser, or included in backup files.
         self.native_nexus_available = False
         self.native_nexus_files_available: bool | None = None
@@ -202,7 +205,7 @@ class ArsenalService:
         with self._guard:
             return {"ok": True, "generation": self._generation,
                     "profileId": self._snapshot.get("profileId"),
-                    "selectedModId": self.selected_mod_id}
+                    "selectedModId": self.selected_mod_id, "selectionRevision": self._selection_revision}
 
     def health(self) -> dict:
         with self._guard:
@@ -409,13 +412,16 @@ class ArsenalService:
                                    "queued": [], "skipped": [], "failed": []}
             if not same_profile or not same_game:
                 self._scan = {"state": "idle", "reason": "MO2 profile changed"}
-                self.selected_mod_id = ""
+                self.set_selected("")
             elif awards or versions_changed or not same_runtime:
                 # A successful install/version change invalidates the old scan verdict.
                 self._scan = {"state": "stale", "reason": "Installed mods or runtime changed: rescan to verify latest state"}
             self.chronicle.set_profile_name(snapshot.get("profileId", ""), snapshot.get("profileName", "Default"))
             self._snapshot = snapshot
             self._items_by_id = new_items
+            self._focus_profile_pending = False
+            if self.selected_mod_id and self.selected_mod_id not in new_items:
+                self.set_selected("")
             self._labels_to_ids = self._label_index(snapshot)
             self._nexus_ids = {int(i.get("nexusId") or 0) for i in snapshot.get("items", [])}
             self._generation += 1
@@ -429,23 +435,84 @@ class ArsenalService:
                 # Selection-only changes are read by /api/revision directly.
                 # Do not invalidate the entire mod snapshot on every click.
                 self.selected_mod_id = mod_id
+                self._selection_revision += 1
 
-    def focus_mod(self, mod_id: str, profile_id: str) -> dict:
+    def invalidate_focus_profile(self) -> None:
+        """An organizer callback invalidates focus even before A→B→A publishes."""
         with self._guard:
-            if profile_id != self._snapshot.get("profileId"):
+            self._focus_order += 1
+            self._focus_profile_pending = True
+            self.set_selected("")
+
+    def _focus_error_locked(self, payload: dict, *, since_intent=False) -> str:
+        if (self._stopped or self._focus_profile_pending
+                or payload["profileId"] != self._snapshot.get("profileId")
+                or payload["generation"] != self._generation):
+            return "MO2 profile changed during navigation; refresh Arsenal"
+        item = self._items_by_id.get(payload["modId"])
+        if item is None or item.get("mo2InternalName") != payload["name"]:
+            return "Exact mod target no longer matches MO2"
+        if (payload["focusOrder"] != self._focus_order or since_intent
+                and self._selection_revision != payload["selectionRevision"]):
+            return "A newer MO2 selection superseded this navigation"
+        return ""
+
+    def native_focus_target(self, payload: dict, *, since_intent=False) -> dict:
+        """Kept to exact identity primitives, never a full or copied catalog row."""
+        with self._guard:
+            error = self._focus_error_locked(payload, since_intent=since_intent)
+            if error:
+                return {"ok": False, "error": error}
+            return {"ok": True, "profileName": self._snapshot.get("profileName"), "name": payload["name"]}
+
+    def acknowledge_native_focus(self, payload: dict, result: dict) -> dict:
+        """The owner finished traversal; only publish a still-owned selection."""
+        if not result.get("ok"):
+            return result
+        with self._guard:
+            error = self._focus_error_locked(payload)
+            if error:
+                return {"ok": False, "error": error}
+            self.set_selected(payload["modId"])
+            return {**result, "_selectionAck": self._selection_revision}
+
+    def focus_mod(self, mod_id: str, profile_id: str, *, generation=None) -> dict:
+        with self._guard:
+            if (self._stopped or self._focus_profile_pending or profile_id != self._snapshot.get("profileId")
+                    or generation is not None and (type(generation) is not int or generation != self._generation)):
                 return {"ok": False, "error": "Profile changed; refresh before navigating"}
             m = self._items_by_id.get(mod_id)
             if m is None:
                 return {"ok": False, "error": "Mod is not in the current MO2 profile"}
             internal = m.get("mo2InternalName")
-            if not internal:
+            if not isinstance(internal, str) or not internal:
                 return {"ok": False, "error": "Mod has no native MO2 identifier"}
-        # No untrusted browser string is used as a native widget target; only the
-        # profile's exact mobase internal-name snapshot may cross the Qt queue.
-        result = self.call_ui("focus", {"profileId": profile_id, "modId": mod_id, "name": internal}, timeout=12)
-        if result.get("ok"):
-            self.set_selected(mod_id)
-        return result
+            # The owner cannot infer a click clock from independent clients.
+            # A valid authenticated admission is the server ordering point.
+            self._focus_order += 1
+            payload = {"profileId": profile_id, "modId": mod_id, "name": internal,
+                       "generation": self._generation, "focusOrder": self._focus_order,
+                       "selectionRevision": self._selection_revision}
+        # Route input can never supply the native name, acknowledgement, or
+        # organizer generation. Asynchronous success does not confer ownership.
+        result = self.call_ui("focus", payload, timeout=12)
+        if not result.get("ok"):
+            return result
+        with self._guard:
+            error = self._focus_error_locked(payload)
+            if error:
+                return {"ok": False, "error": error}
+            ack = result.get("_selectionAck")
+            if ack is None:
+                # Preserve synchronous non-Qt adapter behavior, but never
+                # project it over a native selection made during the call.
+                if self._selection_revision != payload["selectionRevision"] and self.selected_mod_id != mod_id:
+                    return {"ok": False, "error": "A newer MO2 selection superseded this navigation"}
+                self.set_selected(mod_id)
+            elif ack != self._selection_revision or self.selected_mod_id != mod_id:
+                return {"ok": False, "error": "A newer MO2 selection superseded this navigation"}
+            return {**{k: v for k, v in result.items() if k != "_selectionAck"},
+                    "selectionRevision": self._selection_revision}
 
     def siege_targets(self) -> dict:
         """Only genuine live MO2 entries with a recorded newer Nexus version.
@@ -1984,7 +2051,8 @@ class ArsenalService:
                         return self._reply({"ok": False, "error": "Invalid world revision"}, 400)
                     return self._reply(service.chronicle.save_realm_world(profile, data.get("world"), revision))
                 if uri.path == "/api/focus":
-                    return self._reply(service.focus_mod(str(data.get("id") or ""), str(data.get("profileId") or "")))
+                    return self._reply(service.focus_mod(str(data.get("id") or ""), str(data.get("profileId") or ""),
+                                                         generation=data.get("generation")))
                 if uri.path == "/api/progress":
                     result = service.save_progress(data)
                     return self._reply(result, 409 if result.get("profileChanged") else 200)

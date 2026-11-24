@@ -221,7 +221,7 @@ class BackgroundRefreshIntegrationTests(unittest.TestCase):
         org.persistent.return_value = "unknown"
         self.plugin = kind()
         self.plugin.init(org)
-        self.service = SimpleNamespace(set_snapshot=Mock(), content=Mock(), stop=Mock())
+        self.service = SimpleNamespace(set_snapshot=Mock(), content=Mock(), stop=Mock(), invalidate_focus_profile=Mock())
         self.plugin.server = self.service
         self.plugin._publish_diagnostics = Mock()
         self.addCleanup(self.plugin._shutdown)
@@ -269,6 +269,7 @@ class BackgroundRefreshIntegrationTests(unittest.TestCase):
         for name in ("Fixture B", "Fixture A"):
             previous, self.profile = self.profile, name
             self.plugin._on_profile_changed(previous, name)
+        self.assertEqual(self.service.invalidate_focus_profile.call_count, 2)
         self.assertEqual(len(self.timers), 1)
         self.timers.pop(0)[1]()
         self.go.set()

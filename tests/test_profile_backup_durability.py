@@ -10,6 +10,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
+from mo2_update_arsenal.install_policy import protected_installs, protected_refusal
+
 
 def actual_backup(name="_profile_backup"):
     source = Path(__file__).resolve().parents[1] / "mo2_update_arsenal/plugin.py"
@@ -17,6 +19,7 @@ def actual_backup(name="_profile_backup"):
     cls = next(n for n in module.body if isinstance(n, ast.ClassDef) and n.name == "ModUpdateArsenal")
     method = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == name)
     namespace = dict(Path=Path, datetime=datetime, timezone=timezone, json=json, shutil=shutil, os=os,
+                     protected_installs=protected_installs, protected_refusal=protected_refusal,
                      __package__="mo2_update_arsenal")
     exec(compile(ast.Module(body=[method], type_ignores=[]), str(source), "exec"), namespace)
     return namespace[name]

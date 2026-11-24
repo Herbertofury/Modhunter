@@ -113,6 +113,21 @@ class UIRequest:
         return self._complete(data)
 
 
+_AGENT_INVENTORY_FIELDS = (
+    "id", "name", "mo2InternalName", "enabled", "priority", "installedVersion",
+    "nexusId", "repository", "groupId", "group",
+)
+
+
+def _agent_rows_changed(before, after):
+    # Called only when the scan context (including membership, versions, source
+    # and receipts) is unchanged. Ordering and the public inventory projection
+    # can still change. Never recompute this across the library on a page read.
+    missing = object()
+    return any(a.get(key, missing) != b.get(key, missing)
+               for a, b in zip(before, after) for key in _AGENT_INVENTORY_FIELDS)
+
+
 def _bind_scan_result(item: dict, scanned_item: dict | None, update: dict) -> None:
     bound = item["update"] = dict(update)
     # This comparison only binds provenance to the scanned row; the scanners
@@ -182,6 +197,7 @@ class ArsenalService:
         self._early_download_events: dict[int, str] = {}
         self.journal = OperationJournal(cache_path.with_name("update-operations.jsonl"))
         self._stopped = False
+        self._agent_inventory_generation = 0
         self._generation = 1
         # Native Reveal leases exclude plugin-audit observations only. The
         # public generation still publishes those observations for clients.
@@ -221,7 +237,9 @@ class ArsenalService:
 
     def agent_revision(self):
         # A native callback can arrive before the next coalesced full refresh.
-        return f"{self._catalog_session}-{self._generation}-{self.content._native_generation}"
+        # Provider observations have their own per-row evidence revision. They
+        # may arrive between any two pages without altering the MO2 inventory.
+        return f"{self._catalog_session}-{self._agent_inventory_generation:x}-{self._execution_epoch:x}-{self.content._native_generation:x}"
 
     def agent_mods(self, query: dict) -> dict:
         """Read a revision-bound page from the live inventory, without building the dashboard."""
@@ -239,13 +257,11 @@ class ArsenalService:
             rows = self._snapshot.get("items", [])
             if offset > len(rows):
                 return {"ok": False, "error": "Offset is beyond the inventory."}
-            fields = ("id", "name", "mo2InternalName", "enabled", "priority", "installedVersion",
-                      "nexusId", "repository", "groupId", "group")
             end = min(len(rows), offset + 128)
             return {"ok": True, "profileId": profile, "profileName": self._snapshot.get("profileName"),
                     "game": self._snapshot.get("game"), "revision": revision, "total": len(rows),
                     "offset": offset, "nextOffset": end if end < len(rows) else None,
-                    "items": [{key: row[key] for key in fields if key in row} for row in rows[offset:end]]}
+                    "items": [{key: row[key] for key in _AGENT_INVENTORY_FIELDS if key in row} for row in rows[offset:end]]}
 
     def agent_evidence(self, query: dict) -> dict:
         with self._guard:
@@ -448,6 +464,9 @@ class ArsenalService:
                         i["update"] = before["update"]
             awards = self.chronicle.observe(old, snapshot) if same_profile else []
             scan_context_changed = not (same_profile and same_game and same_runtime) or versions_changed
+            if not scan_context_changed and (old.get("profileName") != snapshot.get("profileName")
+                    or _agent_rows_changed(old.get("items", []), snapshot.get("items", []))):
+                self._agent_inventory_generation += 1
             if scan_context_changed:
                 self._execution_epoch += 1
                 if not (same_profile and same_game and same_runtime):

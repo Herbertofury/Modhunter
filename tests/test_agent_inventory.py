@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import time
 import tempfile
+import threading
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -51,6 +52,53 @@ class AgentInventoryTests(unittest.TestCase):
         for q in ({"profileId": ["other"]}, dict(params, revision=["old-process-0"]),
                   {"profileId": ["target"], "offset": ["1"]}, dict(params, offset=["-1"])):
             self.assertFalse(self.service.agent_mods(q)["ok"])
+
+    def test_background_provider_results_preserve_inventory_pages_and_refresh_row_evidence(self):
+        profile = {"profileId": ["target"]}
+        first = self.service.agent_mods(profile)
+        revision = first["revision"]
+        selection = dict(profile, itemId=["0"], revision=[revision])
+        initial = self.service.agent_evidence(selection)
+        published, finish = threading.Event(), threading.Event()
+        def scan(snapshot, mode, progress, *, cancel_event):
+            record = {"verdict": "review", "reason": "Source observed during inventory traversal"}
+            progress({"itemRecords": {"0": record}, "checked": 1, "total": 1})
+            published.set()
+            finish.wait(4)
+            return {"itemRecords": {"0": record}, "queried": 1, "errors": []}
+
+        self.service.api_key = "fixture"
+        with patch("mo2_update_arsenal.bridge.UpdateScanner.scan", side_effect=scan):
+            try:
+                self.assertTrue(self.service.begin_scan("deep", "target")["ok"])
+                self.assertTrue(published.wait(3))
+                page = self.service.agent_mods(dict(profile, offset=[str(first["nextOffset"])], revision=[revision]))
+                self.assertTrue(page["ok"])
+                self.assertEqual(page["revision"], revision)
+                changed = self.service.agent_evidence(selection)
+                self.assertEqual(changed["updateDecision"]["verdict"], "review")
+                self.assertNotEqual(changed["evidenceRevision"], initial["evidenceRevision"])
+                self.assertFalse(self.service.agent_evidence(dict(selection, evidenceRevision=[initial["evidenceRevision"]]))["ok"])
+            finally:
+                finish.set()
+
+    def test_inventory_cursor_tracks_row_fields_order_and_native_notifications(self):
+        catalog = copy.deepcopy(self.catalog)
+        revision = self.service.agent_revision()
+        self.service.set_snapshot(copy.deepcopy(catalog))
+        self.assertEqual(self.service.agent_revision(), revision)
+        for field, value in [("enabled", True), ("priority", 42), ("name", "Display name"),
+                             ("mo2InternalName", "MO2 name"), ("repository", "Nexus"), ("group", "Changed")]:
+            catalog["items"][0][field] = value
+            self.service.set_snapshot(copy.deepcopy(catalog))
+            self.assertNotEqual(self.service.agent_revision(), revision, field)
+            revision = self.service.agent_revision()
+        catalog["items"].reverse()
+        self.service.set_snapshot(copy.deepcopy(catalog))
+        self.assertNotEqual(self.service.agent_revision(), revision)
+        revision = self.service.agent_revision()
+        self.service.content._native_generation += 1
+        self.assertNotEqual(self.service.agent_revision(), revision)
 
     def test_public_advisories_page_without_leaking_private_row_fields(self):
         row = self.service._items_by_id["1"]

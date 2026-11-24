@@ -114,6 +114,57 @@ test('compact external source file picker fetches exact details and ignores an o
  assert.ok(h.nodes.get('filePickerFiles').innerHTML.includes('data-asset-proof="'+'f'.repeat(64)+'"'));
  assert.equal(h.calls.filter(c=>c.endpoint.startsWith('files?')).length,0);
 });
+test('review approved queue previews all selected archives from one plan pass with exact scope and evidence',()=>{
+ const start=APP.indexOf('function closeQueuePreview(){'),end=APP.indexOf('function queueWorkshop(){',start);
+ assert.ok(start>=0&&end>start);
+ const escape=APP.match(/^const escapeHTML=.*$/m)[0];
+ const cells=new Map(),calls=[];
+ let activeElement=null;
+ const node=id=>{if(!cells.has(id))cells.set(id,{isConnected:true,focus(){activeElement=this}});return cells.get(id)};
+ const ui=Function('node','calls','state',`
+ const $=node,SET=(id,value)=>node(id).textContent=value,txt=value=>String(value??'');
+ ${escape}
+ let WORKSHOP_PLAN,QUEUE_PENDING,PREVIEW_RETURN_FOCUS;
+ const WORKSHOP_CHOICES=new Map(),BRIDGE={active:true},LIVE_CATALOG={profileId:'a'},WORKSHOP_BUSY=false;
+ const providerLabel=value=>value==='gitlab'?'GitLab':value;
+ const currentWorkshopPlan=()=>WORKSHOP_PLAN,workshopSetStatus=text=>calls.push(text);
+ const document={get activeElement(){return state.active}};
+ ${APP.slice(start,end)}
+ $('workshopInspectQueue').onclick=inspectQueue;
+ $('queueReviewCancel').onclick=closeQueuePreview;
+ return {queueFixtures:(plan,choices)=>{WORKSHOP_PLAN=plan;WORKSHOP_CHOICES.clear();for(const [key,item] of choices)WORKSHOP_CHOICES.set(key,item)},queuePending:()=>QUEUE_PENDING};`)(node,calls,{get active(){return activeElement}});
+ const review=node('workshopInspectQueue'),confirm=node('queueReviewConfirm'),close=node('queueReviewCancel'),veil=node('queueReviewVeil');
+ const base=Array.from({length:1200},(_,i)=>({id:'plan-'+i,name:'Catalog '+i,provider:'gitlab',risks:i%2===0?['Check mod prerequisites']:[]}));
+ const items=[...base,{id:'plan-1198',name:'Incorrect later duplicate',provider:'modrinth',risks:[]}];
+ const choices=Array.from({length:15},(_,i)=>({profileId:'a',itemId:'plan-'+(1199-i),fileName:'archive-'+i+'.zip',displayName:i===1?'<Alternate main>':'',kind:i===1?'source':'nexus',installedVersion:'1.0',targetVersion:'2.0'}));
+ choices.push({profileId:'a',itemId:'no-current-row',fileId:334,installedVersion:'old'});
+ const foreign={profileId:'other',itemId:'plan-1180',fileName:'wrong-profile.zip',installedVersion:'1.0'};
+ let reads=0;
+ for(const item of items){const id=item.id;Object.defineProperty(item,'id',{get(){reads++;return id}})}
+ const plan={profileId:'a',profileName:'My profile',gameRuntime:'1.5.97',items};
+ ui.queueFixtures(plan,[...choices,foreign].map((x,i)=>['choice-'+i,x]));
+ review.focus();review.onclick();
+ assert.equal(veil.hidden,false);assert.equal(activeElement,confirm);
+ assert.equal(ui.queuePending().entries.length,16);
+ assert.equal(ui.queuePending().entries[15],choices[15]);
+ assert.equal(node('queueReviewTitle').textContent,'16 approved archives');
+ assert.equal(node('queueReviewSummary').textContent,'My profile · 1.5.97 · 7 with compatibility advisories');
+ assert.equal(confirm.textContent,'Queue 16 approved downloads');
+ const html=node('queueReviewRows').innerHTML;
+ assert.equal((html.match(/class="queue-review-row"/g)||[]).length,16);
+ assert.equal((html.match(/COMPATIBILITY WATCH/g)||[]).length,7);
+ assert.match(html,/Catalog 1199[\s\S]*Catalog 1198[\s\S]*&lt;Alternate main&gt; · archive-1\.zip[\s\S]*GitLab/);
+ assert.match(html,/no-current-row[\s\S]*File #334/);
+ assert.doesNotMatch(html,/Incorrect later duplicate|wrong-profile\.zip/);
+ assert.ok(reads<=items.length,'Approved queue traversed the plan '+reads+' times for '+items.length+' records');
+ assert.equal(calls.length,0);
+ close.onclick();assert.equal(veil.hidden,true);assert.equal(activeElement,review);assert.equal(ui.queuePending(),null);
+ // Small preview takes the direct path and preserves its singular labels.
+ ui.queueFixtures(plan,[['single',choices[1]]]);reads=0;review.onclick();
+ assert.equal(node('queueReviewSummary').textContent,'My profile · 1.5.97 · 1 with compatibility advisories');
+ assert.equal(confirm.textContent,'Queue 1 approved download');assert.ok(reads<=items.length);
+});
+
 test('loading source evidence preserves unsaved inspector notes',async()=>{
  const h=harness();await h.settle();const mod=h.qa.getCatalog().items[0];h.api.drawInspector(mod);
  h.context.document.getElementById('drawerNote').value='Keep my unsaved setup notes';await h.api.loadSourceDetails(mod);await h.settle();

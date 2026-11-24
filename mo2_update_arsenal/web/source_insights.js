@@ -15,17 +15,19 @@ function label(value){return names[value]||text(value||'Original source').replac
 function checked(value){if(value===null||value===undefined||value==='')return'Not checked';const d=new Date(typeof value==='number'?value*1000:value);return Number.isFinite(d.getTime())?d.toLocaleString():'Time unavailable'}
 function hasAssets(mod){const update=mod.update||mod;return (number(update.releaseAssetCount)??list(update.releaseAssets).length)>0}
 function canReview(mod){const s=state(mod);return hasAssets(mod)&&mod.update?.verdict==='candidate'&&!s.stale&&!s.rateLimited&&!compatibilityAlerts[mod.update?.compatibility?.status]}
+function sourceCapabilities(mod,update,p){return update.capabilities||mod.sourceCapabilities||(p==='nexus'?{checkMode:'native-api',reviewedDownload:true,authentication:'mo2',reason:'Uses the connected MO2 Nexus integration.'}:{})}
+function expired(update,now){return update.freshness==='stale'||(Number(update.expiresAt)>0&&Number(update.expiresAt)<=now)}
+function coolingDown(update,now){return update.availability==='rate-limited'||Number(update.retryAt)>now}
 function state(mod,now=Date.now()/1000){
- const u=mod.update||{},caps=u.capabilities||mod.sourceCapabilities||(provider(mod)==='nexus'?{checkMode:'native-api',reviewedDownload:true,authentication:'mo2',reason:'Uses the connected MO2 Nexus integration.'}:{});
- const stale=u.freshness==='stale'||(Number(u.expiresAt)>0&&Number(u.expiresAt)<=now);
- const rateLimited=u.availability==='rate-limited'||Number(u.retryAt)>now;
+ const u=mod.update||{},p=provider(mod),caps=sourceCapabilities(mod,u,p);
+ const stale=expired(u,now),rateLimited=coolingDown(u,now);
  let status=stale?'Refresh needed':rateLimited?'Provider cooldown':({fresh:'Fresh API evidence',cached:'Cached API evidence',revalidated:'Revalidated API evidence',unverified:'Not verified'})[u.freshness]||'Not checked';
  if(!stale&&!rateLimited&&u.outcome==='unavailable')status='Source unavailable';
  if(!stale&&!rateLimited&&['manual','api-key'].includes(caps.checkMode))status=caps.checkMode==='api-key'?'Provider key required':'Source-page review';
  const compatibilityAlert=compatibilityAlerts[u.compatibility?.status];
  if(compatibilityAlert)status=compatibilityAlert;
  const tone=stale||rateLimited||compatibilityAlert?'warning':u.outcome==='unavailable'?'danger':u.freshness&&u.freshness!=='unverified'?'positive':'muted';
- return {provider:provider(mod),caps,stale,rateLimited,status,tone,assets:number(u.releaseAssetCount)??list(u.releaseAssets).length,assetsKnown:number(u.releaseAssetCount)!==null||Array.isArray(u.releaseAssets),dependencies:number(u.dependencyCount)??list(u.dependencies).length,dependenciesKnown:number(u.dependencyCount)!==null||Array.isArray(u.dependencies)};
+ return {provider:p,caps,stale,rateLimited,status,tone,assets:number(u.releaseAssetCount)??list(u.releaseAssets).length,assetsKnown:number(u.releaseAssetCount)!==null||Array.isArray(u.releaseAssets),dependencies:number(u.dependencyCount)??list(u.dependencies).length,dependenciesKnown:number(u.dependencyCount)!==null||Array.isArray(u.dependencies)};
 }
 function chips(mod){
  const u=mod.update||{},s=state(mod);
@@ -82,13 +84,24 @@ function details(mod,{live=false,loading=false,error=''}={}){
 function coverage(items){
  const groups=new Map();
  for(const mod of list(items)){
-  const s=state(mod),key=s.provider+'|'+(s.caps.checkMode||'unverified');
-  const row=groups.get(key)||{provider:s.provider,caps:s.caps,count:0,stale:0};row.count++;if(s.stale)row.stale++;groups.set(key,row);
+  const now=Date.now()/1000,u=mod.update||{},p=provider(mod),c=u.capabilities||mod.sourceCapabilities,mode=c?(c.checkMode||'unverified'):(p==='nexus'?'native-api':'unverified'),key=p+'|'+mode;
+  let row=groups.get(key);
+  if(!row){row={provider:p,caps:c||sourceCapabilities(mod,u,p),count:0,stale:0};groups.set(key,row)}
+  row.count++;if(expired(u,now))row.stale++;
  }
  const rows=[...groups.values()].sort((a,b)=>b.count-a.count||a.provider.localeCompare(b.provider));
  return '<div class="source-coverage-table"><table><thead><tr><th scope="col">Source</th><th scope="col">Mods</th><th scope="col">Update checks</th><th scope="col">File workflow</th></tr></thead><tbody>'+rows.map(r=>'<tr><th scope="row">'+esc(label(r.provider))+'</th><td>'+r.count+(r.stale?' · '+r.stale+' stale':'')+'</td><td>'+esc(({'native-api':'MO2 native API','public-api':'Public release API','manual':'Original page review','api-key':'Provider key required'})[r.caps.checkMode]||'Check sources to establish support')+'</td><td>'+esc(r.caps.reviewedDownload?'Reviewed files in MO2':r.caps.authentication==='mo2'?'MO2 download manager':'Original provider page')+'</td></tr>').join('')+'</tbody></table></div>';
 }
-function matches(mod,filter){const s=state(mod);return filter==='source-stale'?s.stale||s.rateLimited:filter==='source-manual'?['manual','api-key'].includes(s.caps.checkMode):filter==='source-dependencies'?s.dependencies>0:filter==='source-incompatible'?!!compatibilityAlerts[mod.update?.compatibility?.status]:filter==='all'}
+// A toolbar predicate needs only its own evidence. Do not build status, tone
+// or provider detail for every candidate before checking its selected field.
+function matches(mod,filter){
+ if(filter==='all')return true;
+ const u=mod.update||{};
+ if(filter==='source-stale'){const now=Date.now()/1000;return expired(u,now)||coolingDown(u,now)}
+ if(filter==='source-manual'){const mode=(u.capabilities||mod.sourceCapabilities)?.checkMode;return mode==='manual'||mode==='api-key'}
+ if(filter==='source-dependencies')return (number(u.dependencyCount)??list(u.dependencies).length)>0;
+ return filter==='source-incompatible'&&Boolean(compatibilityAlerts[u.compatibility?.status]);
+}
 function searchText(mod){const u=mod.update||{},s=state(mod);return [s.provider,label(s.provider),s.status,u.latestVersion,u.releaseId,u.availability,u.compatibility?.status,u.author?.name,u.publisher?.name,...list(u.dependencies).slice(0,128).map(d=>d.name||d.projectId||d.versionId)].map(text).join(' ').toLowerCase()}
 const csvHeaders=['Release provider','Release version','Release ID','Release URL','Release published at','Source checked at','Source expires at','Source freshness','Source availability','Adapter mode','Provider compatibility','Declared dependencies','Release files'];
 function csv(mod){const u=mod.update||{},s=state(mod);return [s.provider,u.latestVersion||'',u.releaseId||'',safeURL(u.releaseUrl),u.publishedAt||'',u.checkedAt||'',u.expiresAt||'',u.freshness||'',u.availability||'',s.caps.checkMode||'',u.compatibility?.status||'',s.dependenciesKnown?s.dependencies:'',s.assetsKnown?s.assets:'']}

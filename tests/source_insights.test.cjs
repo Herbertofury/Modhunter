@@ -79,3 +79,49 @@ test('CSV evidence columns have matching values and preserve unknown metadata',(
  const unlinked={id:'x',source:{type:'unknown'}};const values=sources.csv(unlinked);
  assert.equal(values[1],'');assert.equal(values[4],'');assert.equal(values[5],'');assert.equal(values[7],'');
 });
+test('source filters project only their requested evidence and preserve expiry, cooldown and explicit zero',()=>{
+ const mod=row();mod.update.expiresAt=1;mod.update.retryAt=1;
+ let unrelated=0;
+ for(const name of ['releaseAssetCount','releaseAssets','outcome'])Object.defineProperty(mod.update,name,{get(){unrelated++;return undefined}});
+ const previous=Date.now;Date.now=()=>1_800_000_000_000;
+ try{
+  mod.update.expiresAt=1_800_000_000;
+  assert.equal(sources.matches(mod,'source-stale'),true);
+  mod.update.expiresAt+=1;
+  assert.equal(sources.matches(mod,'source-stale'),false);
+  mod.update.retryAt=1_800_000_001;
+  assert.equal(sources.matches(mod,'source-stale'),true);
+  mod.update.retryAt=1_800_000_000;
+  mod.update.availability='rate-limited';
+  assert.equal(sources.matches(mod,'source-stale'),true);
+  mod.update.dependencies=[{projectId:'declared'}];mod.update.dependencyCount=0;
+  assert.equal(sources.matches(mod,'source-dependencies'),false);
+  mod.update.dependencyCount='bad';
+  assert.equal(sources.matches(mod,'source-dependencies'),true);
+  delete mod.update.capabilities;mod.sourceCapabilities={checkMode:'api-key'};
+  assert.equal(sources.matches(mod,'source-manual'),true);
+  mod.update.capabilities={};
+  assert.equal(sources.matches(mod,'source-manual'),false);
+  assert.equal(sources.matches(mod,'not-a-filter'),false);
+  assert.equal(sources.matches(mod,'all'),true);
+  assert.equal(unrelated,0);
+ }finally{Date.now=previous}
+});
+test('the coverage table retains the first adapter and exact counts without walking file or dependency metadata',()=>{
+ let reads=0;
+ const update={provider:'github',capabilities:{checkMode:'public-api',reviewedDownload:true},freshness:'stale'};
+ for(const name of ['dependencies','releaseAssetCount','releaseAssets','availability'])Object.defineProperty(update,name,{get(){reads++;return undefined}});
+ const mods=[
+  {update},
+  {update:{provider:'github',capabilities:{checkMode:'public-api',authentication:'mo2'}}},
+  {update:{provider:'github'},sourceCapabilities:{checkMode:'manual'}},
+  {nexusId:42},
+  {source:{type:'website'}},
+ ];
+ const html=sources.coverage(mods);
+ assert.match(html,/<th scope="row">GitHub<\/th><td>2 · 1 stale<\/td><td>Public release API<\/td><td>Reviewed files in MO2<\/td>/);
+ assert.match(html,/<th scope="row">GitHub<\/th><td>1<\/td><td>Original page review<\/td><td>Original provider page<\/td>/);
+ assert.match(html,/<th scope="row">Nexus Mods<\/th><td>1<\/td><td>MO2 native API<\/td><td>Reviewed files in MO2<\/td>/);
+ assert.match(html,/<th scope="row">Original website<\/th><td>1<\/td><td>Check sources to establish support<\/td><td>Original provider page<\/td>/);
+ assert.equal(reads,0);
+});

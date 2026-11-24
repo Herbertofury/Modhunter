@@ -1320,19 +1320,34 @@ function closeQueuePreview(){
  if(PREVIEW_RETURN_FOCUS?.isConnected)PREVIEW_RETURN_FOCUS.focus({preventScroll:true});
  PREVIEW_RETURN_FOCUS=null;
 }
+function reviewedQueueItems(items,entries){
+ // Linear lookup is already the fast path for a small set. Large batches
+ // visit the plan once and record only the first row for each requested ID,
+ // matching find's behavior without indexing unrelated mods or keeping state.
+ if(entries.length<=8)return entries.map(x=>items.find(m=>m.id===x.itemId));
+ const wanted=new Set(entries.map(x=>x.itemId)),found=new Map();wanted.delete(NaN);
+ for(const mod of items){
+  const id=mod.id;
+  if(wanted.delete(id))found.set(id,mod);
+  if(!wanted.size)break;
+ }
+ return entries.map(x=>found.get(x.itemId));
+}
 function inspectQueue(){
  if(WORKSHOP_BUSY||!BRIDGE.active||!LIVE_CATALOG)return;
  const plan=currentWorkshopPlan(),profile=plan.profileId;
  const entries=[...WORKSHOP_CHOICES.values()].filter(x=>x.profileId===profile);
  if(!entries.length){workshopSetStatus('Choose and review exact files before queueing.');return;}
  QUEUE_PENDING={profile,entries};PREVIEW_RETURN_FOCUS=document.activeElement;
- const warnings=entries.reduce((n,x)=>n+(plan.items.find(m=>m.id===x.itemId)?.risks?.length?1:0),0);
+ const reviewed=reviewedQueueItems(plan.items,entries);
+ let warnings=0;
+ const markup=entries.map((x,i)=>{
+  const m=reviewed[i]||{},warn=Boolean(m.risks?.length);if(warn)warnings++;
+  return '<article class="queue-review-row"><span class="queue-review-index">'+String(i+1).padStart(2,'0')+'</span><div><strong>'+escapeHTML(m.name||x.itemId)+'</strong><span>'+escapeHTML(x.displayName&&x.displayName!==x.fileName?x.displayName+' · '+x.fileName:x.fileName||('File #'+(x.fileId||x.assetKey||x.assetId)))+'</span><small>'+escapeHTML(x.kind==='source'?providerLabel(x.provider||m.provider):'Nexus Mods')+' · '+escapeHTML(x.installedVersion)+' → '+escapeHTML(x.targetVersion||'?')+(warn?' · COMPATIBILITY WATCH':'')+'</small></div></article>';
+ }).join('');
  SET('queueReviewTitle',entries.length+' approved archive'+(entries.length===1?'':'s'));
  SET('queueReviewSummary',plan.profileName+' · '+(plan.gameRuntime||'Unknown runtime')+' · '+warnings+' with compatibility advisories');
- $('queueReviewRows').innerHTML=entries.map((x,i)=>{
-  const m=plan.items.find(row=>row.id===x.itemId)||{};
-  return '<article class="queue-review-row"><span class="queue-review-index">'+String(i+1).padStart(2,'0')+'</span><div><strong>'+escapeHTML(m.name||x.itemId)+'</strong><span>'+escapeHTML(x.displayName&&x.displayName!==x.fileName?x.displayName+' · '+x.fileName:x.fileName||('File #'+(x.fileId||x.assetKey||x.assetId)))+'</span><small>'+escapeHTML(x.kind==='source'?providerLabel(x.provider||m.provider):'Nexus Mods')+' · '+escapeHTML(x.installedVersion)+' → '+escapeHTML(x.targetVersion||'?')+(m.risks?.length?' · COMPATIBILITY WATCH':'')+'</small></div></article>';
- }).join('');
+ $('queueReviewRows').innerHTML=markup;
  $('queueReviewConfirm').textContent='Queue '+entries.length+' approved download'+(entries.length===1?'':'s');
  $('queueReviewVeil').hidden=false;$('queueReviewConfirm').focus({preventScroll:true});
 }

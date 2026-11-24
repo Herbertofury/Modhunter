@@ -54,6 +54,39 @@ pub(crate) struct Entry {
     pub sha256: String,
 }
 pub(crate) type Tree = BTreeMap<String, Entry>;
+
+fn native_install_identity(files: &Tree) -> Result<(String, &str)> {
+    let mut payload = Sha256::new();
+    let mut metadata = "";
+    for (path, entry) in files {
+        if path.eq_ignore_ascii_case("meta.ini") {
+            metadata = &entry.sha256;
+        } else {
+            payload.update(serde_json::to_vec(&(path, entry)).map_err(err)?);
+            payload.update([0]);
+        }
+    }
+    Ok((format!("{:x}", payload.finalize()), metadata))
+}
+
+fn native_seal_tree(
+    root: &Path,
+    expected: Option<&str>,
+    cancel: &impl Fn() -> bool,
+) -> Result<Tree> {
+    let files = tree(root, cancel)?;
+    if let Some(expected) = expected {
+        let (payload, metadata) = native_install_identity(&files)?;
+        let digest = format!(
+            "{:x}",
+            Sha256::digest(format!("{payload}\0{metadata}").as_bytes())
+        );
+        if digest != expected {
+            return Err("Installed files changed during native refresh or after MO2's metadata acknowledgement; undo was not sealed.".into());
+        }
+    }
+    Ok(files)
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Record {
@@ -777,6 +810,16 @@ pub fn execute(request: Request, cancel: impl Fn() -> bool) -> Result<Value> {
         return Err("Backup belongs to a different target mod, game or profile.".into());
     }
     match request.action.as_str() {
+        "observeNativeInstall" => {
+            if !matches!(record.state.as_str(), "prepared" | "preparedNew") {
+                return Err(
+                    "Native install observation requires the original prepared backup.".into(),
+                );
+            }
+            let files = tree(&root, &cancel)?;
+            let (payload, metadata) = native_install_identity(&files)?;
+            Ok(json!({"ok":true,"payloadSha256":payload,"metadataSha256":metadata}))
+        }
         "verifyPrepared" => {
             if record.new_target && record.state == "preparedNew" {
                 if root.exists() {
@@ -809,7 +852,11 @@ pub fn execute(request: Request, cancel: impl Fn() -> bool) -> Result<Value> {
             if !record.new_target || record.state != "preparedNew" {
                 return Err("Only this pending new target may be sealed.".into());
             }
-            record.after = Some(tree(&root, &cancel)?);
+            record.after = Some(native_seal_tree(
+                &root,
+                request.expected_digest.as_deref(),
+                &cancel,
+            )?);
             record.state = "sealedNew".into();
             atomic_json(&dir.join("receipt.json"), &record)?;
             Ok(json!({"ok":true,"backup":public(&record)}))
@@ -1172,7 +1219,11 @@ pub fn execute(request: Request, cancel: impl Fn() -> bool) -> Result<Value> {
             if tree(&dir.join("files"), &cancel)? != record.before {
                 return Err("Backup contents changed before sealing.".into());
             }
-            record.after = Some(tree(&root, &cancel)?);
+            record.after = Some(native_seal_tree(
+                &root,
+                request.expected_digest.as_deref(),
+                &cancel,
+            )?);
             record.state = "sealed".into();
             atomic_json(&dir.join("receipt.json"), &record)?;
             Ok(json!({"ok":true,"backup":public(&record)}))

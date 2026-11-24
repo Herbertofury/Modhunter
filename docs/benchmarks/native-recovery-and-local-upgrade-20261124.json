@@ -1,0 +1,74 @@
+{
+  "checkedUtc": "2026-11-24T20:31:59.480359+00:00",
+  "localProductCommit": "0aa86d73f7db3cbe70f7a6e630ef891f5e879996",
+  "version": "0.12.6",
+  "scope": "Local installed application and stock beta12 plugin on disk. Live native install, update and recovery exercised in disposable stock MO2 2.5.2.",
+  "normalDesktop": {
+    "applicationSha256": "1402d009c358c5153701eddd3a0d8d257625f323a025c62a1ec26a5bccded2ef",
+    "installerSha256": "d78c615809be427bcd64d47f41e803f44d60d6252c6f40a74493ed7389dee2c0",
+    "installerExit": 0,
+    "startMenuLaunch": true,
+    "desktopShortcutRestartWithoutArguments": true,
+    "profileAndHistoryRestored": true,
+    "rows": 11325,
+    "importMsAfterDesktopShortcut": 1261.8,
+    "datedDecisions": {
+      "current": 6569,
+      "candidate": 540,
+      "ignored": 10,
+      "review": 1729,
+      "unverified": 2456,
+      "unavailable": 18,
+      "unknown": 3
+    },
+    "lastProviderObservation": "2026-11-24T18:37:31Z",
+    "shellTaskbarButtonRegistered": true,
+    "pinnedColdLaunchVerified": false
+  },
+  "localMO2Plugin": {
+    "packageSha256": "9241cf79426db9c7e763fa38115583a98d1af25ad3038eb3e7f69b8dcbc70421",
+    "candidateManifestSha256": "ec2c8a85640dc9fb0d6e2276e97c06f9093ef958cf42e0c302a361621480a847",
+    "reproducibleZip": true,
+    "originalProtectedEntriesReopened": 2601501,
+    "independentlyVerifiedOldAndNewPayloads": true,
+    "previousPluginFileIdsRetained": 44,
+    "newPluginEntries": 44,
+    "atomicDirectoryMoves": 2,
+    "namedEvents": 49,
+    "completeJournalRecords": 216,
+    "unrelatedJournalRecords": 0,
+    "stockBeta12StaticReadiness": true,
+    "stockBeta12ProductionLiveSessionVerified": false
+  },
+  "exactLocalDesktopQualification": {
+    "isolatedRender": {
+      "bytesRead": 73052189,
+      "directoriesRead": 13636,
+      "elapsedMs": 1467.3151,
+      "filesRead": 21668,
+      "foreignMods": 0,
+      "metadataCacheHits": 0,
+      "mods": 11325,
+      "pluginCopies": 10352,
+      "pluginHeaderCacheHits": 0,
+      "warnings": 0,
+      "workers": 8
+    },
+    "authenticatedNativeChecks": 26,
+    "signedInInventoryCases": 3,
+    "genuineArchiveCount": 4,
+    "genuineAcquisitionSeconds": 8.39
+  },
+  "isolatedStockMO2": {
+    "version": "2.5.2",
+    "casesPerVM": 37,
+    "source": "https://github.com/Herbertofury/Modhunter/actions/runs/45479820195",
+    "packageFixtureSource": "https://github.com/Herbertofury/Modhunter/actions/runs/45479861343",
+    "separateRuns": [
+      "Tiered Casters 1.0.0 disabled native FOMOD installation, exact selected INIs and removal",
+      "Chairrows 2.0.0 to 2.0.1 disabled native update, exact ESP and BSA, byte-identical rollback and removal"
+    ],
+    "protectedListsUnchanged": true
+  },
+  "publicStablePromotion": false
+}

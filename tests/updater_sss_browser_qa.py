@@ -14,7 +14,7 @@ from pathlib import Path
 
 from playwright.sync_api import expect, sync_playwright
 
-from mo2_update_arsenal.file_advisor import advise_nexus_files
+from mo2_update_arsenal.file_advisor import NexusFileIndex, advise_nexus_files
 from mo2_update_arsenal.update_plan import plan_updates
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,6 +51,17 @@ files = lambda mid: [
     {"fileId":100+mid,"name":"Exact latest main","fileName":"latest-se.zip","version":"2.0" if mid==44 else "2.3","category":1,"description":"Check runtime and dependencies"},
     {"fileId":200+mid,"name":"Optional textures","fileName":"textures.zip","version":"2.0","category":2,"description":"Optional upgrade"},
 ]
+# Exercise the same provider succession and freshness boundary as a live scan.
+observed = time.time()
+for item in mods[:2]:
+    mid = item["nexusId"]
+    old_id, new_id = 90 + mid, 100 + mid
+    item.update(installedFiles=[[mid, old_id]], installationArchive="old.zip")
+    lineage = NexusFileIndex({"files": files(mid), "file_updates": [
+        {"old_file_id": old_id, "new_file_id": new_id, "old_file_name": "old.zip"}
+    ]})
+    item["update"].update(lineage.resolve(item), checkedAt=observed,
+                          expiresAt=observed + 3600, freshness="fresh")
 review={str(mid): {"ok": True, "modId": mid, **advise_nexus_files(mods[ix],files(mid))}
         for ix,mid in enumerate((44,45))}
 history=[{"key":"previous:101","sessionId":"previous","sessionActive":False,"needsReview":True,

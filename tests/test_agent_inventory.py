@@ -157,7 +157,8 @@ class AgentInventoryTests(unittest.TestCase):
         policy = Mock()
         policy.capture.return_value = {"modName":name}
         plugin = SimpleNamespace(org=organizer, name=lambda:"MO2 Update Arsenal", server=self.service,
-                                 _content_native=policy, _dirty=False, _schedule_refresh=Mock())
+                                 _content_native=policy, _background_dirty=False, _pending_refresh=None,
+                                 _background_refresh=None, _schedule_refresh=Mock())
         args = {"profileId":"target", "revision":self.service.agent_revision(), "itemId":"0",
                 "name":name, "expectedEnabled":False, "enabled":True}
         for setting in ("{}", '{"different":["Mod 0"]}', '{"target":"Mod 0"}', '{"target":["Mod 1"]}'):
@@ -172,8 +173,14 @@ class AgentInventoryTests(unittest.TestCase):
         policy.check.assert_called()
         native.setActive.assert_called_once_with(name,True)
         with self.assertRaises(ValueError): set_enabled(plugin,args,2)
-        plugin._dirty = True
-        with self.assertRaises(ValueError): set_enabled(plugin,dict(args,expectedEnabled=True,enabled=False),2)
+        for key, value in (("_background_dirty", True), ("_pending_refresh", object()),
+                           ("_background_refresh", SimpleNamespace(busy=True))):
+            old = getattr(plugin, key)
+            setattr(plugin, key, value)
+            with self.assertRaisesRegex(ValueError, "inventory changed"):
+                set_enabled(plugin,dict(args,expectedEnabled=True,enabled=False),2)
+            setattr(plugin, key, old)
+        native.setActive.assert_called_once_with(name,True)
 
     def test_protected_mode_never_queues_or_dispatches_an_install(self):
         content = self.service.content

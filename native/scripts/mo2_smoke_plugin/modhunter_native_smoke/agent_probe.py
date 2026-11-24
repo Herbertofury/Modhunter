@@ -45,7 +45,8 @@ def check_scoped_toggle(cli, endpoint, profile_id, by_name):
                         raise AssertionError("Native compare-and-set returned the wrong transition")
                     break
                 # Retry only definite pre-dispatch stale-inventory refusals, never an ambiguous mutation.
-                if "changed or is refreshing" not in response["content"][0]["text"]:
+                reason = response["content"][0]["text"]
+                if not any(message in reason for message in ("inventory changed or is refreshing", "MO2 profile is refreshing; review the operation again")):
                     raise AssertionError(response["content"])
             if time.monotonic() >= deadline: raise AssertionError("Native fixture inventory did not converge")
             time.sleep(0.1)

@@ -15,7 +15,9 @@ def set_enabled(plugin, payload, active_bit):
     server = plugin.server
     def check_revision():
         with server._guard:
-            if (plugin._dirty or server._stopped or server._snapshot.get("profileId") != payload["profileId"]
+            refreshing = (plugin._background_dirty or plugin._pending_refresh is not None
+                          or plugin._background_refresh is not None and plugin._background_refresh.busy)
+            if (refreshing or server._stopped or server._snapshot.get("profileId") != payload["profileId"]
                     or str(plugin.org.profileName()) != server._snapshot.get("profileName")
                     or server.agent_revision() != payload["revision"]):
                 raise ValueError("MO2 inventory changed or is refreshing. Read a fresh inventory page")

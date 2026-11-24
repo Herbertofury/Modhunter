@@ -73,8 +73,9 @@ The names below omit the upstream `housecarl_` prefix. Each group reflects the 2
 | asset_status, nif_inspect | Production read via Modhunter. Verified an enabled mesh's provider and internal NIF blocks, absent-path handling and an NPC's FaceGen pair. |
 | layer, skse | Production read via Modhunter. Verified SPID inspection and matching SKSE DLL/config inventory. Other distributor formats and SKSE finding modes need individual runtime coverage. |
 | create_plugin, apply | Isolated direct upstream calls wrote a new header-only plugin and a separate single-record override and read back the override. |
-| bsa_list | The local Modhunter BSA directory reader has fixture coverage. Direct upstream call unverified. |
-| check, create, remove, forward, copy, write_seq, compact_plugin, merge_plugins | Upstream registration observed. Integrated workflow and mutation verification pending. |
+| bsa_list | The product MCP companion and its independent native archive index both counted 136 entries in the installed MarketplaceTextures.bsa. The native index also read all 23 game Data BSAs (172,961 entries). |
+| check | Product MCP checked the selected Skyrim.esm gold record through houseCARL on the real profile. Its result reported zero dangling references for that record, 3,628 successfully scanned plugins and one explicit parse exclusion. Script and FaceGen check families are available with separate selection. |
+| create, remove, forward, copy, write_seq, compact_plugin, merge_plugins | Upstream registration observed. Integrated workflow and mutation verification pending. |
 | place, nif_set, compile_script, decompile_script, bsa_extract, bsa_repack | Upstream registration observed. Integrated editing and external-tool verification pending. |
 | nexus_search, nexus_mod, nexus_graphql, nexus_check_updates, nexus_identify | Upstream registration observed. Real-provider matching and authorization require separate acceptance. |
 | set_mo2_instance, set_tool_path, update_status | Upstream registration observed. Modhunter selects explicit roots at process launch. Direct upstream calls unverified. |

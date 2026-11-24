@@ -191,9 +191,14 @@ pub fn inventory(mut input: impl Read, archive_bytes: u64) -> Result<Directory, 
             paths.push(path);
         }
     }
+    // Some SE archives align the file-name table to 16 bytes (e.g. MarketplaceTextures).
+    // Only accept the exact zero padding needed after the last declared name.
+    let padding = &names[name_cursor..];
+    let aligned_names = padding.is_empty()
+        || (names.len() % 16 == 0 && padding.len() < 16 && padding.iter().all(|byte| *byte == 0));
     if paths.len() != files
         || block_cursor != blocks.len()
-        || name_cursor != names.len()
+        || !aligned_names
         || found_dir_names != dir_names
     {
         return Err("BSA directory counts or table sizes do not reconcile");

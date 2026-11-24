@@ -92,6 +92,27 @@ fn standard_named_pc_revisions_list_multiple_folders_in_stored_order() {
     }
 }
 #[test]
+fn se_file_name_table_accepts_only_zero_alignment_padding() {
+    let (mut bytes, end) = fixture(105, 3, &[("meshes", &["one.nif"])]);
+    let extra = 8;
+    bytes.splice(end..end, [0; 8]);
+    bytes[28..32].copy_from_slice(&16u32.to_le_bytes());
+    let folder_offset = u64::from_le_bytes(bytes[52..60].try_into().unwrap());
+    bytes[52..60].copy_from_slice(&(folder_offset + extra).to_le_bytes());
+    let entry_start = 60 + 1 + "meshes".len() + 1;
+    bytes[entry_start + 12..entry_start + 16]
+        .copy_from_slice(&((end + extra as usize) as u32).to_le_bytes());
+    assert_eq!(
+        bsa_directory::inventory(&bytes[..], bytes.len() as u64)
+            .unwrap()
+            .paths,
+        ["meshes/one.nif"]
+    );
+    bytes[end] = 1;
+    assert!(bsa_directory::inventory(&bytes[..], bytes.len() as u64).is_err());
+}
+
+#[test]
 fn intentionally_unavailable_payload_is_never_read() {
     struct MetadataOnly<'a>(Cursor<&'a [u8]>, u64);
     impl Read for MetadataOnly<'_> {

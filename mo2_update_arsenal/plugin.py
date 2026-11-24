@@ -713,15 +713,26 @@ class ModUpdateArsenal(mobase.IPluginTool):
             return
         try:
             view.selectionModel().currentChanged.connect(self._on_native_selection)
+            view.model().modelReset.connect(self._on_native_model_reset)
             self._selection_connected = True
         except (AttributeError, RuntimeError):
             pass
+
+    def _on_native_model_reset(self):
+        # QItemSelectionModel resets without sending currentChanged. Observe
+        # the resulting native index just as we would after a keyboard action.
+        _, view = find_mo2_view(QtWidgets)
+        if view is not None:
+            self._on_native_selection(view.currentIndex(), None)
 
     def _on_native_selection(self, current, _previous):
         # The owner's verified reveal acknowledges its exact native target
         # explicitly. Its synchronous focus/filter signals are not newer
         # user actions and cannot invalidate a queued subsequent reveal.
-        if self._focus_navigating or not self.server or not current.isValid():
+        if self._focus_navigating or not self.server:
+            return
+        if not current.isValid():
+            self.server.set_selected("")
             return
         _, view = find_mo2_view(QtWidgets)
         if view is None:

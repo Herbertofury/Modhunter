@@ -614,9 +614,6 @@ class NativeSmokePlugin(ModUpdateArsenal):
                 self._check("native_desktop_live_workflow", completed.returncode == 0
                             and report.get("ok") is True, driverExitCode=completed.returncode,
                             failurePhase=report.get("phase"), error=completed.stderr[-1800:])
-            final_focus = api("/api/focus", {"id": target["id"], "profileId": catalog["profileId"]})
-            self._check("native_selection_after_content", final_focus.get("ok") is True
-                        and final_focus.get("selected") == target["name"])
             if rust_cli:
                 protected_files = [_fixture_root / "profiles" / PROFILE_NAME / f for f in ("loadorder.txt", "plugins.txt")]
                 original_files = [p.read_bytes() for p in protected_files]
@@ -639,6 +636,11 @@ class NativeSmokePlugin(ModUpdateArsenal):
                                 and not any(active for _, active in observed)
                                 and all(p.read_bytes() == old for p, old in zip(protected_files, original_files)),
                                 events=observed, **evidence)
+            # Installing and undoing a new mod resets MO2's item model. Verify
+            # Reveal against the resulting native list after every such change.
+            final_focus = api("/api/focus", {"id": target["id"], "profileId": catalog["profileId"]})
+            self._check("native_selection_after_content", final_focus.get("ok") is True
+                        and final_focus.get("selected") == target["name"], response=final_focus)
             self._signals.finished.emit({"ok": True, "timingsMs": timings,
                                          "targetName": target["name"],
                                          "profileId": catalog["profileId"]})

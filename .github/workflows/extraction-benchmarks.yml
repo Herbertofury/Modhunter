@@ -1,0 +1,96 @@
+name: Completed extraction benchmarks
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '19 9 * * 3'
+  push:
+    branches: [main, 'upgrade/**']
+    paths:
+      - 'scripts/benchmark_extraction_routes.py'
+      - 'scripts/benchmark_firecrawl.py'
+      - '.github/workflows/extraction-benchmarks.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  rendered-and-static:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install 'scrapy==2.20.0' 'crawl4ai==0.9.6' 'playwright==1.65.2' psutil
+      - run: python scripts/benchmark_extraction_routes.py --channel chrome --output extraction.json
+      - name: Require every expected complete result
+        run: |
+          python - <<'PY'
+          import json
+          results = json.load(open('extraction.json'))['results']
+          assert len(results) == 6
+          for item in results:
+              expected = (item['engine'], item['workload']) != ('scrapy', 'dynamic')
+              assert item['complete'] == expected, item
+              if not expected:
+                  assert 'received 0 of 120' in item['reason'], item
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: completed-crawler-results
+          path: extraction.json
+
+  self-hosted-firecrawl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check out reference compose configuration
+        uses: actions/checkout@v4
+        with:
+          repository: firecrawl/firecrawl
+          ref: dd5febf184a3a8e344f5b72f7e851b2a10953c63
+          path: reference
+          persist-credentials: false
+          sparse-checkout: |
+            docker-compose.yaml
+          sparse-checkout-cone-mode: false
+      - name: Start the public reference containers on the disposable runner
+        working-directory: reference
+        run: |
+          cat > benchmark-compose.yml <<'YAML'
+          services:
+            api:
+              image: ghcr.io/firecrawl/firecrawl@sha256:e584c9bd92a2174a31c29b4c522793f4cb7bc37d781aad3701e297704fa1f6d6
+            playwright-service:
+              image: ghcr.io/firecrawl/playwright-service@sha256:227ce3d8059173925a5a0697c63a1e947662cca934a609151651f578774edd5d
+            nuq-postgres:
+              image: ghcr.io/firecrawl/nuq-postgres@sha256:d719b36160eac2fcbe16dc7e7360ddb9c82c40ea5da183d07bf4a755c6a0b2ae
+          YAML
+          export PORT=127.0.0.1:3002 NUM_WORKERS_PER_QUEUE=1 MAX_CONCURRENT_JOBS=1 BROWSER_POOL_SIZE=1
+          docker compose -f docker-compose.yaml -f benchmark-compose.yml up -d --no-build --pull always
+          for attempt in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:3002/ >/dev/null; then exit 0; fi
+            sleep 2
+          done
+          docker compose -f docker-compose.yaml -f benchmark-compose.yml logs --tail 40
+          exit 1
+      - name: Verify every title and link, including external retrieval time
+        run: python scripts/benchmark_firecrawl.py --output firecrawl.json
+      - name: Capture final service resource usage
+        if: always()
+        run: docker stats --no-stream --format '{{json .}}' > service-stats.jsonl
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: completed-self-hosted-firecrawl
+          path: |
+            firecrawl.json
+            service-stats.jsonl

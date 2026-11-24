@@ -1,0 +1,349 @@
+{
+  "rowsPerObservation": 120,
+  "warmRounds": 12,
+  "browserChannel": "chrome",
+  "scope": "Serial fresh HTTP loads on loopback. Cold includes engine import and startup. Every observation verifies all titles, relative links and order. CPU and aggregate RSS sampled at about 50 ms; shared pages can be counted multiple times.",
+  "results": [
+    {
+      "engine": "scrapy",
+      "version": "2.20.0",
+      "samples": [
+        {
+          "ms": 1845.2316999901086,
+          "sha256": "cb898bde54ffdb70bdb5e0ce5b4bbd27b96c5e7a6e2fee7caf46dffe1ca8cdd2"
+        },
+        {
+          "ms": 123.56169999111444,
+          "sha256": "b5d1b9ad50bd2c0f628dd81439ba0cbbd0543250968204895be13c5895fe6098"
+        },
+        {
+          "ms": 124.45320002734661,
+          "sha256": "b99c6659d719d6e7259dee40b58aaeaae5bbdeea37b64097e6721a6efb1cda8b"
+        },
+        {
+          "ms": 107.9862000187859,
+          "sha256": "3d9937780ef0e77628fc8526d191814fbbaabe67940799a526c7c98dd878b32b"
+        },
+        {
+          "ms": 108.50759991444647,
+          "sha256": "053c6eb0520d9f30a4d07d2f1e29e467dfed7762feaee92ed33738c2bf6f08ba"
+        },
+        {
+          "ms": 109.13599992636591,
+          "sha256": "3f79bcf9d139c81ac351cba6b2cc835883f24ea225c9ecec3ee787e8e9f2392c"
+        },
+        {
+          "ms": 108.38119999971241,
+          "sha256": "3dfac89ff4fc22077221e2f388ab4eaa27d9e4f99b0da11866ce23338e3ba9ce"
+        },
+        {
+          "ms": 108.04920003283769,
+          "sha256": "28b47efc4a2016ff0e81d5e4b6776482b5879fa45266c35a9de74629960d4146"
+        },
+        {
+          "ms": 109.56079990137368,
+          "sha256": "9c1364d1bb4677e1bd532d748ba1b227e2e2fd12abce3703a28358df1e367d8d"
+        },
+        {
+          "ms": 107.8992000548169,
+          "sha256": "a9fa5442389389421aa75bf63b923402f2d031be6de8fa9f0ef8a516c6e3df00"
+        },
+        {
+          "ms": 111.62920005153865,
+          "sha256": "c397c5a926a814c34fab999455e28bc088e7607591540654a7b08e56a980d41b"
+        },
+        {
+          "ms": 109.99060003086925,
+          "sha256": "1622629e35179c628e810fdd87937c5c33531ed7c28b1e12572606862475e07e"
+        },
+        {
+          "ms": 127.73409998044372,
+          "sha256": "e23f1fdf77dae37f9f60b743d38826e597c87bfc387f57b880342f36a6ca8a17"
+        }
+      ],
+      "complete": true,
+      "coldMs": 1845.2316999901086,
+      "medianMs": 109.3483999138698,
+      "p95Ms": 127.73409998044372,
+      "workload": "static",
+      "processTreePeakRssBytesSampled": 88207360,
+      "processTreeCpuSecondsSampled": 0.171875,
+      "processWallSeconds": 3.6933227999834344
+    },
+    {
+      "engine": "playwright",
+      "version": "1.65.2",
+      "samples": [
+        {
+          "ms": 1050.821700016968,
+          "sha256": "cb898bde54ffdb70bdb5e0ce5b4bbd27b96c5e7a6e2fee7caf46dffe1ca8cdd2"
+        },
+        {
+          "ms": 61.54869997408241,
+          "sha256": "b5d1b9ad50bd2c0f628dd81439ba0cbbd0543250968204895be13c5895fe6098"
+        },
+        {
+          "ms": 71.8273000093177,
+          "sha256": "b99c6659d719d6e7259dee40b58aaeaae5bbdeea37b64097e6721a6efb1cda8b"
+        },
+        {
+          "ms": 55.16280001029372,
+          "sha256": "3d9937780ef0e77628fc8526d191814fbbaabe67940799a526c7c98dd878b32b"
+        },
+        {
+          "ms": 57.36480001360178,
+          "sha256": "053c6eb0520d9f30a4d07d2f1e29e467dfed7762feaee92ed33738c2bf6f08ba"
+        },
+        {
+          "ms": 68.15519998781383,
+          "sha256": "3f79bcf9d139c81ac351cba6b2cc835883f24ea225c9ecec3ee787e8e9f2392c"
+        },
+        {
+          "ms": 50.727800000458956,
+          "sha256": "3dfac89ff4fc22077221e2f388ab4eaa27d9e4f99b0da11866ce23338e3ba9ce"
+        },
+        {
+          "ms": 57.1398000465706,
+          "sha256": "28b47efc4a2016ff0e81d5e4b6776482b5879fa45266c35a9de74629960d4146"
+        },
+        {
+          "ms": 58.7900000391528,
+          "sha256": "9c1364d1bb4677e1bd532d748ba1b227e2e2fd12abce3703a28358df1e367d8d"
+        },
+        {
+          "ms": 60.558400000445545,
+          "sha256": "a9fa5442389389421aa75bf63b923402f2d031be6de8fa9f0ef8a516c6e3df00"
+        },
+        {
+          "ms": 52.0518000703305,
+          "sha256": "c397c5a926a814c34fab999455e28bc088e7607591540654a7b08e56a980d41b"
+        },
+        {
+          "ms": 65.52599999122322,
+          "sha256": "1622629e35179c628e810fdd87937c5c33531ed7c28b1e12572606862475e07e"
+        },
+        {
+          "ms": 65.49829989671707,
+          "sha256": "e23f1fdf77dae37f9f60b743d38826e597c87bfc387f57b880342f36a6ca8a17"
+        }
+      ],
+      "complete": true,
+      "coldMs": 1050.821700016968,
+      "medianMs": 59.67420001979917,
+      "p95Ms": 71.8273000093177,
+      "workload": "static",
+      "processTreePeakRssBytesSampled": 644243456,
+      "processTreeCpuSecondsSampled": 0.421875,
+      "processWallSeconds": 2.382903499994427
+    },
+    {
+      "engine": "crawl4ai",
+      "version": "0.9.6",
+      "samples": [
+        {
+          "ms": 2781.4979000249878,
+          "sha256": "cb898bde54ffdb70bdb5e0ce5b4bbd27b96c5e7a6e2fee7caf46dffe1ca8cdd2"
+        },
+        {
+          "ms": 229.12829997949302,
+          "sha256": "b5d1b9ad50bd2c0f628dd81439ba0cbbd0543250968204895be13c5895fe6098"
+        },
+        {
+          "ms": 223.68460008874536,
+          "sha256": "b99c6659d719d6e7259dee40b58aaeaae5bbdeea37b64097e6721a6efb1cda8b"
+        },
+        {
+          "ms": 213.45799998380244,
+          "sha256": "3d9937780ef0e77628fc8526d191814fbbaabe67940799a526c7c98dd878b32b"
+        },
+        {
+          "ms": 222.2512000007555,
+          "sha256": "053c6eb0520d9f30a4d07d2f1e29e467dfed7762feaee92ed33738c2bf6f08ba"
+        },
+        {
+          "ms": 234.48179999832064,
+          "sha256": "3f79bcf9d139c81ac351cba6b2cc835883f24ea225c9ecec3ee787e8e9f2392c"
+        },
+        {
+          "ms": 230.204000021331,
+          "sha256": "3dfac89ff4fc22077221e2f388ab4eaa27d9e4f99b0da11866ce23338e3ba9ce"
+        },
+        {
+          "ms": 234.99080003239214,
+          "sha256": "28b47efc4a2016ff0e81d5e4b6776482b5879fa45266c35a9de74629960d4146"
+        },
+        {
+          "ms": 232.50230005942285,
+          "sha256": "9c1364d1bb4677e1bd532d748ba1b227e2e2fd12abce3703a28358df1e367d8d"
+        },
+        {
+          "ms": 248.0770000256598,
+          "sha256": "a9fa5442389389421aa75bf63b923402f2d031be6de8fa9f0ef8a516c6e3df00"
+        },
+        {
+          "ms": 250.4081999650225,
+          "sha256": "c397c5a926a814c34fab999455e28bc088e7607591540654a7b08e56a980d41b"
+        },
+        {
+          "ms": 206.38019999023527,
+          "sha256": "1622629e35179c628e810fdd87937c5c33531ed7c28b1e12572606862475e07e"
+        },
+        {
+          "ms": 260.2800000458956,
+          "sha256": "e23f1fdf77dae37f9f60b743d38826e597c87bfc387f57b880342f36a6ca8a17"
+        }
+      ],
+      "complete": true,
+      "coldMs": 2781.4979000249878,
+      "medianMs": 231.35315004037693,
+      "p95Ms": 260.2800000458956,
+      "workload": "static",
+      "processTreePeakRssBytesSampled": 726462464,
+      "processTreeCpuSecondsSampled": 0.921875,
+      "processWallSeconds": 6.212825799942948
+    },
+    {
+      "engine": "scrapy",
+      "version": "2.20.0",
+      "samples": [],
+      "complete": false,
+      "reason": "Expected every title and href in order, received 0 of 120 for revision 0",
+      "workload": "dynamic",
+      "processTreePeakRssBytesSampled": 87609344,
+      "processTreeCpuSecondsSampled": 0.21875,
+      "processWallSeconds": 1.917070799972862
+    },
+    {
+      "engine": "playwright",
+      "version": "1.65.2",
+      "samples": [
+        {
+          "ms": 893.2964999694377,
+          "sha256": "cb898bde54ffdb70bdb5e0ce5b4bbd27b96c5e7a6e2fee7caf46dffe1ca8cdd2"
+        },
+        {
+          "ms": 91.78690006956458,
+          "sha256": "b5d1b9ad50bd2c0f628dd81439ba0cbbd0543250968204895be13c5895fe6098"
+        },
+        {
+          "ms": 95.9020999725908,
+          "sha256": "b99c6659d719d6e7259dee40b58aaeaae5bbdeea37b64097e6721a6efb1cda8b"
+        },
+        {
+          "ms": 85.45570005662739,
+          "sha256": "3d9937780ef0e77628fc8526d191814fbbaabe67940799a526c7c98dd878b32b"
+        },
+        {
+          "ms": 86.46169991698116,
+          "sha256": "053c6eb0520d9f30a4d07d2f1e29e467dfed7762feaee92ed33738c2bf6f08ba"
+        },
+        {
+          "ms": 93.0379000492394,
+          "sha256": "3f79bcf9d139c81ac351cba6b2cc835883f24ea225c9ecec3ee787e8e9f2392c"
+        },
+        {
+          "ms": 88.02220004145056,
+          "sha256": "3dfac89ff4fc22077221e2f388ab4eaa27d9e4f99b0da11866ce23338e3ba9ce"
+        },
+        {
+          "ms": 86.92760008852929,
+          "sha256": "28b47efc4a2016ff0e81d5e4b6776482b5879fa45266c35a9de74629960d4146"
+        },
+        {
+          "ms": 84.71339999232441,
+          "sha256": "9c1364d1bb4677e1bd532d748ba1b227e2e2fd12abce3703a28358df1e367d8d"
+        },
+        {
+          "ms": 76.79219997953624,
+          "sha256": "a9fa5442389389421aa75bf63b923402f2d031be6de8fa9f0ef8a516c6e3df00"
+        },
+        {
+          "ms": 77.00329995714128,
+          "sha256": "c397c5a926a814c34fab999455e28bc088e7607591540654a7b08e56a980d41b"
+        },
+        {
+          "ms": 81.59710001200438,
+          "sha256": "1622629e35179c628e810fdd87937c5c33531ed7c28b1e12572606862475e07e"
+        },
+        {
+          "ms": 97.00619999784976,
+          "sha256": "e23f1fdf77dae37f9f60b743d38826e597c87bfc387f57b880342f36a6ca8a17"
+        }
+      ],
+      "complete": true,
+      "coldMs": 893.2964999694377,
+      "medianMs": 86.69465000275522,
+      "p95Ms": 97.00619999784976,
+      "workload": "dynamic",
+      "processTreePeakRssBytesSampled": 639778816,
+      "processTreeCpuSecondsSampled": 0.375,
+      "processWallSeconds": 2.542308200034313
+    },
+    {
+      "engine": "crawl4ai",
+      "version": "0.9.6",
+      "samples": [
+        {
+          "ms": 2260.8658000826836,
+          "sha256": "cb898bde54ffdb70bdb5e0ce5b4bbd27b96c5e7a6e2fee7caf46dffe1ca8cdd2"
+        },
+        {
+          "ms": 223.13239995855838,
+          "sha256": "b5d1b9ad50bd2c0f628dd81439ba0cbbd0543250968204895be13c5895fe6098"
+        },
+        {
+          "ms": 224.1288999794051,
+          "sha256": "b99c6659d719d6e7259dee40b58aaeaae5bbdeea37b64097e6721a6efb1cda8b"
+        },
+        {
+          "ms": 236.58840009011328,
+          "sha256": "3d9937780ef0e77628fc8526d191814fbbaabe67940799a526c7c98dd878b32b"
+        },
+        {
+          "ms": 228.25160005595535,
+          "sha256": "053c6eb0520d9f30a4d07d2f1e29e467dfed7762feaee92ed33738c2bf6f08ba"
+        },
+        {
+          "ms": 238.08749997988343,
+          "sha256": "3f79bcf9d139c81ac351cba6b2cc835883f24ea225c9ecec3ee787e8e9f2392c"
+        },
+        {
+          "ms": 234.18060003314167,
+          "sha256": "3dfac89ff4fc22077221e2f388ab4eaa27d9e4f99b0da11866ce23338e3ba9ce"
+        },
+        {
+          "ms": 244.71730005461723,
+          "sha256": "28b47efc4a2016ff0e81d5e4b6776482b5879fa45266c35a9de74629960d4146"
+        },
+        {
+          "ms": 230.8574999915436,
+          "sha256": "9c1364d1bb4677e1bd532d748ba1b227e2e2fd12abce3703a28358df1e367d8d"
+        },
+        {
+          "ms": 222.5354000693187,
+          "sha256": "a9fa5442389389421aa75bf63b923402f2d031be6de8fa9f0ef8a516c6e3df00"
+        },
+        {
+          "ms": 248.57389996759593,
+          "sha256": "c397c5a926a814c34fab999455e28bc088e7607591540654a7b08e56a980d41b"
+        },
+        {
+          "ms": 213.69979996234179,
+          "sha256": "1622629e35179c628e810fdd87937c5c33531ed7c28b1e12572606862475e07e"
+        },
+        {
+          "ms": 241.7795000365004,
+          "sha256": "e23f1fdf77dae37f9f60b743d38826e597c87bfc387f57b880342f36a6ca8a17"
+        }
+      ],
+      "complete": true,
+      "coldMs": 2260.8658000826836,
+      "medianMs": 232.51905001234263,
+      "p95Ms": 248.57389996759593,
+      "workload": "dynamic",
+      "processTreePeakRssBytesSampled": 734527488,
+      "processTreeCpuSecondsSampled": 0.8125,
+      "processWallSeconds": 5.744747699936852
+    }
+  ]
+}

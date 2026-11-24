@@ -117,6 +117,11 @@ class OperationJournal:
         if prior is None:
             prior = {"key": key, "sessionId": session_id, "firstAt": at, "timeline": []}
             self.records[key] = prior
+        # Each recorded event describes the current ticket. A retry or
+        # successful install can clear its error without erasing the earlier
+        # cancellation note in the append-only timeline.
+        if "lastError" not in ticket:
+            prior.pop("lastError", None)
         prior.update(ticket)
         prior["lastAt"] = at
         prior["timeline"].append({
@@ -135,7 +140,8 @@ class OperationJournal:
             key = self.session_id + ":" + operation
             with self.lock:
                 previous = self.records.get(key)
-                unchanged = previous and all(previous.get(k) == v for k, v in sanitized.items())
+                unchanged = (previous and previous.get("lastError") == sanitized.get("lastError")
+                             and all(previous.get(k) == v for k, v in sanitized.items()))
                 if not unchanged:
                     at = _stamp()
                     event = {"schemaVersion": 1, "eventId": secrets.token_hex(16),

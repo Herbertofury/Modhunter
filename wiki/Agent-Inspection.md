@@ -37,6 +37,8 @@ Call `skyrim_load_order` with empty arguments to inspect the configured profile.
 
 Use `skyrim_inspect` for these additional reads. Each call returns the underlying engine's result and its scope.
 
+- `{"kind":"check","formId":"00000F:Skyrim.esm","family":"errors"}` runs houseCARL's reference checks on that record. Select `scripts` or `facegen` to examine that family. The response retains exclusions and upstream diagnostics.
+- `{"kind":"archive","name":"Skyrim - Meshes0.bsa"}` returns the complete upstream archive entry count for a file in the configured game Data directory. Use the separate launch-selected BSA directory tool to page through paths.
 - `{"kind":"asset","path":"meshes/example.nif"}` checks a Data-relative asset and its providers.
 - `{"kind":"nif","path":"meshes/example.nif"}` reads the mesh structure and reports any unavailable blocks.
 - `{"kind":"facegen","formId":"0A2C8E:Skyrim.esm"}` inspects the NPC's mesh and tint providers.

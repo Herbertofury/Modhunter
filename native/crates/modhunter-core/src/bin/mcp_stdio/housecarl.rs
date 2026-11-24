@@ -74,7 +74,7 @@ impl Companion {
         let (name, arguments) = match query {
             Query::Status(_) => (STATUS_UPSTREAM, json!({})),
             Query::Record(record) => (RECORD_UPSTREAM, record.arguments()?),
-            Query::Inspect(inspect) => inspect.arguments()?,
+            Query::Inspect(inspect) => inspect.arguments(&self.dirs.data_dir)?,
         };
         let mut runtime = self
             .runtime
@@ -170,6 +170,14 @@ pub(super) enum Query {
 #[derive(Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
 pub(super) enum Diagnostic {
+    Archive {
+        name: String,
+    },
+    Check {
+        #[serde(rename = "formId")]
+        form_id: String,
+        family: CheckFamily,
+    },
     Asset {
         path: String,
     },
@@ -199,9 +207,47 @@ pub(super) enum Layer {
     Flm,
 }
 
+#[derive(Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub(super) enum CheckFamily {
+    Errors,
+    Scripts,
+    Facegen,
+}
+
 impl Diagnostic {
-    fn arguments(self) -> Result<(&'static str, Value), String> {
+    fn arguments(self, data_dir: &Path) -> Result<(&'static str, Value), String> {
         match self {
+            Self::Archive { name } => {
+                if name.starts_with(['@', '.'])
+                    || name.contains(['/', '\\', ':'])
+                    || name.chars().any(char::is_control)
+                    || !name.to_ascii_lowercase().ends_with(".bsa")
+                {
+                    return Err("Choose one BSA filename in the configured game Data folder".into());
+                }
+                let root = data_dir
+                    .canonicalize()
+                    .map_err(|_| "Game Data folder is unavailable")?;
+                let path = root
+                    .join(name)
+                    .canonicalize()
+                    .map_err(|_| "Selected Data archive is unavailable")?;
+                if path.parent() != Some(root.as_path()) || !path.is_file() {
+                    return Err("Selected BSA is outside the configured game Data folder".into());
+                }
+                Ok((
+                    "housecarl_bsa_list",
+                    json!({"archive":path,"counts_only":true}),
+                ))
+            }
+            Self::Check { form_id, family } => {
+                validate_form_id(&form_id)?;
+                Ok((
+                    "housecarl_check",
+                    json!({"formids":[form_id],"findings":[family]}),
+                ))
+            }
             Self::Asset { ref path } | Self::Nif { ref path } => {
                 if path.starts_with('@')
                     || path.contains(':')
@@ -241,8 +287,10 @@ pub(super) fn tools() -> [Value; 3] {
         json!({"name":STATUS,"title":"Inspect Skyrim load-order status","description":"Read active plugins and reported load failures from the configured houseCARL engine.",
         "inputSchema":{"type":"object","properties":{},"additionalProperties":false},"annotations":annotations}),
         json!({"name":INSPECT,"title":"Inspect Skyrim assets, FaceGen, SKSE and distributor rules",
-            "description":"Resolve an asset winner, inspect a NIF, compare an NPC's FaceGen providers, read distributor rules or inspect the configured SKSE layer.",
+            "description":"Resolve an asset winner, inspect a NIF, compare an NPC's FaceGen providers, read distributor rules or inspect the configured SKSE layer. Check one record for link, script or FaceGen findings, or count all entries in one game Data BSA.",
             "inputSchema":{"type":"object","required":["kind"],"oneOf":[
+                {"properties":{"kind":{"const":"check"},"formId":{"type":"string"},"family":{"enum":["errors","scripts","facegen"]}},"required":["formId","family"],"additionalProperties":false},
+                {"properties":{"kind":{"const":"archive"},"name":{"type":"string"}},"required":["name"],"additionalProperties":false},
                 {"properties":{"kind":{"enum":["asset","nif"]},"path":{"type":"string"}},"required":["path"],"additionalProperties":false},
                 {"properties":{"kind":{"const":"facegen"},"formId":{"type":"string"}},"required":["formId"],"additionalProperties":false},
                 {"properties":{"kind":{"const":"distributor"},"layer":{"enum":["skypatcher","spid","kid","bos","flm"]},"filter":{"type":"string"}},"required":["layer"],"additionalProperties":false},
@@ -368,6 +416,40 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn archive_and_check_accept_only_scoped_inputs() {
+        let fixture = tempfile::tempdir().unwrap();
+        std::fs::write(fixture.path().join("Example.bsa"), b"test").unwrap();
+        for name in [
+            "@list.bsa",
+            "../Example.bsa",
+            "C:/Example.bsa",
+            "Example.ini",
+            "Missing.bsa",
+        ] {
+            assert!(
+                Diagnostic::Archive { name: name.into() }
+                    .arguments(fixture.path())
+                    .is_err()
+            );
+        }
+        let (tool, args) = Diagnostic::Archive {
+            name: "Example.bsa".into(),
+        }
+        .arguments(fixture.path())
+        .unwrap();
+        assert_eq!(tool, "housecarl_bsa_list");
+        assert_eq!(args["counts_only"], true);
+        assert!(
+            Diagnostic::Check {
+                form_id: "@file".into(),
+                family: CheckFamily::Errors
+            }
+            .arguments(fixture.path())
+            .is_err()
+        );
+    }
+
     #[test]
     fn record_read_does_not_accept_file_lists_paths_or_write_options() {
         for key in [

@@ -1,0 +1,360 @@
+{
+  "checkedUtcDate": "2026-11-24",
+  "productCommit": "62e9ae6ca120801f8c7da3fe8c4b6a65faacb062",
+  "previousReceipt": "docs/benchmarks/pre-release-optimization-20261124.json",
+  "result": "Completed bounded independent optimization, package and dependency verification. No third-party code removal or bridge promoted.",
+  "testedScope": {
+    "target": "Windows x86_64, real read-only MO2 library, packaged Rust executable, synthetic matching and Chromium DOM workflows",
+    "pythonUnittestDiscovery": {
+      "testCases": 757,
+      "importErrors": 0,
+      "command": "unittest.TestLoader().discover('tests')"
+    },
+    "formatCheck": {
+      "command": "cargo fmt --manifest-path native/Cargo.toml --all -- --check",
+      "exit": 0,
+      "compiler": "rustc 1.99.0"
+    },
+    "limitations": "Discovery independently verifies available tests. The complete CI suites and native installed-user workflows are separate acceptance evidence."
+  },
+  "optimizer": {
+    "toolPinsAndSupplyChain": "See previousReceipt for checked artifacts, exact commits, licenses, script inspection and advisory lookup. The same unmodified tools ran against this candidate.",
+    "sourceScanner": {
+      "commands": {
+        "shrink-anything scan --lib --json": 0,
+        "shrink-anything weigh dist": 0,
+        "shrink-anything weigh PACKAGE_DIRECTORY": 0
+      },
+      "sourceMetrics": {
+        "files": 301,
+        "lines": 97082,
+        "code_lines": 88095,
+        "bytes": 5122006,
+        "deps": 22,
+        "assets": 37,
+        "asset_bytes": 8288112
+      },
+      "reportedCandidateCount": 0,
+      "duplicateGroups": 8,
+      "staticAnalysisControl": "The earlier receipt mentions both risky public symbols. Repeating the scan on an otherwise identical 0f17fa1 export excluding only that receipt made both warnings reappear. Reference counting across documents is insufficient evidence to remove either symbol."
+    },
+    "migrationAnalysis": {
+      "cmd": "rust-anything analyze --lang python --json mo2_update_arsenal",
+      "exit": 0,
+      "summary": {
+        "packages": 1,
+        "source_files": 33,
+        "test_files": 0,
+        "ui_files": 0,
+        "loc": 10722,
+        "units": 33,
+        "ready": 22,
+        "caution": 11,
+        "blocked": 0,
+        "keep": 0,
+        "parse_errors": 0
+      }
+    },
+    "profileFixture": {
+      "cmds": {
+        "python3 gate_profile_workload.py": 0,
+        "fast-anything scan -- python3 gate_profile_workload.py": 0,
+        "rust-anything profile . --lang python --json -- python3 gate_profile_workload.py": 0,
+        "fast-anything doctor": 1,
+        "rust-anything doctor": 1
+      },
+      "inputs": "Unchanged known-answer fixture, final candidate Python source, isolated non-root Linux RAM guest, no network or host filesystem shares. The missing Rust compilation toolchain remains a doctor limitation.",
+      "rowsPerRun": 11325,
+      "rounds": 3,
+      "digest": "d69ffad42881959b172fbf07766cedeb52dfb9a15e96384dfa7f22c27c55508e",
+      "rustProfilerProductRows": [
+        {
+          "function": "resolve",
+          "calls": 33975,
+          "inclusivePercent": 80.8
+        },
+        {
+          "function": "compare",
+          "calls": 33975,
+          "inclusivePercent": 57.4
+        },
+        {
+          "function": "compare_versions",
+          "calls": 33975,
+          "inclusivePercent": 52.2
+        },
+        {
+          "function": "parse_version",
+          "calls": 67950,
+          "inclusivePercent": 42.3
+        },
+        {
+          "function": "_numbers",
+          "calls": 33975,
+          "inclusivePercent": 3.9
+        },
+        {
+          "function": "nexus_file_id",
+          "calls": 101937,
+          "inclusivePercent": 1.4
+        }
+      ],
+      "decision": "Keep comparison in Python. End-to-end, ABI, fallback and bridge-inclusive improvement have not been demonstrated."
+    }
+  },
+  "chromium": {
+    "command": "python scripts/benchmark_watchtower_capture.py --rounds 40 --output LOCAL.json",
+    "scope": "In-page completed extraction on a generated DOM, excluding browser startup, network and IPC.",
+    "base": "0547bcd2e4ca5cc1bb693d74dc636935e94bbac7",
+    "chromium": "143.0.7499.4",
+    "samplesPerBranch": 40,
+    "articleCount": 1200,
+    "results": [
+      {
+        "ignoreSelectors": [],
+        "completeExpectedTextSha256": "f26a810735ebf71a0d13901b51417ea641823b64a4d11be141583f4174b3e4ea",
+        "warm": {
+          "baseline": {
+            "p50Ms": 3.7,
+            "p95Ms": 4.7,
+            "p99Ms": 12.9
+          },
+          "candidate": {
+            "p50Ms": 3.7,
+            "p95Ms": 4.5,
+            "p99Ms": 6
+          }
+        }
+      },
+      {
+        "ignoreSelectors": [
+          "aside"
+        ],
+        "completeExpectedTextSha256": "c2f3070b7bec00d3830fb175e24193c51806081774aa3e318ecfe16c54ef050f",
+        "warm": {
+          "baseline": {
+            "p50Ms": 28.4,
+            "p95Ms": 38.5,
+            "p99Ms": 40.7
+          },
+          "candidate": {
+            "p50Ms": 2.7,
+            "p95Ms": 3,
+            "p99Ms": 3.1
+          }
+        }
+      }
+    ]
+  },
+  "windowsPackages": {
+    "command": "shrink-anything weigh PACKAGE_DIRECTORY",
+    "exit": 0,
+    "artifactsBySource": {
+      "6e2bb09": {
+        "modhunter-cli.exe": {
+          "bytes": 6818304,
+          "sha256": "40655185766b8d7307dcf9047827889a8fd90386c5f62d63300fd7a03a0d33c3"
+        },
+        "Modhunter.exe": {
+          "bytes": 27039232,
+          "sha256": "2db34e674921005dfd5dc76eb07d26f986d698a1c8dc499c74848e302450ec08"
+        },
+        "Modhunter_0.12.6_x64-setup.exe": {
+          "bytes": 6763925,
+          "sha256": "529c36aa4a965ef93cf487a2684d1c1fe31d03d9410204d5d8e570123d5b823e"
+        }
+      },
+      "9e6fa07": {
+        "modhunter-cli.exe": {
+          "bytes": 7512576,
+          "sha256": "d55413c98d48297c9da29a82757dc798aa3aecdfcedcd2591a288e9250ba8abd"
+        },
+        "Modhunter.exe": {
+          "bytes": 27134976,
+          "sha256": "532008e84e4b202c3eb19c612a1bbed8ea657701a423ec72fbb47af8c3adefa8"
+        },
+        "Modhunter_0.12.6_x64-setup.exe": {
+          "bytes": 6801991,
+          "sha256": "1ff9dfc37c91320981da73c93328aab95923109151d7b7fac216e8d056c31654"
+        }
+      },
+      "0f17fa1": {
+        "modhunter-cli.exe": {
+          "bytes": 7516160,
+          "sha256": "72b60985bb7a720205377f4e6edc2faebb5a6c5f5b1bc5f7ac08b34f298853be"
+        },
+        "Modhunter.exe": {
+          "bytes": 27185152,
+          "sha256": "b9e683f6635bff4fd72017b3dcded22d9a66c001d5b67c2ab5521bb92971eab6"
+        },
+        "Modhunter_0.12.6_x64-setup.exe": {
+          "bytes": 6813685,
+          "sha256": "b680d446e9804be0fb70b585add57135b99224659006afa036d1e2739493a487"
+        }
+      },
+      "62e9ae6": {
+        "modhunter-cli.exe": {
+          "bytes": 7515648,
+          "sha256": "0602e2aad3b28e8c681c79c54130ff6c2eb73ff127bb830311d953e0e68f3f7a"
+        },
+        "Modhunter.exe": {
+          "bytes": 27179520,
+          "sha256": "8408f6dc9e29b3fade8e76c2b5bbdef25fb3de3f4fb43b2430e869873edf9564"
+        },
+        "Modhunter_0.12.6_x64-setup.exe": {
+          "bytes": 6807818,
+          "sha256": "7afeca59394edfa3339a4c6b9347abb49db1f5dc2c4244def6fa0820793b1c32"
+        }
+      }
+    },
+    "scope": "The installer and its two standalone executables are separate measured artifacts; summing the three sizes double-counts payload inside the installer."
+  },
+  "dependencyReview": {
+    "method": "OSV exact public crates.io names and versions from the frozen lockfile; per-package applicability through cargo tree --workspace --target x86_64-pc-windows-msvc --locked --offline and published RustSec records.",
+    "registryPackagesQueried": 559,
+    "lockSha256": "4cc721c037ff5192e426c04f1400c5bff95efd63028445b7c3444fa2469bbf72",
+    "previousWindowsFindings": [
+      {
+        "crate": "url",
+        "previous": "2.5.8",
+        "current": "2.5.9",
+        "advisory": "https://rustsec.org/advisories/RUSTSEC-2026-0592.html",
+        "assessment": "Desktop download origin validation uses the affected method on WebView2 inputs. The patched version was published unyanked with Rust 1.63 minimum."
+      },
+      {
+        "crate": "cookie",
+        "previous": "0.18.2",
+        "current": "0.18.3",
+        "advisory": "https://rustsec.org/advisories/RUSTSEC-2026-0594.html",
+        "assessment": "RustSec excludes Windows. Only the default cookie feature was present, and the upstream issue requires the private feature and process forking. The patched version was published unyanked with Rust 1.56 minimum."
+      }
+    ],
+    "otherLockChange": "form_urlencoded 1.2.3",
+    "windowsRemaining": {
+      "crate": "chrono 0.4.45",
+      "advisory": "https://rustsec.org/advisories/RUSTSEC-2026-0543.html",
+      "assessment": "Direct core dependency with clock; the published informational advisory describes all versions as unmaintained and lists no patched version. A future date/time migration needs compatibility tests."
+    },
+    "lockMatchesOutsideWindows": [
+      {
+        "crate": "glib",
+        "version": "0.18.5",
+        "advisories": [
+          "GHSA-wrw7-89jp-8q8g",
+          "RUSTSEC-2024-0429"
+        ]
+      },
+      {
+        "crate": "proc-macro-error",
+        "version": "1.0.4",
+        "advisories": [
+          "RUSTSEC-2024-0370"
+        ]
+      },
+      {
+        "crate": "zbus_names",
+        "version": "4.3.5",
+        "advisories": [
+          "RUSTSEC-2026-0371"
+        ]
+      },
+      {
+        "crate": "zvariant",
+        "version": "5.15.1",
+        "advisories": [
+          "RUSTSEC-2026-0370"
+        ]
+      },
+      {
+        "crate": "zvariant_derive",
+        "version": "5.15.1",
+        "advisories": [
+          "RUSTSEC-2026-0372"
+        ]
+      }
+    ],
+    "interpretation": "Matching IDs for glib describe the same GTK iterator issue. proc-macro-error and the three zbus/zvariant-family records are unmaintained notices. Those five crates were absent from the Windows target graph. Other target graphs require their own applicability review. Registry matching covers published advisories and does not establish freedom from defects."
+  },
+  "realProfile": {
+    "productCommand": "modhunter-cli import --modlist PROFILE_MODLIST --ini INSTANCE_INI --mods MODS_DIRECTORY --workers 8",
+    "benchmarkCommand": "modhunter-cli benchmark-profile --modlist PROFILE_MODLIST --ini INSTANCE_INI --mods MODS_DIRECTORY --workers 8 --rounds 12",
+    "realMods": 11325,
+    "separators": 834,
+    "explicitActiveMods": 4109,
+    "pluginCopies": 10352,
+    "uniquePluginNames": 9380,
+    "winningOrderedPlugins": 3629,
+    "explicitPluginStates": 3549,
+    "orderOnlyImplicitState": 80,
+    "everyProfileRowPriorityOrderAndExplicitStateMatched": true,
+    "normalizedCompleteCatalogAndWarningsMatch9e6fa07": true,
+    "importWarnings": 0,
+    "normalization": "Removes run timestamps and plugin-analysis timing/cache counters. Every other catalog and warning field is compared.",
+    "comparisonOrder": [
+      "9e6fa07",
+      "62e9ae6",
+      "62e9ae6",
+      "9e6fa07"
+    ],
+    "reference": {
+      "cliSha256": "d55413c98d48297c9da29a82757dc798aa3aecdfcedcd2591a288e9250ba8abd",
+      "processCount": 2,
+      "warmImportsPerProcess": 12,
+      "applicationCacheColdMs": [
+        1589.93,
+        1076.73
+      ],
+      "warmP50Ms": 1150.18,
+      "warmP95Ms": 1489.73,
+      "warmP99Ms": 1546.55,
+      "peakWorkingSetBytesByProcess": [
+        909516800,
+        913707008
+      ],
+      "processCpuSeconds": [
+        45.531,
+        33.422
+      ]
+    },
+    "candidate": {
+      "cliSha256": "0602e2aad3b28e8c681c79c54130ff6c2eb73ff127bb830311d953e0e68f3f7a",
+      "processCount": 2,
+      "warmImportsPerProcess": 12,
+      "applicationCacheColdMs": [
+        1033.86,
+        1192.83
+      ],
+      "warmP50Ms": 1052.15,
+      "warmP95Ms": 1253.49,
+      "warmP99Ms": 1280.49,
+      "peakWorkingSetBytesByProcess": [
+        917540864,
+        910053376
+      ],
+      "processCpuSeconds": [
+        29.859,
+        35.375
+      ]
+    },
+    "interpretation": "Two processes per build and 12 warm imports per process. Application-cache cold is the first import in each process. OS caches, builds and other independent testing were uncontrolled. Samples describe this hardware and workload. No independent general speedup claim for these two release snapshots."
+  },
+  "integrity": {
+    "assetFilesWithSha256": 2369967,
+    "assetLogicalBytes": 2672936357023,
+    "postReadFiles": 2372271,
+    "postReadDigestsReread": 14466,
+    "directoriesWhoseEnumeratedAndPathAllocationSizeWereCompared": 61632,
+    "unexplainedDifferences": 0,
+    "unchangedAssetVolumeJournalThroughFinalCLI": true,
+    "recoveryFilesReopenedFromPrivateArchive": 14465,
+    "recoveryLogicalBytes": 108816931,
+    "method": "The original manifest hashes every asset. The second pass verifies membership, paths, sizes, timestamps, attributes and link targets. It rehashes metadata and off-volume files. The unchanged NTFS journal binds other asset hashes across the interval. Private manifests, names and recovery files stay outside the repository.",
+    "scope": "MO2, shared assets, game, saves and profile configuration. Separately, earlier desktop smoke tests wrote to the existing application WebView profile. The saved native preferences file was restored and independently matched; other browser data received a separate hash-checked recovery review."
+  },
+  "remainingGates": [
+    "A complete test/coverage and platform release decision requires final CI, installed native host behavior, offline and user-data migration acceptance. This receipt covers the stated read-only subset.",
+    "The original governance adoption baseline and any remaining published CI failures require an owner decision or a verified repair. No third-party rewrite was promoted.",
+    "The bounded DOM benchmark excludes browser startup, network and native IPC. Acceptance of live page extraction requires independent WebView2 evidence.",
+    "Future replacements for unmaintained dependencies and any non-Windows distribution require separate ABI, packaging and platform qualification."
+  ]
+}

@@ -341,7 +341,17 @@ impl ProfileImporter {
                 .enumerate()
                 .map(|(priority, e)| {
                     check_cancelled(cancelled)?;
-                    let row = self.read_item(e, priority, &mods_dir, &dirs, &profile_id, &game);
+                    let actual = dirs
+                        .get(&e.name.to_lowercase())
+                        .map(|name| mods_dir.join(name));
+                    let row = self.read_item(
+                        e,
+                        priority,
+                        actual.as_deref(),
+                        &profile_id,
+                        &game,
+                        cancelled,
+                    );
                     check_cancelled(cancelled)?;
                     Ok(row)
                 })
@@ -527,21 +537,19 @@ impl ProfileImporter {
         &self,
         e: &Entry,
         priority: usize,
-        mods_dir: &Path,
-        dirs: &HashMap<String, String>,
+        actual: Option<&Path>,
         profile_id: &str,
         game: &str,
+        cancelled: CancellationCheck<'_>,
     ) -> ItemRead {
         let mut stats = ImportStats::default();
         let mut warnings = Vec::new();
-        let actual = dirs.get(&e.name.to_lowercase());
         let separator = e.name.to_lowercase().ends_with("_separator");
         let mut meta = Arc::new(Ini::default());
         let mut flags = Vec::<&str>::new();
         if !e.foreign && !separator {
-            if let Some(actual) = actual {
-                let dir = mods_dir.join(actual);
-                match self.read_meta(&dir.join("meta.ini"), &mut stats) {
+            if let Some(dir) = actual {
+                match self.read_meta(&dir.join("meta.ini"), &mut stats, cancelled) {
                     Ok(Some(m)) => meta = m,
                     Ok(None) => {}
                     Err(ex) => warnings.push(format!(
@@ -549,7 +557,7 @@ impl ProfileImporter {
                         e.name
                     )),
                 }
-                match inspect_dlls(&dir, &mut stats) {
+                match inspect_dlls(dir, &mut stats) {
                     Ok(true) => flags.push("DLL"),
                     Ok(false) => {}
                     Err(ex) => warnings.push(format!(
@@ -657,6 +665,7 @@ impl ProfileImporter {
         &self,
         path: &Path,
         stats: &mut ImportStats,
+        cancelled: CancellationCheck<'_>,
     ) -> Result<Option<Arc<Ini>>, CoreError> {
         let meta = match fs::symlink_metadata(path) {
             Ok(m) => m,
@@ -678,10 +687,16 @@ impl ProfileImporter {
         // Mod managers can preserve timestamps, and Windows may report the
         // same metadata for a quick equal-length rewrite. Verify bounded fresh
         // bytes before reusing parsed versions, game IDs or source links.
-        let bytes = read_bounded(path, META_LIMIT)?;
+        let (bytes, digest) = if meta.len() > META_LIMIT as u64 {
+            let file = open_verified(path, &meta)?;
+            crate::ini::read_catalog_metadata(file, meta.len(), META_LIMIT, cancelled)?
+        } else {
+            let bytes = read_bounded(path, META_LIMIT)?;
+            let digest = Sha256::digest(&bytes).into();
+            (bytes, digest)
+        };
         stats.files_read += 1;
-        stats.bytes_read += bytes.len();
-        let digest: [u8; 32] = Sha256::digest(&bytes).into();
+        stats.bytes_read += meta.len() as usize;
         let after =
             fs::symlink_metadata(path).map_err(|e| io_error("Recheck meta.ini after import", e))?;
         if is_link(&after) || FileStamp::from(&after) != stamp {
@@ -792,6 +807,20 @@ fn read_bounded(path: &Path, limit: usize) -> Result<Vec<u8>, CoreError> {
             "MO2 file exceeds the {limit}-byte import limit"
         )));
     }
+    let file = open_verified(path, &before)?;
+    let mut bytes = Vec::with_capacity(before.len() as usize);
+    file.take(limit as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| io_error("Read MO2 file contents", e))?;
+    if bytes.len() > limit {
+        return Err(CoreError::Invalid(format!(
+            "MO2 file exceeds the {limit}-byte import limit"
+        )));
+    }
+    Ok(bytes)
+}
+
+fn open_verified(path: &Path, before: &Metadata) -> Result<File, CoreError> {
     let mut options = OpenOptions::new();
     options.read(true);
     #[cfg(unix)]
@@ -812,22 +841,13 @@ fn read_bounded(path: &Path, limit: usize) -> Result<Vec<u8>, CoreError> {
     let opened = file
         .metadata()
         .map_err(|e| io_error("Inspect opened MO2 file", e))?;
-    if is_link(&opened) || !opened.is_file() || FileStamp::from(&opened) != FileStamp::from(&before)
+    if is_link(&opened) || !opened.is_file() || FileStamp::from(&opened) != FileStamp::from(before)
     {
         return Err(CoreError::Invalid(
             "MO2 file changed or became a link while opening it".into(),
         ));
     }
-    let mut bytes = Vec::with_capacity(before.len() as usize);
-    file.take(limit as u64 + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|e| io_error("Read MO2 file contents", e))?;
-    if bytes.len() > limit {
-        return Err(CoreError::Invalid(format!(
-            "MO2 file exceeds the {limit}-byte import limit"
-        )));
-    }
-    Ok(bytes)
+    Ok(file)
 }
 
 fn inspect_dlls(mod_dir: &Path, stats: &mut ImportStats) -> Result<bool, CoreError> {

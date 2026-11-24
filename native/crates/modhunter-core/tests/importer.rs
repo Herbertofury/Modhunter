@@ -382,6 +382,34 @@ fn corrupted_or_oversized_metadata_keeps_row_with_warning() {
 }
 
 #[test]
+fn cached_nexus_descriptions_do_not_hide_installed_identity() {
+    let fixture = Fixture::new("+Patch\n+UTF16\n+Invalid\n");
+    let text = format!(
+        "[General]\ngameName=SkyrimSE\nnexusDescription={}\nversion=2.6\nmodid=50307\n",
+        "日本".repeat(75_000)
+    );
+    fixture.add("Patch", &text);
+    fixture.add("UTF16", "");
+    let encoded: Vec<u8> = [0xff, 0xfe]
+        .into_iter()
+        .chain(text.encode_utf16().flat_map(u16::to_le_bytes))
+        .collect();
+    fs::write(fixture.mods.join("UTF16/meta.ini"), encoded).unwrap();
+    fixture.add("Invalid", "");
+    let mut bad = text.into_bytes();
+    bad[300_000] = 0xff;
+    fs::write(fixture.mods.join("Invalid/meta.ini"), bad).unwrap();
+    let result = ProfileImporter::new().import(&fixture.request()).unwrap();
+    for name in ["Patch", "UTF16"] {
+        let row = item(&result.catalog, name);
+        assert_eq!(row["installedVersion"], "2.6");
+        assert_eq!(row["nexusId"], 50307);
+    }
+    assert_eq!(result.warnings.len(), 1);
+    assert!(result.warnings[0].contains("Invalid text encoding"));
+}
+
+#[test]
 fn an_explicit_unknown_mod_game_never_falls_back_to_profile_nexus_identity() {
     let f = Fixture::new("+Different Game\n");
     f.add(

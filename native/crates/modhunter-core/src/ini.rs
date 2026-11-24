@@ -1,7 +1,9 @@
 //! Small QSettings-compatible INI reader. Keeps sections separate so unrelated
 //! plugin settings cannot override MO2's authoritative path and game settings.
 use crate::CoreError;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::io::{Cursor, Read};
 
 #[derive(Debug, Clone, Default)]
 pub struct Ini {
@@ -138,6 +140,90 @@ pub fn decode_text(bytes: &[u8]) -> Result<String, CoreError> {
             CoreError::Invalid("MO2 file must contain valid UTF-8 or BOM-tagged UTF-16".into())
         })
     }
+}
+
+/// MO2 can store megabytes of cached Nexus page description in one meta.ini
+/// field. The catalog reads notes, versions and identities from other fields.
+/// Validate the complete text and fingerprint the original bytes, while keeping
+/// only the bounded INI used by the catalog. Snapshot comparison is separate.
+pub(crate) fn read_catalog_metadata(
+    mut source: impl Read,
+    expected: u64,
+    retained_limit: usize,
+    cancelled: crate::CancellationCheck<'_>,
+) -> Result<(Vec<u8>, [u8; 32]), CoreError> {
+    use encoding_rs::{DecoderResult, Encoding, UTF_8};
+    let mut prefix = [0; 3];
+    source
+        .read_exact(&mut prefix)
+        .map_err(|e| crate::io_error("Read metadata encoding", e))?;
+    let encoding = Encoding::for_bom(&prefix).map_or(UTF_8, |(encoding, _)| encoding);
+    let mut decoder = encoding.new_decoder_with_bom_removal();
+    let mut stream = Cursor::new(prefix).chain(source);
+    let mut input = [0; 8192];
+    let mut decoded = [0; 8192];
+    let mut digest = Sha256::new();
+    let mut size = 0;
+    let mut text = String::new();
+    let mut line_start = 0;
+    let mut description = false;
+    loop {
+        crate::check_cancelled(cancelled)?;
+        let n = stream
+            .read(&mut input)
+            .map_err(|e| crate::io_error("Read metadata", e))?;
+        size += n as u64;
+        if size > expected {
+            return Err(CoreError::Invalid("Metadata grew during import".into()));
+        }
+        digest.update(&input[..n]);
+        let mut remaining = &input[..n];
+        loop {
+            let (state, read, written) =
+                decoder.decode_to_utf8_without_replacement(remaining, &mut decoded, n == 0);
+            remaining = &remaining[read..];
+            let chunk = std::str::from_utf8(&decoded[..written]).expect("decoder emits UTF-8");
+            for part in chunk.split_inclusive('\n') {
+                if !description {
+                    text.push_str(part.trim_end_matches('\n'));
+                    if text[line_start..]
+                        .split_once('=')
+                        .is_some_and(|(key, _)| key.trim().eq_ignore_ascii_case("nexusDescription"))
+                    {
+                        text.truncate(line_start);
+                        text.push_str("nexusDescription=");
+                        description = true;
+                    }
+                }
+                if part.ends_with('\n') {
+                    text.push('\n');
+                    line_start = text.len();
+                    description = false;
+                }
+                if text.len() > retained_limit {
+                    return Err(CoreError::Invalid(format!(
+                        "Catalog metadata excluding the cached Nexus description exceeds {retained_limit} bytes"
+                    )));
+                }
+            }
+            match state {
+                DecoderResult::InputEmpty => break,
+                DecoderResult::OutputFull => (),
+                DecoderResult::Malformed(_, _) => {
+                    return Err(CoreError::Invalid(
+                        "Invalid text encoding in meta.ini".into(),
+                    ));
+                }
+            }
+        }
+        if n == 0 {
+            break;
+        }
+    }
+    if size != expected {
+        return Err(CoreError::Invalid("Metadata changed during import".into()));
+    }
+    Ok((text.into_bytes(), digest.finalize().into()))
 }
 
 /// Decode the strings written by Qt QSettings, including UTF-8 QByteArrays.

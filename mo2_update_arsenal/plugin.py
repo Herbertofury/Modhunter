@@ -973,6 +973,25 @@ class ModUpdateArsenal(mobase.IPluginTool):
                 result = self._install(int(request.payload["downloadId"]), request.payload.get("nativeArchiveProof"))
             elif request.cmd == "focus":
                 result = self._focus_mod(request.payload)
+            elif request.cmd == "open-archive-dialog":
+                if protected_installs():
+                    request.finish(protected_refusal())
+                    return
+                snapshot = self.server.native_selection_snapshot([request.payload["itemId"]])
+                rows = snapshot["items"]
+                if (snapshot["profileId"] != request.payload["profileId"] or self.org.profileName() != snapshot["profileName"]
+                        or len(rows) != 1 or not self.org.modList().getMod(rows[0].get("mo2InternalName", ""))):
+                    request.finish({"ok":False,"error":"The selected mod or active MO2 profile changed."})
+                    return
+                window, _ = find_mo2_view(QtWidgets)
+                action = window.findChild(QtGui.QAction, "actionInstallMod") if window else None
+                if (not action or not action.isEnabled() or QtWidgets.QApplication.activeModalWidget() is not None
+                        or self.server.content._lease is not None or self.server._install_active is not None):
+                    request.finish({"ok":False,"error":"Finish the active MO2 operation before opening its archive chooser."})
+                    return
+                request.finish({"ok":True, "state":"handed-off"})
+                action.trigger()  # Stock MO2 owns the chooser, FOMOD and overwrite decisions.
+                return
             elif request.cmd == "backup":
                 result = self._profile_backup() if request.payload.get("confirm") else {"ok": False, "error": "Confirmation required"}
             elif request.cmd == "runtime":

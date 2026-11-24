@@ -188,6 +188,7 @@ class ArsenalService:
         self._source_scanner = None
         self._source_cache_path = cache_path.with_name("source-adapter-cache.json")
         self._file_cache: dict[tuple[str, int], tuple[float, dict]] = {}
+        self._nexus_quota_until = 0.0
         self._file_epoch = 0
         self._file_inflight: dict[tuple, dict] = {}
         self._downloads: dict[int, dict] = {}
@@ -854,6 +855,8 @@ class ArsenalService:
                                 if code in (401, 403):
                                     raise MissingAuth(message)
                                 if code == 429:
+                                    with self._guard:
+                                        self._nexus_quota_until = (int(time.time()) // 3600 + 1) * 3600
                                     from .scanner import QuotaDepleted
                                     raise QuotaDepleted(message)
                                 raise NexusError(message)
@@ -976,6 +979,8 @@ class ArsenalService:
                 self._file_cache.pop(cache_key, None)
             key = self.api_key
             native_nexus = self.native_nexus_available and self.native_nexus_files_available is not False
+            if self._nexus_quota_until > time.time():
+                return {"ok": False, "statusCode": 429, "error": "Nexus API quota reached. Use the Nexus website for manual downloads."}
             if not key and not native_nexus:
                 if self.native_nexus_available and self.native_nexus_files_error:
                     return {"ok": False, "error": "MO2 Nexus file list unavailable: " + self.native_nexus_files_error
@@ -999,6 +1004,8 @@ class ArsenalService:
                     result = {"ok": False, "error": "MO2 profile or scan changed while loading files; refresh and review again"}
                 elif result.get("ok"):
                     self._file_cache[cache_key] = (time.monotonic(), result)
+                elif result.get("statusCode") == 429:
+                    self._nexus_quota_until = (int(time.time()) // 3600 + 1) * 3600
                 flight["result"] = result
                 self._file_inflight.pop(identity, None)
                 flight["event"].set()
@@ -1038,9 +1045,33 @@ class ArsenalService:
             items.sort(key=lambda f: (f["category"] != 1, -f["fileId"]))
             return {"ok": True, "files": items, "modId": mod_id}
         except (NexusError, MissingAuth, ValueError) as ex:
+            from .scanner import QuotaDepleted
+            if isinstance(ex, QuotaDepleted):
+                return {"ok": False, "statusCode": 429, "error": str(ex)}
             return {"ok": False, "error": str(ex)}
 
-    def review_files(self, mod_id: int, item_id: str, *, include_archive_receipt: bool = False) -> dict:
+    def website_file_review(self, snapshot, item):
+        """Resolve a dated website link from local evidence without granting queue authority."""
+        from .file_advisor import NexusFileIndex
+        from .mod_health import nexus_identity
+        from .scanner import metadata_identity_matches, summary_from_metadata
+        owner = nexus_identity(item, snapshot.get("game", ""))
+        if not owner or item.get("installedFileEvidenceIncomplete") or item.get("updateEligible") is False:
+            return None
+        game, project = owner
+        record = self.cache.get(game, project) or {}
+        metadata, checked = record.get("meta"), record.get("checkedAt")
+        if not (metadata_identity_matches(metadata, game, project) and isinstance(metadata.get("fileCatalog"), dict)
+                and type(checked) in (float, int) and 0 < checked <= time.time() + 60):
+            return None
+        exact = summary_from_metadata(item, metadata, checked, NexusFileIndex(metadata["fileCatalog"]))
+        target, installed = nexus_file_id(exact.get("targetFileId")), nexus_file_id(exact.get("installedFileId"))
+        if exact.get("verdict") != "candidate" or exact.get("evidenceScope") != "exact-file" or not target or not installed or target == installed:
+            return None
+        return {"fileId": target, "installedFileId": installed, "version": exact.get("latestVersion"), "checkedAt": checked}
+
+    def review_files(self, mod_id: int, item_id: str, *, include_archive_receipt: bool = False,
+                     website_fallback=False, website_only=False) -> dict:
         """Decorate native Nexus files for one exact MO2 row, not shared projects."""
         snapshot = self.selection_snapshot([item_id])
         item = next((row for row in snapshot.get("items", [])
@@ -1048,8 +1079,15 @@ class ArsenalService:
                      and int(row.get("nexusId") or 0) == mod_id), None)
         if item is None:
             return {"ok": False, "error": "Selected file review does not belong to this MO2 profile"}
-        response = self.fetch_files(mod_id)
+        if website_only:
+            response = {"ok": False, "error": "The website review uses the locally recorded file evidence."}
+        else:
+            response = self.fetch_files(mod_id)
         if not response.get("ok"):
+            if website_fallback and self.selection_snapshot([item_id]) == snapshot:
+                return {"ok": True, "nativeFilesAvailable": False, "files": [], "statusCode": response.get("statusCode"),
+                        "profileId": snapshot["profileId"], "itemId": item_id, "modId": mod_id,
+                        "websiteFile": self.website_file_review(snapshot, item), "reason": response.get("error", "")}
             return response
         advisory = advise_nexus_files(item, response["files"])
         result = {**response, **advisory, "itemId": item_id}
@@ -2158,7 +2196,8 @@ class ArsenalService:
                         mid = 0
                     item_id = query.get("itemId", [""])[0]
                     return self._reply(service.review_files(mid, item_id,
-                        include_archive_receipt=query.get("reviewArchive") == ["1"])
+                        include_archive_receipt=query.get("reviewArchive") == ["1"],
+                        website_fallback=query.get("websiteFallback") == ["1"], website_only=query.get("websiteOnly") == ["1"])
                         if item_id else service.fetch_files(mid))
                 if uri.path == "/api/diagnostics":
                     return self._reply({"ok": True, "version": VERSION,
@@ -2181,6 +2220,10 @@ class ArsenalService:
                 except (ValueError, json.JSONDecodeError):
                     return self._reply({"ok": False, "error": "Invalid JSON"}, 400)
                 uri = urllib.parse.urlsplit(self.path)
+                if uri.path == "/api/open-archive-dialog":
+                    if set(data) != {"profileId", "itemId", "confirm"} or data.get("confirm") != "OPEN_ARCHIVE_DIALOG":
+                        return self._reply({"ok": False, "error": "Choose the archive dialog from a live mod row."}, 400)
+                    return self._reply(service.call_ui("open-archive-dialog", data))
                 if uri.path == "/api/agent-set-enabled":
                     if not self._native_client():
                         return self._reply({"ok": False, "error": "Native client required."}, 403)

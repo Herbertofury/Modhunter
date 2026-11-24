@@ -1951,7 +1951,7 @@ body[data-layout="compact"]:not(.realm-route) #gameBoard{--vault-primary:#d9bb83
   <div class="operation-actions"><button class="quiet-button" id="installPreviewCancel" type="button">Not now</button><button class="button-bright" id="installPreviewConfirm" type="button" disabled>Verifying…</button></div>
  </section>
 </div>
-<div class="modal-veil" id="filePickerVeil" hidden><div class="help-dialog file-picker" role="dialog" aria-modal="true" aria-labelledby="filePickerTitle"><button id="filePickerClose" class="close-button" aria-label="Close release file picker">×</button><div class="kicker">RELEASE FILES · EXACT PROVIDER EVIDENCE</div><h2 id="filePickerTitle">Choose update file</h2><p id="filePickerSummary" class="muted-help">Verify the selected build for your game and requirements before download.</p><p id="filePickerArchiveReceipt" class="muted-help" role="status" hidden></p><div class="picker-searchbar"><label for="filePickerSearch">Find exact file</label><input id="filePickerSearch" type="search" autocomplete="off" placeholder="Filter by file name, version, description…" aria-label="Filter available release files"><label id="filePickerRoleLabel" hidden>File evidence<select id="filePickerRole"><option value="all">All files</option><option value="matches">Matches published version</option><option value="main">Main files</option><option value="other">Optional or other files</option><option value="receipt" disabled>Recorded archive</option></select></label><span id="filePickerMatchCount" role="status" aria-live="polite"></span></div><div id="filePickerFiles" class="file-picker-files" aria-live="polite"></div><div class="picker-tail"><button id="filePickerNexus" class="quiet-button">↗ Open original files</button><button id="filePickerCancel" class="quiet-button">Cancel</button></div></div></div>
+<div class="modal-veil" id="filePickerVeil" hidden><div class="help-dialog file-picker" role="dialog" aria-modal="true" aria-labelledby="filePickerTitle"><button id="filePickerClose" class="close-button" aria-label="Close release file picker">×</button><div class="kicker">RELEASE FILES · EXACT PROVIDER EVIDENCE</div><h2 id="filePickerTitle">Choose update file</h2><p id="filePickerSummary" class="muted-help">Verify the selected build for your game and requirements before download.</p><p id="filePickerArchiveReceipt" class="muted-help" role="status" hidden></p><div class="picker-searchbar"><label for="filePickerSearch">Find exact file</label><input id="filePickerSearch" type="search" autocomplete="off" placeholder="Filter by file name, version, description…" aria-label="Filter available release files"><label id="filePickerRoleLabel" hidden>File evidence<select id="filePickerRole"><option value="all">All files</option><option value="matches">Matches published version</option><option value="main">Main files</option><option value="other">Optional or other files</option><option value="receipt" disabled>Recorded archive</option></select></label><span id="filePickerMatchCount" role="status" aria-live="polite"></span></div><div id="filePickerFiles" class="file-picker-files" aria-live="polite"></div><p class="muted-help">After a website download, open the archive in MO2. To update the selected mod, choose its existing destination and review the FOMOD and overwrite prompts.</p><div class="picker-tail"><button id="filePickerArchiveDialog" class="quiet-button" hidden>Open MO2 archive chooser…</button><button id="filePickerNexus" class="quiet-button">↗ Open original files</button><button id="filePickerCancel" class="quiet-button">Cancel</button></div></div></div>
 <div class="victory-overlay" id="victoryOverlay" hidden role="dialog" aria-modal="true" aria-labelledby="victoryTitle">
  <div class="victory-sky" id="victorySky" aria-hidden="true"></div>
  <div class="victory-runes" id="victoryRunes" aria-hidden="true"></div>
@@ -3891,9 +3891,10 @@ async function fastUpdateOne(id){
    return;
   }
   const reason=(result.skipped||[])[0]?.reason||(result.failed||[])[0]?.error||'Choose an exact file';
+  if(/quota|rate limit|HTTP 429/i.test(reason)){workshopSetStatus(reason);const m=ITEM_MAP.get(id);if(m)await openFilePicker(m,true);return}
   workshopSetStatus(reason);QUICK_SKIPPED.set(id,reason);
   if(!reason.toLowerCase().includes('already in mo2')){FAST_PICKER_ID=id;await reviewWorkshopFile(id);}
- }catch(e){if(active()){workshopSetStatus('Could not start download: '+e.message);FAST_PICKER_ID=id;await reviewWorkshopFile(id)}}
+ }catch(e){if(active()){workshopSetStatus('Could not start download: '+e.message);const m=ITEM_MAP.get(id);if(m&&/quota|rate limit|HTTP 429/i.test(e.message)){await openFilePicker(m,true)}else{FAST_PICKER_ID=id;await reviewWorkshopFile(id)}}}
  finally{if(active()){QUICK_RUNNING=false;renderWorkshop()}}
 }
 async function fastUpdateAll(){
@@ -4302,7 +4303,7 @@ async function refreshDownloadSnapshot(){
    const title=state==='complete'?'Ready to install':state==='installing'?'MO2 installer open':state==='installed'?(d.verifiedUpdate?'Update confirmed':'Installed · needs verification'):state==='downloading'?'Downloading':state==='paused'?'Paused in MO2':state==='failed'?'Download failed':state==='removed'?'Removed from MO2':state;
    const detail=state==='complete'?'Profile snapshot and interactive FOMOD/overwrite review before installing':state==='installing'?'Finish the installer prompts inside MO2':state==='installed'?(d.verifiedUpdate?'Version change confirmed in MO2':'Rescan and verify the installed version and overwrite order'):state==='paused'?'Resume in the MO2 Downloads pane':state==='failed'?'Review an exact file to try again':state==='downloading'?'MO2 is handling this archive':'Check MO2 Downloads';
    const buttons=state==='complete'?'<button class="button-bright" data-download-id="'+escapeHTML(id)+'">ϟ Install now</button><button class="quiet-button" data-download-details="'+escapeHTML(id)+'">Details</button>':state==='failed'&&Number.isInteger(d.retriedBy)&&d.retriedBy>=0?'<span class="ticket-requeued">Requeued as #'+escapeHTML(d.retriedBy)+'</span>':state==='failed'&&mod?'<button class="button-bright" data-retry-download-id="'+escapeHTML(id)+'">↻ Retry now</button><button class="quiet-button" data-retry-item-id="'+escapeHTML(d.itemId)+'">Choose another file</button>':'';
-   return {key:'ticket:'+id,html:'<article data-ticket-id="'+escapeHTML(id)+'" class="download-ticket ticket-'+escapeHTML(safeState)+'" data-ticket-item-id="'+escapeHTML(d.itemId||'')+'"><i class="ticket-status-dot" aria-hidden="true"></i><div class="ticket-copy"><strong>'+escapeHTML(name)+'</strong><span>'+escapeHTML(title)+' · '+(providerLabel(d.provider||'nexus'))+' · #'+escapeHTML(id)+'</span><small>'+escapeHTML(d.lastError||detail)+'</small></div>'+buttons+'</article>'};
+   return {key:'ticket:'+id,html:'<article data-ticket-id="'+escapeHTML(id)+'" class="download-ticket ticket-'+escapeHTML(safeState)+'" data-ticket-item-id="'+escapeHTML(d.itemId||'')+'"><i class="ticket-status-dot" aria-hidden="true"></i><div class="ticket-copy"><strong>'+escapeHTML(name)+'</strong><span>'+escapeHTML(title)+' · '+(providerLabel(d.provider||'nexus'))+' · #'+escapeHTML(id)+'</span><small>'+escapeHTML(d.lastError||detail)+'</small></div>'+buttons+(state==='failed'&&mod&&d.provider==='nexus'&&d.modId===mod.nexusId?manualDownloadLink(mod,d.fileId):'')+'</article>'};
   });
   if(tickets.length)entries.unshift({key:'heading',html:'<div class="workshop-downloads-heading"><div><strong>MO2 Downloads & Installations</strong><small>Real MO2 download manager · every installation is interactive</small></div><span>'+tickets.length+' ticket'+(tickets.length===1?'':'s')+'</span></div>'});
   setRows(box,entries,'',true);
@@ -4335,7 +4336,29 @@ function filePickerArchive(j,files){
  if((receipt.state==='listed'&&matches===1)||(receipt.state==='notListed'&&matches===0))return receipt;
  return {state:'unknown'};
 }
-async function openFilePicker(m){
+function nexusWebsite(m,fileId){
+ if(!isNativeNexusFileSource(m)||m.updateEligible===false)return '';
+ const source=getSrc(m),game=String(LIVE_CATALOG?.game||DATA.game||'');
+ if(!source.verified||!Number.isSafeInteger(m.nexusId)||m.nexusId<=0||game==='unknown'||!/^[a-z0-9_-]+$/.test(game))return '';
+ try{
+  const u=new URL(source.url);
+  if(u.protocol!=='https:'||u.username||u.password||u.port||!['www.nexusmods.com','nexusmods.com'].includes(u.hostname)||u.pathname.replace(/\/$/,'')!=='/'+game+'/mods/'+m.nexusId)return '';
+ }catch{return ''}
+ if(fileId!==undefined&&(!Number.isSafeInteger(fileId)||fileId<=0))return '';
+ return 'https://www.nexusmods.com/'+game+'/mods/'+m.nexusId+'?tab=files'+(fileId===undefined?'':'&file_id='+fileId+'&nmm=0');
+}
+function manualDownloadLink(m,fileId){
+ const href=nexusWebsite(m,fileId);
+ return href?'<a class="quiet-button" target="_blank" rel="noopener noreferrer" href="'+escapeHTML(href)+'">'+(fileId===undefined?'Choose a file on Nexus':'Manual Download on Nexus · #'+fileId)+' ↗</a>':'';
+}
+function websiteFallback(m,websiteFile,reason){
+ const u=m.update||{},known=websiteFile||(u.evidenceScope==='exact-file'&&u.verdict==='candidate'?{fileId:u.targetFileId,installedFileId:u.installedFileId,checkedAt:u.checkedAt,version:u.latestVersion}:null);
+ const exact=known&&Number.isSafeInteger(known.fileId)&&Number.isSafeInteger(known.installedFileId)&&known.installedFileId>0&&known.fileId>0&&known.fileId!==known.installedFileId&&Number.isFinite(known.checkedAt)&&known.checkedAt>0&&!m.installedFileEvidenceIncomplete;
+ const link=manualDownloadLink(m,exact?known.fileId:undefined);
+ const detail=exact&&link?'Last observed successor to installed file #'+known.installedFileId+' · '+new Date(known.checkedAt*1000).toLocaleString()+(known.version?' · v'+escapeHTML(known.version):'')+'. Verify that Nexus still offers this file.':'The exact successor is unverified. Choose the intended file on its Nexus project.';
+ return '<div class="picker-error">'+escapeHTML(reason)+'<p>'+detail+'</p>'+link+'</div>';
+}
+async function openFilePicker(m,websiteOnly=false){
  const nativeNexus=isNativeNexusFileSource(m);
  if(!BRIDGE.active||(!nativeNexus&&!hasReleaseAssets(m))){toast('No verified download assets for this source.');return}
  const context=profileContext(),view=++FILE_PICKER_VIEW;FILE_PICKER_MOD=m;
@@ -4344,6 +4367,7 @@ async function openFilePicker(m){
  $('filePickerArchiveReceipt').textContent='';
  $('filePickerSearch').value='';$('filePickerMatchCount').textContent='Loading…';
  $('filePickerTitle').textContent=m.name;
+ $('filePickerArchiveDialog').hidden=!BRIDGE.active;
  $('filePickerSummary').textContent='Installed: '+m.installedVersion+' · Target runtime: '+(DATA.gameRuntime||'unknown')+'. Inspect file version, requirements and FOMOD instructions.';
  $('filePickerVeil').hidden=false;$('filePickerFiles').innerHTML='<div class="picker-loading">Loading exact file choices…</div>';
  if(m.update?.detailsAvailable||(!m.update?.releaseAssets?.length&&hasReleaseAssets(m))){
@@ -4357,13 +4381,17 @@ async function openFilePicker(m){
   filterFilePicker();return;
  }
  try{
-  const j=await bridgeRequest('GET','files?modId='+m.nexusId+'&itemId='+encodeURIComponent(m.id)+'&reviewArchive=1&reviewView='+view);
+  const j=await bridgeRequest('GET','files?modId='+m.nexusId+'&itemId='+encodeURIComponent(m.id)+'&reviewArchive=1&reviewView='+view+'&websiteFallback=1'+(websiteOnly||m.update?.availability==='rate-limited'?'&websiteOnly=1':''));
   if(!j.ok)throw Error(j.error||'Nexus file review unavailable');
   if(!current())return;
   // A current file list can coexist with no verified historical receipt.
   // Refuse contradictory identity evidence, including delayed results for a reused picker.
   if((j.itemId!=null&&j.itemId!==m.id)||(j.modId!=null&&j.modId!==Number(m.nexusId))||(j.profileId!=null&&j.profileId!==context.profile))
    throw Error('The file review no longer identifies this mod. Reopen the picker.');
+  if(j.nativeFilesAvailable===false){
+   $('filePickerFiles').innerHTML=websiteFallback(detailed,j.websiteFile,j.reason||'Nexus API file list unavailable.')+releaseFiles;
+   filterFilePicker();return;
+  }
   const files=Array.isArray(j.files)?j.files:[];
   const receipt=Boolean(context.profile)&&j.itemId===m.id&&j.modId===Number(m.nexusId)&&j.profileId===context.profile?filePickerArchive(j,files):{state:'unknown'};
   const archiveNote=$('filePickerArchiveReceipt');
@@ -4376,7 +4404,7 @@ async function openFilePicker(m){
   const nexus=files.map(f=>{
    const recorded=receipt.state==='listed'&&Number(f.fileId)===receipt.fileId;
    const tag=f.suggested?'◈ VERIFIED FILE SUCCESSOR':f.releaseVersionMatch?'✓ PROJECT VERSION MATCH':f.category===1?'MAIN FILE':'OPTIONAL / OTHER';
-   return '<div class="picker-file'+(f.suggested?' picker-suggested':'')+'" data-picker-role="'+(f.category===1?'main':'other')+'" data-picker-matches="'+String(f.releaseVersionMatch===true)+'" data-picker-receipt="'+String(recorded)+'"><div class="picker-file-main"><span class="picker-match-tag">'+escapeHTML(tag)+'</span><strong>'+escapeHTML(f.name)+'</strong>'+(recorded?'<span class="picker-archive-receipt">Recorded archive</span>':'')+'<span>Nexus #'+Number(f.fileId)+' · v'+escapeHTML(f.version||'?')+' · '+escapeHTML(f.fileName||'')+' · '+escapeHTML(f.sizeInKB||'?')+' KB '+(f.category===1?' · MAIN FILE':'')+'</span>'+(f.reviewHint?'<p class="picker-hint">'+escapeHTML(f.reviewHint)+'</p>':'')+(f.description?'<p class="picker-file-desc">'+escapeHTML(f.description)+'</p>':'')+'</div><button class="button-bright" data-file-id="'+Number(f.fileId)+'" data-file-version="'+escapeHTML(f.version||'')+'" data-mod-id="'+Number(m.nexusId)+'" data-archive-name="'+escapeHTML(f.fileName||f.name)+'">Select Nexus file</button></div>';
+   return '<div class="picker-file'+(f.suggested?' picker-suggested':'')+'" data-picker-role="'+(f.category===1?'main':'other')+'" data-picker-matches="'+String(f.releaseVersionMatch===true)+'" data-picker-receipt="'+String(recorded)+'"><div class="picker-file-main"><span class="picker-match-tag">'+escapeHTML(tag)+'</span><strong>'+escapeHTML(f.name)+'</strong>'+(recorded?'<span class="picker-archive-receipt">Recorded archive</span>':'')+'<span>Nexus #'+Number(f.fileId)+' · v'+escapeHTML(f.version||'?')+' · '+escapeHTML(f.fileName||'')+' · '+escapeHTML(f.sizeInKB||'?')+' KB '+(f.category===1?' · MAIN FILE':'')+'</span>'+(f.reviewHint?'<p class="picker-hint">'+escapeHTML(f.reviewHint)+'</p>':'')+(f.description?'<p class="picker-file-desc">'+escapeHTML(f.description)+'</p>':'')+'</div><button class="button-bright" data-file-id="'+Number(f.fileId)+'" data-file-version="'+escapeHTML(f.version||'')+'" data-mod-id="'+Number(m.nexusId)+'" data-archive-name="'+escapeHTML(f.fileName||f.name)+'">Select Nexus file</button>'+manualDownloadLink(m,f.fileId)+'</div>';
   }).join('');
   if(!nexus&&!releaseFiles)throw Error('No files available for this project');
   $('filePickerFiles').innerHTML=(nexus?'<div class="picker-source-title">NEXUS MODS · EXACT FILES</div>'+nexus:'')+releaseFiles;
@@ -4387,13 +4415,21 @@ async function openFilePicker(m){
  }catch(ex){
   if(!current())return;
   $('filePickerRoleLabel').hidden=true;$('filePickerArchiveReceipt').hidden=true;$('filePickerArchiveReceipt').textContent='';
-  $('filePickerFiles').innerHTML='<div class="picker-error">'+escapeHTML(ex.message)+'<p>Use the original Nexus Files page and Mod Manager Download if required by your account.</p></div>'+releaseFiles;
+  $('filePickerFiles').innerHTML=websiteFallback(detailed,null,ex.message)+releaseFiles;
   filterFilePicker();
  }
 }
 function closeFilePicker(){FILE_PICKER_VIEW++;$('filePickerVeil').hidden=true;FILE_PICKER_MOD=null;WORKSHOP_REVIEW_ID=null;FAST_PICKER_ID=null}
 $('filePickerClose').onclick=closeFilePicker;$('filePickerCancel').onclick=closeFilePicker;$('filePickerVeil').addEventListener('click',e=>{if(e.target===$('filePickerVeil'))closeFilePicker()});
 $('filePickerNexus').onclick=()=>{if(FILE_PICKER_MOD)window.open(getSrc(FILE_PICKER_MOD).url,'_blank','noopener,noreferrer')};
+$('filePickerArchiveDialog').onclick=async()=>{
+ const m=FILE_PICKER_MOD,button=$('filePickerArchiveDialog');if(!m||!LIVE_CONNECTED||ITEM_MAP.get(m.id)!==m)return;
+ button.disabled=true;
+ try{
+  await bridgeRequest('POST','open-archive-dialog',{profileId:LIVE_CATALOG.profileId,itemId:m.id,confirm:'OPEN_ARCHIVE_DIALOG'});
+  if(FILE_PICKER_MOD===m)toast('Choose the downloaded archive in MO2, then confirm the destination and FOMOD options.');
+ }catch(e){toast('MO2 archive chooser: '+e.message)}finally{button.disabled=false}
+};
 $('filePickerFiles').addEventListener('click',async e=>{const b=e.target.closest('button[data-file-id]');if(!b)return;const m=FILE_PICKER_MOD;if(!m)return;
  if(WORKSHOP_REVIEW_ID){
   const plan=currentWorkshopPlan(),record=plan.items.find(x=>x.id===WORKSHOP_REVIEW_ID);

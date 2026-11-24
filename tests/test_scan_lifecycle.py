@@ -159,7 +159,8 @@ class ScanOwnershipTests(unittest.TestCase):
         calls = []
         result = {"records": {}, "itemRecords": {"live-one": {"verdict": "candidate", "latestVersion": "2.0"}},
                   "errors": [], "queried": 1, "mode": "deep"}
-        def provider(cache, client):
+        def provider(cache, client, *, native_catalog):
+            self.assertIsNone(native_catalog)
             self.assertEqual(client.api_key, "fixture-api-key")
             def scan(snapshot, mode, progress, *, cancel_event):
                 self.assertIs(cancel_event, self.service._scan_cancel)

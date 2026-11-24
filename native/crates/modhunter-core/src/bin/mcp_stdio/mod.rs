@@ -1,4 +1,5 @@
 //! Read-only subprocess MCP. Files are selectable only before stdio starts.
+use modhunter_core::{BridgeClient, validate_bridge_endpoint};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
@@ -20,7 +21,8 @@ const BSA_PAGE_SIZE: usize = 64;
 const PLUGIN_TOOL: &str = "plugin_header";
 const PLUGIN_MASTER_LIMIT: usize = 256;
 const PLUGIN_MASTER_NAME_LIMIT: usize = 255;
-const USAGE: &str = "mcp-stdio [--legacy-2025-11-25] [--bsa ALIAS PATH] [--plugin ALIAS PATH]";
+const LIVE_TOOL: &str = "mo2_mods";
+const USAGE: &str = "mcp-stdio [--legacy-2025-11-25] [--bsa ALIAS PATH] [--plugin ALIAS PATH] [--mo2 PROFILE_ID LOOPBACK_URL]";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mode {
@@ -80,7 +82,14 @@ impl PluginSnapshot {
     }
 }
 
+struct LiveProfile {
+    profile_id: String,
+    endpoint: String,
+    client: BridgeClient,
+}
+
 struct Selections {
+    live: Option<LiveProfile>,
     archive: Option<ArchiveSnapshot>,
     plugin: Option<PluginSnapshot>,
 }
@@ -102,7 +111,24 @@ fn configuration(args: &[String]) -> Result<(Mode, Selections), &'static str> {
         return Err(USAGE);
     }
     let (mut archive, mut plugin) = (None, None);
+    let mut live = None;
     for [flag, alias, path] in triples {
+        if flag == "--mo2" {
+            if live.is_some()
+                || alias.is_empty()
+                || alias.len() > 256
+                || alias.chars().any(char::is_control)
+            {
+                return Err(USAGE);
+            }
+            live = Some(LiveProfile {
+                profile_id: alias.clone(),
+                endpoint: validate_bridge_endpoint(path)
+                    .map_err(|_| "Invalid MO2 loopback endpoint")?,
+                client: BridgeClient::new().map_err(|_| "Cannot initialize the MO2 connection")?,
+            });
+            continue;
+        }
         let slot = match flag.as_str() {
             "--bsa" => &mut archive,
             "--plugin" => &mut plugin,
@@ -129,7 +155,14 @@ fn configuration(args: &[String]) -> Result<(Mode, Selections), &'static str> {
     let plugin = plugin
         .map(|(alias, path)| PluginSnapshot::capture(alias, Path::new(path)))
         .transpose()?;
-    Ok((mode, Selections { archive, plugin }))
+    Ok((
+        mode,
+        Selections {
+            archive,
+            plugin,
+            live,
+        },
+    ))
 }
 
 pub(super) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
@@ -195,7 +228,16 @@ struct PluginRequest {
     plugin_alias: String,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LivePage {
+    #[serde(default)]
+    offset: usize,
+    revision: Option<String>,
+}
+
 enum ToolRequest {
+    Live(LivePage),
     Spid(DeclarationRequest),
     Bsa(ArchivePageRequest),
     Plugin(PluginRequest),
@@ -315,6 +357,18 @@ fn list(mode: Mode, selections: &Selections) -> Value {
             "annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false}
         }));
     }
+    if selections.live.is_some() {
+        result["tools"].as_array_mut().expect("tools array").push(json!({
+            "name":LIVE_TOOL,
+            "title":"Read the running MO2 profile's mods",
+            "description":"Page through the live inventory selected at launch. Start with empty arguments, then pass nextOffset as offset and the same revision until nextOffset is null. Restart traversal if the inventory changes.",
+            "inputSchema":{"type":"object","additionalProperties":false,"properties":{
+                "offset":{"type":"integer","minimum":0},
+                "revision":{"type":"string","maxLength":64}
+            }},
+            "annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false}
+        }));
+    }
     if mode == Mode::Modern {
         result["ttlMs"] = json!(0);
         result["cacheScope"] = json!("private");
@@ -364,6 +418,23 @@ fn plugin_header(selection: &PluginSnapshot, request: PluginRequest) -> Result<V
 
 fn execute(mode: Mode, request: ToolRequest, selections: &Selections) -> Value {
     let generated = match request {
+        ToolRequest::Live(page) => selections
+            .live
+            .as_ref()
+            .ok_or_else(|| "No live MO2 profile was selected".to_owned())
+            .and_then(|live| {
+                let mut query =
+                    json!({"profileId": live.profile_id, "offset":page.offset.to_string()});
+                if let Some(revision) = page.revision {
+                    if revision.len() > 64 {
+                        return Err("Invalid inventory revision".to_owned());
+                    }
+                    query["revision"] = json!(revision);
+                }
+                live.client
+                    .native_content(&live.endpoint, "agent-mods", &query)
+                    .map_err(|e| e.to_string())
+            }),
         ToolRequest::Spid(request) => super::spid_preview::run(
             &request.source_name,
             request.text.as_bytes(),
@@ -510,6 +581,9 @@ fn handle<W: Write>(
                 Some(TOOL) => serde_json::from_value(arguments).map(ToolRequest::Spid),
                 Some(BSA_TOOL) if selections.archive.is_some() => {
                     serde_json::from_value(arguments).map(ToolRequest::Bsa)
+                }
+                Some(LIVE_TOOL) if selections.live.is_some() => {
+                    serde_json::from_value(arguments).map(ToolRequest::Live)
                 }
                 Some(PLUGIN_TOOL) if selections.plugin.is_some() => {
                     serde_json::from_value(arguments).map(ToolRequest::Plugin)

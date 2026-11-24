@@ -29,6 +29,7 @@ from .operation_journal import OperationJournal
 from .session_discovery import SessionDiscovery
 from .intelligence import ModIntelligence
 from .content_recovery import ContentRecovery
+from .install_policy import PROTECTED_INSTALL_REASON, protected_installs
 from .duplicate_report import DuplicateReports
 from .source_adapters import compact_source_update, PUBLIC_API_PROVIDERS
 from .version import VERSION
@@ -1279,6 +1280,8 @@ class ArsenalService:
                                "active": int(self._install_active is not None)}}
 
     def _enqueue_install(self, entry: dict) -> None:
+        if protected_installs():
+            raise RuntimeError(PROTECTED_INSTALL_REASON)
         with self._guard:
             if self._stopped:
                 raise RuntimeError("The native MO2 session is closed")
@@ -2027,7 +2030,7 @@ class ArsenalService:
                                         "native": dict(service.native_diagnostics),
                                         "rustHelperAvailable": service.intelligence.runner.available})
                 if uri.path == "/api/capabilities":
-                    return self._reply({"ok": True, "app": "MO2 Update Arsenal", "live": True, "nexusKeySession": bool(service.api_key), "nativeNexusAvailable": bool(service.native_nexus_available), "nativeNexusFilesAvailable": bool(service.native_nexus_available and service.native_nexus_files_available is not False), "nativeNexusFilesError": service.native_nexus_files_error, "keyStorage": "RAM only", "features": ["actual-mod-content-backups", "native-content-review", "guarded-content-undo", "separate-new-content-target", "batch-content-restore", "reviewed-backup-retention", "complete-duplicate-reports", "reversible-duplicate-quarantine", "rust-plugin-audit", "eslifier-provenance", "per-mod-health", "nexus-public-bugs", "master-order-checks", "snapshot", "local-check", "nexus-quick", "nexus-deep", "nexus-files", "native-mo2-nexus-login", "github-release-checks", "gitlab-release-checks", "rust-site-adapters", "modrinth-release-checks", "thunderstore-release-checks", "source-details", "provider-capabilities", "manual-source-review", "github-direct-downloads", "reviewed-provider-downloads", "mixed-source-batch-updates", "reviewed-update-workshop", "one-click-matched-update", "background-bulk-queue", "mo2-download", "mo2-install", "install-preview", "operation-journal", "read-only-recovery-history", "backup", "focus-mod", "chronicle", "verified-achievements", "ranked-full-clear", "persistent-profile-progress", "realm-wallet", "realm-purchase", "realm-save", "siege-targets", "siege-state", "siege-bounties", "siege-mod-focus"]})
+                    return self._reply({"ok": True, "protectedInstall":{"supported":False,"requiredByHost":protected_installs(),"reason":PROTECTED_INSTALL_REASON}, "app": "MO2 Update Arsenal", "live": True, "nexusKeySession": bool(service.api_key), "nativeNexusAvailable": bool(service.native_nexus_available), "nativeNexusFilesAvailable": bool(service.native_nexus_available and service.native_nexus_files_available is not False), "nativeNexusFilesError": service.native_nexus_files_error, "keyStorage": "RAM only", "features": ["actual-mod-content-backups", "native-content-review", "guarded-content-undo", "separate-new-content-target", "batch-content-restore", "reviewed-backup-retention", "complete-duplicate-reports", "reversible-duplicate-quarantine", "rust-plugin-audit", "eslifier-provenance", "per-mod-health", "nexus-public-bugs", "master-order-checks", "snapshot", "local-check", "nexus-quick", "nexus-deep", "nexus-files", "native-mo2-nexus-login", "github-release-checks", "gitlab-release-checks", "rust-site-adapters", "modrinth-release-checks", "thunderstore-release-checks", "source-details", "provider-capabilities", "manual-source-review", "github-direct-downloads", "reviewed-provider-downloads", "mixed-source-batch-updates", "reviewed-update-workshop", "one-click-matched-update", "background-bulk-queue", "mo2-download", "mo2-install", "install-preview", "operation-journal", "read-only-recovery-history", "backup", "focus-mod", "chronicle", "verified-achievements", "ranked-full-clear", "persistent-profile-progress", "realm-wallet", "realm-purchase", "realm-save", "siege-targets", "siege-state", "siege-bounties", "siege-mod-focus"]})
                 return self._reply({"ok": False, "error": "Unknown endpoint"}, 404)
 
             def do_POST(self):

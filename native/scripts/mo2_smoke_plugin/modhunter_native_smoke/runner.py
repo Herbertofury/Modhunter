@@ -288,18 +288,19 @@ class NativeSmokePlugin(ModUpdateArsenal):
                         error=self._native_nexus_error,
                         api=repository_api_metadata(organizer) if self._native_nexus is None else None,
                         scope="Construction and Qt signal binding only; no account or requests")
-            self._new_fixture_name = new_fixture_name(json.loads((expected / "modhunter-smoke-fixture.json").read_text("utf-8-sig")))
+            self._fixture_marker = json.loads((expected / "modhunter-smoke-fixture.json").read_text("utf-8-sig"))
+            self._new_fixture_name = new_fixture_name(self._fixture_marker)
             self._new_mod_events = []
             self._new_mod_events_lock = threading.Lock()
-            def observe(kind, state):
+            def observe(name, kind, state):
                 with self._new_mod_events_lock:
-                    self._new_mod_events.append((kind, bool(int(state) & int(mobase.ModState.ACTIVE))))
+                    if name == self._new_fixture_name:
+                        self._new_mod_events.append((kind, bool(int(state) & int(mobase.ModState.ACTIVE))))
             def installed(mod):
-                if mod.name() == self._new_fixture_name:
-                    observe("installed", organizer.modList().state(mod.name()))
+                observe(mod.name(), "installed", organizer.modList().state(mod.name()))
             def changed(states):
-                if self._new_fixture_name in states:
-                    observe("stateChanged", states[self._new_fixture_name])
+                for name, state in states.items():
+                    observe(name, "stateChanged", state)
             self._check("fixture_observes_new_mod_state", organizer.modList().onModInstalled(installed)
                         and organizer.modList().onModStateChanged(changed))
             accepted = organizer.onUserInterfaceInitialized(self._ui_ready)
@@ -639,6 +640,7 @@ class NativeSmokePlugin(ModUpdateArsenal):
                             events=events, **new_install)
                 if os.environ.get("MODHUNTER_VERIFY_PUBLIC_FOMOD") == "1":
                     with self._new_mod_events_lock:
+                        self._new_fixture_name = new_fixture_name(self._fixture_marker, "TieredCasters")
                         self._new_mod_events.clear()
                     evidence = run_public_fomod(api, _fixture_root, catalog["profileId"], by_name, installed_cli,
                                                 self._arm_fixture_installer, self._disarm_fixture_installer)
@@ -650,6 +652,7 @@ class NativeSmokePlugin(ModUpdateArsenal):
                                 events=observed, **evidence)
                 if os.environ.get("MODHUNTER_VERIFY_PUBLIC_VERSIONS") == "1":
                     with self._new_mod_events_lock:
+                        self._new_fixture_name = new_fixture_name(self._fixture_marker, "Chairrows")
                         self._new_mod_events.clear()
                     evidence = run_public_fomod(api, _fixture_root, catalog["profileId"], by_name, installed_cli,
                                                 self._arm_fixture_installer, self._disarm_fixture_installer, history=True)

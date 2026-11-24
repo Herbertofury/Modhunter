@@ -604,6 +604,66 @@ class GalleryWorkspaceTests(unittest.TestCase):
         self.page.locator('#row-item-0 .mod-art').click()
         self.assertTrue(self.page.locator('#detailDrawer').evaluate('e=>e.classList.contains("open")'))
 
+    def test_definite_artwork_track_matches_intrinsic_gallery_layout(self):
+        self.open(count=3)
+        self.page.evaluate("""async()=>{
+          const copy=structuredClone(__RESP__.catalog);
+          copy.items[0].name='Artwork fixture with a wrapping title and a translated-ready source';
+          copy.items[1].thumbnailUrl='https://cdn.modrinth.com/data/fixture/definite-track.png';
+          copy.items[2].installedVersion='1.2.3 long original version';
+          copy.items[2].screenshotNote='Review an extended maintenance note';
+          await __ARSENAL_QA__.setCatalog(copy);
+        }""")
+        self.page.locator('#libraryGallery').click()
+        self.page.locator('#galleryGrouping').select_option('all')
+        self.page.evaluate("""()=>{
+          const rule=[...document.querySelector('style').sheet.cssRules].find(r=>
+            r.selectorText?.endsWith(' .mod-row')&&r.style?.gridTemplateRows?.includes('--vault-gallery-art-height'));
+          if(!rule)throw Error('Definite first card track missing');
+          const declaration=rule.style.gridTemplateRows;
+          window.__compareGalleryFirstTrack=on=>{
+             if(on)rule.style.gridTemplateRows=declaration;
+             else rule.style.removeProperty('grid-template-rows');
+          };
+        }""")
+
+        def snapshot(expected):
+            state = self.page.locator('#modList > .mod-row').evaluate_all("""rows=>{
+              const witness=node=>{
+                const r=node.getBoundingClientRect();
+                const s=getComputedStyle(node);
+                return [r.x,r.y,r.width,r.height,s.display, s.visibility,
+                    node.textContent, node.scrollWidth, node.scrollHeight];
+              };
+              return rows.map(row=>{
+                const art=row.querySelector('.mod-art'), css=getComputedStyle(row);
+                return {id:row.dataset.id,row:witness(row), artwork:witness(art),
+                  firstTrack:parseFloat(css.gridTemplateRows), grids:css.gridTemplateRows,
+                  controls:[...row.querySelectorAll('button,a')].map(witness),
+                  children:[...row.children].map(witness), artworkLabel:getComputedStyle(art,'::after').content};
+              });
+            }""")
+            self.assertEqual(len(state), 3)
+            self.assertTrue(all(row['firstTrack'] == expected for row in state),state)
+            return state
+
+        for width, compact, comfy in ((1028, 122, 166), (550, 105, 172)):
+            self.page.set_viewport_size({'width':width,'height':900})
+            for density, track in (('compact', compact), ('comfy', comfy)):
+                if self.page.locator('body').get_attribute('data-density')!=density:
+                    self.page.locator('#densityToggle').click()
+                self.page.evaluate("async()=>{await document.fonts.ready;await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame)}")
+                with self.subTest(width=width,density=density):
+                    before=snapshot(track)
+                    self.page.evaluate("window.__compareGalleryFirstTrack(false)")
+                    try:
+                        self.assertEqual(before,snapshot(track))
+                    finally:
+                        self.page.evaluate("window.__compareGalleryFirstTrack(true)")
+        self.page.locator('#row-item-1 [data-act="inspect"]').focus()
+        self.page.keyboard.press('Enter')
+        self.assertTrue(self.page.locator('#detailDrawer').evaluate('e=>e.classList.contains("open")'))
+
     def test_thumbnail_failure_keeps_mod_and_all_actions(self):
         # Exercise genuine alpha artwork in cover-fit mode, as in the separate
         # preview fixture; this is not a provider screenshot metadata claim.

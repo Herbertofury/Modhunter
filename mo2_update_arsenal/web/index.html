@@ -1198,13 +1198,16 @@ body[data-layout="compact"] .list-footer{padding:10px 0;border-color:var(--vault
 body[data-layout="compact"] .list-footer button{color:var(--vault-primary);font-size:10px}
 body[data-layout="compact"][data-density="comfy"][data-library-view="list"] .mod-row{min-height:82px;padding-block:14px}
 body[data-layout="compact"][data-density="comfy"] .mod-title{font-size:13px}
+/* Artwork already has a definite border-box height and block-end gap.
+   Give grid that first-track constraint directly; other tracks stay intrinsic. */
+body[data-layout="compact"][data-library-view="gallery"]{--vault-gallery-art-height:120px}
 body[data-layout="compact"][data-library-view="gallery"] .list-header{display:none}
 body[data-layout="compact"][data-library-view="gallery"] .modlist{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start;align-content:flex-start}
 body[data-layout="compact"][data-library-view="gallery"] .chapterbar{flex:0 0 100%;width:100%;margin-top:8px;padding-left:10px;height:28px;min-height:28px}
-body[data-layout="compact"][data-library-view="gallery"] .mod-row{display:grid;flex:0 0 calc((100% - 70px)/6);grid-template-columns:minmax(0,1fr) auto;gap:9px 8px;align-content:start;padding:0 13px 12px;border:1px solid var(--vault-line);border-radius:9px;background:var(--vault-surface);overflow:hidden;min-height:273px;margin:0;box-shadow:0 2px 2px #0000000a;position:relative}
+body[data-layout="compact"][data-library-view="gallery"] .mod-row{display:grid;flex:0 0 calc((100% - 70px)/6);grid-template-columns:minmax(0,1fr) auto;grid-template-rows:calc(var(--vault-gallery-art-height) + 2px);gap:9px 8px;align-content:start;padding:0 13px 12px;border:1px solid var(--vault-line);border-radius:9px;background:var(--vault-surface);overflow:hidden;min-height:273px;margin:0;box-shadow:0 2px 2px #0000000a;position:relative}
 body[data-layout="compact"][data-library-view="gallery"] .mod-row:hover{border-color:var(--vault-muted);background:var(--vault-surface);box-shadow:0 4px 12px #00000017}
 body[data-layout="compact"][data-library-view="gallery"] .mod-row[data-detected="update"]{border-top:2px solid var(--vault-accent)}
-body[data-layout="compact"][data-library-view="gallery"] .mod-art{grid-column:1/-1;grid-row:1;width:calc(100% + 26px);height:120px;margin:0 -13px 2px;border:0;border-bottom:1px solid var(--vault-line);border-radius:0;background:var(--vault-raised);display:flex;align-items:center;justify-content:center;font-size:9px;padding-top:26px}
+body[data-layout="compact"][data-library-view="gallery"] .mod-art{grid-column:1/-1;grid-row:1;width:calc(100% + 26px);height:var(--vault-gallery-art-height);margin:0 -13px 2px;border:0;border-bottom:1px solid var(--vault-line);border-radius:0;background:var(--vault-raised);display:flex;align-items:center;justify-content:center;font-size:9px;padding-top:26px}
 body[data-layout="compact"][data-library-view="gallery"] .mod-art:before{width:28px;height:28px;left:calc(50% - 14px);top:calc(50% - 25px)}
 body[data-layout="compact"][data-library-view="gallery"] .mod-art:after{content:attr(data-provider-label);display:block;position:absolute;bottom:8px;left:10px;padding:3px 6px;background:var(--vault-surface);color:var(--vault-muted);border:1px solid var(--vault-line);border-radius:3px;font:600 8px/1.3 var(--mh-ui);letter-spacing:.04em;max-width:calc(100% - 20px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;pointer-events:none}
 body[data-layout="compact"][data-library-view="gallery"] .mod-priority{position:absolute;right:10px;top:9px;border:1px solid var(--vault-line);background:var(--vault-surface);border-radius:4px;padding:3px 5px;font-size:9px;z-index:1}
@@ -1224,7 +1227,7 @@ body[data-layout="compact"][data-library-view="gallery"] .source-btn{border:0;pa
 body[data-layout="compact"][data-library-view="gallery"] .inspect-col{grid-column:2;grid-row:5;padding-top:8px;border-top:1px solid var(--vault-soft)}
 body[data-layout="compact"][data-library-view="gallery"] .favorite-btn{display:inline-flex}
 body[data-layout="compact"][data-density="comfy"][data-library-view="gallery"] .modlist{gap:18px}
-body[data-layout="compact"][data-density="comfy"][data-library-view="gallery"] .mod-art{height:164px}
+body[data-layout="compact"][data-density="comfy"][data-library-view="gallery"]{--vault-gallery-art-height:164px}
 body[data-layout="compact"] .empty-state{grid-column:1/-1;background:var(--vault-surface);border:1px dashed var(--vault-line);border-radius:8px;color:var(--vault-text);padding:44px 16px}
 body[data-layout="compact"][data-library-view="gallery"] .empty-state{flex:0 0 100%;width:100%}
 body[data-layout="compact"] .empty-state p{color:var(--vault-muted)}
@@ -1414,11 +1417,12 @@ body[data-layout="compact"] .toast button{color:var(--vault-primary)}
  body[data-layout="compact"] .inspect-btn{font-size:10px;min-width:48px;height:26px;min-height:26px;padding:4px 6px}
  body[data-layout="compact"][data-library-view="gallery"] .modlist{gap:10px}
  body[data-layout="compact"][data-library-view="gallery"] .mod-row{padding:0 9px 10px;min-height:266px;gap:7px 5px}
- body[data-layout="compact"][data-library-view="gallery"] .mod-art{height:103px;width:calc(100% + 18px);margin-inline:-9px}
+ body[data-layout="compact"][data-library-view="gallery"]{--vault-gallery-art-height:103px}
+ body[data-layout="compact"][data-library-view="gallery"] .mod-art{width:calc(100% + 18px);margin-inline:-9px}
  body[data-layout="compact"][data-library-view="gallery"] .mod-title{font-size:11px}
  body[data-layout="compact"][data-library-view="gallery"] .mod-source{grid-column:1/-1;grid-row:5;padding-top:4px}
  body[data-layout="compact"][data-library-view="gallery"] .inspect-col{grid-column:1/-1;grid-row:6;padding-top:0;border:0;justify-content:flex-end}
- body[data-layout="compact"][data-density="comfy"][data-library-view="gallery"] .mod-art{height:170px}
+ body[data-layout="compact"][data-density="comfy"][data-library-view="gallery"]{--vault-gallery-art-height:170px}
  body[data-layout="compact"] .workshop-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
  body[data-layout="compact"] .workshop-metric:nth-child(3){border-right:1px solid var(--vault-line)}
  body[data-layout="compact"] .workshop-metric:nth-child(2n){border-right:0}

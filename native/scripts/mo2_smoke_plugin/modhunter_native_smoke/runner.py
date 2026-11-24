@@ -42,6 +42,7 @@ from .agent_probe import check_scoped_toggle
 from .audit_probe import exercise_plugin_audit
 from .content_probe import exercise_content_recovery, exercise_native_install, new_fixture_name
 from .public_fomod_probe import DIGEST as PUBLIC_FOMOD_DIGEST, accept_tiered_casters, run_public_fomod
+from . import public_version_probe as versions
 
 
 GAME_NAME = "Modhunter CI Fixture"
@@ -342,7 +343,8 @@ class NativeSmokePlugin(ModUpdateArsenal):
             self._finish({"ok": False, "error": "Unexpected native modal dialog",
                           "dialog": {"title": dialog.windowTitle(), "objectName": dialog.objectName(),
                                      "className": dialog.metaObject().className(), "text": labels[:12]}})
-        elif time.monotonic() - self._start_time > (170 if os.environ.get("MODHUNTER_LIVE_DESKTOP") else 90):
+        elif time.monotonic() - self._start_time > (320 if os.environ.get("MODHUNTER_VERIFY_PUBLIC_VERSIONS") == "1"
+                                                   else 170 if os.environ.get("MODHUNTER_LIVE_DESKTOP") else 90):
             self._finish({"ok": False, "error": "Native smoke exceeded its bounded deadline"})
 
     def _arm_fixture_installer(self, intent):
@@ -370,24 +372,34 @@ class NativeSmokePlugin(ModUpdateArsenal):
                     or Path(intent["modRoot"]).resolve() != fixture / "mods" / intent["modName"]):
                 return False
             with self.server.content._lock:
-                job = self.server.content._jobs.get(intent["reviewId"], {})
-                if (self.server.content._lease != intent["reviewId"] or job.get("downloadId") != intent["downloadId"]
+                review_id = intent.get("reviewId")
+                if intent.get("publicUpdate") and intent.get("publicSha256") == versions.NEW_DIGEST:
+                    # The normal reviewed MO2 download queue assigns the review
+                    # ID itself. Accept only its current job for this download.
+                    review_id = self.server.content._lease
+                job = self.server.content._jobs.get(review_id, {})
+                if (not review_id or self.server.content._lease != review_id or job.get("downloadId") != intent["downloadId"]
                         or job.get("profileId") != intent["profileId"] or job.get("modName") != intent["modName"]
                         or job.get("state") != "installing" or not job.get("nativeStarted") or not job.get("backupId")):
                     return False
             if isinstance(dialog, QtWidgets.QProgressDialog):
                 return True  # Observe progress without interacting with the dialog.
             target = self.org.modList().getMod(intent["modName"])
-            is_new = intent["modName"] == self._new_fixture_name
+            public_update = (intent.get("publicUpdate") is True and intent.get("publicSha256") == versions.NEW_DIGEST
+                             and intent["modName"] == self._new_fixture_name)
+            is_new = intent["modName"] == self._new_fixture_name and not public_update
             if is_new and (target is not None or Path(intent["modRoot"]).exists()):
                 return False
-            if not is_new and (target is None or Path(target.absolutePath()).resolve() != fixture / "mods" / "Smoke Disabled"):
+            if not is_new and (target is None or Path(target.absolutePath()).resolve() != fixture / "mods" / intent["modName"]):
                 return False
             object_name = str(dialog.objectName())
-            if intent.get("publicSha256"):
-                if not is_new or intent["publicSha256"] != PUBLIC_FOMOD_DIGEST:
+            if intent.get("publicSha256") and not (public_update and object_name == "QueryOverwriteDialog"):
+                if is_new and intent["publicSha256"] == PUBLIC_FOMOD_DIGEST:
+                    button = accept_tiered_casters(QtWidgets, dialog, intent)
+                elif (is_new and intent["publicSha256"] == versions.OLD_DIGEST) or public_update:
+                    button = versions.accept_chairrows(QtWidgets, dialog, intent)
+                else:
                     return False
-                button = accept_tiered_casters(QtWidgets, dialog, intent)
                 if button is None:
                     return False
             elif object_name == "SimpleInstallDialog" and not intent["dialogs"]:
@@ -404,7 +416,7 @@ class NativeSmokePlugin(ModUpdateArsenal):
                 backup = dialog.findChild(QtWidgets.QCheckBox, "backupBox")
                 if backup is not None:
                     backup.setChecked(False)  # Production Rust backup already verified this owned fixture.
-                intent["dialogs"].append({"dialog": object_name, "action": "merge exact fixture target", "target": "Smoke Disabled"})
+                intent["dialogs"].append({"dialog": object_name, "action": "merge exact fixture target", "target": intent["modName"]})
             else:
                 return False
         button.click()
@@ -633,6 +645,17 @@ class NativeSmokePlugin(ModUpdateArsenal):
                     with self._new_mod_events_lock:
                         observed = list(self._new_mod_events)
                     self._check("native_public_fomod", any(kind == "installed" for kind, _ in observed)
+                                and not any(active for _, active in observed)
+                                and all(p.read_bytes() == old for p, old in zip(protected_files, original_files)),
+                                events=observed, **evidence)
+                if os.environ.get("MODHUNTER_VERIFY_PUBLIC_VERSIONS") == "1":
+                    with self._new_mod_events_lock:
+                        self._new_mod_events.clear()
+                    evidence = run_public_fomod(api, _fixture_root, catalog["profileId"], by_name, installed_cli,
+                                                self._arm_fixture_installer, self._disarm_fixture_installer, history=True)
+                    with self._new_mod_events_lock:
+                        observed = list(self._new_mod_events)
+                    self._check("native_public_version_update", any(kind == "installed" for kind, _ in observed)
                                 and not any(active for _, active in observed)
                                 and all(p.read_bytes() == old for p, old in zip(protected_files, original_files)),
                                 events=observed, **evidence)

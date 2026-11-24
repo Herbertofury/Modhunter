@@ -19,6 +19,7 @@ param(
     [string]$QtBridgePath = '',
     [string]$DesktopExecutable = '',
     [switch]$VerifyPublicFomod,
+    [switch]$VerifyPublicVersions,
     [ValidateRange(30, 600)][int]$TimeoutSeconds = 150
 )
 
@@ -320,7 +321,7 @@ log_level=0
         $StartInfo.Environment['MODHUNTER_LIVE_DESKTOP'] = [IO.Path]::GetFullPath($DesktopExecutable)
         $StartInfo.Environment['MODHUNTER_LIVE_DRIVER'] = Join-Path $PSScriptRoot 'verify_live_desktop.cjs'
     }
-    if ($VerifyPublicFomod) {
+    if ($VerifyPublicFomod -or $VerifyPublicVersions) {
         if (!$DesktopExecutable -or !$RustCliPath) { throw 'Public FOMOD proof needs the matching desktop and CLI.' }
         $PublicOutput = Join-Path $InstanceRoot 'public-acquisition/managed.json'
         $Managed = [Diagnostics.ProcessStartInfo]::new()
@@ -329,10 +330,11 @@ log_level=0
         $Managed.CreateNoWindow = $true
         $Managed.ArgumentList.Add("--watchtower-smoke-output=$PublicOutput")
         $Managed.ArgumentList.Add('--verify-public-skyrim-offers')
+        if ($VerifyPublicVersions) { $Managed.ArgumentList.Add('--verify-public-release-history') }
         $Managed.ArgumentList.Add('--retain-public-acquisitions')
         $Browser = [Diagnostics.Process]::Start($Managed)
         try {
-            if (!$Browser.WaitForExit(120000)) {
+            if (!$Browser.WaitForExit($(if ($VerifyPublicVersions) { 200000 } else { 120000 }))) {
                 $Browser.Kill()
                 throw 'The isolated public archive manager exceeded its deadline.'
             }
@@ -354,8 +356,9 @@ log_level=0
             }
             $Browser.Dispose()
         }
-        $StartInfo.Environment['MODHUNTER_VERIFY_PUBLIC_FOMOD'] = '1'
-    } else { $StartInfo.Environment.Remove('MODHUNTER_VERIFY_PUBLIC_FOMOD') | Out-Null }
+    }
+    $StartInfo.Environment['MODHUNTER_VERIFY_PUBLIC_FOMOD'] = if ($VerifyPublicFomod) { '1' } else { '0' }
+    $StartInfo.Environment['MODHUNTER_VERIFY_PUBLIC_VERSIONS'] = if ($VerifyPublicVersions) { '1' } else { '0' }
     $StartInfo.Environment['PYTHONNOUSERSITE'] = '1'
     $StartInfo.Environment.Remove('PYTHONHOME') | Out-Null
     $StartInfo.Environment.Remove('PYTHONPATH') | Out-Null
@@ -382,6 +385,7 @@ log_level=0
     if ($RustCliPath) { $RequiredChecks += @('rust_cli_live_probe', 'rust_plugin_audit', 'rust_mcp_live_inventory', 'rust_mcp_scoped_mod_control', 'native_new_mod_install') }
     if ($DesktopExecutable) { $RequiredChecks += 'native_desktop_live_workflow' }
     if ($VerifyPublicFomod) { $RequiredChecks += 'native_public_fomod' }
+    if ($VerifyPublicVersions) { $RequiredChecks += 'native_public_version_update' }
     foreach ($RequiredCheck in $RequiredChecks) {
         if (!(@($Receipt.checks | Where-Object { $_.name -eq $RequiredCheck -and $_.passed }).Count)) {
             throw "Native receipt omitted required passing check: $RequiredCheck"

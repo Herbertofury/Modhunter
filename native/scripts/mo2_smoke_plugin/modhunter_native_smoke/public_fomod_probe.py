@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path
 import subprocess
 import time
 import urllib.parse
+from pathlib import Path
 
+from . import public_version_probe as versions
 from .content_probe import new_fixture_name, require
-
 
 FILENAME = "skyrim-tiered-casters-1.0.0.zip"
 DIGEST = "a9e7bfdc1c849d7a25d20d51b476046b41667b27bac5bfc2939c8de8f09632c7"
@@ -72,8 +72,16 @@ def accept_tiered_casters(QtWidgets, dialog, intent):
     return button
 
 
-def run_public_fomod(api, root, profile, before, cli, arm, disarm):
+def run_public_fomod(api, root, profile, before, cli, arm, disarm, *, history=False):
     root = Path(root).resolve(strict=True)
+    if history:
+        filename, digest, size = versions.FILENAME, versions.OLD_DIGEST, 2734912
+        selected, count = versions.OLD_FILES, 7
+        source = versions.PROJECT + "/releases/expanded_assets/v2.0.0"
+    else:
+        filename, digest, size = FILENAME, DIGEST, 16202
+        selected, count = SELECTED, 10
+        source = "https://github.com/3pvxiozkua/skyrim-tiered-casters/releases/expanded_assets/v1.0.0"
     name = new_fixture_name(
         json.loads((root / "modhunter-smoke-fixture.json").read_text("utf-8-sig"))
     )
@@ -94,19 +102,21 @@ def run_public_fomod(api, root, profile, before, cli, arm, disarm):
     matches = [
         check["receipt"]
         for check in proof["checks"]
-        if "receipt" in check and check["filename"] == FILENAME
+        if "receipt" in check
+        and check["filename"] == filename
+        and check["source"] == source
     ]
     require(len(matches) == 1, "Required exact approved release receipt is missing")
     receipt = matches[0]
     require(
-        receipt["sha256"] == DIGEST
-        and receipt["bytes"] == 16202
+        receipt["sha256"] == digest
+        and receipt["bytes"] == size
         and receipt["state"] == "ready"
         and receipt["binding"]["contentIntent"] == "newContent"
         and receipt["binding"]["sourceOrigin"] == "https://github.com",
         "Unexpected public release identity",
     )
-    original = acquired / receipt["id"] / "archive.zip"
+    original = acquired / receipt["id"] / ("archive.7z" if history else "archive.zip")
     target = root / "mods" / name
     require(
         not target.exists() and not target.is_symlink() and name not in before,
@@ -114,17 +124,17 @@ def run_public_fomod(api, root, profile, before, cli, arm, disarm):
     )
     require(
         original.resolve(strict=True).is_relative_to(acquired)
-        and original.stat().st_size == 16202
-        and hashlib.sha256(original.read_bytes()).hexdigest() == DIGEST,
+        and original.stat().st_size == size
+        and hashlib.sha256(original.read_bytes()).hexdigest() == digest,
         "Retained original no longer matches the publisher's content",
     )
-    stage = output / "native-review"
+    stage = output / ("native-chairrows-old" if history else "native-review")
     request = {
         "action": "inspect",
         "archive": str(original),
         "stage": str(stage),
-        "expectedSha256": DIGEST,
-        "expectedBytes": 16202,
+        "expectedSha256": digest,
+        "expectedBytes": size,
         "selected": [],
     }
     completed = subprocess.run(
@@ -139,15 +149,14 @@ def run_public_fomod(api, root, profile, before, cli, arm, disarm):
     require(
         manifest.get("ok")
         and manifest.get("requiresInstaller")
-        and len(manifest.get("entries", [])) == 10
+        and len(manifest.get("entries", [])) == count
         and all(
             {e["path"]: e["sha256"] for e in manifest["entries"]}.get(path) == digest
-            for path, digest in SELECTED.items()
+            for path, digest in selected.items()
         ),
         "Author's FOMOD or one of the selected variant files changed",
     )
     run = int(time.time() * 1000)
-    deadline = time.monotonic() + 55
 
     def context(params):
         c = api("/api/content-context?" + urllib.parse.urlencode(params))
@@ -160,6 +169,7 @@ def run_public_fomod(api, root, profile, before, cli, arm, disarm):
         return c["contextId"]
 
     def wait(accepted):
+        deadline = time.monotonic() + 55
         require(
             accepted.get("ok") and accepted.get("jobId"),
             "Native public operation rejected: " + str(accepted),
@@ -194,8 +204,8 @@ def run_public_fomod(api, root, profile, before, cli, arm, disarm):
             "profileId": profile,
             "modName": name,
             "modRoot": str(target),
-            "deadline": deadline,
-            "publicSha256": DIGEST,
+            "deadline": time.monotonic() + 55,
+            "publicSha256": digest,
         }
     )
     try:
@@ -213,7 +223,7 @@ def run_public_fomod(api, root, profile, before, cli, arm, disarm):
                         "archivePath": str(original),
                         "receipt": receipt,
                         "review": {
-                            "archiveIdentity": {"sha256": DIGEST, "bytes": 16202},
+                            "archiveIdentity": {"sha256": digest, "bytes": size},
                             "stage": str(stage),
                             "incomingRoot": manifest["incomingRoot"],
                             "manifestDigest": manifest["manifestDigest"],
@@ -233,7 +243,8 @@ def run_public_fomod(api, root, profile, before, cli, arm, disarm):
         "Public FOMOD native transaction missing confirmed target or backup",
     )
     require(
-        [d["selected"] for d in dialogs] == [c[0] for c in CHOICES],
+        [d["selected"] for d in dialogs]
+        == ([list(versions.TARGET_CHOICES)] if history else [c[0] for c in CHOICES]),
         "Wrong FOMOD choices",
     )
     files = {
@@ -242,7 +253,7 @@ def run_public_fomod(api, root, profile, before, cli, arm, disarm):
         if p.is_file() and p != target / "meta.ini"
     }
     require(
-        files == SELECTED and (target / "meta.ini").is_file(),
+        files == selected and (target / "meta.ini").is_file(),
         "Installed original-choice paths/hashes differ from the author's XML and archive: "
         + str(files),
     )
@@ -251,6 +262,13 @@ def run_public_fomod(api, root, profile, before, cli, arm, disarm):
         rows[name]["enabled"] is False
         and all(rows[n]["enabled"] == v["enabled"] for n, v in before.items()),
         "Public FOMOD changed activation",
+    )
+    update = (
+        versions.update_chairrows(
+            api, root, profile, rows[name], cli, arm, disarm, wait, context
+        )
+        if history
+        else None
     )
     restored = wait(
         api(
@@ -269,11 +287,11 @@ def run_public_fomod(api, root, profile, before, cli, arm, disarm):
         "Public FOMOD undo failed",
     )
     return {
-        "archive": FILENAME,
-        "sha256": DIGEST,
+        "archive": filename,
+        "sha256": digest,
         "archiveManifest": manifest["manifestDigest"],
         "managedReceipt": receipt["id"],
-        "source": "https://github.com/3pvxiozkua/skyrim-tiered-casters/releases/tag/v1.0.0",
+        "source": source,
         "target": name,
         "dialogs": dialogs,
         "installedFiles": files,
@@ -281,4 +299,5 @@ def run_public_fomod(api, root, profile, before, cli, arm, disarm):
         "disabledAtInventory": True,
         "undoVerified": True,
         "game": "isolated native MO2 BasicGame fixture",
+        "versionUpdate": update,
     }

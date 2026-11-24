@@ -300,8 +300,8 @@ log_level=0
     Copy-Item -LiteralPath (Join-Path $HarnessSource 'game_modhunter_smoke.py') -Destination (Join-Path $BasicGames 'games/game_modhunter_smoke.py')
     $TestPlugin = Join-Path $PortableRoot 'plugins/modhunter_native_smoke'
     New-Item -ItemType Directory -Path $TestPlugin | Out-Null
-    foreach ($Name in @('__init__.py', 'runner.py', 'audit_probe.py', 'content_probe.py')) {
-        Copy-Item -LiteralPath (Join-Path $HarnessSource "modhunter_native_smoke/$Name") -Destination (Join-Path $TestPlugin $Name)
+    foreach ($Module in (Get-ChildItem -LiteralPath (Join-Path $HarnessSource 'modhunter_native_smoke') -File -Filter '*.py')) {
+        Copy-Item -LiteralPath $Module.FullName -Destination (Join-Path $TestPlugin $Module.Name)
     }
 
     $Summary.phase = 'run-native-mo2'

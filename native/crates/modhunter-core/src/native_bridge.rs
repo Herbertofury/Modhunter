@@ -61,6 +61,13 @@ impl BridgeClient {
         route: &str,
         value: &Value,
     ) -> Result<Value, CoreError> {
+        if route == "content-install"
+            && (value["requireProtectedInstall"] == true
+                || std::env::var_os("MODHUNTER_PROTECTED_INSTALLS")
+                    .is_some_and(|v| !matches!(v.to_string_lossy().trim(), "" | "0")))
+        {
+            return Err(CoreError::NativeRejected("Protected install unavailable: this MO2 installer cannot enforce a fixed destination and disabled state. Nothing was dispatched.".into()));
+        }
         let method = match route {
             "snapshot" | "agent-mods" | "notification-facts" | "install-queue"
             | "content-context" | "content-jobs" | "content-backups" | "duplicates" => "GET",
@@ -181,6 +188,19 @@ mod tests {
         assert_eq!(result["state"], "cancelling");
         assert!(!result.to_string().contains("fixture_native_secret"));
         server.join().unwrap();
+    }
+
+    #[test]
+    fn protected_install_refuses_before_bootstrap_or_native_dispatch() {
+        let error = BridgeClient::new()
+            .unwrap()
+            .native_content(
+                "invalid endpoint",
+                "content-install",
+                &json!({"requireProtectedInstall":true}),
+            )
+            .unwrap_err();
+        assert!(matches!(error, CoreError::NativeRejected(_)));
     }
 
     #[test]

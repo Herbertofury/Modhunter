@@ -15,6 +15,7 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 
 from .bridge import ArsenalService, UIRequest
 from .agent_control import set_enabled
+from .install_policy import protected_installs, protected_refusal
 from .model import LocalMetadataCache, call_str, take_snapshot
 from .focus import navigate, find_mo2_view, name_column
 from .scanner import version_verdict
@@ -396,6 +397,8 @@ class ModUpdateArsenal(mobase.IPluginTool):
         return {"ok": True, "backupPath": str(path), "files": copied}
 
     def _install(self, download_id: int):
+        if protected_installs():
+            return protected_refusal()
         status = self.server.downloads().get(download_id, {}) if self.server else {}
         if status.get("status") != "installing":
             return {"ok": False, "error": "The download is not complete"}

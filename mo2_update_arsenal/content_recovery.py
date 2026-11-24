@@ -5,6 +5,7 @@ runs on Qt; hashing/copying runs in the matching Rust helper on worker threads.
 Prepared backups and ambiguous installer results are intentionally durable.
 """
 from __future__ import annotations
+from .install_policy import protected_installs, protected_refusal
 
 from copy import deepcopy
 import ctypes
@@ -691,10 +692,19 @@ class ContentRecovery:
                 "state": job["state"], "alreadyAccepted": duplicate}
 
     def start_install(self, data):
+        # Refuse before approval generation, receipt or queue creation and before
+        # the native plugin can perform any preparation or open an installer.
+        if protected_installs():
+            return protected_refusal()
+        if isinstance(data, dict) and "requireProtectedInstall" in data:
+            if type(data["requireProtectedInstall"]) is not bool:
+                return {"ok":False, "error":"requireProtectedInstall must be a boolean", "nativeStarted":False}
+            if data["requireProtectedInstall"]:
+                return protected_refusal()
         try:
             with self.service._guard:
                 approval_generation = self.service._install_cancel_generation
-            if not isinstance(data, dict) or set(data) - {"reviewId", "downloadId", "contextId", "confirm", "targetName", "resolvedArchive", "review", "comparisonDigest"}:
+            if not isinstance(data, dict) or set(data) - {"reviewId", "downloadId", "contextId", "confirm", "targetName", "resolvedArchive", "review", "comparisonDigest", "requireProtectedInstall"}:
                 raise ValueError("Native page installation accepts only owned review and receipt fields")
             if data.get("confirm") != "INSTALL":
                 raise ValueError("Confirm the exact reviewed INSTALL operation")
@@ -1365,6 +1375,9 @@ class NativeContent:
                 raise ValueError("Native download is outside MO2's real downloads directory")
             request.finish({"ok": True, "archive": str(source)})
         elif request.cmd == "content-install":
+            if protected_installs():
+                request.finish(protected_refusal())
+                return
             self._require_lease(payload)
             if payload.get("nativeDownloadId") is not None:
                 from .install_brief import build_install_brief

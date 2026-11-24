@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from mo2_update_arsenal.agent_control import set_enabled
 
@@ -115,3 +115,16 @@ class AgentInventoryTests(unittest.TestCase):
         with self.assertRaises(ValueError): set_enabled(plugin,args,2)
         plugin._dirty = True
         with self.assertRaises(ValueError): set_enabled(plugin,dict(args,expectedEnabled=True,enabled=False),2)
+
+    def test_protected_mode_never_queues_or_dispatches_an_install(self):
+        content = self.service.content
+        old_jobs = content.jobs()
+        for protection in (True, "bad"):
+            result = content.start_install({"requireProtectedInstall":protection})
+            self.assertFalse(result["nativeStarted"])
+            self.assertFalse(result["ok"])
+        with patch.dict(os.environ, {"MODHUNTER_PROTECTED_INSTALLS": "1"}):
+            self.assertEqual(content.start_install({})["code"], "protected-install-unavailable")
+            with self.assertRaisesRegex(RuntimeError, "cannot guarantee"):
+                self.service._enqueue_install({"kind":"nexus"})
+        self.assertEqual(old_jobs, content.jobs())

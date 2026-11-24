@@ -63,8 +63,11 @@ def main() -> int:
     ok = (runtime_ok and result.wasSuccessful() and not result.skipped
           and result.testsRun == len(EXPECTED)
           and {check['name'] for check in result.checks} == EXPECTED)
-    commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
-    dirty = bool(subprocess.check_output(['git', 'status', '--porcelain', '--', *SOURCES], cwd=ROOT, text=True).strip())
+    # Restoring a patched environment in Windows Python can drop empty values
+    # from the native process block. Pass the complete Python mapping to Git.
+    git_env = os.environ.copy()
+    commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True, env=git_env).strip()
+    dirty = bool(subprocess.check_output(['git', 'status', '--porcelain', '--', *SOURCES], cwd=ROOT, text=True, env=git_env).strip())
     report = {'ok': ok and not dirty, 'realQt': True, 'schemaVersion': 1,
               'candidateCommit': commit, 'sourceDirty': dirty, **resolver.info,
               'pyQtVersion': QtCore.PYQT_VERSION_STR, 'ownedSignalSelfTest': resolver.self_test_passed,

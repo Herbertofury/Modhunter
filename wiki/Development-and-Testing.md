@@ -109,3 +109,14 @@ Upstream API reference: [Mod Organizer 2 Python plugin documentation](https://ww
 `tests/test_quick_update.py` exercises exact numeric-version main selection, ambiguous/optional files, GitHub single-archive selection, general advisory notes, DLL/hold review fallback, one-click download→native installer handoff, duplicate-click protection, immediate user-selected risky download, profile/runtime invalidation and a background full-profile queue. The server never treats a browser-provided Nexus file ID as a verified auto match; recommendation and exact provider file verification occur inside the authenticated MO2 bridge.
 
 `tests/updater_sss_browser_qa.py` exercises the actual built HTML in Chromium: one-click per-mod update, automatic native-install intent, direct Install now action, optional Details and full-manifest screens, ambiguous/risky file-picker fallback with no confirmation dialogs, and asynchronous bulk queue progress. This is browser/MO2-contract testing with deterministic native responses, not actual Windows MO2 2.5.x or Nexus authentication validation.
+## Measuring a selected MO2 profile
+
+Build the release-mode core CLI and pass the selected profile's actual modlist and instance INI. For split-path installations, use the same paths used by the desktop importer.
+
+~~~text
+modhunter-cli benchmark-profile --modlist "<profile>/modlist.txt" --ini "<instance>/ModOrganizer.ini" --mods "<shared mods directory>" --workers 8 --rounds 20
+~~~
+
+The command completes one cold import with a new application cache and repeats the entire import with that cache warm. It checks the full catalog and warnings for equality across rounds. The JSON receipt includes every engine completion time, the warm median and nearest-rank p95, throughput, I/O counts and cache hits. The operating system's disk cache remains under normal OS control. Record the binary hash, wall time, process CPU time and peak working set alongside the receipt when comparing builds.
+
+For production acceptance, capture a private baseline with `python scripts/protected_inventory.py capture <new-receipt.sqlite> --full <protected-root> --workers 8`. Repeat `--full` for each separate root. The command records directory entries and hashes every regular file. Place the receipt outside all protected roots. A second capture can be compared using `python scripts/protected_inventory.py compare <before.sqlite> <after.sqlite>`. Exit 0 means equality within the recorded scope, exit 1 means differences, and exit 2 signals an error. Keep inventories and paths local.

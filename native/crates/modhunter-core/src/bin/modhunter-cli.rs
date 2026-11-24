@@ -53,14 +53,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         .collect::<Result<_, _>>()?;
     match args.first().map(String::as_str) {
         Some("import") => {
-            let request = ImportRequest {
-                modlist_path: PathBuf::from(
-                    value(&args, "--modlist")?.ok_or("import requires --modlist PATH")?,
-                ),
-                ini_path: value(&args, "--ini")?.map(PathBuf::from),
-                mods_path: value(&args, "--mods")?.map(PathBuf::from),
-                workers: value(&args, "--workers")?.map(|s| s.parse()).transpose()?,
-            };
+            let request = profile_request(&args)?;
             let result = ProfileImporter::new().import(&request)?;
             println!("{}", serde_json::to_string(&result)?);
         }
@@ -280,14 +273,75 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             println!("{}", serde_json::to_string(&report)?);
         }
         Some("benchmark") => benchmark(&args)?,
+        Some("benchmark-profile") => benchmark_profile(&args)?,
         Some("--version") => println!("Modhunter Rust engine {}", env!("CARGO_PKG_VERSION")),
         None | Some("--help") | Some("help") => println!(
-            "Modhunter Rust engine\n\nimport --modlist PATH [--ini PATH] [--mods PATH] [--workers 1..32]\nwatch-feed --url HTTPS_FEED (read-only RSS or Atom observation)\nprobe --endpoint http://127.0.0.1:PORT/\naudit-plugins --request PATH|-\nplugin-file-info --file PATH [--header-only] (selected Skyrim SE-format file; no load-order claims)\nplugin-template [--author TEXT] [--description TEXT] (empty Skyrim SE full ESP candidate bytes on stdout; no file writes)\nscan-sources --request PATH|-\narchive-review --request PATH|- (bounded original-byte review)\nbsa-directory --archive PATH (named PC BSA 103–105, metadata only)\nbsa-compare --left PATH --right PATH (directory names only; no winner or payload check)\nduplicate-report --request PATH|- (complete ownership and reversible quarantine)\ncontent-vault --request PATH|- (explicit scoped backup/restore)\nspid-preview --name FILENAME_DISTR.ini | --file PATH (one bounded UTF-8 file; targets only)\nbos-preview --name FILENAME_SWAP.ini (one bounded UTF-8 file on stdin; authored swap pairs only)\nkid-preview --name FILENAME_KID.ini (one bounded UTF-8 file on stdin; declaration preview only)\nmcp-stdio [--legacy-2025-11-25] [--bsa ALIAS PATH] [--plugin ALIAS PATH] (read-only stdio; optional launch-time file snapshots)\nplugin-order-preview capture|preview (explicit snapshot JSON on stdin; never applies a change)\nnif-info --file PATH (selected Skyrim SE NIF block inventory and limited DDS slots)\nini-compare --before PATH --after PATH (read-only selected QSettings INIs; values redacted)\nbenchmark [--mods 2500] [--rounds 5] [--workers 8]\n\nImport and plugin audits are read-only. ESL eligibility is conditional; save, dependent-mod, asset and external-reference safety is not certified. The live MO2 plugin remains responsible for downloads and FOMOD installation. Benchmark uses a generated fixture, not a user's MO2 installation."
+            "Modhunter Rust engine\n\nimport --modlist PATH [--ini PATH] [--mods PATH] [--workers 1..32]\nwatch-feed --url HTTPS_FEED (read-only RSS or Atom observation)\nprobe --endpoint http://127.0.0.1:PORT/\naudit-plugins --request PATH|-\nplugin-file-info --file PATH [--header-only] (selected Skyrim SE-format file; no load-order claims)\nplugin-template [--author TEXT] [--description TEXT] (empty Skyrim SE full ESP candidate bytes on stdout; no file writes)\nscan-sources --request PATH|-\narchive-review --request PATH|- (bounded original-byte review)\nbsa-directory --archive PATH (named PC BSA 103–105, metadata only)\nbsa-compare --left PATH --right PATH (directory names only; no winner or payload check)\nduplicate-report --request PATH|- (complete ownership and reversible quarantine)\ncontent-vault --request PATH|- (explicit scoped backup/restore)\nspid-preview --name FILENAME_DISTR.ini | --file PATH (one bounded UTF-8 file; targets only)\nbos-preview --name FILENAME_SWAP.ini (one bounded UTF-8 file on stdin; authored swap pairs only)\nkid-preview --name FILENAME_KID.ini (one bounded UTF-8 file on stdin; declaration preview only)\nmcp-stdio [--legacy-2025-11-25] [--bsa ALIAS PATH] [--plugin ALIAS PATH] (read-only stdio; optional launch-time file snapshots)\nplugin-order-preview capture|preview (explicit snapshot JSON on stdin; never applies a change)\nnif-info --file PATH (selected Skyrim SE NIF block inventory and limited DDS slots)\nini-compare --before PATH --after PATH (read-only selected QSettings INIs; values redacted)\nbenchmark [--mods 2500] [--rounds 5] [--workers 8] (generated fixture)\nbenchmark-profile --modlist PATH [--ini PATH] [--mods PATH] [--workers 8] [--rounds 5] (read-only selected profile)\n\nImport and plugin audits are read-only. ESL eligibility is conditional; save, dependent-mod, asset and external-reference safety is not certified. The live MO2 plugin remains responsible for downloads and FOMOD installation. Benchmark uses a generated fixture, not a user's MO2 installation."
         ),
         Some(command) => {
             return Err(format!("Unknown command: {command}. Run modhunter-cli --help").into());
         }
     }
+    Ok(())
+}
+
+fn profile_request(args: &[String]) -> Result<ImportRequest, Box<dyn std::error::Error>> {
+    Ok(ImportRequest {
+        modlist_path: PathBuf::from(value(args, "--modlist")?.ok_or("Select --modlist PATH")?),
+        ini_path: value(args, "--ini")?.map(PathBuf::from),
+        mods_path: value(args, "--mods")?.map(PathBuf::from),
+        workers: value(args, "--workers")?.map(|s| s.parse()).transpose()?,
+    })
+}
+
+fn benchmark_profile(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let request = profile_request(args)?;
+    let rounds = number(args, "--rounds", 5)?;
+    if rounds == 0 {
+        return Err("Choose at least one warm round".into());
+    }
+    let importer = ProfileImporter::new();
+    let measure = || -> Result<_, Box<dyn std::error::Error>> {
+        let mut result = importer.import(&request)?;
+        // Timestamps and instrumentation vary by design. Every mod, group,
+        // plugin, conflict, warning, load-order entry and source must agree.
+        for field in [
+            "/importedAt",
+            "/generatedAt",
+            "/pluginAnalysis/checkedAt",
+            "/pluginAnalysis/stats",
+            "/sources/0/timestamp",
+        ] {
+            if let Some(value) = result.catalog.pointer_mut(field) {
+                *value = serde_json::Value::Null;
+            }
+        }
+        Ok(result)
+    };
+    let cold = measure()?;
+    let mut warm = Vec::new();
+    for _ in 0..rounds {
+        let result = measure()?;
+        if result.catalog != cold.catalog || result.warnings != cold.warnings {
+            return Err(
+                "The selected profile produced different catalogs during measurement".into(),
+            );
+        }
+        warm.push(result.stats);
+    }
+    let mut times: Vec<_> = warm.iter().map(|s| s.elapsed_ms).collect();
+    times.sort_by(f64::total_cmp);
+    let median = (times[(rounds - 1) / 2] + times[rounds / 2]) / 2.0;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&json!({
+            "scope":"complete specified profile; read-only native engine imports",
+            "osCache":"not evicted", "coldCache":"new importer","fullCatalogEquivalent":true,
+            "throughputModsPerSecondAtMedian":cold.stats.mods as f64*1000.0/median,
+            "cold":cold.stats,"warm":warm,"warmMedianMs":median,"warmP95Ms":times[rounds-(rounds/20)-1],
+            "platform":std::env::consts::OS,"architecture":std::env::consts::ARCH
+        }))?
+    );
     Ok(())
 }
 

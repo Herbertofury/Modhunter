@@ -34,10 +34,7 @@ PORTABLE_NAME = "Modhunter-Rust-Windows.zip"
 JSON_LIMIT = 4 * 1024 * 1024
 PNG_LIMIT = 32 * 1024 * 1024
 PORTABLE_EXPANDED_LIMIT = 512 * 1024 * 1024
-PRODUCTION_FILES = ("plugin.py", "version.py", "download_ids.py", "bridge.py", "gameplay.py", "model.py", "focus.py", "scanner.py", "version_evidence.py", "native_nexus.py", "qt_bridge.py", "intelligence.py",
-                    "plugin_intelligence.py", "mod_health.py", "github_health.py", "source_adapters.py",
-                    "source_registry.py", "update_plan.py", "quick_update.py",
-                    "install_brief.py", "content_recovery.py", "duplicate_report.py", "notification_facts.py", "operation_journal.py", "web/index.html")
+PRODUCTION_FILES = tuple(sorted(path.name for path in (ROOT / "mo2_update_arsenal").glob("*.py"))) + ("web/index.html",)
 # Historical evidence retains its original filename and baseline. Packaging and
 # public release staging share this list so a version bump cannot silently drop
 # earlier measurements or relabel them as evidence from a newer implementation.
@@ -2513,9 +2510,7 @@ def self_test() -> None:
                 prepare(self.artifacts, self.output, self.commit, self.run)
 
         def test_intelligence_and_adapter_sources_are_bound_to_native_proof(self):
-            for name in ("version.py", "gameplay.py", "scanner.py", "version_evidence.py", "native_nexus.py", "qt_bridge.py", "intelligence.py", "plugin_intelligence.py", "mod_health.py", "github_health.py",
-                         "source_adapters.py", "source_registry.py", "update_plan.py",
-                         "quick_update.py", "install_brief.py"):
+            for name in PRODUCTION_FILES:
                 with self.subTest(name=name):
                     original = self.result["productionFileHashes"].pop(name)
                     self.write_json(self.mo2 / "result.json", self.result)

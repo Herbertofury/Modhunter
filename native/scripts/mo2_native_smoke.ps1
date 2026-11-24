@@ -72,10 +72,8 @@ $PortableRoot = $null
 $Process = $null
 $Failure = $null
 $StartedAt = [DateTime]::UtcNow
-$CriticalProductionFiles = @('plugin.py', 'version.py', 'download_ids.py', 'bridge.py', 'model.py', 'focus.py', 'scanner.py', 'version_evidence.py', 'gameplay.py', 'native_nexus.py', 'qt_bridge.py',
-    'intelligence.py', 'plugin_intelligence.py', 'mod_health.py', 'github_health.py', 'content_recovery.py', 'duplicate_report.py', 'notification_facts.py', 'operation_journal.py',
-    'source_adapters.py', 'source_registry.py', 'update_plan.py', 'quick_update.py',
-    'install_brief.py', 'web/index.html')
+$PluginSourceRoot = Join-Path $RepositoryRoot 'mo2_update_arsenal'
+$CriticalProductionFiles = @(Get-ChildItem -LiteralPath $PluginSourceRoot -Filter '*.py' -File | ForEach-Object Name) + @('web/index.html')
 $Summary = [ordered]@{
     schemaVersion = 1
     test = 'mo2-native-fixture-smoke-orchestrator'

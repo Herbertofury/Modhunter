@@ -3,6 +3,8 @@
 use super::*;
 use std::net::{TcpListener, TcpStream};
 
+pub(super) struct ManagerProfile(pub(super) PathBuf);
+
 struct FixtureServer {
     origin: String,
     version: Arc<AtomicU64>,
@@ -285,6 +287,8 @@ fn wait_closed(app: &tauri::AppHandle, label: &str) -> Result<()> {
 
 #[path = "watchtower_acquisition_smoke.rs"]
 mod download_fixture;
+#[path = "watchtower_public_offer_smoke.rs"]
+mod public_offers;
 
 fn run(
     app: &tauri::AppHandle,
@@ -584,6 +588,7 @@ pub fn start(app: &tauri::AppHandle, output: PathBuf) -> Result<()> {
         .prefix("watchtower-fixture-")
         .tempdir_in(parent)
         .map_err(err)?;
+    app.manage(ManagerProfile(root.path().join("manager-webview")));
     setup_paths(
         app,
         root.path().join("config"),
@@ -598,13 +603,22 @@ pub fn start(app: &tauri::AppHandle, output: PathBuf) -> Result<()> {
     let handle = app.clone();
     std::thread::spawn(move || {
         let mut checks = Vec::new();
+        let public = std::env::args().any(|arg| arg == "--verify-public-skyrim-offers");
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            run(&handle, &output, root.path(), &mut checks)
+            if public {
+                public_offers::run(&handle, &output, &mut checks)
+            } else {
+                run(&handle, &output, root.path(), &mut checks)
+            }
         }))
         .unwrap_or_else(|_| Err("The native fixture stopped unexpectedly.".into()));
         let ok = result.is_ok();
-        let receipt = json!({"ok":ok,"nativeWebView2":true,"watchtowerSchema":1,"version":env!("CARGO_PKG_VERSION"),
-            "scope":"Owned local authenticated fixture plus one anonymous public example.com HTTPS production-path check. No real account/provider sign-in claim. Reopen is within one process. Local durable lease checks use a separate canonical public-shaped URL without relabelling captured URLs.",
+        let scope = if public {
+            "Public publisher-hosted Skyrim release archives. Trusted manager discovery, exact offer selection, approval and receipt validation in isolated app storage."
+        } else {
+            "Owned local authenticated fixture plus one anonymous public example.com HTTPS production-path check. No real account/provider sign-in claim. Reopen is within one process. Local durable lease checks use a separate canonical public-shaped URL without relabelling captured URLs."
+        };
+        let receipt = json!({"ok":ok,"nativeWebView2":true,"watchtowerSchema":1,"version":env!("CARGO_PKG_VERSION"),"scope":scope,
             "checks":checks,"error":result.err(),"completedAt":now()});
         let written = (|| -> Result<()> {
             let mut file = tempfile::NamedTempFile::new_in(

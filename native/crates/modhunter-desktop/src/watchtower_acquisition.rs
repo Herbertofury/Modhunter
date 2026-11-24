@@ -440,6 +440,7 @@ fn request_download(
     unsafe { operation.TotalBytesToReceive(&mut reported_total) }.map_err(err)?;
     let total = (reported_total > 0).then_some(reported_total as u64);
     let mut allowed_origin = b.source_origin.clone();
+    let mut github_release_redirect = false;
     if context.download_file_key.is_some() {
         let scope = context
             .download_scope
@@ -464,13 +465,17 @@ fn request_download(
             }
             scope.claim_mega_blob(&Url::parse(&uri).map_err(err)?, &current, proof, now())?;
         } else {
-            scope.claim(&Url::parse(&uri).map_err(err)?, &current)?;
+            let download = Url::parse(&uri).map_err(err)?;
+            scope.claim(&download, &current)?;
+            github_release_redirect = scope.claimed_github_release_redirect(&download);
         }
         if matches!(current.scheme(), "https" | "http") {
             allowed_origin = current.origin().ascii_serialization();
         }
     }
-    if !allowed_download(&uri, &allowed_origin, context.fixture_origin.as_deref()) {
+    if !github_release_redirect
+        && !allowed_download(&uri, &allowed_origin, context.fixture_origin.as_deref())
+    {
         return Err("This download left the tracked site for an unsupported host.".into());
     }
     let row = app

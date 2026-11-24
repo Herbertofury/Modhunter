@@ -492,6 +492,26 @@ impl SelectedDownloadScope {
         drive_file(&self.selected).is_some_and(|id| drive_file(url).as_ref() == Some(&id))
     }
 
+    /// GitHub serves release bytes from a separate origin. Recognize only the
+    /// exact redirect WebView2 observed for this already-claimed release asset.
+    pub fn claimed_github_release_redirect(&self, url: &Url) -> bool {
+        let selected = &self.selected;
+        let parts: Vec<_> = selected.path_segments().into_iter().flatten().collect();
+        self.claimed
+            && !self.invalid
+            && self.pending
+            && self.redirect_count > 0
+            && selected.origin().ascii_serialization() == "https://github.com"
+            && matches!(parts.as_slice(), [owner, repo, "releases", "download", tag, file]
+                if [owner, repo, tag, file].iter().all(|part| !part.is_empty()))
+            && url.origin().ascii_serialization() == "https://release-assets.githubusercontent.com"
+            && url.path().starts_with("/github-production-release-asset/")
+            && self
+                .last_target
+                .as_ref()
+                .is_some_and(|last| same_request(last, url))
+    }
+
     pub fn navigation_started(&mut self, id: u64, url: &Url, redirected: bool) {
         if !self.live() {
             return;
@@ -651,6 +671,34 @@ mod tests {
     }
     fn scope(raw: &str) -> SelectedDownloadScope {
         SelectedDownloadScope::new(url(raw)).unwrap()
+    }
+    #[test]
+    fn github_cdn_requires_the_claimed_exact_release_redirect() {
+        let selected = url("https://github.com/project/mod/releases/download/v1.0/Data.zip");
+        let cdn = url(
+            "https://release-assets.githubusercontent.com/github-production-release-asset/12/abc?fixture=one",
+        );
+        let other = url(
+            "https://release-assets.githubusercontent.com/github-production-release-asset/12/other",
+        );
+        let mut lease = SelectedDownloadScope::new(selected.clone()).unwrap();
+        lease.navigation_started(1, &selected, false);
+        lease.navigation_started(1, &cdn, true);
+        assert!(!lease.claimed_github_release_redirect(&cdn));
+        lease.claim(&cdn, &url("about:blank")).unwrap();
+        assert!(lease.claimed_github_release_redirect(&cdn));
+        assert!(!lease.claimed_github_release_redirect(&other));
+        for untrusted in [
+            "https://github.com/project/mod/issues/1",
+            "https://example.org/project/mod/releases/download/v1.0/Data.zip",
+        ] {
+            let origin = url(untrusted);
+            let mut another = SelectedDownloadScope::new(origin.clone()).unwrap();
+            another.navigation_started(2, &origin, false);
+            another.navigation_started(2, &cdn, true);
+            another.claim(&cdn, &url("about:blank")).unwrap();
+            assert!(!another.claimed_github_release_redirect(&cdn));
+        }
     }
     fn folder_file() -> MegaFolderFile {
         MegaFolderFile {

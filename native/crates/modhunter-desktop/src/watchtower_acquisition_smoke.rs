@@ -66,7 +66,11 @@ fn jobs(app: &tauri::AppHandle) -> Vec<Value> {
         .cloned()
         .unwrap_or_default()
 }
-fn wait_job(app: &tauri::AppHandle, id: &str, test: impl Fn(&Value) -> bool) -> Result<Value> {
+pub(super) fn wait_job(
+    app: &tauri::AppHandle,
+    id: &str,
+    test: impl Fn(&Value) -> bool,
+) -> Result<Value> {
     let deadline = Instant::now() + Duration::from_secs(20);
     while Instant::now() < deadline {
         if let Some(row) = jobs(app).into_iter().find(|r| r["id"] == id)
@@ -80,7 +84,7 @@ fn wait_job(app: &tauri::AppHandle, id: &str, test: impl Fn(&Value) -> bool) -> 
         "Actual browser download did not reach its expected state: {id}"
     ))
 }
-fn command(manager: &WebviewWindow, kind: &str, value: Value) -> Result<Value> {
+pub(super) fn command(manager: &WebviewWindow, kind: &str, value: Value) -> Result<Value> {
     manager.eval(format!("window.__fixtureDownloadCommand=null;window.__TAURI__.core.invoke('watchtower_command',{{kind:{},value:{}}}).then(v=>window.__fixtureDownloadCommand=v).catch(e=>window.__fixtureDownloadCommand={{ok:false,error:String(e)}});",serde_json::to_string(kind).map_err(err)?,value)).map_err(err)?;
     until(
         manager,

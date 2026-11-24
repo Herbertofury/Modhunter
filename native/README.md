@@ -149,6 +149,12 @@ Run the additional native fixture from the repository root after building:
 ./native/scripts/watchtower_smoke.ps1 -Executable "$PWD/native/target/release/Modhunter.exe" -Output "$PWD/native/target/watchtower-smoke"
 ```
 
+For an opt-in live check, the release executable can verify the publisher-hosted Tiered Casters 1.0.0 and WACCF Simonrim SkyPatcher Patch 0.1.2 archives. The test uses a fresh Watchtower manager and anonymous website profiles under the output directory. Its receipt records discovery, selection as new content, download consent, byte count and SHA-256 for each exact file. It exits before installation.
+
+```powershell
+& ./native/target/release/Modhunter.exe "--watchtower-smoke-output=$PWD/native/target/public-offers.json" --verify-public-skyrim-offers
+```
+
 Fixture-based Windows smoke is separate from a user's actual populated MO2 installation. Real Nexus account download behavior, account-specific callbacks, FOMOD choices and in-game results require testing against that installation; no automated fixture is labeled as that evidence. Provider sign-in and network failures cannot be guaranteed absent. The application is not code-signed; the Windows installer is built from the linked repository workflow.
 
 See [`Mod Intelligence`](../wiki/Mod-Intelligence.md) for ESL, provenance and source-health controls, and [`Source Coverage`](../wiki/Updater-Source-Coverage.md) for GitHub/GitLab/Modrinth/Thunderstore adapters. [`Rust Desktop`](../wiki/Rust-Desktop.md) and [`evidence/`](evidence/) record the tests and measured performance associated with this release.

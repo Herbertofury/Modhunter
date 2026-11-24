@@ -404,17 +404,21 @@ pub fn open(app: &tauri::AppHandle, prefill: Option<Value>) -> Result<()> {
         notify(app);
         return Ok(());
     }
-    let window =
-        WebviewWindowBuilder::new(app, "watchtower", WebviewUrl::App("watchtower.html".into()))
-            .visible(false)
-            .focused(false)
-            .title("Modhunter · Watchtower")
-            .inner_size(1280.0, 880.0)
-            .min_inner_size(760.0, 560.0)
-            .on_navigation(|url| crate::policy::local_asset(url, "/watchtower.html"))
-            .on_new_window(|_, _| NewWindowResponse::Deny)
-            .build()
-            .map_err(err)?;
+    let mut builder =
+        WebviewWindowBuilder::new(app, "watchtower", WebviewUrl::App("watchtower.html".into()));
+    if let Some(profile) = app.try_state::<smoke::ManagerProfile>() {
+        builder = builder.data_directory(profile.0.clone());
+    }
+    let window = builder
+        .visible(false)
+        .focused(false)
+        .title("Modhunter · Watchtower")
+        .inner_size(1280.0, 880.0)
+        .min_inner_size(760.0, 560.0)
+        .on_navigation(|url| crate::policy::local_asset(url, "/watchtower.html"))
+        .on_new_window(|_, _| NewWindowResponse::Deny)
+        .build()
+        .map_err(err)?;
     let handle = app.clone();
     window.on_window_event(move |event| {
         if matches!(event, tauri::WindowEvent::Destroyed) {

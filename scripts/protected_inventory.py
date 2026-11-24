@@ -33,6 +33,10 @@ def entries(root):
     stack = [(root, "", root.lstat())]
     while stack:
         path, relative, before = stack.pop()
+        # NTFS directory enumeration can return an older last-write time for
+        # a subdirectory. Query that directory itself before recording it.
+        if stat.S_ISDIR(before.st_mode):
+            before = path.lstat()
         size, mtime, mode, attributes = fingerprint(before)
         target = ""
         if stat.S_ISLNK(mode) or attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT:

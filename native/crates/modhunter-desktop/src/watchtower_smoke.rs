@@ -618,8 +618,14 @@ pub fn start(app: &tauri::AppHandle, output: PathBuf) -> Result<()> {
         } else {
             "Owned local authenticated fixture plus one anonymous public example.com HTTPS production-path check. No real account/provider sign-in claim. Reopen is within one process. Local durable lease checks use a separate canonical public-shaped URL without relabelling captured URLs."
         };
-        let receipt = json!({"ok":ok,"nativeWebView2":true,"watchtowerSchema":1,"version":env!("CARGO_PKG_VERSION"),"scope":scope,
+        let mut receipt = json!({"ok":ok,"nativeWebView2":true,"watchtowerSchema":1,"version":env!("CARGO_PKG_VERSION"),"scope":scope,
             "checks":checks,"error":result.err(),"completedAt":now()});
+        let retain =
+            public && ok && std::env::args().any(|arg| arg == "--retain-public-acquisitions");
+        if retain {
+            receipt["acquisitionRoot"] =
+                json!(root.path().join("data").join("watchtower-acquisitions"));
+        }
         let written = (|| -> Result<()> {
             let mut file = tempfile::NamedTempFile::new_in(
                 output.parent().ok_or("Fixture output parent missing.")?,
@@ -640,7 +646,9 @@ pub fn start(app: &tauri::AppHandle, output: PathBuf) -> Result<()> {
             },
         );
         shutdown(&handle);
-        drop(root);
+        if retain && written {
+            let _ = root.keep();
+        }
         handle.exit(if ok && written { 0 } else { 1 });
     });
     Ok(())

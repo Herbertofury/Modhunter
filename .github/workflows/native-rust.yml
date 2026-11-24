@@ -251,7 +251,7 @@ jobs:
           npm install --prefix $LiveTools --no-audit --no-fund playwright@1.57.0
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $env:NODE_PATH = Join-Path $LiveTools 'node_modules'
-          ./native/scripts/mo2_native_smoke.ps1 -RustCliPath "$PWD/native/target/release/modhunter-cli.exe" -QtBridgePath "$PWD/native/target/qt-bridge/Release/modhunter-qt-bridge.dll" -DesktopExecutable "$PWD/native/target/release/Modhunter.exe" -EvidenceDirectory "$PWD/native/target/live-mo2-smoke" -TimeoutSeconds 240
+          ./native/scripts/mo2_native_smoke.ps1 -RustCliPath "$PWD/native/target/release/modhunter-cli.exe" -QtBridgePath "$PWD/native/target/qt-bridge/Release/modhunter-qt-bridge.dll" -DesktopExecutable "$PWD/native/target/release/Modhunter.exe" -EvidenceDirectory "$PWD/native/target/live-mo2-smoke" -VerifyPublicFomod -TimeoutSeconds 240
       - name: Install, launch and uninstall the exact Windows installer
         # Installer acceptance is independent of the live MO2 UI harness. Keep
         # its evidence on a failed candidate; any failed gate still blocks the

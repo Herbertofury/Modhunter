@@ -156,6 +156,8 @@ Required observations include:
   verified installed archive bytes, and complete original-tree restoration.
 - A complete passing receipt and a clean zero exit code from MO2 itself.
 
+The Windows desktop job also supplies `-VerifyPublicFomod`. It runs the anonymous public Watchtower acquisition in the marked instance's own storage, then uses the original Tiered Casters release file and its real download receipt in place. The released FOMOD selects “Standard (recommended)” and “Restoration Self-Heal”. The test checks every installed configuration path and hash, native state callbacks, unchanged fixture profile files and removal through the production recovery operation. The disposable BasicGame instance exercises MO2 and the actual native installer. Gameplay requires Skyrim and SPID.
+
 An unexpected modal dialog, failed assertion, missing callback, missing native
 receipt, timeout or abnormal process exit fails the command. There is no mock
 fallback and no conversion of native failures into skipped or passing checks.

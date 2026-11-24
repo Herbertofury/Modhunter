@@ -41,6 +41,7 @@ from mo2_update_arsenal.plugin import ModUpdateArsenal
 from .agent_probe import check_scoped_toggle
 from .audit_probe import exercise_plugin_audit
 from .content_probe import exercise_content_recovery, exercise_native_install, new_fixture_name
+from .public_fomod_probe import DIGEST as PUBLIC_FOMOD_DIGEST, accept_tiered_casters, run_public_fomod
 
 
 GAME_NAME = "Modhunter CI Fixture"
@@ -383,7 +384,13 @@ class NativeSmokePlugin(ModUpdateArsenal):
             if not is_new and (target is None or Path(target.absolutePath()).resolve() != fixture / "mods" / "Smoke Disabled"):
                 return False
             object_name = str(dialog.objectName())
-            if object_name == "SimpleInstallDialog" and not intent["dialogs"]:
+            if intent.get("publicSha256"):
+                if not is_new or intent["publicSha256"] != PUBLIC_FOMOD_DIGEST:
+                    return False
+                button = accept_tiered_casters(QtWidgets, dialog, intent)
+                if button is None:
+                    return False
+            elif object_name == "SimpleInstallDialog" and not intent["dialogs"]:
                 combo = dialog.findChild(QtWidgets.QComboBox, "nameCombo")
                 button = dialog.findChild(QtWidgets.QPushButton, "okBtn")
                 if combo is None or combo.currentText() != intent["modName"] or button is None or not button.isEnabled():
@@ -621,6 +628,17 @@ class NativeSmokePlugin(ModUpdateArsenal):
                             any(kind == "installed" for kind, _ in events) and not any(active for _, active in events)
                             and all(p.read_bytes() == old for p, old in zip(protected_files, original_files)),
                             events=events, **new_install)
+                if os.environ.get("MODHUNTER_VERIFY_PUBLIC_FOMOD") == "1":
+                    with self._new_mod_events_lock:
+                        self._new_mod_events.clear()
+                    evidence = run_public_fomod(api, _fixture_root, catalog["profileId"], by_name, installed_cli,
+                                                self._arm_fixture_installer, self._disarm_fixture_installer)
+                    with self._new_mod_events_lock:
+                        observed = list(self._new_mod_events)
+                    self._check("native_public_fomod", any(kind == "installed" for kind, _ in observed)
+                                and not any(active for _, active in observed)
+                                and all(p.read_bytes() == old for p, old in zip(protected_files, original_files)),
+                                events=observed, **evidence)
             self._signals.finished.emit({"ok": True, "timingsMs": timings,
                                          "targetName": target["name"],
                                          "profileId": catalog["profileId"]})
@@ -684,8 +702,8 @@ class NativeSmokePlugin(ModUpdateArsenal):
                                "ownedGameFiles": False, "accountAuthentication": False},
                    "rustCliProbeRequested": bool(os.environ.get("MODHUNTER_NATIVE_SMOKE_RUST_CLI")),
                    "checks": list(self._checks), "dispatches": list(self._dispatches),
-                   "scopeLimits": ["No Nexus sign-in, remote scan or provider archive download",
-                                   "Only exact marked fixture installer dialogs; no arbitrary FOMOD choices or game launch"],
+                   "scopeLimits": ["No real game or Nexus account is used",
+                                   "Public archive installation is evidenced only by native_public_fomod when requested"],
                    **outcome}
         self._receipt_path.parent.mkdir(parents=True, exist_ok=True)
         temporary = self._receipt_path.with_suffix(".tmp")

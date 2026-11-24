@@ -328,6 +328,7 @@ jobs:
             native/target/qt-bridge/Release/modhunter-qt-bridge.dll
             native/target/qt-forward/qt-forward.json
             native/target/live-mo2-smoke/*.json
+            native/target/live-mo2-smoke/*.jsonl
             native/target/live-mo2-smoke/*.png
             native/target/native-smoke/*.json
             native/target/native-smoke/*.jsonl

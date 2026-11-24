@@ -37,6 +37,7 @@ PAGE_TTL_SECONDS = 15 * 60
 METADATA_TTL_SECONDS = 24 * 60 * 60
 MAX_COUNT = 2_147_483_647
 LAST_GOOD_BUGS = "last-good-after-transient-check"
+NEXUS_SOURCE_CONFLICT = "nexus-source-conflict"
 _SLUG = re.compile(r"[a-z0-9][a-z0-9_-]{1,63}\Z")
 _PATH = re.compile(r"/([a-z0-9][a-z0-9_-]{1,63})/mods/([1-9][0-9]{0,9})/?\Z")
 _VOID_TAGS = frozenset({"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"})
@@ -135,6 +136,29 @@ def nexus_identity(item: dict, game: str = "") -> tuple[str, int] | None:
         return _identity(game, item.get("nexusId"))
     except ValueError:
         return None
+
+
+def _nexus_source_conflict(item: dict, game: str, project_url: str) -> str:
+    """Describe only two contradictory project identities, never missing evidence."""
+    source = item.get("source") if isinstance(item.get("source"), dict) else {}
+    if not source.get("verified") or source.get("kind") == "advisory" or not project_url:
+        return ""
+    # project_url came from _source_links, not raw provider metadata or notes.
+    parsed = urllib.parse.urlsplit(project_url)
+    match = _PATH.fullmatch(parsed.path)
+    if parsed.hostname not in {"nexusmods.com", "www.nexusmods.com"} or not match:
+        return ""
+    linked_game, linked_id = match.group(1), _integer(match.group(2))
+    native_id = _integer(item.get("nexusId"))
+    known_game = isinstance(game, str) and bool(_SLUG.fullmatch(game)) and game != "unknown"
+    if not linked_id or linked_game == "unknown":
+        return ""
+    if not ((native_id and linked_id != native_id) or (known_game and linked_game != game)):
+        return ""
+    native_target = (f"{game} / mod {native_id}" if known_game and native_id else
+                     f"mod {native_id}" if native_id else f"the {game} profile")
+    return (f"MO2 identifies {native_target}, but the linked Nexus page is {linked_game} / mod {linked_id}. "
+            "Confirm the intended source in MO2 before relying on updates or bug reports.")
 
 
 def source_links(item: dict, game: str = "") -> dict[str, str]:
@@ -665,6 +689,8 @@ def build_mod_health(item: dict, *, game: str = "", now: float | None = None,
     source = item.get("source") if isinstance(item.get("source"), dict) else {}
     links = _source_links(item, identity)
     provider = "nexus" if identity else provider_of(source.get("url", ""))
+    conflict = (_nexus_source_conflict(item, game, links.get("project", ""))
+                if identity is None and provider == "nexus" else "")
     result = {"schema": 1, "provider": provider, "identity": {"game": identity[0], "modId": identity[1]} if identity else {"url": links.get("project", "")},
               "checkedAt": None, "links": links, "page": {"status": "unknown", "updatedAt": None, "updatedTimestamp": None,
                 "source": "", "sourceUrl": "", "checkedAt": None, "changedSincePrevious": None},
@@ -698,6 +724,8 @@ def build_mod_health(item: dict, *, game: str = "", now: float | None = None,
                             checkedAt=older["checkedAt"], reasonCode=LAST_GOOD_BUGS,
                             reason="The latest public check could not confirm the Bugs tab. This is the last observed Nexus badge only; no report or affected version is verified.",
                             changedSincePrevious=None, previousState=None)
+    elif conflict:
+        result["bugs"].update(reasonCode=NEXUS_SOURCE_CONFLICT, reason=conflict)
     else:
         result["bugs"].update(state="unsupported" if provider != "unknown" else "unknown", countLabel="Provider issue count",
                                 reasonCode="provider-not-supported", reason="This provider has no verified bug-count adapter. Open its original issue or project page.")
@@ -744,10 +772,13 @@ def build_mod_health(item: dict, *, game: str = "", now: float | None = None,
     def add(key: str, severity: str, label: str, detail: str, action: str, url: str = "", evidence: str = "") -> None:
         actions.append({"id": key, "severity": severity, "label": label, "detail": detail,
                         "action": action, "url": url, "evidence": evidence})
-    if not links or source.get("kind") == "advisory":
+    if conflict:
+        add("review-nexus-source-conflict", "warning", "Nexus project identity conflicts with MO2",
+            conflict, "link-source", links["project"], "MO2 mod ID, managed game and linked Nexus project")
+    elif not links or source.get("kind") == "advisory":
         add("link-source", "info", "Confirm the original source", "Link the exact project before using provider facts to choose an update.", "link-source", links.get("project", ""), "MO2 source identity")
     update = item.get("update") if isinstance(item.get("update"), dict) else {}
-    if update.get("verdict") == "candidate" and current_update_window(update, now=now) is not None:
+    if not conflict and update.get("verdict") == "candidate" and current_update_window(update, now=now) is not None:
         latest = str(update.get("latestVersion") or "the newer version")[:120]
         add("review-update", "info", "Review available update", f"Installed version {str(item.get('installedVersion') or '?')[:120]}; provider candidate {latest}. Check exact files, requirements and installed options before updating.", "review-files", links.get("files", links.get("project", "")), str(update.get("source") or "Version comparison")[:100])
     if page.get("changedSincePrevious"):

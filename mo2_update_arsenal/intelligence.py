@@ -15,7 +15,7 @@ import threading
 import time
 
 from .mod_health import (build_mod_health, nexus_identity, retain_last_good_bug_count,
-                         NexusPageClient, LAST_GOOD_BUGS, PAGE_TTL_SECONDS)
+                         NexusPageClient, LAST_GOOD_BUGS, NEXUS_SOURCE_CONFLICT, PAGE_TTL_SECONDS)
 from .plugin_intelligence import RustAuditRunner
 from .source_registry import provider_of
 
@@ -317,10 +317,14 @@ class ModIntelligence:
             snapshot = self.service.selection_snapshot([item_id])
             if not snapshot.get("items"):
                 return {"ok": False, "error": "Mod is not in the active profile"}
-            return {"ok": True, "profileId": snapshot["profileId"], "itemId": item_id,
-                    "health": snapshot["items"][0].get("modHealth"),
-                    "localAnalysis": snapshot["items"][0].get("localAnalysis"),
-                    "pluginAuditState": snapshot.get("pluginAuditState")}
+            return self._health_reply(snapshot, item_id)
+
+    @staticmethod
+    def _health_reply(snapshot: dict, item_id: str) -> dict:
+        item = snapshot["items"][0]
+        return {"ok": True, "profileId": snapshot["profileId"], "itemId": item_id,
+                "health": item.get("modHealth"), "localAnalysis": item.get("localAnalysis"),
+                "pluginAuditState": snapshot.get("pluginAuditState")}
 
     def start_health(self, item_id: str, profile_id: str, *, force=False) -> dict:
         with self.service._guard:
@@ -329,8 +333,13 @@ class ModIntelligence:
             snapshot = self.service.selection_snapshot([item_id])
             if not snapshot.get("items"):
                 return {"ok": False, "error": "Mod is not in the active MO2 profile"}
-            identity = nexus_identity(snapshot["items"][0], str(snapshot.get("game") or ""))
+            item = snapshot["items"][0]
+            identity = nexus_identity(item, str(snapshot.get("game") or ""))
             if not identity:
+                # The initial Inspector read uses this route. Surface the
+                # already-built warning without ever starting a provider job.
+                if not force and (item.get("modHealth") or {}).get("bugs", {}).get("reasonCode") == NEXUS_SOURCE_CONFLICT:
+                    return self._health_reply(snapshot, item_id)
                 return {"ok": False, "error": "This mod has no unambiguous Nexus project identity; open its original issue page"}
             key = f"{identity[0]}/{identity[1]}"
             saved = self._evidence.get(key) or {}

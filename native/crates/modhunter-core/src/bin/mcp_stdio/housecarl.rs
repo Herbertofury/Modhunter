@@ -213,6 +213,7 @@ pub(super) enum CheckFamily {
     Errors,
     Scripts,
     Facegen,
+    Dialogue,
 }
 
 impl Diagnostic {
@@ -243,10 +244,13 @@ impl Diagnostic {
             }
             Self::Check { form_id, family } => {
                 validate_form_id(&form_id)?;
-                Ok((
-                    "housecarl_check",
-                    json!({"formids":[form_id],"findings":[family]}),
-                ))
+                // houseCARL scopes dialogue by its seed topic or quest. The
+                // other families scope their sweep by a list of record IDs.
+                let args = match family {
+                    CheckFamily::Dialogue => json!({"seeds":[form_id],"findings":[family]}),
+                    _ => json!({"formids":[form_id],"findings":[family]}),
+                };
+                Ok(("housecarl_check", args))
             }
             Self::Asset { ref path } | Self::Nif { ref path } => {
                 if path.starts_with('@')
@@ -289,7 +293,7 @@ pub(super) fn tools() -> [Value; 3] {
         json!({"name":INSPECT,"title":"Inspect Skyrim assets, FaceGen, SKSE and distributor rules",
             "description":"Resolve an asset winner, inspect a NIF, compare an NPC's FaceGen providers, read distributor rules or inspect the configured SKSE layer. Check one record for link, script or FaceGen findings, or count all entries in one game Data BSA.",
             "inputSchema":{"type":"object","required":["kind"],"oneOf":[
-                {"properties":{"kind":{"const":"check"},"formId":{"type":"string"},"family":{"enum":["errors","scripts","facegen"]}},"required":["formId","family"],"additionalProperties":false},
+                {"properties":{"kind":{"const":"check"},"formId":{"type":"string"},"family":{"enum":["errors","scripts","facegen","dialogue"]}},"required":["formId","family"],"additionalProperties":false},
                 {"properties":{"kind":{"const":"archive"},"name":{"type":"string"}},"required":["name"],"additionalProperties":false},
                 {"properties":{"kind":{"enum":["asset","nif"]},"path":{"type":"string"}},"required":["path"],"additionalProperties":false},
                 {"properties":{"kind":{"const":"facegen"},"formId":{"type":"string"}},"required":["formId"],"additionalProperties":false},
@@ -472,6 +476,20 @@ mod tests {
         assert_eq!(
             value.arguments().unwrap(),
             json!({"formids":["00000F:Skyrim.esm"],"project":{"form":"tree"}})
+        );
+    }
+
+    #[test]
+    fn dialogue_check_uses_the_upstream_seed_scope() {
+        let check: Diagnostic = serde_json::from_value(json!({
+            "kind":"check", "family":"dialogue", "formId":"0F1AC1:Skyrim.esm"
+        }))
+        .unwrap();
+        let (tool, args) = check.arguments(Path::new(".")).unwrap();
+        assert_eq!(tool, "housecarl_check");
+        assert_eq!(
+            args,
+            json!({"seeds":["0F1AC1:Skyrim.esm"],"findings":["dialogue"]})
         );
     }
 }

@@ -49,7 +49,7 @@ Call `skyrim_load_order` with empty arguments to inspect the configured profile.
 
 Use `skyrim_inspect` for these additional reads. Each call returns the underlying engine's result and its scope.
 
-- `{"kind":"check","formId":"00000F:Skyrim.esm","family":"errors"}` runs houseCARL's reference checks on that record. Select `scripts` or `facegen` to examine that family. The response retains exclusions and upstream diagnostics.
+- `{"kind":"check","formId":"00000F:Skyrim.esm","family":"errors"}` runs houseCARL's reference checks on that record. Select `scripts` or `facegen` to examine that family. For `dialogue`, supply the FormID of a dialogue topic, quest, dialogue view or dialogue branch. The companion passes that record as the seed for the dialogue analysis. The response retains exclusions and upstream diagnostics.
 - `{"kind":"archive","name":"Skyrim - Meshes0.bsa"}` returns the complete upstream archive entry count for a file in the configured game Data directory. Use the separate launch-selected BSA directory tool to page through paths.
 - `{"kind":"asset","path":"meshes/example.nif"}` checks a Data-relative asset and its providers.
 - `{"kind":"nif","path":"meshes/example.nif"}` reads the mesh structure and reports any unavailable blocks.
@@ -73,7 +73,7 @@ The names below omit the upstream `housecarl_` prefix. Each group reflects the 2
 | --- | --- |
 | records, load_order_status | Production read via Modhunter. Record tree resolved competing providers and reported one plugin load failure. |
 | asset_status, nif_inspect | Production read via Modhunter. Verified an enabled mesh's provider and internal NIF blocks, absent-path handling and an NPC's FaceGen pair. |
-| layer, skse | Production read via Modhunter. Verified SPID inspection and matching SKSE DLL/config inventory. Other distributor formats and SKSE finding modes need individual runtime coverage. |
+| layer, skse | Production reads through Modhunter covered SkyPatcher, SPID, KID, BOS and FLM. The companion read 406, 292, 382, 204 and 86 configuration files respectively. The SKSE query returned a matching DLL and its config. |
 | create_plugin, apply | Isolated direct upstream calls wrote a new header-only plugin and a separate single-record override and read back the override. |
 | bsa_list | The product MCP companion and its independent native archive index both counted 136 entries in the installed MarketplaceTextures.bsa. The native index also read all 23 game Data BSAs (172,961 entries). |
 | check | Product MCP checked the selected Skyrim.esm gold record through houseCARL on the real profile. Its result reported zero dangling references for that record, 3,628 successfully scanned plugins and one explicit parse exclusion. Script and FaceGen check families are available with separate selection. |

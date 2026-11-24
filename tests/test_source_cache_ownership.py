@@ -55,8 +55,9 @@ class SourceCacheOwnershipTests(unittest.TestCase):
             else:
                 self.assertEqual(ids,["2"])
                 self.assertFalse(request["force"])
+                self.assertEqual(SourceScanner(runner=self.runner, cache_path=self.path)._cache["entries"], [{"observation": 1}])
                 records = {"2":dict(base,sourceUrl=urls[1])}
-            return {"itemRecords":records,"cache":{"entries":[]},"stats":{"queried":1},"errors":[]}
+            return {"itemRecords":records,"cache":{"entries":[{"observation": self.runner.calls}]},"stats":{"queried":1},"errors":[]}
         self.runner.run = run
         result = self.scanner.scan(dict(PROFILE,items=items))
         self.assertEqual(self.runner.calls,2)

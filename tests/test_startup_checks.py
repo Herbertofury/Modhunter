@@ -36,6 +36,74 @@ class StartupScannerTests(unittest.TestCase):
         self.assertEqual(result['itemRecords']['1']['verdict'],'review')
         self.assertEqual(events[-1]['itemRecords']['1']['verdict'],'review')
         self.assertEqual(set(events[-1]['itemRecords']),{'1'})
+
+    def test_interrupted_native_scan_reuses_exact_catalog_and_refetches_stale_and_unfinished_projects(self):
+        game = "skyrimspecialedition"
+        data = profile(8)
+        data["items"][0]["installedFiles"] = [[1, 8]]
+        self.cached(2, {"version": "old"}, age=STARTUP_CACHE_SECONDS + 100)
+        self.cache.persist()
+        baseline = self.cache.path.read_bytes()
+        cancel = threading.Event()
+        def native_request(path):
+            if path.endswith("/1/files.json"):
+                return {"files": [{"file_id": 9, "name": "Mod", "version": "2.0", "category_id": 1}],
+                        "file_updates": [{"old_file_id": 8, "new_file_id": 9}]}
+            if not path.endswith("/1.json"):
+                self.assertTrue(cancel.wait(5), path)
+            return {"version": "2.0", "status": "published"}
+        def interrupted(progress):
+            if progress.get("checked") == 1:
+                self.assertEqual(progress["itemRecords"]["0"]["verdict"], "candidate")
+                # The dashboard can only see this result after its full file
+                # catalog is recoverable in a different Cache instance.
+                self.assertEqual(Cache(self.cache.path).get(game, 1)["meta"]["fileCatalog"]["files"][0]["fileId"], 9)
+                cancel.set()
+        first = UpdateScanner(self.cache, NexusClient("fixture", native_request))
+        self.assertTrue(first.scan(data, "startup", interrupted, cancel_event=cancel)["cancelled"])
+        self.assertEqual(self.cache.path.read_bytes(), baseline)
+        restarted = Cache(self.cache.path)
+        calls, events = [], []
+        def remaining(path):
+            self.assertEqual(events[0]["itemRecords"]["0"]["verdict"], "candidate")
+            calls.append(path)
+            return {"version": "3.0"}
+        second = UpdateScanner(restarted, NexusClient("fixture", remaining)).scan(data, "startup", events.append)
+        self.assertEqual(second["fromCache"], 1)
+        self.assertEqual(sorted(calls), [f"/v1/games/{game}/mods/{mid}.json" for mid in range(2, 9)])
+        self.assertEqual(Cache(self.cache.path).get(game, 2)["meta"]["version"], "3.0")
+
+    def test_torn_append_and_interrupted_compaction_preserve_exact_accepted_results(self):
+        game = "skyrimspecialedition"
+        def accept(cache, mid, version):
+            cancel = threading.Event()
+            epoch = cache.begin_scan(game, cancel)
+            value = {"meta": {"mod_id": mid, "version": version}, "checkedAt": time.time()}
+            self.assertTrue(cache.set_for_scan(game, mid, value, epoch=epoch, cancel_event=cancel))
+        accept(self.cache, 1, "1.0")
+        with self.cache._journal.open("ab") as stream:
+            stream.write(b'[2,"skyrimspecialedition",2,{"meta":')
+        recovered = Cache(self.cache.path)
+        self.assertIsNone(recovered.get(game, 2))
+        accept(recovered, 2, "2.0")
+        restarted = Cache(self.cache.path)
+        self.assertEqual(restarted.get(game, 2)["meta"]["version"], "2.0")
+        old_log = restarted._journal.read_bytes()
+        restarted.set(game, 1, {"meta": {"version": "3.0"}, "checkedAt": time.time()})
+        restarted.persist()
+        restarted._journal.write_bytes(old_log)  # Snapshot committed; cleanup interrupted.
+        self.assertEqual(Cache(self.cache.path).get(game, 1)["meta"]["version"], "3.0")
+
+    def test_expired_lower_ids_do_not_consume_the_next_quota_window_before_unvisited_projects(self):
+        for mid in range(1, 7):
+            self.cached(mid, {"version": "1.0"}, age=STARTUP_CACHE_SECONDS + 1)
+        visited = []
+        def limited(path):
+            visited.append(int(path.rsplit("/", 1)[1].split(".")[0]))
+            raise MissingAuth("Fixture provider stopped")
+        UpdateScanner(self.cache, NexusClient("fixture", limited)).scan(profile(12), "startup")
+        self.assertTrue(visited)
+        self.assertTrue(all(mid > 6 for mid in visited), visited)
     def test_stale_future_invalid_and_failed_cache_entries_are_refetched(self):
         cases=[({'version':'1.0'},STARTUP_CACHE_SECONDS+1),({'version':'1.0'},-300),
                ({'status':'not_found'},1),({},1),({'version':''},1)]

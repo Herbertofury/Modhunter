@@ -539,6 +539,10 @@ class SourceScanner:
         partial = {key for key, raw in records.items() if isinstance(raw, dict) and raw.get("detailsTruncated")}
         if not partial:
             return
+        # The bounded Rust batch has finished. Retain its complete HTTP
+        # observations before any slower per-project detail requests.
+        if not self._save_cache(result.get("cache") or {}, epoch=epoch, cancel_event=cancel_event):
+            return
         complete = {}
         for raw in records.values():
             if isinstance(raw, dict) and not raw.get("detailsTruncated") and raw.get("sourceUrl") and raw.get("outcome") == "release":

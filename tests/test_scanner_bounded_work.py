@@ -177,6 +177,7 @@ class BoundedNexusAuditTests(unittest.TestCase):
         self.assertTrue(results[0]["cancelled"])
         self.assertEqual(self.cache.get("skyrimspecialedition", 1)["meta"]["version"], "3.0")
         self.assertEqual(current["itemRecords"]["mod-0"]["projectVersion"], "3.0")
+        self.assertEqual(Cache(self.cache.path).get("skyrimspecialedition", 1)["meta"]["version"], "3.0")
 
 
 if __name__ == "__main__":

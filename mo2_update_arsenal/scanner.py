@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import json
+import logging
 import os
 import re
 import threading
@@ -26,6 +27,7 @@ DAY = 24 * 3600
 MAX_RESPONSE_BYTES = 8_000_000
 MAX_NEXUS_WORKERS = 5
 STARTUP_CACHE_SECONDS = 4 * 3600
+LOG = logging.getLogger(__name__)
 
 
 class NexusError(Exception):
@@ -125,6 +127,7 @@ def safe_game_slug(game: str) -> str:
 class Cache:
     def __init__(self, path: Path):
         self.path = path
+        self._journal = path.with_suffix(path.suffix + ".projects.jsonl")
         self.lock = threading.RLock()
         self._revision = 0
         self._entry_revisions: dict[str, int] = {}
@@ -136,6 +139,38 @@ class Cache:
                 self.data = raw
         except (OSError, ValueError, json.JSONDecodeError):
             pass
+        self._checkpoint = self.data.get("checkpoint", 0)
+        if type(self._checkpoint) is not int or self._checkpoint < 0:
+            self._checkpoint = 0
+        self._dirty = False
+        try:
+            self._replay_projects()
+        except OSError as exc:
+            LOG.warning(f"Could not read the Nexus scan checkpoint ({type(exc).__name__})")
+
+    def _replay_projects(self) -> None:
+        # A completed snapshot already includes all journal records through
+        # its checkpoint, even if the process exited before clearing the log.
+        try:
+            stream = self._journal.open("rb")
+        except FileNotFoundError:
+            return
+        with stream:
+            for line in stream:
+                if not line.strip():
+                    continue
+                try:
+                    sequence, game, mod_id, value = json.loads(line)
+                    if (type(sequence) is not int or sequence <= self._checkpoint or type(game) is not str
+                            or not re.fullmatch(r"[a-z0-9_-]{2,64}", game) or type(mod_id) is not int
+                            or mod_id <= 0 or not isinstance(value, dict)
+                            or not metadata_identity_matches(value.get("meta"), game, mod_id)):
+                        continue
+                except (ValueError, TypeError, UnicodeError):
+                    continue  # An interrupted final write is safe to query again.
+                self.data["entries"][f"{game}/{mod_id}"] = value
+                self._checkpoint = sequence
+                self._dirty = True
 
     def get(self, game: str, mod_id: int) -> dict | None:
         with self.lock:
@@ -156,6 +191,7 @@ class Cache:
     def set(self, game: str, mod_id: int, value: dict) -> None:
         with self.lock:
             self.data["entries"][f"{game}/{mod_id}"] = dict(value)
+            self._dirty = True
             self._revision += 1
             self._entry_revisions[f"{game}/{mod_id}"] = self._revision
 
@@ -179,9 +215,22 @@ class Cache:
         with self.lock:
             if not self.scan_is_current(game, epoch, cancel_event):
                 return False
-            self.data["entries"][f"{game}/{mod_id}"] = dict(value)
-            self._revision += 1
-            self._entry_revisions[f"{game}/{mod_id}"] = self._revision
+            sequence = self._checkpoint + 1
+            payload = json.dumps([sequence, game, mod_id, value], ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            # Reserve the number before I/O: a failed flush can leave a
+            # complete record that a restarted reader can legitimately see.
+            self._checkpoint = sequence
+            try:
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                with self._journal.open("ab") as stream:
+                    # Frame both ends: a new accepted record can follow a torn tail.
+                    stream.write(b"\n" + payload + b"\n")
+                    stream.flush()
+                    os.fsync(stream.fileno())
+            except OSError as exc:
+                raise OSError(f"Could not save the Nexus scan checkpoint for {game}/{mod_id}; "
+                              "earlier completed projects remain available on restart") from exc
+            self.set(game, mod_id, value)
             return True
 
     def persist_for_scan(self, game: str, *, epoch: int | None,
@@ -189,15 +238,26 @@ class Cache:
         with self.lock:
             if not self.scan_is_current(game, epoch, cancel_event):
                 return False
-            self.persist()
+            if self._dirty:
+                self.persist()
             return True
 
     def persist(self) -> None:
         with self.lock:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self.path.with_suffix(self.path.suffix + ".tmp")
-            tmp.write_text(json.dumps(self.data, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
+            self.data["checkpoint"] = self._checkpoint
+            with tmp.open("w", encoding="utf-8") as stream:
+                json.dump(self.data, stream, separators=(",", ":"), ensure_ascii=False)
+                stream.flush()
+                os.fsync(stream.fileno())
             os.replace(tmp, self.path)
+            # A surviving journal is harmless: replay skips its old sequence numbers.
+            self._dirty = False
+            try:
+                self._journal.unlink(missing_ok=True)
+            except OSError as exc:
+                LOG.warning(f"Could not remove the compacted Nexus scan checkpoint ({type(exc).__name__})")
 
 
 def nexus_project_id(item: dict, game: str) -> int:
@@ -394,6 +454,7 @@ class UpdateScanner:
         else:
             candidate_ids = set(ids)
         uncached: list[int] = []
+        stale_on_startup: list[int] = []
         identifiable = {mid for mid, rows in grouped.items() if any(
             row.get("installedFiles") or row.get("installationArchive") for row in rows)}
 
@@ -431,8 +492,13 @@ class UpdateScanner:
                     output[str(mod_id)]=info
             elif cached and not should:
                 summarize(mod_id, cached.get("meta", {}), checked_at)
+            elif cached and mode == "startup":
+                # Across repeated interruptions or quota windows, previously
+                # unvisited projects must also receive their first check.
+                stale_on_startup.append(mod_id)
             else:
                 uncached.append(mod_id)
+        uncached.extend(stale_on_startup)
         total = len(uncached)
         if progress:
             progress({"checked": 0, "total": total, "fromCache": len(ids) - total,
@@ -515,10 +581,11 @@ class UpdateScanner:
                             continue  # Submitted before cancellation, never queried.
                         checked += 1
                         consecutive_failures = 0
-                        if not self.cache.set_for_scan(game, mid, {"checkedAt": now, "meta": meta},
+                        checked_at = time.time()
+                        if not self.cache.set_for_scan(game, mid, {"checkedAt": checked_at, "meta": meta},
                                                        epoch=cache_epoch, cancel_event=cancel_event):
                             continue  # Superseded work must not overwrite a newer cache.
-                        summarize(mid, meta, now)
+                        summarize(mid, meta, checked_at)
                     except (QuotaDepleted, MissingAuth) as ex:
                         checked += 1
                         halt.set()

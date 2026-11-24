@@ -410,6 +410,28 @@ fn cached_nexus_descriptions_do_not_hide_installed_identity() {
 }
 
 #[test]
+fn offline_catalog_preserves_exact_installed_files_and_blocks_partial_receipts() {
+    let f = Fixture::new("-Patch\n-Broken\n");
+    let metadata = "[General]\ngameName=SkyrimSE\nmodid=50307\nversion=2.6.0.0\nignoredVersion=3.1\nnexusFileStatus=2\ninstallationFile=C:/Downloads/Patch.zip\n[installedFiles]\nsize=2\n2\\modid=50307\n2\\fileid=252977\n1\\modid=50307\n1\\fileid=252976\n";
+    f.add("Patch", metadata);
+    f.add("Broken", &metadata.replace("size=2", "size=999999999"));
+    let importer = ProfileImporter::new();
+    let result = importer.import(&f.request()).unwrap();
+    let patch = item(&result.catalog, "Patch");
+    assert_eq!(patch["installationArchive"], "Patch.zip");
+    assert_eq!(patch["mo2FileStatus"], 2);
+    assert_eq!(patch["ignoredVersion"], "3.1");
+    assert_eq!(
+        patch["installedFiles"],
+        serde_json::json!([[50307, 252976], [50307, 252977]])
+    );
+    assert_eq!(patch["updateEligible"], true);
+    let partial = item(&result.catalog, "Broken");
+    assert_eq!(partial["installedFileEvidenceIncomplete"], true);
+    assert_eq!(partial["updateEligible"], false);
+}
+
+#[test]
 fn an_explicit_unknown_mod_game_never_falls_back_to_profile_nexus_identity() {
     let f = Fixture::new("+Different Game\n");
     f.add(

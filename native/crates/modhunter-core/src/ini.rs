@@ -110,6 +110,10 @@ impl Ini {
         self.sections.get(section)?.get(key).map(Vec::as_slice)
     }
 
+    pub(crate) fn section(&self, canonical_name: &str) -> Option<&HashMap<String, Vec<u8>>> {
+        self.sections.get(canonical_name)
+    }
+
     pub fn general(&self, key: &str) -> &str {
         self.get("general", key).unwrap_or("")
     }

@@ -6,7 +6,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{self, File, Metadata, OpenOptions};
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -646,19 +646,21 @@ impl ProfileImporter {
         } else {
             json!({})
         };
+        let mut item = json!({
+            "id":format!("live-{}", identity(&format!("{profile_id}|{}", name_identity(&e.name)))),
+            "mo2InternalName":e.name,"name":e.name,"installedVersion":version,
+            "latestKnownVersion":meta.general("newestversion"),"enabled":e.enabled,"nexusId":mod_id,
+            "priority":priority,"flags":flags,"groupId":"","group":"Imported load order",
+            "screenshotNote":notes.chars().take(4000).collect::<String>(),"author":meta.general("author"),
+            "source":source,"screenshot":0,"audit":audit,"offlineImported":true,
+            "foreign":e.foreign,"notInProfile":e.not_in_profile,
+            "missingFromDisk":!e.foreign && actual.is_none(),"sourceGame":effective_game,
+            "updateEligible":!e.foreign && actual.is_some() && !mismatched_game,
+            "repository":if meta.general("repository").is_empty() {"Nexus"} else {meta.general("repository")}
+        });
+        add_file_evidence(&mut item, &meta);
         ItemRead {
-            item: json!({
-                "id":format!("live-{}", identity(&format!("{profile_id}|{}", name_identity(&e.name)))),
-                "mo2InternalName":e.name,"name":e.name,"installedVersion":version,
-                "latestKnownVersion":meta.general("newestversion"),"enabled":e.enabled,"nexusId":mod_id,
-                "priority":priority,"flags":flags,"groupId":"","group":"Imported load order",
-                "screenshotNote":notes.chars().take(4000).collect::<String>(),"author":meta.general("author"),
-                "source":source,"screenshot":0,"audit":audit,"offlineImported":true,
-                "foreign":e.foreign,"notInProfile":e.not_in_profile,
-                "missingFromDisk":!e.foreign && actual.is_none(),"sourceGame":effective_game,
-                "updateEligible":!e.foreign && actual.is_some() && !mismatched_game,
-                "repository":if meta.general("repository").is_empty() {"Nexus"} else {meta.general("repository")}
-            }),
+            item,
             stats,
             warnings,
         }
@@ -731,6 +733,77 @@ impl ProfileImporter {
             },
         );
         Ok(Some(parsed))
+    }
+}
+
+fn add_file_evidence(item: &mut Value, meta: &Ini) {
+    let archive = meta
+        .general("installationfile")
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or("");
+    if !archive.is_empty() && !archive.chars().any(char::is_control) {
+        item["installationArchive"] = json!(archive);
+    }
+    let ignored = meta.general("ignoredversion");
+    if !ignored.is_empty() {
+        item["ignoredVersion"] = json!(ignored);
+    }
+    if let Ok(status @ 1..=7) = meta.general("nexusfilestatus").parse::<u8>() {
+        item["mo2FileStatus"] = json!(status);
+    }
+    let Some(fields) = meta.section("installedfiles") else {
+        return;
+    };
+    let declared = meta
+        .get("installedfiles", "size")
+        .and_then(|value| value.parse::<usize>().ok());
+    let mut pairs = BTreeMap::<usize, [Option<i32>; 2]>::new();
+    let mut incomplete = false;
+    for (key, raw) in fields {
+        let Some((index, field)) = key.split_once('\\') else {
+            continue;
+        };
+        let slot = match field {
+            "modid" => 0,
+            "fileid" => 1,
+            _ => continue,
+        };
+        let Some(index) = index.parse::<usize>().ok().filter(|index| *index > 0) else {
+            incomplete = true;
+            continue;
+        };
+        let id = std::str::from_utf8(raw)
+            .ok()
+            .and_then(|v| v.parse::<i32>().ok())
+            .filter(|id| *id > 0);
+        let pair = pairs.entry(index).or_default();
+        if pair[slot].is_some() || id.is_none() {
+            incomplete = true;
+        }
+        pair[slot] = id;
+    }
+    if declared != Some(pairs.len())
+        || pairs
+            .last_key_value()
+            .is_some_and(|(last, _)| *last != pairs.len())
+    {
+        incomplete = true;
+    }
+    let mut receipts = Vec::new();
+    for pair in pairs.into_values() {
+        if let [Some(project @ 1..), Some(file @ 1..)] = pair {
+            receipts.push([project, file]);
+        } else {
+            incomplete = true;
+        }
+    }
+    if !receipts.is_empty() {
+        item["installedFiles"] = json!(receipts);
+    }
+    if incomplete {
+        item["installedFileEvidenceIncomplete"] = Value::Bool(true);
+        item["updateEligible"] = Value::Bool(false);
     }
 }
 

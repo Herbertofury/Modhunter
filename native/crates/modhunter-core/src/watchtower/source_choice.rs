@@ -35,7 +35,7 @@ pub struct SourceOfferChoice {
 pub(crate) fn publication_time(raw: &str, evidence: &str, now: u64) -> Option<u64> {
     if !matches!(
         evidence,
-        "patreonPost" | "loversLabAttachment" | "loversLabRelease"
+        "patreonPost" | "loversLabAttachment" | "loversLabRelease" | "githubRelease"
     ) {
         return None;
     }

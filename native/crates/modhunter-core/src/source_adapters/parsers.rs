@@ -108,13 +108,13 @@ fn hashes(value: &Value) -> Value {
     }
     Value::Object(result)
 }
-fn archive(name: &str) -> bool {
+pub(super) fn archive(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
     [".zip", ".7z", ".rar"]
         .iter()
         .any(|suffix| lower.ends_with(suffix))
 }
-fn filename(name: &str) -> bool {
+pub(super) fn filename(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 240
         && !name

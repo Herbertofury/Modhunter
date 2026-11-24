@@ -631,7 +631,11 @@ impl WatchStore {
                 });
                 let accessible = matches!(
                     offer.access_evidence.as_str(),
-                    "patreonAttachment" | "loversLabChooser" | "loversLabDirect" | "megaFolderFile"
+                    "patreonAttachment"
+                        | "loversLabChooser"
+                        | "loversLabDirect"
+                        | "megaFolderFile"
+                        | "githubPublicAsset"
                 );
                 let group_id = source.filter(|_| compatible).map(|s| {
                     format!(
@@ -653,6 +657,7 @@ impl WatchStore {
                     .and_then(|url| url.host_str().map(str::to_owned))
                     .unwrap_or_default();
                 let provider_date = match offer.publication_evidence.as_str() {
+                    "githubRelease" => host == "github.com",
                     "patreonPost" => host == "patreon.com" || host.ends_with(".patreon.com"),
                     "loversLabAttachment" | "loversLabRelease" => {
                         host == "loverslab.com" || host.ends_with(".loverslab.com")

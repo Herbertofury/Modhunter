@@ -13,6 +13,9 @@ pub(super) fn run(app: &tauri::AppHandle, output: &Path, checks: &mut Vec<Value>
         Instant::now() + Duration::from_secs(15),
         |v| v == true,
     )?;
+    if std::env::args().any(|arg| arg == "--verify-public-release-inventory") {
+        return verify_inventory(&manager, output, checks);
+    }
     let mut releases = vec![
         (
             "3pvxiozkua/skyrim-tiered-casters",
@@ -146,6 +149,73 @@ pub(super) fn run(app: &tauri::AppHandle, output: &Path, checks: &mut Vec<Value>
             ));
         }
         checks.push(json!({"ok":true,"source":source,"releaseTag":tag,"filename":filename,"offerKey":offer["sourceFileKey"],"receipt":receipt}));
+    }
+    Ok(())
+}
+
+fn verify_inventory(manager: &WebviewWindow, output: &Path, checks: &mut Vec<Value>) -> Result<()> {
+    // Keep the fixture transport bounded: project the real manager response
+    // inside its WebView rather than copying every unrelated Watchtower state
+    // field and thousands of duplicated UI labels through the debug observer.
+    let script = r#"async(url) => {
+        const cmd=(kind,value)=>window.__TAURI__.core.invoke('watchtower_command',{kind,value});
+        const saved=await cmd('saveWatch',{url,title:'Release inventory fixture',enabled:true});
+        if(!saved.ok)throw Error(saved.error);
+        const listed=await cmd('resolveFiles',{id:saved.watchId});
+        if(!listed.ok)throw Error(listed.error);
+        const offers=listed.state.acquisitions.offers.filter(x=>x.watchId===saved.watchId);
+        const manual=offers.find(x=>x.kind==='manual');
+        if(!manual||offers.some(x=>!x.current||!x.githubRelease||x.supported!==(x.kind!=='manual')))throw Error('Incomplete native release offers');
+        const decision=await cmd('decideOffer',{id:manual.id,kind:'newContent'});
+        const opened=await cmd('openOffer',{id:manual.id});
+        if(decision.ok||opened.ok)throw Error('Manual asset acquired file authority');
+        return {rows:offers.map(x=>[x.githubRelease.assetId,x.name,x.supported]).sort((a,b)=>a[0]-b[0]),manualControlsRejected:true};
+    }"#;
+    for (project, tag, total, archives, expected) in [
+        (
+            "be5invis/Iosevka",
+            "v34.9.1",
+            453,
+            452,
+            "cdba16da7c56a2371799935e6234eee031bc574cd53b23d655e013378f451ce7",
+        ),
+        (
+            "astral-sh/python-build-standalone",
+            "20261124",
+            991,
+            0,
+            "276d6bb41ee6b1319d9216eb78584c121f8982e506ae21c1e4f01cdd8fcc9b58",
+        ),
+    ] {
+        let source = format!("https://github.com/{project}/releases/tag/{tag}");
+        event(output, "resolving-public-release-inventory");
+        let start = Instant::now();
+        manager.eval(format!("window.__releaseInventoryFixture=null;({script})({}).then(r=>window.__releaseInventoryFixture=r).catch(e=>window.__releaseInventoryFixture={{error:String(e)}})",json!(source))).map_err(err)?;
+        let answer = until(
+            manager,
+            "window.__releaseInventoryFixture",
+            Instant::now() + Duration::from_secs(100),
+            Value::is_object,
+        )?;
+        let rows = answer["rows"].as_array().ok_or_else(|| {
+            answer["error"]
+                .as_str()
+                .unwrap_or("Missing managed release inventory")
+                .to_owned()
+        })?;
+        let fingerprint = format!(
+            "{:x}",
+            Sha256::digest(serde_json::to_vec(rows).map_err(err)?)
+        );
+        if rows.len() != total
+            || rows.iter().filter(|r| r[2] == true).count() != archives
+            || fingerprint != expected
+            || answer["manualControlsRejected"] != true
+        {
+            return Err("Manager release inventory differs from the pinned provider IDs, names or file eligibility.".into());
+        }
+        checks.push(json!({"ok":true,"phase":"completePublicReleaseInventory","source":source,"assets":total,"selectable":archives,
+            "manual":total-archives,"assetIdentitySha256":fingerprint,"manualActionsRejected":true,"elapsedMs":start.elapsed().as_millis()}));
     }
     Ok(())
 }

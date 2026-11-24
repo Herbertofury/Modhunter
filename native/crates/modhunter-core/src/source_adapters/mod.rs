@@ -3,6 +3,7 @@
 //! Primary contracts: GitHub releases REST API, GitLab project release API,
 //! Modrinth v2 project/version API and thunderstore-io/Thunderstore's official
 //! PackageSerializerExperimental. Version comparison remains in the MO2 updater.
+pub mod github_offers;
 pub mod http;
 pub mod identity;
 pub mod parsers;

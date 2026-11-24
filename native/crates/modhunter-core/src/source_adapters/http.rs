@@ -86,6 +86,9 @@ pub trait SourceTransport: Sync {
         validators: &Validators,
         timeout: Duration,
     ) -> Result<HttpReply, String>;
+    fn release_metadata(&self, url: &str, timeout: Duration) -> Result<HttpReply, String> {
+        self.get(url, &Validators::default(), timeout)
+    }
 }
 pub struct PublicTransport {
     client: Client,
@@ -111,6 +114,22 @@ impl SourceTransport for PublicTransport {
         url: &str,
         validators: &Validators,
         timeout: Duration,
+    ) -> Result<HttpReply, String> {
+        self.get_bounded(url, validators, timeout, BODY_LIMIT)
+    }
+    fn release_metadata(&self, url: &str, timeout: Duration) -> Result<HttpReply, String> {
+        // A release header can embed its entire asset list. Pages stay at the
+        // ordinary per-request budget; large headers get a separate bound.
+        self.get_bounded(url, &Validators::default(), timeout, 32 * 1024 * 1024)
+    }
+}
+impl PublicTransport {
+    fn get_bounded(
+        &self,
+        url: &str,
+        validators: &Validators,
+        timeout: Duration,
+        limit: usize,
     ) -> Result<HttpReply, String> {
         if !api_url_allowed(url) {
             return Err("Unsupported API endpoint".into());
@@ -147,6 +166,7 @@ impl SourceTransport for PublicTransport {
             "x-ratelimit-reset",
             "content-type",
             "location",
+            "link",
         ] {
             if let Some(value) = response.headers().get(name).and_then(|v| v.to_str().ok())
                 && clean_header(value)
@@ -167,18 +187,15 @@ impl SourceTransport for PublicTransport {
             if content_type != "application/json" && !content_type.ends_with("+json") {
                 return Err("Provider returned a non-JSON page or verification challenge".into());
             }
-            if response
-                .content_length()
-                .is_some_and(|n| n > BODY_LIMIT as u64)
-            {
-                return Err("Provider response exceeded 2 MiB".into());
+            if response.content_length().is_some_and(|n| n > limit as u64) {
+                return Err(format!("Provider response exceeded {limit} bytes"));
             }
             response
-                .take(BODY_LIMIT as u64 + 1)
+                .take(limit as u64 + 1)
                 .read_to_end(&mut body)
                 .map_err(|_| "Provider response was incomplete".to_owned())?;
-            if body.len() > BODY_LIMIT {
-                return Err("Provider response exceeded 2 MiB".into());
+            if body.len() > limit {
+                return Err(format!("Provider response exceeded {limit} bytes"));
             }
         }
         Ok(HttpReply {

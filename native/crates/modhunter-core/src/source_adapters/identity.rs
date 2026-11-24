@@ -259,9 +259,7 @@ pub fn api_url_allowed(raw: &str) -> bool {
         url.host_str(),
         Some("api.github.com" | "gitlab.com" | "api.modrinth.com" | "thunderstore.io")
     ) && match url.host_str().unwrap_or_default() {
-        "api.github.com" => {
-            url.path().starts_with("/repos/") && url.path().ends_with("/releases/latest")
-        }
+        "api.github.com" => super::github_offers::metadata_endpoint(&url),
         "gitlab.com" => gitlab_release_endpoint(&url).is_some(),
         "api.modrinth.com" => {
             url.path().starts_with("/v2/project/") || url.path().starts_with("/v2/version/")
@@ -333,7 +331,7 @@ fn gitlab_release_endpoint(url: &Url) -> Option<(String, Option<String>)> {
     Some((project, Some(tag)))
 }
 
-fn decode_path_component(raw: &str) -> Option<String> {
+pub(super) fn decode_path_component(raw: &str) -> Option<String> {
     let mut decoded = Vec::with_capacity(raw.len());
     let mut bytes = raw.bytes();
     while let Some(byte) = bytes.next() {

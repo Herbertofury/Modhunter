@@ -605,7 +605,9 @@ pub fn start(app: &tauri::AppHandle, output: PathBuf) -> Result<()> {
     let handle = app.clone();
     std::thread::spawn(move || {
         let mut checks = Vec::new();
-        let public = std::env::args().any(|arg| arg == "--verify-public-skyrim-offers");
+        let inventory = std::env::args().any(|arg| arg == "--verify-public-release-inventory");
+        let public =
+            inventory || std::env::args().any(|arg| arg == "--verify-public-skyrim-offers");
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             if public {
                 public_offers::run(&handle, &output, &mut checks)
@@ -615,7 +617,9 @@ pub fn start(app: &tauri::AppHandle, output: PathBuf) -> Result<()> {
         }))
         .unwrap_or_else(|_| Err("The native fixture stopped unexpectedly.".into()));
         let ok = result.is_ok();
-        let scope = if public {
+        let scope = if inventory {
+            "Complete pinned public GitHub release asset inventories in the native manager. Manual actions are rejected. No download or installation."
+        } else if public {
             "Public publisher-hosted Skyrim release archives. Trusted manager discovery, exact offer selection, approval and receipt validation in isolated app storage."
         } else {
             "Owned local authenticated fixture plus one anonymous public example.com HTTPS production-path check. No real account/provider sign-in claim. Reopen is within one process. Local durable lease checks use a separate canonical public-shaped URL without relabelling captured URLs."

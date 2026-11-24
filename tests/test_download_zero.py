@@ -97,6 +97,23 @@ class ZeroHandleTests(unittest.TestCase):
         result=self.service.retry_failed_download(0)
         self.assertTrue(result["ok"],result)
         self.assertIn(1,self.service.downloads())
+
+    def test_callback_number_alone_never_completes_or_reassigns_a_native_nexus_ticket(self):
+        self.queue()
+        before=self.service.downloads()[0]
+        self.service.set_download_status(0,"complete",native_signal=True)
+        self.assertEqual(self.service.downloads()[0]["status"],"downloading")
+        wrong={**before,"fileId":before["fileId"]+1,"operationId":"wrong-operation"}
+        result=self.service._start_native_download("download",{},wrong)
+        self.assertFalse(result["ok"])
+        self.assertEqual(self.service.downloads()[0],before)
+        proof={"modId":before["modId"],"fileId":before["fileId"]}
+        self.service.confirm_native_archive(0,"wrong-operation",proof)
+        self.assertEqual(self.service.downloads()[0]["status"],"downloading")
+        self.service.confirm_native_archive(0,before["operationId"],proof)
+        self.assertEqual(self.service.downloads()[0]["status"],"complete")
+        self.assertTrue(self.service._start_native_download("download",{},dict(before))["ok"])
+        self.assertEqual(self.service.downloads()[0]["status"],"complete")
     def test_diagnostics_requires_the_same_session_authorization(self):
         with self.assertRaises(urllib.error.HTTPError) as denied:
             self.api("diagnostics",authorized=False)

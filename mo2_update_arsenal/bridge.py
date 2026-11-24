@@ -1069,18 +1069,33 @@ class ArsenalService:
             result = self.call_ui(command, native_payload)
             if result.get("ok") and parse_download_id(result.get("downloadId")) is None:
                 result = {"ok": False, "error": "MO2 did not return a valid download handle; inspect MO2 Downloads before retrying"}
-            return result
         finally:
             with self._guard:
                 self._download_dispatches -= 1
                 if result.get("ok"):
                     download_id = parse_download_id(result.get("downloadId"))
                     if download_id is not None:
-                        ticket["status"] = self._early_download_events.pop(download_id, "downloading")
-                        self._downloads[download_id] = ticket
-                        self.journal.record(ticket, download_id)
+                        status = self._early_download_events.pop(download_id, "downloading")
+                        previous = self._downloads.get(download_id)
+                        if previous is not None:
+                            fields = ("profileId", "game", "gameRuntime", "itemId", "installedVersion", "provider",
+                                      "modId", "fileId", "assetKey", "assetProof")
+                            if any(previous.get(key) != ticket.get(key) for key in fields):
+                                result = {"ok": False, "error": "MO2 returned a handle already owned by a different download. Inspect MO2 Downloads."}
+                            elif previous.get("status") in ("failed", "removed", "paused"):
+                                # A new attempt for the very same identity can
+                                # legitimately reuse its native handle.
+                                previous["status"] = "downloading"
+                                self.journal.record(previous, download_id)
+                        else:
+                            if status == "native-complete":
+                                status = "downloading" if ticket.get("provider") == "nexus" else "complete"
+                            ticket["status"] = status
+                            self._downloads[download_id] = ticket
+                            self.journal.record(ticket, download_id)
                 if not self._download_dispatches:
                     self._early_download_events.clear()
+        return result
 
     def request_download(self, mod_id: int, file_id: int, confirmation: str,
                          item_id: str = "", installed_version: str = "",
@@ -1775,12 +1790,16 @@ class ArsenalService:
         return {"ok": True, "partial": bool(failed), "queued": queued, "failed": failed, "skipped": skipped,
                 "message": f"Queued {len(queued)} reviewed archive(s). Install each separately in MO2."}
 
-    def set_download_status(self, download_id: int, state: str) -> None:
+    def set_download_status(self, download_id: int, state: str, *, native_signal=False) -> None:
         if (type(download_id) is not int or parse_download_id(download_id) is None
                 or state not in ("complete", "downloading", "paused", "failed", "removed")):
             return
         with self._guard:
             if download_id in self._downloads:
+                if state == "complete" and native_signal and self._downloads[download_id].get("provider") == "nexus":
+                    # A callback number can move/refer to another archive on
+                    # row-based releases. The Qt owner reconciles exact evidence.
+                    return
                 # A delayed download callback cannot renew installation
                 # authority, including an uncertain native outcome that still
                 # requires explicit inspection of its retained backup.
@@ -1789,13 +1808,36 @@ class ArsenalService:
                     self.journal.record(self._downloads[download_id], download_id)
             elif self._download_dispatches and type(download_id) is int and parse_download_id(download_id) is not None:
                 # Early native callback raced ahead of startDownload's return ID.
-                self._early_download_events[download_id] = state
+                self._early_download_events[download_id] = "native-complete" if native_signal and state == "complete" else state
         if state == "complete":
             self._maybe_autoinstall()
 
+    def pending_native_archives(self):
+        with self._guard:
+            keys = ("operationId", "game", "profileName", "modId", "fileId")
+            return [(handle, {k: ticket.get(k) for k in keys}) for handle, ticket in self._downloads.items()
+                    if ticket.get("status") == "downloading" and ticket.get("provider") == "nexus"
+                    and ticket.get("profileId") == self._snapshot.get("profileId")]
+
+    def confirm_native_archive(self, download_id, operation_id, proof):
+        with self._guard:
+            ticket = self._downloads.get(download_id)
+            if (not ticket or ticket.get("status") != "downloading" or ticket.get("provider") != "nexus"
+                    or ticket.get("profileId") != self.profile_id() or ticket.get("operationId") != operation_id
+                    or (ticket.get("modId"), ticket.get("fileId")) != (proof["modId"], proof["fileId"])):
+                return
+            if sum(1 for t in self._downloads.values()
+                   if t.get("status") == "downloading" and t.get("profileId") == ticket.get("profileId")
+                   and (t.get("provider"), t.get("modId"), t.get("fileId")) == ("nexus", proof["modId"], proof["fileId"])) != 1:
+                return
+            ticket.update(status="complete", nativeArchiveProof=proof, completionEvidence="MO2 Downloads")
+            self.journal.record(ticket, download_id)
+        self._maybe_autoinstall()
+
     def downloads(self) -> dict:
         with self._guard:
-            return deepcopy({k:v for k,v in self._downloads.items() if v.get("profileId")==self._snapshot.get("profileId")})
+            return deepcopy({k: {field: value for field, value in v.items() if field != "nativeArchiveProof"}
+                             for k,v in self._downloads.items() if v.get("profileId")==self._snapshot.get("profileId")})
 
     def activity(self) -> dict:
         """Read-only operational history; previous-session receipts never install."""
@@ -1852,7 +1894,7 @@ class ArsenalService:
             if self.content.native_enabled:
                 result = self.content.install_native_download(download_id, ticket, execution_epoch, cancel=cancel)
             else:
-                request = UIRequest("install", {"downloadId": download_id,
+                request = UIRequest("install", {"downloadId": download_id, "nativeArchiveProof": ticket.get("nativeArchiveProof"),
                                 "executionEpoch": execution_epoch,
                                 "profileId": ticket.get("profileId"),
                                 "gameRuntime": ticket.get("gameRuntime"),

@@ -200,7 +200,7 @@ class RequestLifecycleTests(unittest.TestCase):
         modlist = SimpleNamespace(getMod=lambda name: SimpleNamespace(version=lambda: "1.0"))
         native = SimpleNamespace(server=self.service,
             org=SimpleNamespace(profileName=lambda: "One", modList=lambda: modlist),
-            _download=Mock(return_value={"ok": True, "downloadId": 40}))
+            _download=Mock(return_value={"ok": True, "downloadId": 40}), _schedule_download_check=Mock())
         dispatch = actual_dispatcher()
         dispatch(native, request)
         dispatch(native, request)

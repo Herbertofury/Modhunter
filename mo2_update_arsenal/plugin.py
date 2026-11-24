@@ -25,6 +25,7 @@ from .native_nexus import NativeNexusGateway
 from .plugin_intelligence import attach_native_plugin_state, build_audit_request
 from .version import VERSION
 from .download_ids import download_id as parse_download_id
+from .native_downloads import DownloadDirectoryIndex, archive_receipt, download_model, ready_receipt, verified_path
 from .content_recovery import NativeContent
 
 LOG = logging.getLogger(__name__)
@@ -50,7 +51,9 @@ class ModUpdateArsenal(mobase.IPluginTool):
         self._background_dirty = False
         self._deferred_content_leases = set()
         self._runtime = "unknown"
-        self._download_complete_callback = None
+        self._download_check_pending = False
+        self._download_check_offset = 0
+        self._download_directory_index = None
         self._selection_connected = False
         self._focus_navigating = False
         self._native_nexus = None
@@ -460,7 +463,54 @@ class ModUpdateArsenal(mobase.IPluginTool):
 
     def _download_state(self, did: int, state: str):
         if self.server and type(did) is int and parse_download_id(did) is not None:
-            self.server.set_download_status(did, state)
+            self.server.set_download_status(did, state, native_signal=True)
+            if state == "complete":
+                # The callback itself is an authoritative READY observation.
+                # Match its actual path immediately, independently of ticket IDs.
+                pending = self.server.pending_native_archives()
+                if pending:
+                    try:
+                        proof = archive_receipt(self.org.downloadsPath(), self.org.downloadManager().downloadPath(did))
+                        game = self.org.managedGame()
+                        matches = [(handle, t) for handle, t in pending if t["profileName"] == self.org.profileName()
+                                   and t["game"].casefold() == str(game.gameNexusName()).casefold()
+                                   and proof["game"] == str(game.gameShortName()).casefold()
+                                   and (t["modId"], t["fileId"]) == (proof["modId"], proof["fileId"])]
+                        if len(matches) == 1:
+                            handle, ticket = matches[0]
+                            self.server.confirm_native_archive(handle, ticket["operationId"], proof)
+                    except (AttributeError, OSError, RuntimeError, TypeError, ValueError):
+                        pass
+                self._schedule_download_check()
+
+    def _schedule_download_check(self):
+        if not self._download_check_pending and not self._closing:
+            self._download_check_pending = True
+            QtCore.QTimer.singleShot(3000, self._check_native_downloads)
+
+    def _check_native_downloads(self):
+        self._download_check_pending = False
+        if self._closing or self.server is None:
+            return
+        pending = self.server.pending_native_archives()
+        if not pending:
+            return
+        try:
+            model = download_model(QtWidgets)
+            if model is not None:
+                if self._download_directory_index is None:
+                    self._download_directory_index = DownloadDirectoryIndex()
+                start = self._download_check_offset % len(pending)
+                for i in range(min(4, len(pending))):
+                    handle, ticket = pending[(start + i) % len(pending)]
+                    if self.org.profileName() == ticket["profileName"]:
+                        proof = ready_receipt(self.org, model, QtCore, handle, ticket, self._download_directory_index)
+                        if proof:
+                            self.server.confirm_native_archive(handle, ticket["operationId"], proof)
+                self._download_check_offset = start + 4
+        except (AttributeError, OSError, RuntimeError, TypeError, ValueError):
+            pass
+        self._schedule_download_check()
 
     def _schedule_refresh(self):
         if self.server is not None and self._background_refresh is not None and not self._closing:
@@ -587,7 +637,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
             os.fsync(output.fileno())
         return {"ok": True, "backupPath": str(path), "files": copied}
 
-    def _install(self, download_id: int):
+    def _install(self, download_id: int, native_archive_proof=None):
         if protected_installs():
             return protected_refusal()
         status = self.server.downloads().get(download_id, {}) if self.server else {}
@@ -602,7 +652,8 @@ class ModUpdateArsenal(mobase.IPluginTool):
             before = self.server.native_snapshot()
             if str(self.org.profileName()) != str(before.get("profileName") or ""):
                 return {"ok": False, "error": "Active MO2 profile changed; reopen the Workshop before installing"}
-            source = Path(self.org.downloadManager().downloadPath(download_id)).resolve()
+            source = (verified_path(self.org.downloadsPath(), native_archive_proof) if native_archive_proof
+                      else Path(self.org.downloadManager().downloadPath(download_id)).resolve())
             root = Path(self.org.downloadsPath()).resolve()
             if not source.is_file() or not source.is_relative_to(root) or source.suffix.lower() not in (".zip", ".7z", ".rar"):
                 return {"ok": False, "error": "Selected download file is missing or outside the MO2 download directory"}
@@ -914,10 +965,12 @@ class ModUpdateArsenal(mobase.IPluginTool):
                         result = {"ok": False, "error": "Reviewed release or compatibility changed before native execution; review the file again"}
                     elif request.cmd == "download":
                         result = self._download(int(request.payload["modId"]), int(request.payload["fileId"]))
+                        if result.get("ok"):
+                            self._schedule_download_check()
                     else:
                         result = self._download_url(request.payload)
             elif request.cmd == "install":
-                result = self._install(int(request.payload["downloadId"]))
+                result = self._install(int(request.payload["downloadId"]), request.payload.get("nativeArchiveProof"))
             elif request.cmd == "focus":
                 result = self._focus_mod(request.payload)
             elif request.cmd == "backup":

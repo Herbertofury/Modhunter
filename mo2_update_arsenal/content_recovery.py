@@ -1167,7 +1167,8 @@ class ContentRecovery:
         context = self._context(data["contextId"])
         if epoch != context["executionEpoch"]:
             return {"ok": False, "error": "Native download context changed before content backup"}
-        archive = self._ui("content-download", {"downloadId": download_id, "context": context})
+        archive = self._ui("content-download", {"downloadId": download_id, "context": context,
+                                                "nativeArchiveProof": ticket.get("nativeArchiveProof")})
         if not archive.get("ok"):
             return archive
         data["_nativeArchive"] = archive["archive"]
@@ -1388,8 +1389,12 @@ class NativeContent:
             result = self.plugin._profile_backup()
             request.finish({"ok": bool(result.get("ok")), "backup": result, "error": result.get("error", "")})
         elif request.cmd == "content-download":
-            source = real_path(str(self.plugin.org.downloadManager().downloadPath(int(payload["downloadId"]))))
             downloads = real_path(str(self.plugin.org.downloadsPath()), directory=True)
+            if payload.get("nativeArchiveProof"):
+                from .native_downloads import verified_path
+                source = verified_path(downloads, payload["nativeArchiveProof"])
+            else:
+                source = real_path(str(self.plugin.org.downloadManager().downloadPath(int(payload["downloadId"]))))
             if not source.is_relative_to(downloads) or source.suffix.lower() not in {".zip", ".7z", ".rar"} or not source.is_file():
                 raise ValueError("Native download is outside MO2's real downloads directory")
             request.finish({"ok": True, "archive": str(source)})

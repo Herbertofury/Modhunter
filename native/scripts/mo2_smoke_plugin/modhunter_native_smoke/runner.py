@@ -13,6 +13,7 @@ import sys
 import threading
 import time
 import traceback
+import mobase
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -37,7 +38,7 @@ from mo2_update_arsenal.focus import find_mo2_view, name_column
 from mo2_update_arsenal.plugin import ModUpdateArsenal
 
 from .audit_probe import exercise_plugin_audit
-from .content_probe import exercise_content_recovery, exercise_native_install
+from .content_probe import exercise_content_recovery, exercise_native_install, new_fixture_name
 
 
 GAME_NAME = "Modhunter CI Fixture"
@@ -246,6 +247,20 @@ class NativeSmokePlugin(ModUpdateArsenal):
                         error=self._native_nexus_error,
                         api=repository_api_metadata(organizer) if self._native_nexus is None else None,
                         scope="Construction and Qt signal binding only; no account or requests")
+            self._new_fixture_name = new_fixture_name(json.loads((expected / "modhunter-smoke-fixture.json").read_text("utf-8-sig")))
+            self._new_mod_events = []
+            self._new_mod_events_lock = threading.Lock()
+            def observe(kind, state):
+                with self._new_mod_events_lock:
+                    self._new_mod_events.append((kind, bool(int(state) & int(mobase.ModState.ACTIVE))))
+            def installed(mod):
+                if mod.name() == self._new_fixture_name:
+                    observe("installed", organizer.modList().state(mod.name()))
+            def changed(states):
+                if self._new_fixture_name in states:
+                    observe("stateChanged", states[self._new_fixture_name])
+            self._check("fixture_observes_new_mod_state", organizer.modList().onModInstalled(installed)
+                        and organizer.modList().onModStateChanged(changed))
             accepted = organizer.onUserInterfaceInitialized(self._ui_ready)
             self._check("native_ui_callback_registered", bool(accepted))
             self._watchdog = QtCore.QTimer()
@@ -296,7 +311,8 @@ class NativeSmokePlugin(ModUpdateArsenal):
             fixture = Path(os.environ["MODHUNTER_NATIVE_SMOKE_INSTANCE"]).resolve()
             if (not self._on_qt_thread() or self.server is None or self.org.profileName() != PROFILE_NAME
                     or Path(self.org.basePath()).resolve() != fixture or Path(self.org.modsPath()).resolve() != fixture / "mods"
-                    or intent["modName"] != "Smoke Disabled" or Path(intent["modRoot"]).resolve() != fixture / "mods" / "Smoke Disabled"):
+                    or intent["modName"] not in {"Smoke Disabled", self._new_fixture_name}
+                    or Path(intent["modRoot"]).resolve() != fixture / "mods" / intent["modName"]):
                 return False
             with self.server.content._lock:
                 job = self.server.content._jobs.get(intent["reviewId"], {})
@@ -304,18 +320,23 @@ class NativeSmokePlugin(ModUpdateArsenal):
                         or job.get("profileId") != intent["profileId"] or job.get("modName") != intent["modName"]
                         or job.get("state") != "installing" or not job.get("nativeStarted") or not job.get("backupId")):
                     return False
-            target = self.org.modList().getMod("Smoke Disabled")
-            if target is None or Path(target.absolutePath()).resolve() != fixture / "mods" / "Smoke Disabled":
+            if isinstance(dialog, QtWidgets.QProgressDialog):
+                return True  # Observe progress without interacting with the dialog.
+            target = self.org.modList().getMod(intent["modName"])
+            is_new = intent["modName"] == self._new_fixture_name
+            if is_new and (target is not None or Path(intent["modRoot"]).exists()):
+                return False
+            if not is_new and (target is None or Path(target.absolutePath()).resolve() != fixture / "mods" / "Smoke Disabled"):
                 return False
             object_name = str(dialog.objectName())
             if object_name == "SimpleInstallDialog" and not intent["dialogs"]:
                 combo = dialog.findChild(QtWidgets.QComboBox, "nameCombo")
                 button = dialog.findChild(QtWidgets.QPushButton, "okBtn")
-                if combo is None or combo.currentText() != "Smoke Disabled" or button is None or not button.isEnabled():
+                if combo is None or combo.currentText() != intent["modName"] or button is None or not button.isEnabled():
                     return False
                 intent["nameConfirmed"] = True
                 intent["dialogs"].append({"dialog": object_name, "action": "accept exact fixture name", "target": combo.currentText()})
-            elif object_name == "QueryOverwriteDialog" and intent["nameConfirmed"] and len(intent["dialogs"]) == 1:
+            elif not is_new and object_name == "QueryOverwriteDialog" and intent["nameConfirmed"] and len(intent["dialogs"]) == 1:
                 button = dialog.findChild(QtWidgets.QPushButton, "mergeBtn")
                 if button is None or not button.isEnabled():
                     return False
@@ -323,8 +344,6 @@ class NativeSmokePlugin(ModUpdateArsenal):
                 if backup is not None:
                     backup.setChecked(False)  # Production Rust backup already verified this owned fixture.
                 intent["dialogs"].append({"dialog": object_name, "action": "merge exact fixture target", "target": "Smoke Disabled"})
-            elif isinstance(dialog, QtWidgets.QProgressDialog):
-                return True  # Observe progress; never accept an unknown prompt.
             else:
                 return False
         button.click()
@@ -526,6 +545,17 @@ class NativeSmokePlugin(ModUpdateArsenal):
             final_focus = api("/api/focus", {"id": target["id"], "profileId": catalog["profileId"]})
             self._check("native_selection_after_content", final_focus.get("ok") is True
                         and final_focus.get("selected") == target["name"])
+            if rust_cli:
+                protected_files = [_fixture_root / "profiles" / PROFILE_NAME / f for f in ("loadorder.txt", "plugins.txt")]
+                original_files = [p.read_bytes() for p in protected_files]
+                new_install = exercise_native_install(api, _fixture_root, catalog["profileId"], by_name,
+                    self._arm_fixture_installer, self._disarm_fixture_installer, cli_path=installed_cli, new_target=True)
+                with self._new_mod_events_lock:
+                    events = list(self._new_mod_events)
+                self._check("native_new_mod_install",
+                            any(kind == "installed" for kind, _ in events) and not any(active for _, active in events)
+                            and all(p.read_bytes() == old for p, old in zip(protected_files, original_files)),
+                            events=events, **new_install)
             self._signals.finished.emit({"ok": True, "timingsMs": timings,
                                          "targetName": target["name"],
                                          "profileId": catalog["profileId"]})

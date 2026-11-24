@@ -12,6 +12,7 @@ from pathlib import Path
 import subprocess
 import time
 import urllib.parse
+import uuid
 import zipfile
 
 
@@ -127,22 +128,33 @@ def exercise_content_recovery(api, instance_root, profile_id, fixture_rows, *, t
             "scope": "Shipped Rust helper, actual MO2 Qt capture/refresh and disposable fixture mod bytes; no user files or live-game installation"}
 
 
+def new_fixture_name(marker):
+    require(marker.get("purpose") == "isolated native MO2 CI fixture", "Expected isolated MO2 fixture")
+    return "MODHUNTER_QA__native__" + uuid.UUID(marker["runId"]).hex
+
+
 def exercise_native_install(api, instance_root, profile_id, fixture_rows, arm, disarm,
-                            *, cli_path, timeout=50, clock=time.monotonic, pause=time.sleep):
+                            *, cli_path, new_target=False, timeout=50, clock=time.monotonic, pause=time.sleep):
     """Install one owned ZIP using production MO2 APIs and exact Qt dialogs."""
     root = Path(instance_root).resolve(strict=True)
     marker = json.loads((root / "modhunter-smoke-fixture.json").read_text("utf-8-sig"))
     require(marker.get("purpose") == "isolated native MO2 CI fixture" and marker.get("runId"),
             "Native install requires the marked disposable MO2 instance")
     require(0 < timeout <= 60, "Native install probe needs a bounded deadline")
-    target = root / "mods" / "Smoke Disabled"
-    require(target.resolve(strict=True) == target and not target.is_symlink(), "Native install target must be the exact disposable mod")
-    item = fixture_rows["Smoke Disabled"]["id"]
+    original_target = root / "mods" / "Smoke Disabled"
+    require(original_target.resolve(strict=True) == original_target and not original_target.is_symlink(),
+            "Native install source must be the exact disposable mod")
+    name = new_fixture_name(marker) if new_target else "Smoke Disabled"
+    target = root / "mods" / name
+    if new_target:
+        require(not target.exists() and not target.is_symlink() and name not in fixture_rows,
+                "Fixture destination must be new in MO2 and on disk")
+    item = "" if new_target else fixture_rows[name]["id"]
     started = clock()
     deadline = started + timeout
     run = int(time.time() * 1000)
     review_id = f"review-{run}-701"
-    download_id = "download-native-install-smoke"
+    download_id = "download-native-new-smoke" if new_target else "download-native-install-smoke"
 
     def tree():
         result = {}
@@ -154,10 +166,13 @@ def exercise_native_install(api, instance_root, profile_id, fixture_rows, arm, d
         return result
 
     before = tree()
-    original = (target / "smoke-fixture.txt").read_bytes()
+    original = (original_target / "smoke-fixture.txt").read_bytes()
     require(b"Harmless fixture content" in original, "Native installer target has unrecognized fixture bytes")
     replacement = original + b"Installed by the real native MO2 installer.\n"
-    acquisitions = root / "watchtower-acquisitions"
+    case_root = root / "new-mod-case" if new_target else root
+    if new_target:
+        case_root.mkdir()
+    acquisitions = case_root / "watchtower-acquisitions"
     acquisitions.mkdir(exist_ok=False)
     folder = acquisitions / download_id
     folder.mkdir()
@@ -165,10 +180,10 @@ def exercise_native_install(api, instance_root, profile_id, fixture_rows, arm, d
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as output:
         output.writestr("smoke-fixture.txt", replacement)
         output.writestr("textures/modhunter-smoke.txt", "Inert CI fixture texture-directory marker; never loaded by a game.\n")
-        output.writestr("ModhunterSmoke.esp", (target / "ModhunterSmoke.esp").read_bytes())
+        output.writestr("ModhunterQANew.esp" if new_target else "ModhunterSmoke.esp", (original_target / "ModhunterSmoke.esp").read_bytes())
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
     size = archive.stat().st_size
-    stage = root / "native-install-archive-review"
+    stage = case_root / "native-install-archive-review"
     inspection = subprocess.run([str(Path(cli_path).resolve(strict=True)), "archive-review", "--request", "-"],
         input=json.dumps({"action": "inspect", "archive": str(archive), "stage": str(stage),
                           "expectedSha256": digest, "expectedBytes": size, "selected": []}),
@@ -187,6 +202,10 @@ def exercise_native_install(api, instance_root, profile_id, fixture_rows, arm, d
                            "sessionId": "session-native-install-smoke", "sessionGeneration": 1,
                            "sourceOrigin": "https://modhunter-fixture.invalid", "contentIntent": "update",
                            "association": {"profileId": profile_id, "itemId": item, "name": "Smoke Disabled", "sourceUrl": "https://modhunter-fixture.invalid/archive"}}}
+    if new_target:
+        receipt["filename"] = name + ".zip"
+        receipt["binding"]["contentIntent"] = "newContent"
+        receipt["binding"].pop("association")
     (acquisitions / "receipts.json").write_text(json.dumps({"schema": 1, "revision": 1, "jobs": [receipt]}), encoding="utf-8")
 
     def call(path, data=None, *, native=False):
@@ -194,9 +213,10 @@ def exercise_native_install(api, instance_root, profile_id, fixture_rows, arm, d
         require(remaining > 0, "Native fixture installation exceeded its deadline")
         return api(path, data, timeout=min(5, remaining), native=native)
 
-    def context():
-        value = call("/api/content-context?" + urllib.parse.urlencode({"itemId": item}))
-        require(value.get("ok") and value.get("profileId") == profile_id and value.get("target", {}).get("modName") == "Smoke Disabled",
+    def context(installed_item=None):
+        query = {"itemId": installed_item or item} if installed_item or not new_target else {"targetName":name}
+        value = call("/api/content-context?" + urllib.parse.urlencode(query))
+        require(value.get("ok") and value.get("profileId") == profile_id and value.get("target", {}).get("modName") == name,
                 "Native installer fixture target changed before capture")
         return value["contextId"]
 
@@ -217,17 +237,36 @@ def exercise_native_install(api, instance_root, profile_id, fixture_rows, arm, d
                                    "review": {"archiveIdentity": {"sha256": digest, "bytes": size},
                                               "stage": str(stage), "incomingRoot": inspected["incomingRoot"],
                                               "manifestDigest": inspected["manifestDigest"], "requiresInstaller": False}}}
-    arm({"reviewId": review_id, "downloadId": download_id, "profileId": profile_id, "modName": "Smoke Disabled", "modRoot": str(target), "deadline": deadline})
+    if new_target:
+        request["targetName"] = name
+    arm({"reviewId": review_id, "downloadId": download_id, "profileId": profile_id, "modName": name, "modRoot": str(target), "deadline": deadline})
     try:
         installed = wait(call("/api/content-install", request, native=True))
     finally:
         dialogs = disarm()
-    require(installed.get("nativeStarted") is True and installed.get("installedName") == "Smoke Disabled"
+    require(installed.get("nativeStarted") is True and installed.get("installedName") == name
             and installed.get("backup", {}).get("undoAvailable") is True,
             "Native installer did not acknowledge its exact target and actual-byte backup")
     require((target / "smoke-fixture.txt").read_bytes() == replacement
             and (target / "textures/modhunter-smoke.txt").is_file(),
             "The native installer did not deliver the owned archive bytes")
+    if new_target:
+        require([d.get("dialog") for d in dialogs] == ["SimpleInstallDialog"] and dialogs[0].get("target") == name,
+                "Unexpected modal interaction for the new installation")
+        with zipfile.ZipFile(archive) as reviewed:
+            for entry in reviewed.namelist():
+                require((target / entry).read_bytes() == reviewed.read(entry), "Installed bytes differ from the reviewed fixture")
+        protected = {row["mo2InternalName"]: row for row in call("/api/snapshot")["catalog"]["items"]}
+        require(protected[name]["enabled"] is False, "New fixture mod appeared enabled in the connected profile")
+        require(all(protected[n]["enabled"] == old["enabled"] for n,old in fixture_rows.items()),
+                "Existing fixture mod states changed")
+        restored = wait(call("/api/content-recovery", {"reviewId":f"review-{run}-702",
+            "contextId":context(protected[name]["id"]), "action":"restoreNew", "backupId":installed["backupId"], "confirm":"RESTORE"}))
+        require(not target.exists() and restored.get("refreshRequired") is False,
+                "New fixture mod undo left the target behind")
+        return {"exactTarget":name,"archiveSha256":digest,"archiveBytes":size,"dialogs":dialogs,
+                "nativeInstallerOpened":True,"disabledAtInventory":True,"completeArchiveReadback":True,
+                "undoVerified":True,"realQt":True}
     require([d.get("dialog") for d in dialogs] == ["SimpleInstallDialog", "QueryOverwriteDialog"]
             and [d.get("action") for d in dialogs] == ["accept exact fixture name", "merge exact fixture target"],
             "Native installer dialog acceptance did not follow the exact reviewed fixture sequence")

@@ -60,7 +60,7 @@ REQUIRED_MO2_CHECKS = {
     "native_profile_snapshot", "loopback_health", "protected_snapshot_authentication",
     "queued_refresh", "queued_focus", "native_dispatch_thread", "native_view_selection",
     "native_window_screenshot", "compact_game_response", "rust_cli_live_probe", "rust_plugin_audit",
-    "rust_content_recovery", "native_content_install", "rust_mcp_live_inventory",
+    "rust_content_recovery", "native_content_install", "rust_mcp_live_inventory", "native_new_mod_install",
 }
 LIVE_DESKTOP_SOURCES = ('native/scripts/verify_live_desktop.cjs', 'native/ui/shell.js', 'native/ui/shell.html', 'native/ui/native.css', 'native/crates/modhunter-desktop/src/windows.rs', 'native/crates/modhunter-desktop/src/policy.rs', 'mo2_update_arsenal/plugin.py', 'mo2_update_arsenal/bridge.py', 'mo2_update_arsenal/download_ids.py', 'mo2_update_arsenal/scanner.py', 'mo2_update_arsenal/gameplay.py', 'mo2_update_arsenal/native_nexus.py', 'mo2_update_arsenal/web/atelier.css', 'mo2_update_arsenal/web/app.js', 'mo2_update_arsenal/web/app.template.html')
 LIVE_DESKTOP_CHECKS = {"compact_workspace", "automatic_source_check", "automatic_discovery", "live_catalog_not_demo", "toolbar_refresh", "toolbar_plugin_audit", "connection_details", "content_native_ipc_denied", "manual_rediscovery", "disconnected_welcome", "setup_reconnect", "native_layout_1440_dark", "native_layout_900_light", "native_gallery_retains_live_catalog", "native_inspector_returns_focus", "native_dashboard_theme_control_acknowledged"}
@@ -825,6 +825,17 @@ def validate_mo2(result: dict, receipt: dict) -> None:
     passing = {check.get("name") for check in checks}
     missing = REQUIRED_MO2_CHECKS - passing
     require(not missing, "MO2 receipt omitted required passing checks: " + ", ".join(sorted(missing)))
+    mcp = next(check for check in checks if check.get("name") == "rust_mcp_live_inventory")
+    require(mcp.get("profileMatched") is True and mcp.get("rejectedMutation") is True
+            and type(mcp.get("comparedMods")) is int and mcp["comparedMods"] >= 2,
+            "Live MCP inventory comparison or mutation rejection is missing")
+    new_mod = next(check for check in checks if check.get("name") == "native_new_mod_install")
+    events = new_mod.get("events")
+    require(all(new_mod.get(flag) is True for flag in ("realQt", "nativeInstallerOpened", "disabledAtInventory",
+                "completeArchiveReadback", "undoVerified")) and isinstance(events, list) and bool(events)
+            and all(isinstance(event, list) and len(event) == 2 and event[1] is False for event in events)
+            and any(event[0] == "installed" for event in events),
+            "New native mod lacks disabled creation, full archive evidence or cleanup")
     for name, flags in (("rust_content_recovery",("realQt","actualModBytesRestored","nativeRefreshAcknowledged","wrongTargetRejected","laterEditPreserved","lostAckDeduplicated")),
                         ("native_content_install",("realQt","nativeInstallerOpened","nativeInstallVerified","bundledArchiveReviewVerified","actualModBytesRestored","nativeRefreshAcknowledged"))):
         matched=[check for check in checks if check.get("name")==name]
@@ -1523,6 +1534,11 @@ def self_test() -> None:
                 check.update(schemaVersion=1,profileId="fixture-profile",state="complete",realQt=True,actualModBytesRestored=True,nativeRefreshAcknowledged=True,
                              wrongTargetRejected=True,laterEditPreserved=True,lostAckDeduplicated=True,batchTargets=2,nativeInstallerOpened=name=="native_content_install",
                              nativeInstallVerified=True,bundledArchiveReviewVerified=True,exactTarget="Smoke Disabled",archiveSha256="f"*64,archiveBytes=100)
+            next(c for c in self.receipt["checks"] if c["name"] == "rust_mcp_live_inventory").update(
+                profileMatched=True, rejectedMutation=True, comparedMods=2)
+            next(c for c in self.receipt["checks"] if c["name"] == "native_new_mod_install").update(
+                realQt=True, nativeInstallerOpened=True, disabledAtInventory=True,
+                completeArchiveReadback=True, undoVerified=True, events=[["installed", False]])
             self.audit = next(check for check in self.receipt["checks"] if check["name"] == "rust_plugin_audit")
             self.audit.update(schemaVersion=1, profileId="fixture-profile", state="completed", depth="records",
                 helperSha256=self.cli_hash,

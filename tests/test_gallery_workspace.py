@@ -654,6 +654,13 @@ class GalleryWorkspaceTests(unittest.TestCase):
                     self.page.locator('#densityToggle').click()
                 self.page.evaluate("async()=>{await document.fonts.ready;await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame)}")
                 with self.subTest(width=width,density=density):
+                    sizes=self.page.locator('#modList > .mod-row').first.evaluate("""row=>{
+                      const v='--vault-gallery-art-height';
+                      const size=node=>getComputedStyle(node).getPropertyValue(v).trim();
+                      return [size(row),size(row.querySelector('.mod-art')),
+                              size(row.querySelector('.mod-title')),size(document.body)];
+                    }""")
+                    self.assertEqual(sizes,[f'{track-2}px',f'{track-2}px','120px','120px'])
                     before=snapshot(track)
                     self.page.evaluate("window.__compareGalleryFirstTrack(false)")
                     try:
@@ -663,6 +670,8 @@ class GalleryWorkspaceTests(unittest.TestCase):
         self.page.locator('#row-item-1 [data-act="inspect"]').focus()
         self.page.keyboard.press('Enter')
         self.assertTrue(self.page.locator('#detailDrawer').evaluate('e=>e.classList.contains("open")'))
+        artwork = self.page.locator('#drawerContent .mod-art-large')
+        self.assertEqual(artwork.evaluate("e=>getComputedStyle(e).getPropertyValue('--vault-gallery-art-height').trim()"),'170px')
 
     def test_thumbnail_failure_keeps_mod_and_all_actions(self):
         # Exercise genuine alpha artwork in cover-fit mode, as in the separate

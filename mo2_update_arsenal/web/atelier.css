@@ -614,9 +614,14 @@ body[data-layout="compact"] .list-footer{padding:10px 0;border-color:var(--vault
 body[data-layout="compact"] .list-footer button{color:var(--vault-primary);font-size:10px}
 body[data-layout="compact"][data-density="comfy"][data-library-view="list"] .mod-row{min-height:82px;padding-block:14px}
 body[data-layout="compact"][data-density="comfy"] .mod-title{font-size:13px}
+/* Set this dimension on its layout boxes, including the expanded artwork.
+   Keep density changes out of the inherited style of every other control.
+   Browsers without @property still receive the exact local declarations. */
+@property --vault-gallery-art-height{syntax:"<length>";inherits:false;initial-value:120px}
 /* Artwork already has a definite border-box height and block-end gap.
    Give grid that first-track constraint directly; other tracks stay intrinsic. */
-body[data-layout="compact"][data-library-view="gallery"]{--vault-gallery-art-height:120px}
+body[data-layout="compact"][data-library-view="gallery"] .mod-row,
+ body[data-layout="compact"][data-library-view="gallery"] .mod-art{--vault-gallery-art-height:120px}
 body[data-layout="compact"][data-library-view="gallery"] .list-header{display:none}
 body[data-layout="compact"][data-library-view="gallery"] .modlist{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-start;align-content:flex-start}
 body[data-layout="compact"][data-library-view="gallery"] .chapterbar{flex:0 0 100%;width:100%;margin-top:8px;padding-left:10px;height:28px;min-height:28px}
@@ -643,7 +648,8 @@ body[data-layout="compact"][data-library-view="gallery"] .source-btn{border:0;pa
 body[data-layout="compact"][data-library-view="gallery"] .inspect-col{grid-column:2;grid-row:5;padding-top:8px;border-top:1px solid var(--vault-soft)}
 body[data-layout="compact"][data-library-view="gallery"] .favorite-btn{display:inline-flex}
 body[data-layout="compact"][data-density="comfy"][data-library-view="gallery"] .modlist{gap:18px}
-body[data-layout="compact"][data-density="comfy"][data-library-view="gallery"]{--vault-gallery-art-height:164px}
+body[data-layout="compact"][data-density="comfy"][data-library-view="gallery"] .mod-row,
+ body[data-layout="compact"][data-density="comfy"][data-library-view="gallery"] .mod-art{--vault-gallery-art-height:164px}
 body[data-layout="compact"] .empty-state{grid-column:1/-1;background:var(--vault-surface);border:1px dashed var(--vault-line);border-radius:8px;color:var(--vault-text);padding:44px 16px}
 body[data-layout="compact"][data-library-view="gallery"] .empty-state{flex:0 0 100%;width:100%}
 body[data-layout="compact"] .empty-state p{color:var(--vault-muted)}
@@ -833,12 +839,14 @@ body[data-layout="compact"] .toast button{color:var(--vault-primary)}
  body[data-layout="compact"] .inspect-btn{font-size:10px;min-width:48px;height:26px;min-height:26px;padding:4px 6px}
  body[data-layout="compact"][data-library-view="gallery"] .modlist{gap:10px}
  body[data-layout="compact"][data-library-view="gallery"] .mod-row{padding:0 9px 10px;min-height:266px;gap:7px 5px}
- body[data-layout="compact"][data-library-view="gallery"]{--vault-gallery-art-height:103px}
+ body[data-layout="compact"][data-library-view="gallery"] .mod-row,
+ body[data-layout="compact"][data-library-view="gallery"] .mod-art{--vault-gallery-art-height:103px}
  body[data-layout="compact"][data-library-view="gallery"] .mod-art{width:calc(100% + 18px);margin-inline:-9px}
  body[data-layout="compact"][data-library-view="gallery"] .mod-title{font-size:11px}
  body[data-layout="compact"][data-library-view="gallery"] .mod-source{grid-column:1/-1;grid-row:5;padding-top:4px}
  body[data-layout="compact"][data-library-view="gallery"] .inspect-col{grid-column:1/-1;grid-row:6;padding-top:0;border:0;justify-content:flex-end}
- body[data-layout="compact"][data-density="comfy"][data-library-view="gallery"]{--vault-gallery-art-height:170px}
+ body[data-layout="compact"][data-density="comfy"][data-library-view="gallery"] .mod-row,
+ body[data-layout="compact"][data-density="comfy"][data-library-view="gallery"] .mod-art{--vault-gallery-art-height:170px}
  body[data-layout="compact"] .workshop-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
  body[data-layout="compact"] .workshop-metric:nth-child(3){border-right:1px solid var(--vault-line)}
  body[data-layout="compact"] .workshop-metric:nth-child(2n){border-right:0}

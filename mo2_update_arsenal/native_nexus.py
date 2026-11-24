@@ -350,7 +350,7 @@ class NativeNexusGateway:
         if status == 429:
             message = "Nexus rate limit reached (HTTP 429). Retry after the provider quota resets."
         elif status == 401:
-            message = "Nexus requires sign-in (HTTP 401). Connect to Nexus in MO2 Settings."
+            message = "Not connected to Nexus (HTTP 401). Sign in through MO2 Settings."
         elif status == 403:
             message = "Nexus denied access to this item for the connected account (HTTP 403)."
         elif status == 404:

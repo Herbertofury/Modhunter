@@ -172,13 +172,13 @@ class ModIntelligence:
                         self._deep_profiles.add(profile)
                     self._state = {"state": "completed", "profileId": profile, "epoch": epoch,
                                    "depth": result.get("depth"), "checkedAt": result.get("checkedAt")}
-                    self.service._generation += 1
+                    self.service._publish_plugin_audit_revision_locked()
             except Exception as exc:
                 with self.service._guard:
                     if epoch == self._epoch and profile == self.service.profile_id() and not self.service._stopped:
                         self._state = {"state": "failed", "profileId": profile, "epoch": epoch,
                                        "error": str(exc)[:1200]}
-                        self.service._generation += 1
+                        self.service._publish_plugin_audit_revision_locked()
 
     @staticmethod
     def _compact_health(health):

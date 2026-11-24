@@ -17,6 +17,7 @@ from mo2_update_arsenal.bridge import ArsenalService
 from mo2_update_arsenal.focus import find_mo2_view, name_column, navigate
 from test_focus import MockModel, Organizer, QT, View, Window, widgets
 from test_plugin_autostart import plugin_type
+from test_plugin_intelligence import GatedRunner, wait_until
 
 
 class CountedModel(MockModel):
@@ -260,6 +261,83 @@ class FocusGenerationTests(unittest.TestCase):
         self.assertEqual(self.view.selected.row, 52)
         self.assertFalse(out.get(timeout=5)[1]["ok"])
         self.assertEqual(self.request("revision")[1]["selectedModId"], "A-15")
+
+    def start_audit_during_exact_focus(self):
+        runner = GatedRunner()
+        self.addCleanup(runner.release_all)
+        self.service.intelligence.runner = runner
+        # Use the ordinary post-content publication -> capture -> gated
+        # helper -> audit observation lifecycle. Do not assign revisions.
+        self.service.set_snapshot(deepcopy(self.initial))
+        capture = self.owner.get(timeout=5)
+        self.assertEqual(capture.cmd, "plugin-audit-input")
+        capture.finish({"ok": True, "request": {"profileId": "A", "deep": False}})
+        entry = runner.started.get(timeout=5)
+        return entry, self.request("revision")[1]["generation"]
+
+    def publish_audit(self, entry, generation):
+        entry["release"].set()
+        wait_until(lambda: self.service.revision()["generation"] == generation + 1)
+        self.assertEqual(self.service.native_snapshot()["items"], self.initial["items"])
+
+    def test_audit_only_change_between_admission_and_owner_dispatch_preserves_focus(self):
+        entry, generation = self.start_audit_during_exact_focus()
+        # Use the compatibility client path, which the stock native smoke uses.
+        request, reply = self.queue_focus(5)
+        self.publish_audit(entry, generation)
+        self.plugin._dispatch(request)
+        self.assert_success(reply, 5)
+
+    def test_audit_only_change_during_traversal_preserves_focus(self):
+        entry, generation = self.start_audit_during_exact_focus()
+        request, reply = self.queue_focus(5, generation=generation)
+        self.model.on_read = lambda: self.publish_audit(entry, generation)
+        self.plugin._dispatch(request)
+        self.assert_success(reply, 5)
+        self.assertEqual(self.model.label_reads, 2300)
+
+    def test_failed_audit_does_not_invalidate_exact_ack_before_delivery(self):
+        entry, generation = self.start_audit_during_exact_focus()
+        entry["error"] = "Synthetic audit failure"
+        request, reply = self.queue_focus(5, generation=generation)
+        finish = request.finish
+
+        def deliver(result):
+            self.assertTrue(result["ok"], result)
+            self.publish_audit(entry, generation)
+            return finish(result)
+
+        request.finish = deliver
+        self.plugin._dispatch(request)
+        self.assert_success(reply, 5)
+        self.assertEqual(self.service.intelligence.state()["state"], "failed")
+
+    def test_audit_publication_does_not_accept_stale_browser_or_mask_real_owner_failure(self):
+        entry, generation = self.start_audit_during_exact_focus()
+        request, reply = self.queue_focus(5, generation=generation)
+        self.publish_audit(entry, generation)
+        code, rejected = self.request("focus", {"profileId": "A", "id": "A-5", "generation": generation})
+        self.assertEqual(code, 200)
+        self.assertFalse(rejected["ok"])
+        self.assertTrue(self.owner.empty())
+        self.model.rows = ["Different fixture"]
+        self.plugin._dispatch(request)
+        code, rejected = reply.get(timeout=5)
+        self.assertEqual(code, 200)
+        self.assertFalse(rejected["ok"])
+        self.assertEqual(rejected.get("matchedRows"), 0)
+        self.assertIsNone(self.view.selected)
+        self.assertEqual(self.request("revision")[1]["selectedModId"], "")
+
+    def test_audit_only_change_cannot_mask_a_true_same_profile_catalog_republication(self):
+        entry, generation = self.start_audit_during_exact_focus()
+        request, reply = self.queue_focus(5, generation=generation)
+        self.publish_audit(entry, generation)
+        self.service.intelligence.runner.available = False
+        self.service.set_snapshot(deepcopy(self.initial))
+        self.plugin._dispatch(request)
+        self.assertFalse(reply.get(timeout=5)[1]["ok"])
+        self.assertEqual(self.model.label_reads, 0)
 
     def test_stale_client_generation_and_unauthenticated_requests_never_enter_owner_queue(self):
         for auth, generation, status in ((True, 2, 200), (True, True, 200), (False, 1, 403)):

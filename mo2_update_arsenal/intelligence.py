@@ -247,6 +247,25 @@ class ModIntelligence:
                 key = f"{identity[0]}/{identity[1]}" if identity else ""
                 cache, cache_revision = self.service.cache.get_with_revision(*identity) if identity else (None, 0)
                 evidence = self._evidence.get(key)
+                if not detailed and not cache and not evidence:
+                    # No observation means this public projection is a pure
+                    # function of the provider and the current job. Build the
+                    # final owned shape directly, without caching or copying a
+                    # synthetic observation per row.
+                    item_id = str(item.get("id"))
+                    self._summary_cache.pop(item_id, None)
+                    health = {"schema": 1, "provider": provider, "checkedAt": None,
+                              "freshness": {"state": "unknown"},
+                              "page": {"status": "unknown"},
+                              "bugs": {"state": "unknown" if provider in ("nexus", "unknown") else "unsupported",
+                                       "displayedCount": None},
+                              "detailsAvailable": True}
+                    if key in self._health_jobs:
+                        health["job"] = deepcopy(self._health_jobs[key])
+                    item["modHealth"] = health
+                    if local:
+                        item["localAnalysis"] = self._compact_analysis(local)
+                    continue
                 update = item.get("update") or {}
                 summary_key = (snapshot.get("profileId"), identity_key, self._epoch,
                     update.get("source"), update.get("verdict"), update.get("checkedAt"), update.get("latestVersion"),
@@ -258,19 +277,6 @@ class ModIntelligence:
                     item["modHealth"] = self._compact_health(saved_summary[1])
                     if key in self._health_jobs:
                         item["modHealth"]["job"] = deepcopy(self._health_jobs[key])
-                    if local:
-                        item["localAnalysis"] = self._compact_analysis(local)
-                    continue
-                if not detailed and not cache and not evidence:
-                    # Most profiles begin with thousands of unobserved pages.
-                    # Do not construct URLs, prose or action lists for every row;
-                    # the inspector obtains those exact-row details on demand.
-                    health = {"schema": 1, "provider": provider, "checkedAt": None, "freshness": {"state": "unknown"},
-                              "page": {"status": "unknown"}, "bugs": {"state": "unknown" if provider in ("nexus", "unknown") else "unsupported", "displayedCount": None}}
-                    item["modHealth"] = self._compact_health(health)
-                    if key in self._health_jobs:
-                        item["modHealth"]["job"] = deepcopy(self._health_jobs[key])
-                    self._summary_cache[str(item.get("id"))] = (summary_key, self._compact_health(item["modHealth"]))
                     if local:
                         item["localAnalysis"] = self._compact_analysis(local)
                     continue

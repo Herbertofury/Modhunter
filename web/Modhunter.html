@@ -4154,10 +4154,24 @@ function filePickerArchive(j,files){
  if((receipt.state==='listed'&&matches===1)||(receipt.state==='notListed'&&matches===0))return receipt;
  return {state:'unknown'};
 }
+let FILE_PICKER_NEXUS_SCOPE=null;
+function nexusPickerScope(mod,plan,record){
+ if(!mod||!isNativeNexusFileSource(mod))return null;
+ const source=getSrc(mod),update=mod.update||{};
+ return JSON.stringify([PROFILE_EPOCH,LIVE_CATALOG?.profileId,DATA.game,DATA.gameRuntime,
+  mod.id,Number(mod.nexusId),mod.installedVersion,source.type,source.url,update.source,update.verdict,update.latestVersion,
+  update.compatibility?.status,getAudit(mod).verdict,
+  record?.lane==='candidate'?[plan.profileId,record.id,record.installedVersion,record.latestVersion,record.provider,record.risks]:null]);
+}
+function currentNexusPickerScope(mod){
+ const plan=currentWorkshopPlan();
+ return nexusPickerScope(mod,plan,plan.items.find(row=>row.id===mod.id));
+}
 async function openFilePicker(m){
  const nativeNexus=isNativeNexusFileSource(m);
  if(!BRIDGE.active||(!nativeNexus&&!hasReleaseAssets(m))){toast('No verified download assets for this source.');return}
- const context=profileContext(),view=++FILE_PICKER_VIEW;FILE_PICKER_MOD=m;
+ const context=profileContext(),view=++FILE_PICKER_VIEW,nexusScope=nativeNexus?currentNexusPickerScope(m):null;
+ FILE_PICKER_MOD=m;FILE_PICKER_NEXUS_SCOPE=null;
  const current=()=>view===FILE_PICKER_VIEW&&FILE_PICKER_MOD===m&&contextIsCurrent(context)&&ITEM_MAP.get(m.id)===m;
  $('filePickerRole').value='all';$('filePickerRoleLabel').hidden=true;$('filePickerArchiveReceipt').hidden=true;
  $('filePickerArchiveReceipt').textContent='';
@@ -4179,6 +4193,7 @@ async function openFilePicker(m){
   const j=await bridgeRequest('GET','files?modId='+m.nexusId+'&itemId='+encodeURIComponent(m.id)+'&reviewArchive=1&reviewView='+view);
   if(!j.ok)throw Error(j.error||'Nexus file review unavailable');
   if(!current())return;
+  if(currentNexusPickerScope(m)!==nexusScope)throw Error('The Nexus file review changed. Reopen the file picker to choose an exact archive.');
   // A current file list can coexist with no verified historical receipt.
   // Refuse contradictory identity evidence, including delayed results for a reused picker.
   if((j.itemId!=null&&j.itemId!==m.id)||(j.modId!=null&&j.modId!==Number(m.nexusId))||(j.profileId!=null&&j.profileId!==context.profile))
@@ -4199,6 +4214,7 @@ async function openFilePicker(m){
   }).join('');
   if(!nexus&&!releaseFiles)throw Error('No files available for this project');
   $('filePickerFiles').innerHTML=(nexus?'<div class="picker-source-title">NEXUS MODS · EXACT FILES</div>'+nexus:'')+releaseFiles;
+  if(nexus)FILE_PICKER_NEXUS_SCOPE=nexusScope;
   if(j.reviewAdvice?.hasUniqueMainMatch)$('filePickerSummary').textContent='One main Nexus file matches the published project version. Verify game/runtime, required files, and FOMOD options.';
   else if(j.reviewAdvice?.matchingMainFiles>1)$('filePickerSummary').textContent='Several main files share the published version. Compare the variants carefully for your runtime and mod configuration.';
   filterFilePicker();
@@ -4209,12 +4225,17 @@ async function openFilePicker(m){
   filterFilePicker();
  }
 }
-function closeFilePicker(){FILE_PICKER_VIEW++;$('filePickerVeil').hidden=true;FILE_PICKER_MOD=null;WORKSHOP_REVIEW_ID=null;FAST_PICKER_ID=null}
+function closeFilePicker(){FILE_PICKER_VIEW++;$('filePickerVeil').hidden=true;FILE_PICKER_MOD=null;FILE_PICKER_NEXUS_SCOPE=null;WORKSHOP_REVIEW_ID=null;FAST_PICKER_ID=null}
 $('filePickerClose').onclick=closeFilePicker;$('filePickerCancel').onclick=closeFilePicker;$('filePickerVeil').addEventListener('click',e=>{if(e.target===$('filePickerVeil'))closeFilePicker()});
 $('filePickerNexus').onclick=()=>{if(FILE_PICKER_MOD)window.open(getSrc(FILE_PICKER_MOD).url,'_blank','noopener,noreferrer')};
 $('filePickerFiles').addEventListener('click',async e=>{const b=e.target.closest('button[data-file-id]');if(!b)return;const m=FILE_PICKER_MOD;if(!m)return;
+ const plan=currentWorkshopPlan(),record=plan.items.find(x=>x.id===(WORKSHOP_REVIEW_ID||m.id));
+ // The file list was reviewed against a particular row and release. A
+ // later same-profile snapshot can replace that evidence while it is open.
+ if(b.dataset.sourceKind!=='release'&&(!FILE_PICKER_NEXUS_SCOPE||nexusPickerScope(ITEM_MAP.get(m.id),plan,record)!==FILE_PICKER_NEXUS_SCOPE)){
+  closeFilePicker();toast('The Nexus file review changed. Reopen the file picker to choose an exact archive.');return;
+ }
  if(WORKSHOP_REVIEW_ID){
-  const plan=currentWorkshopPlan(),record=plan.items.find(x=>x.id===WORKSHOP_REVIEW_ID);
   if(!record||record.lane!=='candidate'){closeFilePicker();toast('Candidate is no longer current.');return}
   const picked=b.closest('.picker-file'),label=picked?.querySelector('strong')?.textContent||'Selected file';
   // Exact archive selection is the user action; compatibility hints stay visible.
@@ -4228,7 +4249,7 @@ $('filePickerFiles').addEventListener('click',async e=>{const b=e.target.closest
   if(fast)return performQueuedWorkshop([selection],plan.profileId);
   workshopSetStatus('File selected for '+record.name+'. Queue selected downloads whenever you like.');return;
  }
- if(currentWorkshopPlan().items.some(row=>row.id===m.id&&row.lane==='candidate')){
+ if(record?.lane==='candidate'){
   WORKSHOP_REVIEW_ID=m.id;
   b.click();return;
  }

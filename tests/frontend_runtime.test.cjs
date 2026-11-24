@@ -23,12 +23,12 @@ function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={
  const state={catalog:catalog('a',count),generation:1,failSnapshots,progressRows,progressReadFailures,score:0,scan:{state:'idle'},defer:new Set()};
  const document={hidden:false,activeElement:null,addEventListener(type,listener){if(!documentListeners.has(type))documentListeners.set(type,[]);documentListeners.get(type).push(listener)},dispatchEvent(event){for(const listener of documentListeners.get(event.type)||[])listener(event);return true},querySelectorAll(){return[]},createElement:name=>element(name),getElementById:id=>node(id),querySelector:selector=>node(selector)};
  function element(id){
-  const classes=new Set();let html='';
+  const classes=new Set(),listeners=new Map();let html='';
   return{id,textContent:'',value:'',checked:false,disabled:false,hidden:true,dataset:{},writes:0,
    style:{setProperty(){}},classList:{add(...names){names.forEach(n=>classes.add(n))},remove(...names){names.forEach(n=>classes.delete(n))},contains:name=>classes.has(name),toggle(name,force){const on=force??!classes.has(name);on?classes.add(name):classes.delete(name);return on}},
    get innerHTML(){return html},set innerHTML(value){html=value;this.writes++},
-   getContext(){return{setTransform(){}}},addEventListener(){},setAttribute(){},removeAttribute(){},querySelector:selector=>node(id+' '+selector),querySelectorAll(){return[]},
-   append(){},appendChild(){},remove(){},scrollIntoView(){},focus(){document.activeElement=this},getBoundingClientRect(){return{left:0,top:0,width:800,height:50}},
+   getContext(){return{setTransform(){}}},addEventListener(type,listener){listeners.set(type,listener)},emit(type,event){return listeners.get(type)?.(event)},setAttribute(){},removeAttribute(){},querySelector:selector=>node(id+' '+selector),querySelectorAll(){return[]},
+   append(child){if(id==='toastWrap')this.lastToast=child?.innerHTML},appendChild(){},remove(){},scrollIntoView(){},focus(){document.activeElement=this},getBoundingClientRect(){return{left:0,top:0,width:800,height:50}},
    // This transport harness does not parse HTML. Only the static footer has
    // modeled children; actual row replacement is covered in Chromium tests.
    get children(){return id==='.pagefooter'?[node(id+'-first'),node(id+'-second')]:[]},get firstElementChild(){return node(id+'-first')},
@@ -75,13 +75,15 @@ function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={
     const id=new URL('http://fixture/'+endpoint).searchParams.get('itemId');
     value={ok:true,profileId:c.profileId,itemId:id,update:state.sourceDetails||c.items.find(m=>m.id===id)?.update||{}};
    }
-   else if(endpoint==='update-plan'||endpoint==='update-plan?details=full')value={ok:true,profileId:c.profileId,profileName:c.profileName,summary:{candidates:c.items.length,total:c.items.length,review:0,manual:0,current:0,risky:0},items:c.items.map(m=>({...m,lane:'candidate',latestVersion:'2.0',risks:[]}))};
+   else if(endpoint==='update-plan'||endpoint==='update-plan?details=full')value={ok:true,profileId:c.profileId,profileName:c.profileName,summary:{candidates:c.items.length,total:c.items.length,review:0,manual:0,current:0,risky:0},items:state.planItems||c.items.map(m=>({...m,lane:'candidate',latestVersion:'2.0',risks:[]}))};
+   else if(endpoint.startsWith('files?')&&state.fileReview)value=structuredClone(state.fileReview);
    else if(endpoint==='scan'){
     if(method==='POST'){state.scan={state:'running',mode:body.mode,total:c.items.length};value={ok:true,profileId:c.profileId,state:'running'}}
     else value={ok:true,profileId:c.profileId,scan:structuredClone(state.scan)};
    }else if(endpoint==='quick-update')value={ok:true,profileId:c.profileId,state:body.all?'running':'completed',queued:[],skipped:[]};
    else if(endpoint==='quick-state')value={ok:true,profileId:c.profileId,state:'running',total:c.items.length,queued:[],skipped:[]};
-   if(state.defer.has(key))await new Promise(resolve=>{if(!pending.has(key))pending.set(key,[]);pending.get(key).push(resolve)});
+   const waitKey=state.defer.has(key)?key:endpoint.startsWith('files?')&&state.defer.has('GET files')?'GET files':'';
+   if(waitKey)await new Promise(resolve=>{if(!pending.has(waitKey))pending.set(waitKey,[]);pending.get(waitKey).push(resolve)});
    return{ok:true,json:async()=>value};
   }finally{active.set(key,active.get(key)-1)}
  };
@@ -1122,4 +1124,99 @@ test('direct Gallery switch counts exact sources without recomputing dashboard r
  assert.match(h.nodes.get('listFooter').textContent,/3 MATCHING MODS · 3 EXACT ORIGINAL SOURCE/);
  h.api.updatePrefs({query:'Paperlark'});
  assert.match(h.nodes.get('listFooter').textContent,/1 MATCHING MOD · 3 EXACT ORIGINAL SOURCE/);
+});
+
+
+// Scope/roles are based on official public Nexus Files for Skyrim SE #1090.
+// File IDs and the simulated future version are fabricated and never dispatched.
+const APOCALYPSE_FILES=[
+ {fileId:91001,name:'Apocalypse 10.3.0',fileName:'apocalypse-main-fixture.zip',category:1,version:'10.3.0',suggested:true,releaseVersionMatch:true},
+ {fileId:91002,name:'Apocalypse - Ordinator Compatibility Patch',fileName:'ordin-fixture.zip',category:2,version:'fixture-ordin'},
+ {fileId:91003,name:'Apocalypse - Vokrii Compatibility Patch',fileName:'vokrii-fixture.zip',category:2,version:'fixture-vokrii'},
+];
+async function apocalypsePicker(h,latestVersion='10.3.0',lane='candidate',profile='a'){
+ const data=catalog(profile,2);data.items.forEach((m,i)=>Object.assign(m,{
+  nexusId:1090,name:i?'Apocalypse patch (installed separately)':'Apocalypse base',
+  source:{type:'nexus',verified:true,url:'https://www.nexusmods.com/skyrimspecialedition/mods/1090'},
+  update:{verdict:lane==='candidate'?'candidate':'review',source:'nexus-api',latestVersion},
+ }));
+ h.state.planItems=data.items.map(m=>({...m,lane,latestVersion,risks:[]}));
+ h.state.catalog=data;
+ await h.qa.setCatalog(data);
+ await h.settle();
+}
+function pickApocalypse(h,index){
+ const f=APOCALYPSE_FILES[index],panel=h.nodes.get('filePickerFiles');
+ assert.match(panel.innerHTML,new RegExp('data-file-id="'+f.fileId+'"'));
+ const button={disabled:false,dataset:{fileId:String(f.fileId),modId:'1090',archiveName:f.fileName,fileVersion:f.version},
+  closest(selector){if(selector==='button[data-file-id]')return button;if(selector==='.picker-file')return {querySelector:()=>({textContent:f.name})};return null},
+  click(){return panel.emit('click',{target:button})},
+ };
+ return button;
+}
+async function openApocalypsePicker(h){
+ h.state.fileReview={ok:true,itemId:'item-1',modId:1090,profileId:'a',files:APOCALYPSE_FILES,
+  reviewAdvice:{hasUniqueMainMatch:true},archiveReceipt:{state:'listed',fileId:91002}};
+ await h.api.openFilePicker(h.qa.getCatalog().items[1]);
+ const content=h.nodes.get('filePickerFiles').innerHTML;
+ assert.match(content,/data-picker-role="main"/);assert.match(content,/data-picker-role="other"/);
+ assert.match(content,/data-picker-receipt="true"[^>]*>[\s\S]*?Ordinator Compatibility Patch/);assert.match(content,/Vokrii Compatibility Patch/);
+}
+
+test('a rendered optional Nexus review cannot silently acquire a different project release on a same-profile refresh',async()=>{
+ const h=harness();await h.settle();await apocalypsePicker(h);await openApocalypsePicker(h);
+ const choice=pickApocalypse(h,1);
+ await apocalypsePicker(h,'10.4.0'); // Same profile/epoch, different release evidence.
+ assert.equal(h.nodes.get('filePickerVeil').hidden,false);
+ const before=h.calls.length;await choice.click();await h.settle();
+ assert.equal(h.nodes.get('filePickerVeil').hidden,true,'The stale review should ask to reopen instead of attaching a new target');
+ assert.doesNotMatch(h.nodes.get('workshopResults').innerHTML,/workshop-selected/,'The previous optional archive must not inherit the new release');
+ assert.match(h.nodes.get('toastWrap')?.lastToast||'',/file review changed/i);
+ assert.deepEqual(h.calls.slice(before),[],'A stale click must not start any bridge or provider request');
+ await h.nodes.get('workshopQueue').onclick();
+ assert.equal(h.calls.slice(before).some(c=>c.method==='POST'&&['download','update-queue','queue-reviewed'].includes(c.endpoint)),false);
+});
+
+test('an equivalent refresh keeps every Nexus archive and the exact manual optional choice and provenance',async()=>{
+ const h=harness();await h.settle();await apocalypsePicker(h);await openApocalypsePicker(h);
+ const choice=pickApocalypse(h,1);
+ await apocalypsePicker(h);
+ await choice.click();await h.settle();
+ assert.match(h.nodes.get('workshopResults').innerHTML,/workshop-selected[^>]*>✓ ordin-fixture.zip/);
+ await h.nodes.get('workshopQueue').onclick();
+ const submit=h.calls.find(c=>c.endpoint==='update-queue'&&c.method==='POST');
+ assert.equal(submit.body.confirm,'QUEUE_REVIEWED_DOWNLOADS');
+ assert.deepEqual(submit.body.entries.map(({itemId,modId,fileId,fileVersion,targetVersion})=>[itemId,modId,fileId,fileVersion,targetVersion]),
+  [['item-1',1090,91002,'fixture-ordin','10.3.0']]);
+});
+
+
+test('a newer plan during loading cannot rebind Nexus files; the official chooser link remains available',async()=>{
+ const h=harness();await h.settle();await apocalypsePicker(h);
+ const official=[];h.context.open=(...args)=>official.push(args);
+ h.state.defer.add('GET files');
+ h.state.fileReview={ok:true,itemId:'item-1',modId:1090,profileId:'a',files:APOCALYPSE_FILES};
+ const initial=h.qa.getCatalog().items[1],open=h.api.openFilePicker(initial);
+ assert.equal(h.active.get(h.calls.at(-1).method+' '+h.calls.at(-1).endpoint),1);
+ h.state.planItems=h.state.planItems.map(r=>r.id==='item-1'?{...r,latestVersion:'fake-newer-plan'}:r);
+ await h.api.refreshWorkshop();
+ assert.equal(h.qa.getCatalog().items[1],initial,'Only the plan changed, not the row object');
+ h.release('GET files');await open;
+ const content=h.nodes.get('filePickerFiles').innerHTML;
+ assert.match(content,/file review changed/i);assert.doesNotMatch(content,/data-file-id/);
+ assert.match(content,/original Nexus Files page and Mod Manager Download/);
+ h.nodes.get('filePickerNexus').onclick();
+ assert.deepEqual(official,[['https://www.nexusmods.com/skyrimspecialedition/mods/1090','_blank','noopener,noreferrer']]);
+ assert.equal(h.calls.some(c=>c.method==='POST'&&['download','update-queue'].includes(c.endpoint)),false);
+});
+
+test('direct manual optional Nexus downloads keep their explicit confirmation, while a changed profile cannot use the old picker',async()=>{
+ const h=harness();await h.settle();await apocalypsePicker(h,'10.3.0','review');await openApocalypsePicker(h);
+ await pickApocalypse(h,2).click();
+ const downloads=()=>h.calls.filter(c=>c.method==='POST'&&c.endpoint==='download');
+ assert.deepEqual(downloads()[0]?.body,{modId:1090,fileId:91003,confirm:'DOWNLOAD'});
+ await openApocalypsePicker(h);const old=pickApocalypse(h,1);
+ await apocalypsePicker(h,'10.3.0','review','alternate-profile');
+ assert.equal(h.nodes.get('filePickerVeil').hidden,true);
+ await old.click();assert.equal(downloads().length,1);
 });

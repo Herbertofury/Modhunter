@@ -8,10 +8,11 @@ A static preflight, not an actual MO2/Nexus execution test. Only -SaveReport
 writes anything: a new credential-free JSON report beside this script.
 #>
 [CmdletBinding()]
-param([string]$MO2Directory, [switch]$Json, [switch]$SaveReport)
+param([string]$MO2Directory, [switch]$Json, [switch]$SaveReport, [switch]$PluginOnly)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 $Checks = New-Object 'Collections.Generic.List[object]'
+$PluginHashes = @{}
 function Add-Check([string]$Name, [bool]$Passed, [string]$Detail) {
     $Checks.Add([ordered]@{ name = $Name; passed = $Passed; detail = $Detail })
 }
@@ -70,14 +71,27 @@ function Get-VerifiedPackageVersion {
         if ([IO.Path]::IsPathRooted($Relative) -or $Relative.Contains(':') -or $Relative -match '(^|/)(\.|\.\.|)(/|$)' -or $Expected.ContainsKey($Relative)) { return '' }
         $Expected[$Relative] = $Digest
     }
-    foreach ($Relative in @('Modhunter.exe', 'modhunter-cli.exe', 'BUILD_INFO.json',
+    $Required = @('BUILD_INFO.json',
         'MO2/mo2_update_arsenal/version.py', 'MO2/mo2_update_arsenal/qt_bridge.py', 'MO2/mo2_update_arsenal/version_evidence.py',
-        'MO2/mo2_update_arsenal/bin/modhunter-cli.exe', 'MO2/mo2_update_arsenal/bin/modhunter-qt-bridge.dll')) {
+        'MO2/mo2_update_arsenal/bin/modhunter-cli.exe', 'MO2/mo2_update_arsenal/bin/modhunter-qt-bridge.dll')
+    if ($PluginOnly) {
+        $Required += @('Install_MO2_Plugin.ps1', 'Install_MO2_Plugin.bat', 'MO2/mo2_update_arsenal/__init__.py',
+            'MO2/mo2_update_arsenal/plugin.py', 'MO2/mo2_update_arsenal/web/index.html')
+        foreach ($Name in @('7z.exe', '7z.dll', 'License.txt', 'provenance.json')) {
+            $Required += 'MO2/mo2_update_arsenal/bin/archive-tools/' + $Name
+        }
+        foreach ($Relative in $Required) { if (!$Expected.ContainsKey($Relative)) { return '' } }
+        $Required = $Expected.Keys
+    } else { $Required += @('Modhunter.exe', 'modhunter-cli.exe') }
+    foreach ($Relative in $Required) {
         $Path = Join-Path $PSScriptRoot $Relative
         if (!$Expected.ContainsKey($Relative) -or !(Test-Path -LiteralPath $Path -PathType Leaf)) { return '' }
         $File = Get-Item -LiteralPath $Path -Force
         if ($File.Length -gt 268435456 -or ($File.Attributes -band [IO.FileAttributes]::ReparsePoint)) { return '' }
         if ((File-SHA256 $Path) -ne $Expected[$Relative]) { return '' }
+        if ($PluginOnly -and $Relative.StartsWith('MO2/mo2_update_arsenal/', [StringComparison]::Ordinal)) {
+            $PluginHashes[$Relative.Substring('MO2/mo2_update_arsenal/'.Length)] = $Expected[$Relative]
+        }
     }
     # A matching checksum alone does not make a mixed package valid. Use the
     # same build/plugin version contract as Install_MO2_Plugin.ps1, after both
@@ -89,6 +103,7 @@ function Get-VerifiedPackageVersion {
         $Build = [IO.File]::ReadAllText($BuildPath) | ConvertFrom-Json
         if (!$PluginVersion -or $Build.version -isnot [string] -or $Build.version -cne $PluginVersion -or
             $Build.commit -isnot [string] -or $Build.commit -notmatch '^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$') { return '' }
+        if ($PluginOnly -and $Build.component -cne 'mo2-plugin') { return '' }
     } catch { return '' }
     return $PluginVersion
 }
@@ -119,10 +134,20 @@ try {
     Add-Check 'qt_runtime_files' $QtGood ('Observed Qt: ' + ($QtVersions -join ', ') + '. Exactly one root or dlls/ Qt6Core.dll is required for an unambiguous static check.')
     $PackageVersion = Get-VerifiedPackageVersion
     $PackageGood = ![string]::IsNullOrEmpty($PackageVersion)
-    Add-Check 'package_checksums' $PackageGood 'Checks the packaged desktop, diagnostic helper, version logic and native Qt binding against SHA256SUMS.txt; BUILD_INFO.json and the plugin must identify the same release.'
+    $PackageDetail = if ($PluginOnly) { 'Verifies every plugin package manifest member, including the supported installer, native helpers and archive tools.' } else { 'Checks packaged desktop, diagnostics, version logic and native Qt binding against SHA256SUMS.txt and verifies the release version.' }
+    Add-Check 'package_checksums' $PackageGood $PackageDetail
     $Installed = Join-Path $MO2Directory 'plugins/mo2_update_arsenal/version.py'
     $InstalledVersion = Read-PluginVersion $Installed
     $InstalledGood = $PackageGood -and ($InstalledVersion -eq $PackageVersion)
+    if ($PluginOnly -and $InstalledGood) {
+        $InstalledRoot = Join-Path $MO2Directory 'plugins/mo2_update_arsenal'
+        foreach ($Name in $PluginHashes.Keys) {
+            $Member = Join-Path $InstalledRoot $Name
+            if (!(Test-Path -LiteralPath $Member -PathType Leaf) -or
+                ((Get-Item -LiteralPath $Member -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+                (File-SHA256 $Member) -ne $PluginHashes[$Name]) { $InstalledGood = $false; break }
+        }
+    }
     $ExpectedVersion = if ($PackageGood) { $PackageVersion } else { 'unverified package' }
     Add-Check 'plugin_installed' $InstalledGood ('Installed plugin version: ' + $InstalledVersion + '; expected: ' + $ExpectedVersion + '. Use Install_MO2_Plugin.bat with MO2 closed when missing or from another release.')
     $Ready = $MO2Family -and $X64 -and $QtGood -and $PackageGood

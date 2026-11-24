@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "checkedUtc": "2026-11-24T19:46:52.359642+00:00",
+  "distribution": "Independent local MO2 plugin deployment",
+  "productCommit": "ae151e996f78e8192bed659f3c5fc6f67bacd972",
+  "package": {
+    "filename": "Modhunter-0.12.6-MO2-Plugin-local-ae151e9.zip",
+    "sha256": "fc4059504c2d68db917136a8bdbf52338661a0b365e749d1a3b056f93f266949",
+    "size": 4809319,
+    "archiveMembers": 50,
+    "allManifestFilesVerified": 49,
+    "secondIndependentBuildIdentical": true
+  },
+  "verifiedInstaller": {
+    "windowsPowerShellVersion": "5.1",
+    "sha256": "5b660dc9fbfb54885af535fb983b66b8824536461a03a26e61e843fdd4639854",
+    "installerUnchanged": true,
+    "manifestSha256": "093a872905e5a6a10edc564757fd32de5a5cf73aef951a74768b5f35a10c33cd",
+    "installedFiles": 40,
+    "installedDirectories": 4,
+    "allManifestMembersVerified": true,
+    "independentlyHashedEveryInstalledFile": true,
+    "unexpectedOutput": 0,
+    "namedDirectoryEvents": 46,
+    "atomicStageMoves": 1,
+    "originalFileIdChanges": 0,
+    "scopedScratchChecksPassed": true
+  },
+  "staticHost": {
+    "copiedExecutableVersion": "2.5.3beta12",
+    "copiedQtVersion": [
+      "6.11.1.0"
+    ],
+    "beforeReadyToInstall": true,
+    "beforeReadyForConnectionTest": false,
+    "afterReadyForConnectionTest": true,
+    "executableLaunched": false
+  },
+  "componentExecution": {
+    "cliSha256": "50e834c019f2df5f3b94fefd7a3dda6a3d999add841968cf08a32feafbbe7edc",
+    "archiveCases": 26,
+    "archiveHelperSha256": "dc0493429fe28136fcb177a0e77c9875cbb3b0bff5f2f8eeba4df302e98cef76",
+    "archiveDllSha256": "500db9eb17f3c21b729ba41dd02ecfe1823da05028c7e4ba129084cc74cc364e",
+    "pluginBridgeChecks": 17,
+    "installedCliLibraryReplay": {
+      "source": "Complete selected MO2 profile, read-only",
+      "mods": 11325,
+      "groups": 834,
+      "distinctPlugins": 9380,
+      "orderedPlugins": 3629,
+      "explicitPluginStates": 3549,
+      "knownOrderOnly": 80,
+      "warnings": 0,
+      "rowOrOrderDifferences": 0,
+      "canonicalCatalogSha256": "be42f6729caef54b140450202057fe3cae6ab7d67f004c1634370b79c9694fd7"
+    },
+    "qtBridgeSha256": "d957f896c19c0c9f0b73b9e0381088865ddd187ae8fcdfadc6ca634189489780",
+    "qtChecks": 6,
+    "qtBuild": "6.7.1",
+    "qtRuntime": "6.11.1",
+    "pyQt": "6.11.0",
+    "qtBuildCommit": "62e9ae6ca120801f8c7da3fe8c4b6a65faacb062",
+    "qtExecutionCommit": "ae151e996f78e8192bed659f3c5fc6f67bacd972"
+  },
+  "independentOfficialMO2Fixture": {
+    "url": "https://github.com/Herbertofury/Modhunter/actions/runs/45469730451",
+    "productCommit": "62e9ae6ca120801f8c7da3fe8c4b6a65faacb062",
+    "version": "2.5.2",
+    "nativeChecks": 35,
+    "identicalShippedPythonAndDashboardFiles": 34,
+    "cliSha256": "3d24cc25bf65ed58b6dff112a53962b810d1bc8d37c7ee756fb3b227e6e6023a",
+    "qtBridgeSha256": "375c15396309bfac37c6865a5ccb59a389b617ab7c1f671055d2d8b169a5ff9f",
+    "exactPackagedHelperPairLaunchedInThisHost": false
+  },
+  "negativeControls": {
+    "ok": true,
+    "tamperedPackageLostReadiness": true,
+    "supportedInstallerRejectedDamagedFileBeforeWrites": true,
+    "existingFixtureWholeTreeUnchanged": true,
+    "changedInstalledQtBinaryDetected": true,
+    "missingInstalledQtBinaryDetected": true,
+    "readinessReadOnly": true
+  },
+  "limits": [
+    "Static beta-12 readiness used copies of the host executable and Qt DLL.",
+    "The separate official 2.5.2 runtime exercised identical plugin sources and dashboard using independently compiled helper binaries.",
+    "This local component package covers plugin installation. Desktop publication, beta-12 live host startup, authenticated Nexus transport and user-approved FOMOD decisions have separate evidence requirements."
+  ]
+}

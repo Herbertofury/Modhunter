@@ -38,7 +38,7 @@ function Fixture-Snapshot {
         $_.FullName + ':' + (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash
     }) -join "`n")
 }
-function Assert-PackageReadiness([string]$Case, [bool]$PackageGood, [bool]$InstalledGood, [string]$Version) {
+function Assert-PackageReadiness([string]$Case, [bool]$PackageGood, [bool]$InstalledGood, [string]$Version, [switch]$PluginOnly) {
     $BeforeCheck = Fixture-Snapshot
     $StartInfo = [Diagnostics.ProcessStartInfo]::new()
     $StartInfo.FileName = $PS51
@@ -48,6 +48,7 @@ function Assert-PackageReadiness([string]$Case, [bool]$PackageGood, [bool]$Insta
     foreach ($Argument in @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PackageScript, '-MO2Directory', $Root, '-Json')) {
         $StartInfo.ArgumentList.Add($Argument)
     }
+    if ($PluginOnly) { $StartInfo.ArgumentList.Add('-PluginOnly') }
     $Child = [Diagnostics.Process]::Start($StartInfo)
     try {
         $StandardOutput = $Child.StandardOutput.ReadToEndAsync()
@@ -138,7 +139,32 @@ try {
         }
         Assert-PackageReadiness $Case $false $false ''
     }
-    Write-Output 'PASS: Windows PowerShell 5.1 checks current and future package versions, rejects missing/older installed plugins and mixed/malformed/tampered packages, keeps invalid runtimes in review, preserves all files and omits personal paths.'
+    Reset-PackageFixture
+    foreach ($DesktopFile in @('Modhunter.exe', 'modhunter-cli.exe')) {
+        Remove-Item -LiteralPath (Join-Path $Package $DesktopFile)
+    }
+    $PluginRoot = Join-Path $Package 'MO2/mo2_update_arsenal'
+    $InstalledRoot = Split-Path -Parent $InstalledVersionFile
+    foreach ($Name in @('Install_MO2_Plugin.ps1', 'Install_MO2_Plugin.bat')) {
+        Write-FixtureFile (Join-Path $Package $Name) 'Inert installer fixture.'
+    }
+    foreach ($Name in @('__init__.py', 'plugin.py', 'web/index.html', 'bin/archive-tools/7z.exe',
+            'bin/archive-tools/7z.dll', 'bin/archive-tools/License.txt', 'bin/archive-tools/provenance.json')) {
+        Write-FixtureFile (Join-Path $PluginRoot $Name) 'Inert plugin file.'
+    }
+    foreach ($File in (Get-ChildItem -LiteralPath $PluginRoot -File -Recurse)) {
+        $Name = [IO.Path]::GetRelativePath($PluginRoot, $File.FullName)
+        Write-FixtureFile (Join-Path $InstalledRoot $Name) ([IO.File]::ReadAllText($File.FullName))
+    }
+    Write-FixtureFile $BuildFile (@{ component = 'mo2-plugin'; version = $FixtureVersion; commit = ('a' * 40) } | ConvertTo-Json)
+    Write-FixtureManifest
+    Assert-PackageReadiness 'Full package mode still requires the desktop binaries' $false $false ''
+    Assert-PackageReadiness 'Complete plugin-only package and installed payload' $true $true $FixtureVersion -PluginOnly
+    Write-FixtureFile (Join-Path $InstalledRoot 'bin/archive-tools/License.txt') 'Changed installed bytes.'
+    Assert-PackageReadiness 'Changed installed component' $true $false $FixtureVersion -PluginOnly
+    Write-FixtureFile (Join-Path $PluginRoot 'plugin.py') 'Changed package source.'
+    Assert-PackageReadiness 'Changed packaged source' $false $false '' -PluginOnly
+    Write-Output 'PASS: Windows PowerShell 5.1 checks full and plugin-only packages, detects changed installation bytes, keeps invalid runtimes in review and preserves the fixture.'
 } finally {
     if (Test-Path -LiteralPath $Root) { Remove-Item -LiteralPath $Root -Recurse -Force }
 }

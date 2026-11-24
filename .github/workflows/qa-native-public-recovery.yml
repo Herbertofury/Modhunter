@@ -1,0 +1,59 @@
+name: Native public archive recovery replay
+on:
+  push:
+    branches: [upgrade/real-fomod-acceptance-20261124]
+    paths:
+      - '.github/workflows/qa-native-public-recovery.yml'
+      - 'native/scripts/mo2_smoke_plugin/**'
+      - 'mo2_update_arsenal/content_recovery.py'
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  recover-public-releases:
+    runs-on: windows-2022
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.99.1'
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+          cache-on-failure: 'true'
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: 45474577287
+          name: Modhunter-Rust-Windows
+          path: frozen
+      - name: Build the current recovery CLI and verify the frozen desktop and Qt bridge
+        shell: pwsh
+        run: |
+          cargo build --locked --manifest-path native/Cargo.toml -p modhunter-core --bin modhunter-cli
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $Installer = (Get-ChildItem frozen -Recurse -Filter Modhunter_0.12.6_x64-setup.exe -File).FullName
+          if ((Get-FileHash -LiteralPath $Installer).Hash -cne 'DFB9BFFF4792BEAEB06183DEAA33546D3819809709564792CBA8461368FAD66C') { throw 'Frozen NSIS changed' }
+          7z x $Installer '-ofrozen-desktop' 'Modhunter.exe' 'archive-tools/*' -y
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item -LiteralPath frozen-desktop/archive-tools -Destination native/target/debug/archive-tools -Recurse
+          $Tools = Join-Path $env:RUNNER_TEMP 'modhunter-recovery-tools'
+          npm install --prefix $Tools --no-audit --no-fund playwright@1.57.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Observe the native FOMOD install, update and rollback
+        shell: pwsh
+        run: |
+          $env:NODE_PATH = Join-Path $env:RUNNER_TEMP 'modhunter-recovery-tools/node_modules'
+          $Scope = Join-Path ([IO.Path]::GetPathRoot($PWD.Path)) ('mh-' + [guid]::NewGuid().ToString('N').Substring(0,12))
+          ./native/scripts/mo2_native_smoke.ps1 -WorkDirectory $Scope -RustCliPath "$PWD/native/target/debug/modhunter-cli.exe" -QtBridgePath "$PWD/frozen/qt-bridge/Release/modhunter-qt-bridge.dll" -DesktopExecutable "$PWD/frozen-desktop/Modhunter.exe" -EvidenceDirectory "$PWD/native-public-evidence" -VerifyPublicFomod -VerifyPublicVersions -TimeoutSeconds 420
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isolated-native-public-recovery
+          path: native-public-evidence/
+          if-no-files-found: warn
+          retention-days: 14

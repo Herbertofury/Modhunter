@@ -92,6 +92,8 @@ class SnapshotProjectionTest(unittest.TestCase):
             disabled = self.new_metadata(root, "two", "https://github.com/fixture/disabled", disabled=True)
             fallback = self.new_metadata(root, "three", "https://github.com/fixture/fallback")
             old = self.new_metadata(root, "four", "https://github.com/fixture/old", disabled=True)
+            with (disabled / "meta.ini").open("a", encoding="utf-8") as meta:
+                meta.write("installationFile=optional.zip\nnexusFileStatus=3\n[installedFiles]\n1\\modid=52\n1\\fileid=124\n")
             rows = {
                 "entry-0": _mod("Unsorted custom", path=occupied, url="https://github.com/fixture/native?token=hidden#about", nexus=125,
                                 version="1.0a", latest="2.0"),

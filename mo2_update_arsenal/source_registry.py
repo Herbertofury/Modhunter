@@ -151,6 +151,8 @@ def discover_local_source(mod_directory: Path, notes: str = "") -> dict:
                     file_identity = {"installationArchive": archive, "installedFiles": receipts,
                                      "game": parser.get(general, "gameName", fallback=""),
                                      "status": parser.get(general, "nexusFileStatus", fallback="")}
+                if not any(file_identity.values()):
+                    file_identity = {}
                 for section in parser.sections():
                     for key in ("url", "customurl", "modurl", "updateurl", "homepage", "website", "source"):
                         if parser.has_option(section, key):

@@ -265,7 +265,8 @@ class ScanOwnershipTests(unittest.TestCase):
         rows = {row["id"]: row for row in self.service.snapshot(source_details=True)["items"]}
         for item_id in ("valid", "noncanonical", "native-id-without-url"):
             with self.subTest(item=item_id):
-                self.assertEqual(rows[item_id]["update"]["latestVersion"], "2.0")
+                self.assertEqual(rows[item_id]["update"]["projectVersion"], "2.0")
+                self.assertEqual(rows[item_id]["update"]["verdict"], "review")
                 self.assertNotIn("sourceUrl", rows[item_id]["update"])
         for item_id in ("insecure", "untrusted", "different-project"):
             with self.subTest(item=item_id):

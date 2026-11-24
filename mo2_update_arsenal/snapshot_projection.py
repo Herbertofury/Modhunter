@@ -12,7 +12,7 @@ from threading import Event, get_ident
 from time import monotonic
 from typing import Any
 
-from .model import COLORS, LocalMetadataCache, call_str, identity, inspect_local_flags, source_url
+from .model import COLORS, LocalMetadataCache, call_str, identity, inspect_local_flags, source_url, installed_file_fields
 from .source_registry import discover_local_source, source_record
 
 
@@ -30,6 +30,7 @@ class _ModInput:
     notes: str = field(default="", repr=False)
     native_url: str = field(default="", repr=False)
     repository: str = ""
+    archive: str = field(default="", repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +42,7 @@ class SnapshotInput:
     profile: str
     profile_id: str
     mods: tuple[_ModInput, ...] = field(repr=False)
+    short_game: str = ""
 
 
 class SnapshotCancelled(Exception):
@@ -55,11 +57,12 @@ class SnapshotCapture:
     """
 
     def __init__(self, mod_list: Any, names: list[str], identity_parts: tuple[str, str, str, str],
-                 active_flag: int, is_current: Callable[[], bool]) -> None:
+                 active_flag: int, is_current: Callable[[], bool], short_game: str = "") -> None:
         self._owner = get_ident()
         self._mod_list = mod_list
         self._names = names
         self._identity_parts = identity_parts
+        self._short_game = short_game
         self._active_flag = active_flag
         self._is_current = is_current
         self._mods: list[_ModInput] = []
@@ -114,7 +117,7 @@ class SnapshotCapture:
         self._mods.append(_ModInput(
             name, label, priority, False, nexus_id, version, latest, enabled,
             call_str(mod, "absolutePath"), call_str(mod, "notes"),
-            call_str(mod, "url"), call_str(mod, "repository"),
+            call_str(mod, "url"), call_str(mod, "repository"), call_str(mod, "installationFile"),
         ))
         self._item_count += 1
 
@@ -142,7 +145,7 @@ class SnapshotCapture:
                 if self._closed or (deadline is not None and monotonic() >= deadline):
                     break
             if self._cursor == len(self._names):
-                result = SnapshotInput(*self._identity_parts, tuple(self._mods))
+                result = SnapshotInput(*self._identity_parts, tuple(self._mods), self._short_game)
                 self._require_current()
                 self.close()
                 return result
@@ -191,7 +194,8 @@ def begin_snapshot_capture(organizer: Any, target_runtime: str = "unknown", *,
         active_flag = 0x2
     if not is_current():
         raise SnapshotCancelled()
-    return SnapshotCapture(ml, names, (game, runtime, profile, profile_id), active_flag, is_current)
+    return SnapshotCapture(ml, names, (game, runtime, profile, profile_id), active_flag, is_current,
+                           call_str(game_obj, "gameShortName").casefold())
 
 
 def capture_snapshot(organizer: Any, target_runtime: str = "unknown") -> SnapshotInput:
@@ -260,6 +264,7 @@ def project_snapshot(captured: SnapshotInput, *,
             flags = inspect_local_flags(Path(mod.path)) if mod.path else []
             detected_source = discover_local_source(Path(mod.path), mod.notes) if mod.path else {}
         check_cancelled()
+        receipt = detected_source.pop("_mo2FileIdentity", {})
         custom_enabled = detected_source.pop("customUrlEnabled", None)
         actual_source = (source_record(mod.native_url, "MO2 official mod URL")
                          if mod.native_url and custom_enabled is not False else None)
@@ -282,6 +287,7 @@ def project_snapshot(captured: SnapshotInput, *,
             "name": mod.label,
             "installedVersion": mod.version if mod.version not in ("Invalid", "None", "0", "0.0", "") else "?",
             "latestKnownVersion": mod.latest if mod.latest not in ("Invalid", "None", "0", "0.0", "") else "",
+            **installed_file_fields(receipt, mod.archive, captured.game, captured.short_game),
             "enabled": mod.enabled,
             "nexusId": mod.nexus_id,
             "screenshotNote": mod.notes,

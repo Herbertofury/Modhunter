@@ -14,6 +14,8 @@ Restart MO2, select the intended profile, and wait for it to load. The bridge st
 
 The native integration gate targets official **MO2 2.5.2** with its Qt 6.7.1 runtime. See [Rust Desktop](Rust-Desktop.md) for tested scope and connection instructions. Installing the desktop app is optional when using the plugin's browser dashboard.
 
+For MCP setup and supported tools, see [Agent inspection](Agent-Inspection.md).
+
 ### Update Workshop
 
 Open **The Update Workshop** in the live dashboard. It separates candidates, mods requiring investigation, manual/unlinked mods and current versions. **Update now** can send an unambiguous, freshly validated file directly to MO2 and open its interactive installer when the download completes. Multiple editions or compatibility risks open **Choose file**; batch queueing keeps installers under your control. The optional manifest and installation briefing expose the same exact-file checks. Every dispatch and installation is independently revalidated. See **[Update Workshop](Update-Workshop.md)** and **[Provider Coverage](Updater-Source-Coverage.md)** for the full supported source matrix and limitations.

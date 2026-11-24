@@ -110,3 +110,98 @@ fn empty_and_only_comments_do_not_assert_a_clean_load_order() {
     assert_eq!(json["runtimeStatus"], "not_evaluated");
     assert_eq!(json["rows"], serde_json::json!([]));
 }
+
+#[test]
+fn selected_file_matches_stdin_without_report_path_or_neighbor_access() {
+    let temp = tempfile::tempdir().unwrap();
+    let name = "Fixture_DISTR.Ini";
+    let chosen = temp.path().join(name);
+    let bytes = b"; authored text\nSpell = 0x15~Demo.esl|PrivateFilter\nUnknown = Secret\n";
+    std::fs::write(&chosen, bytes).unwrap();
+    std::fs::write(
+        temp.path().join("Neighbor_DISTR.ini"),
+        b"Spell = NeighborSecret",
+    )
+    .unwrap();
+    let selected = call(&["spid-preview", "--file", chosen.to_str().unwrap()], b"");
+    let streamed = call(&["spid-preview", "--name", name], bytes);
+    assert_eq!(selected.stdout, streamed.stdout);
+    let json = report(&selected);
+    assert_eq!(json["runtimeStatus"], "not_evaluated");
+    assert_eq!(json["sourceName"], name);
+    let output = String::from_utf8(selected.stdout).unwrap();
+    assert!(!output.contains(temp.path().to_str().unwrap()));
+    assert!(!output.contains("PrivateFilter") && !output.contains("NeighborSecret"));
+    assert_eq!(std::fs::read(&chosen).unwrap(), bytes);
+}
+
+#[test]
+fn selected_invalid_missing_directory_and_oversized_inputs_emit_no_report() {
+    let temp = tempfile::tempdir().unwrap();
+    let directory = temp.path().join("Directory_DISTR.ini");
+    let bad_name = temp.path().join("NotSpid.ini");
+    let missing = temp.path().join("Missing_DISTR.ini");
+    let oversized = temp.path().join("Large_DISTR.ini");
+    let bad_utf8 = temp.path().join("Bad_DISTR.ini");
+    std::fs::create_dir(&directory).unwrap();
+    std::fs::write(&bad_name, b"Spell = Good").unwrap();
+    std::fs::write(&bad_utf8, [0xff]).unwrap();
+    std::fs::File::create(&oversized)
+        .unwrap()
+        .set_len(512 * 1024 + 1)
+        .unwrap();
+    for input in [&directory, &bad_name, &missing, &oversized, &bad_utf8] {
+        let path = input.to_str().unwrap();
+        let output = call(&["spid-preview", "--file", path], b"");
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        assert!(!String::from_utf8(output.stderr).unwrap().contains(path));
+    }
+    let output = call(
+        &[
+            "spid-preview",
+            "--file",
+            bad_name.to_str().unwrap(),
+            "--name",
+            "Other_DISTR.ini",
+        ],
+        b"",
+    );
+    assert!(!output.status.success() && output.stdout.is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn selected_symlink_and_fifo_never_open_or_report() {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::fs::symlink;
+
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("Real_DISTR.ini");
+    let linked = temp.path().join("Link_DISTR.ini");
+    let fifo = temp.path().join("Pipe_DISTR.ini");
+    std::fs::write(&source, b"Spell = Real").unwrap();
+    symlink(&source, &linked).unwrap();
+    let raw = CString::new(fifo.as_os_str().as_bytes()).unwrap();
+    assert_eq!(unsafe { libc::mkfifo(raw.as_ptr(), 0o600) }, 0);
+    for path in [&linked, &fifo] {
+        let output = call(&["spid-preview", "--file", path.to_str().unwrap()], b"");
+        assert!(!output.status.success() && output.stdout.is_empty());
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn selected_non_disk_namespaces_and_streams_fail_closed() {
+    for path in [
+        r"\\server\share\Remote_DISTR.ini",
+        r"\\?\C:\Device_DISTR.ini",
+        r"Z:DriveRelative_DISTR.ini",
+        r"C:\NUL\Example_DISTR.ini",
+        r"C:\folder\Regular:stream_DISTR.ini",
+    ] {
+        let output = call(&["spid-preview", "--file", path], b"");
+        assert!(!output.status.success() && output.stdout.is_empty());
+    }
+}

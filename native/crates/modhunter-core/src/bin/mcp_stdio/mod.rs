@@ -1,4 +1,6 @@
 //! Read-only subprocess MCP. Files are selectable only before stdio starts.
+mod housecarl;
+use modhunter_core::{BridgeClient, validate_bridge_endpoint};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
@@ -17,7 +19,11 @@ const MAX_REPLY: usize = 4 * 1024 * 1024;
 const TOOL: &str = "spid_preview";
 const BSA_TOOL: &str = "bsa_directory_page";
 const BSA_PAGE_SIZE: usize = 64;
-const USAGE: &str = "mcp-stdio [--legacy-2025-11-25] [--bsa ALIAS PATH]";
+const PLUGIN_TOOL: &str = "plugin_header";
+const PLUGIN_MASTER_LIMIT: usize = 256;
+const PLUGIN_MASTER_NAME_LIMIT: usize = 255;
+const LIVE_TOOL: &str = "mo2_mods";
+const USAGE: &str = "mcp-stdio [--legacy-2025-11-25] [--bsa ALIAS PATH] [--plugin ALIAS PATH] [--mo2 PROFILE_ID LOOPBACK_URL] [--housecarl EXE DIRECTORIES_JSON]";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mode {
@@ -37,6 +43,59 @@ struct ArchiveSnapshot {
     directory: super::bsa_directory::Directory,
 }
 
+// This is an allowlist projection, not a serializable file-inspection report.
+struct PluginSnapshot {
+    alias: String,
+    masters: Vec<String>,
+    flags: u32,
+    version: f32,
+    form_version: u16,
+    master_flag: bool,
+    light_flag: bool,
+    declared_count: u32,
+}
+
+impl PluginSnapshot {
+    fn capture(alias: &str, path: &Path) -> Result<Self, &'static str> {
+        let info = modhunter_core::plugin_analysis::inspect_selected_skyrim_plugin(path, true)
+            .map_err(|_| "Could not capture the selected Skyrim-format plugin header")?;
+        let header = info.header;
+        if header.masters.len() > PLUGIN_MASTER_LIMIT
+            || header.masters.iter().any(|name| {
+                name.len() > PLUGIN_MASTER_NAME_LIMIT
+                    || !name.bytes().all(|byte| (0x20..=0x7e).contains(&byte))
+            })
+        {
+            return Err(
+                "Plugin master declarations exceed the snapshot limits or need unsupported name encoding",
+            );
+        }
+        Ok(Self {
+            alias: alias.into(),
+            masters: header.masters,
+            flags: header.flags,
+            version: header.version,
+            form_version: header.record_header_version,
+            master_flag: header.master_flag,
+            light_flag: header.light_flag,
+            declared_count: header.declared_record_and_group_count,
+        })
+    }
+}
+
+struct LiveProfile {
+    profile_id: String,
+    endpoint: String,
+    client: BridgeClient,
+}
+
+struct Selections {
+    housecarl: Option<housecarl::Companion>,
+    live: Option<LiveProfile>,
+    archive: Option<ArchiveSnapshot>,
+    plugin: Option<PluginSnapshot>,
+}
+
 fn alias_name(alias: &str) -> bool {
     (1..=32).contains(&alias.len())
         && alias
@@ -44,31 +103,86 @@ fn alias_name(alias: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-'))
 }
 
-fn configuration(args: &[String]) -> Result<(Mode, Option<ArchiveSnapshot>), &'static str> {
+fn configuration(args: &[String]) -> Result<(Mode, Selections), &'static str> {
     let (mode, rest) = match args.split_first() {
         Some((flag, rest)) if flag == "--legacy-2025-11-25" => (Mode::Legacy, rest),
         _ => (Mode::Modern, args),
     };
-    match rest {
-        [] => Ok((mode, None)),
-        [flag, alias, path] if flag == "--bsa" && alias_name(alias) => {
-            let directory = super::bsa_directory::snapshot(Path::new(path))?;
-            Ok((
-                mode,
-                Some(ArchiveSnapshot {
-                    alias: alias.clone(),
-                    directory,
-                }),
-            ))
-        }
-        _ => Err(USAGE),
+    let (triples, remainder) = rest.as_chunks::<3>();
+    if !remainder.is_empty() {
+        return Err(USAGE);
     }
+    let (mut archive, mut plugin) = (None, None);
+    let mut live = None;
+    let mut companion = None;
+    for [flag, alias, path] in triples {
+        if flag == "--housecarl" {
+            if companion.replace((alias, path)).is_some() {
+                return Err(USAGE);
+            }
+            continue;
+        }
+        if flag == "--mo2" {
+            if live.is_some()
+                || alias.is_empty()
+                || alias.len() > 256
+                || alias.chars().any(char::is_control)
+            {
+                return Err(USAGE);
+            }
+            live = Some(LiveProfile {
+                profile_id: alias.clone(),
+                endpoint: validate_bridge_endpoint(path)
+                    .map_err(|_| "Invalid MO2 loopback endpoint")?,
+                client: BridgeClient::new().map_err(|_| "Cannot initialize the MO2 connection")?,
+            });
+            continue;
+        }
+        let slot = match flag.as_str() {
+            "--bsa" => &mut archive,
+            "--plugin" => &mut plugin,
+            _ => return Err(USAGE),
+        };
+        if !alias_name(alias) || slot.replace((alias, path)).is_some() {
+            return Err(USAGE);
+        }
+    }
+    if let (Some((archive, _)), Some((plugin, _))) = (archive, plugin)
+        && archive.eq_ignore_ascii_case(plugin)
+    {
+        return Err("Each launch-time file selection must have a distinct alias");
+    }
+    // Finish validation of the whole launcher argument shape before any reads.
+    let archive = archive
+        .map(|(alias, path)| {
+            super::bsa_directory::snapshot(Path::new(path)).map(|directory| ArchiveSnapshot {
+                alias: alias.clone(),
+                directory,
+            })
+        })
+        .transpose()?;
+    let plugin = plugin
+        .map(|(alias, path)| PluginSnapshot::capture(alias, Path::new(path)))
+        .transpose()?;
+    Ok((
+        mode,
+        Selections {
+            archive,
+            plugin,
+            live,
+            housecarl: companion
+                .map(|(exe, config)| {
+                    housecarl::Companion::configure(Path::new(exe), Path::new(config))
+                })
+                .transpose()?,
+        },
+    ))
 }
 
 pub(super) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
-    let (mode, archive) = configuration(args)?;
-    // The launcher file handle is already closed. Requests see only memory.
-    serve(io::stdin().lock(), io::stdout(), mode, archive.as_ref())?;
+    let (mode, selections) = configuration(args)?;
+    // Launcher-selected file handles are already closed. Requests only see memory.
+    serve(io::stdin().lock(), io::stdout(), mode, &selections)?;
     Ok(())
 }
 
@@ -121,9 +235,28 @@ struct ArchivePageRequest {
     offset: usize,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PluginRequest {
+    #[serde(rename = "pluginAlias")]
+    plugin_alias: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LivePage {
+    #[serde(default)]
+    offset: usize,
+    revision: Option<String>,
+}
+
 enum ToolRequest {
+    SkyrimRecord(housecarl::Record),
+    SkyrimStatus(housecarl::NoArguments),
+    Live(LivePage),
     Spid(DeclarationRequest),
     Bsa(ArchivePageRequest),
+    Plugin(PluginRequest),
 }
 
 struct Work {
@@ -209,7 +342,7 @@ fn complete(mode: Mode, mut result: Value) -> Value {
     result
 }
 
-fn list(mode: Mode, archive: Option<&ArchiveSnapshot>) -> Value {
+fn list(mode: Mode, selections: &Selections) -> Value {
     let mut result = json!({"tools":[{
         "name":TOOL,
         "title":"Preview supplied Skyrim SPID declarations",
@@ -219,7 +352,7 @@ fn list(mode: Mode, archive: Option<&ArchiveSnapshot>) -> Value {
                         "text":{"type":"string","maxLength":524288}}},
         "annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false}
     }]});
-    if let Some(archive) = archive {
+    if let Some(archive) = &selections.archive {
         result["tools"].as_array_mut().expect("tools array").push(json!({
             "name":BSA_TOOL,
             "title":"List the launcher-selected BSA directory snapshot",
@@ -227,6 +360,34 @@ fn list(mode: Mode, archive: Option<&ArchiveSnapshot>) -> Value {
             "inputSchema":{"type":"object","additionalProperties":false,"required":["archiveAlias"],
               "properties":{"archiveAlias":{"type":"string","enum":[archive.alias]},
                             "offset":{"type":"integer","minimum":0,"maximum":archive.directory.paths.len()} }},
+            "annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false}
+        }));
+    }
+    if let Some(plugin) = &selections.plugin {
+        result["tools"].as_array_mut().expect("tools array").push(json!({
+            "name":PLUGIN_TOOL,
+            "title":"Read a launcher-selected Skyrim-format plugin header snapshot",
+            "description":"Return header flags and ordered declared master names from the single launch-time selection. No files are opened during a call. Does not resolve masters, read records, or establish game compatibility.",
+            "inputSchema":{"type":"object","additionalProperties":false,"required":["pluginAlias"],
+              "properties":{"pluginAlias":{"type":"string","enum":[plugin.alias]}}},
+            "annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false}
+        }));
+    }
+    if selections.housecarl.is_some() {
+        result["tools"]
+            .as_array_mut()
+            .expect("tools array")
+            .extend(housecarl::tools());
+    }
+    if selections.live.is_some() {
+        result["tools"].as_array_mut().expect("tools array").push(json!({
+            "name":LIVE_TOOL,
+            "title":"Read the running MO2 profile's mods",
+            "description":"Page through the live inventory selected at launch. Start with empty arguments, then pass nextOffset as offset and the same revision until nextOffset is null. Restart traversal if the inventory changes.",
+            "inputSchema":{"type":"object","additionalProperties":false,"properties":{
+                "offset":{"type":"integer","minimum":0},
+                "revision":{"type":"string","maxLength":64}
+            }},
             "annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false}
         }));
     }
@@ -258,8 +419,54 @@ fn archive_page(selection: &ArchiveSnapshot, request: ArchivePageRequest) -> Res
     }))
 }
 
-fn execute(mode: Mode, request: ToolRequest, archive: Option<&ArchiveSnapshot>) -> Value {
+fn plugin_header(selection: &PluginSnapshot, request: PluginRequest) -> Result<Value, String> {
+    if request.plugin_alias != selection.alias {
+        return Err("The requested plugin alias is not available".into());
+    }
+    Ok(json!({
+        "scope":"launch-time-skyrim-se-format-header-assumed",
+        "pluginAlias":selection.alias,
+        "headerFlags":selection.flags,
+        "headerVersion":selection.version,
+        "formVersion":selection.form_version,
+        "masterFlag":selection.master_flag,
+        "lightFlag":selection.light_flag,
+        "declaredRecordAndGroupCount":selection.declared_count,
+        "declaredMasters":selection.masters,
+        "masterResolution":"declarations_only_not_resolved",
+        "payloadDecoding":"not_evaluated",
+    }))
+}
+
+fn execute(mode: Mode, request: ToolRequest, selections: &Selections) -> Value {
     let generated = match request {
+        ToolRequest::SkyrimRecord(record) => selections
+            .housecarl
+            .as_ref()
+            .expect("registered houseCARL")
+            .read(Some(record)),
+        ToolRequest::SkyrimStatus(_) => selections
+            .housecarl
+            .as_ref()
+            .expect("registered houseCARL")
+            .read(None),
+        ToolRequest::Live(page) => selections
+            .live
+            .as_ref()
+            .ok_or_else(|| "No live MO2 profile was selected".to_owned())
+            .and_then(|live| {
+                let mut query =
+                    json!({"profileId": live.profile_id, "offset":page.offset.to_string()});
+                if let Some(revision) = page.revision {
+                    if revision.len() > 64 {
+                        return Err("Invalid inventory revision".to_owned());
+                    }
+                    query["revision"] = json!(revision);
+                }
+                live.client
+                    .native_content(&live.endpoint, "agent-mods", &query)
+                    .map_err(|e| e.to_string())
+            }),
         ToolRequest::Spid(request) => super::spid_preview::run(
             &request.source_name,
             request.text.as_bytes(),
@@ -267,9 +474,16 @@ fn execute(mode: Mode, request: ToolRequest, archive: Option<&ArchiveSnapshot>) 
         .and_then(|report| {
             serde_json::to_value(report).map_err(|_| "Cannot encode SPID preview".to_owned())
         }),
-        ToolRequest::Bsa(request) => archive
+        ToolRequest::Bsa(request) => selections
+            .archive
+            .as_ref()
             .ok_or_else(|| "No BSA was selected by the launcher".to_owned())
             .and_then(|selection| archive_page(selection, request)),
+        ToolRequest::Plugin(request) => selections
+            .plugin
+            .as_ref()
+            .ok_or_else(|| "No plugin was selected by the launcher".to_owned())
+            .and_then(|selection| plugin_header(selection, request)),
     };
     match generated {
         Ok(report) => complete(
@@ -290,7 +504,7 @@ fn handle<W: Write>(
     phase: &mut LegacyPhase,
     wire: &Mutex<Wire<W>>,
     worker: &mpsc::SyncSender<Work>,
-    archive: Option<&ArchiveSnapshot>,
+    selections: &Selections,
 ) -> io::Result<()> {
     let id = message.get("id").cloned();
     if message["jsonrpc"] != "2.0"
@@ -388,7 +602,7 @@ fn handle<W: Write>(
             ),
         )),
         "ping" => reply(ok(id, complete(mode, json!({})))),
-        "tools/list" if params.get("cursor").is_none() => reply(ok(id, list(mode, archive))),
+        "tools/list" if params.get("cursor").is_none() => reply(ok(id, list(mode, selections))),
         "tools/list" => reply(error(id, -32602, "No next tool catalog page")),
         "tools/call" => {
             let arguments = params
@@ -397,8 +611,20 @@ fn handle<W: Write>(
                 .unwrap_or_default();
             let request = match params["name"].as_str() {
                 Some(TOOL) => serde_json::from_value(arguments).map(ToolRequest::Spid),
-                Some(BSA_TOOL) if archive.is_some() => {
+                Some(BSA_TOOL) if selections.archive.is_some() => {
                     serde_json::from_value(arguments).map(ToolRequest::Bsa)
+                }
+                Some(housecarl::TOOL) if selections.housecarl.is_some() => {
+                    serde_json::from_value(arguments).map(ToolRequest::SkyrimRecord)
+                }
+                Some(housecarl::STATUS) if selections.housecarl.is_some() => {
+                    serde_json::from_value(arguments).map(ToolRequest::SkyrimStatus)
+                }
+                Some(LIVE_TOOL) if selections.live.is_some() => {
+                    serde_json::from_value(arguments).map(ToolRequest::Live)
+                }
+                Some(PLUGIN_TOOL) if selections.plugin.is_some() => {
+                    serde_json::from_value(arguments).map(ToolRequest::Plugin)
                 }
                 _ => return reply(error(id, -32602, "Unknown read-only MCP tool")),
             };
@@ -441,7 +667,7 @@ fn serve(
     mut input: impl BufRead,
     writer: impl Write + Send,
     mode: Mode,
-    archive: Option<&ArchiveSnapshot>,
+    selections: &Selections,
 ) -> io::Result<()> {
     let mut phase = LegacyPhase::New;
     let mut frame = Vec::new();
@@ -456,7 +682,7 @@ fn serve(
             while let Ok(Work { id, request }) = rx.recv() {
                 // CPU work is bounded by the actual parser. If a cancellation
                 // arrives during it, discard its output rather than replying.
-                let result = execute(mode, request, archive);
+                let result = execute(mode, request, selections);
                 wire.lock().unwrap().finish(id, result)?;
             }
             Ok(())
@@ -465,7 +691,7 @@ fn serve(
             loop {
                 match read_frame(&mut input, &mut frame)? {
                     Frame::Ready => match serde_json::from_slice(&frame) {
-                        Ok(message) => handle(message, mode, &mut phase, wire, &tx, archive)?,
+                        Ok(message) => handle(message, mode, &mut phase, wire, &tx, selections)?,
                         Err(_) => wire.lock().unwrap().reply(error(
                             Value::Null,
                             -32700,

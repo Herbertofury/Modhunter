@@ -128,6 +128,7 @@ class ArsenalService:
                  *, discovery_directory: Path | None = None):
         self.html = app_html
         self.token = secrets.token_urlsafe(36)
+        self._catalog_session = secrets.token_hex(16)
         self.ui_call = ui_call
         self.cache = Cache(cache_path)
         self.chronicle = Chronicle(cache_path.with_name("chronicle.json"))
@@ -212,6 +213,30 @@ class ArsenalService:
             return {"ok": True, "app": "Modhunter", "protocol": 1, "live": True,
                     "version": VERSION, "profileId": self._snapshot.get("profileId"),
                     "generation": self._generation, "executionEpoch": self._execution_epoch}
+
+    def agent_mods(self, query: dict) -> dict:
+        """Read a revision-bound page from the live inventory, without building the dashboard."""
+        with self._guard:
+            profile = self._snapshot.get("profileId")
+            if self._stopped or not profile or query.get("profileId") != [profile]:
+                return {"ok": False, "error": "The selected MO2 profile is unavailable or changed."}
+            revision = f"{self._catalog_session}-{self._generation}"
+            raw_offset = query.get("offset", ["0"])
+            if len(raw_offset) != 1 or not raw_offset[0].isascii() or not raw_offset[0].isdecimal() or len(raw_offset[0]) > 18:
+                return {"ok": False, "error": "Invalid inventory offset."}
+            offset = int(raw_offset[0])
+            if (offset or "revision" in query) and query.get("revision") != [revision]:
+                return {"ok": False, "error": "Inventory revision changed. Restart from the first page."}
+            rows = self._snapshot.get("items", [])
+            if offset > len(rows):
+                return {"ok": False, "error": "Offset is beyond the inventory."}
+            fields = ("id", "name", "mo2InternalName", "enabled", "priority", "installedVersion",
+                      "nexusId", "repository", "groupId", "group")
+            end = min(len(rows), offset + 128)
+            return {"ok": True, "profileId": profile, "profileName": self._snapshot.get("profileName"),
+                    "game": self._snapshot.get("game"), "revision": revision, "total": len(rows),
+                    "offset": offset, "nextOffset": end if end < len(rows) else None,
+                    "items": [{key: row[key] for key in fields if key in row} for row in rows[offset:end]]}
 
     def snapshot_response(self) -> dict:
         # The catalog and its revision must describe the same state even when
@@ -1899,6 +1924,10 @@ class ArsenalService:
                     return self.wfile.write(output)
                 if not self._authorize():
                     return
+                if uri.path == "/api/agent-mods":
+                    if not self._native_client():
+                        return self._reply({"ok": False, "error": "Native client required."}, 403)
+                    return self._reply(service.agent_mods(urllib.parse.parse_qs(uri.query)))
                 if uri.path == "/api/content-context":
                     query = urllib.parse.parse_qs(uri.query)
                     return self._reply(service.content.capture(query.get("itemId", [""])[0], query.get("targetName", [""])[0], native=self._native_client(), backup_id=query.get("backupId", [""])[0]))

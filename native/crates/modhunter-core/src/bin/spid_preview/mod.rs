@@ -1,6 +1,9 @@
 //! Inventory one explicitly supplied SPID document. Not a distributor validator.
 use serde::Serialize;
 use std::io::Read;
+use std::path::Path;
+
+mod selected;
 
 const MAX_BYTES: usize = 512 * 1024;
 const MAX_LINES: usize = 4096;
@@ -141,16 +144,19 @@ fn row(line: usize, text: &str) -> Row {
     }
 }
 
-pub fn run(name: &str, input: impl Read) -> Result<Report, String> {
-    let valid_name = name.len() <= 160
+fn valid_name(name: &str) -> bool {
+    name.len() <= 160
         && name
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_' | b' '))
         && name
             .to_ascii_lowercase()
             .strip_suffix("_distr.ini")
-            .is_some_and(|stem| stem.bytes().any(|b| b.is_ascii_alphanumeric()));
-    if !valid_name {
+            .is_some_and(|stem| stem.bytes().any(|b| b.is_ascii_alphanumeric()))
+}
+
+pub fn run(name: &str, input: impl Read) -> Result<Report, String> {
+    if !valid_name(name) {
         return Err("Choose one SPID filename ending in _DISTR.ini, not a path".into());
     }
     let mut bytes = Vec::new();
@@ -200,4 +206,9 @@ pub fn run(name: &str, input: impl Read) -> Result<Report, String> {
         runtime_status: "not_evaluated",
         rows,
     })
+}
+
+/// CLI-only, host-initiated single file selection. Never used by MCP.
+pub(super) fn selected_file(path: &Path) -> Result<Report, String> {
+    selected::preview(path)
 }

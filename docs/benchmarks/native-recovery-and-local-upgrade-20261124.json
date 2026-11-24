@@ -11,7 +11,7 @@
     "desktopShortcutRestartWithoutArguments": true,
     "profileAndHistoryRestored": true,
     "rows": 11325,
-    "importMsAfterDesktopShortcut": 1261.8,
+    "importMsAfterDesktopShortcut": 1305.7,
     "datedDecisions": {
       "current": 6569,
       "candidate": 540,
@@ -23,7 +23,11 @@
     },
     "lastProviderObservation": "2026-11-24T18:37:31Z",
     "shellTaskbarButtonRegistered": true,
-    "pinnedColdLaunchVerified": false
+    "pinnedColdLaunchVerified": false,
+    "shortcutLauncher": "The existing Windows Explorer shell process launched the actual installed desktop shortcut with no arguments.",
+    "currentUserRegistrationVerifiedByExplorer": true,
+    "portablePrivateReportVisibleToExplorer": true,
+    "configFilesPreservedDuringShellRepair": 5
   },
   "localMO2Plugin": {
     "packageSha256": "9241cf79426db9c7e763fa38115583a98d1af25ad3038eb3e7f69b8dcbc70421",
@@ -68,7 +72,9 @@
       "Tiered Casters 1.0.0 disabled native FOMOD installation, exact selected INIs and removal",
       "Chairrows 2.0.0 to 2.0.1 disabled native update, exact ESP and BSA, byte-identical rollback and removal"
     ],
-    "protectedListsUnchanged": true
+    "protectedListsUnchanged": true,
+    "combinedSameBuildWindowsChecks": 38,
+    "combinedWindowsJob": "https://github.com/Herbertofury/Modhunter/actions/runs/45479820313"
   },
   "publicStablePromotion": false
 }

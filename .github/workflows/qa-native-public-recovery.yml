@@ -12,6 +12,10 @@ permissions:
   contents: read
 jobs:
   recover-public-releases:
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [tiered-casters, chairrows-update]
     runs-on: windows-2022
     timeout-minutes: 18
     steps:
@@ -49,11 +53,12 @@ jobs:
         run: |
           $env:NODE_PATH = Join-Path $env:RUNNER_TEMP 'modhunter-recovery-tools/node_modules'
           $Scope = Join-Path ([IO.Path]::GetPathRoot($PWD.Path)) ('mh-' + [guid]::NewGuid().ToString('N').Substring(0,12))
-          ./native/scripts/mo2_native_smoke.ps1 -WorkDirectory $Scope -RustCliPath "$PWD/native/target/debug/modhunter-cli.exe" -QtBridgePath "$PWD/frozen/qt-bridge/Release/modhunter-qt-bridge.dll" -DesktopExecutable "$PWD/frozen-desktop/Modhunter.exe" -EvidenceDirectory "$PWD/native-public-evidence" -VerifyPublicFomod -VerifyPublicVersions -TimeoutSeconds 420
+          $Case = if ('${{ matrix.scenario }}' -eq 'tiered-casters') { @{ VerifyPublicFomod = $true } } else { @{ VerifyPublicVersions = $true } }
+          ./native/scripts/mo2_native_smoke.ps1 -WorkDirectory $Scope -RustCliPath "$PWD/native/target/debug/modhunter-cli.exe" -QtBridgePath "$PWD/frozen/qt-bridge/Release/modhunter-qt-bridge.dll" -DesktopExecutable "$PWD/frozen-desktop/Modhunter.exe" -EvidenceDirectory "$PWD/native-public-evidence" @Case -TimeoutSeconds 420
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: isolated-native-public-recovery
+          name: isolated-native-public-recovery-${{ matrix.scenario }}
           path: native-public-evidence/
           if-no-files-found: warn
           retention-days: 14

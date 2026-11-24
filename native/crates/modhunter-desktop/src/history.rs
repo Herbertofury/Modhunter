@@ -277,6 +277,25 @@ mod tests {
     }
 
     #[test]
+    fn file_reader_requires_a_local_json_report_within_the_size_limit() {
+        let (catalog, report) = fixture();
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("history.json");
+        let bytes = serde_json::to_vec(&report).unwrap();
+        std::fs::write(&path, &bytes).unwrap();
+        assert_eq!(
+            read(&path, &catalog).unwrap(),
+            decode(&bytes, &catalog).unwrap()
+        );
+        assert!(read(Path::new("history.json"), &catalog).is_err());
+        let other = directory.path().join("history.html");
+        std::fs::rename(&path, &other).unwrap();
+        assert!(read(&other, &catalog).is_err());
+        File::create(&path).unwrap().set_len(MAX_BYTES + 1).unwrap();
+        assert!(read(&path, &catalog).unwrap_err().contains("128 MiB"));
+    }
+
+    #[test]
     fn native_decodes_data_and_recounts_without_interpreting_markup() {
         let (catalog, report) = fixture();
         let text = decode(&serde_json::to_vec(&report).unwrap(), &catalog).unwrap();

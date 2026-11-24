@@ -1,0 +1,53 @@
+name: Exact-file matching accuracy and performance
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '37 9 * * 3'
+  push:
+    branches: [main, 'upgrade/**']
+    paths:
+      - '.github/workflows/exact-file-benchmark.yml'
+      - 'scripts/benchmark_nexus_matching.py'
+      - 'scripts/fixtures/nexus-50307-public-files.json'
+      - 'mo2_update_arsenal/file_advisor.py'
+      - 'mo2_update_arsenal/scanner.py'
+
+permissions:
+  contents: read
+
+jobs:
+  completed-decisions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Locate the exact-file engine
+        id: engine
+        run: |
+          if git grep -q 'def public_project_metadata' -- mo2_update_arsenal/scanner.py; then
+            echo 'root=.' >> "$GITHUB_OUTPUT"
+          else
+            echo 'root=candidate-engine' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Load the candidate while its engine awaits promotion
+        if: steps.engine.outputs.root == 'candidate-engine'
+        uses: actions/checkout@v4
+        with:
+          ref: upgrade/verified-intelligence-20261124
+          path: candidate-engine
+          persist-credentials: false
+      - name: Verify and benchmark all completed decisions
+        env:
+          ENGINE_ROOT: ${{ steps.engine.outputs.root }}
+        run: python scripts/benchmark_nexus_matching.py --engine-root "$ENGINE_ROOT" --output exact-file-benchmark.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exact-file-matching-results
+          path: exact-file-benchmark.json
+          if-no-files-found: error

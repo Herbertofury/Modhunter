@@ -41,18 +41,24 @@ def accept_chairrows(qt, dialog, intent):
         and stack.currentWidget()
     ):
         return None
-    options = {c.text(): c for c in stack.currentWidget().findChildren(qt.QRadioButton)}
-    if set(options) != {*TARGET_CHOICES, "Yes (For Mod Developers)"} or not all(
-        c.isEnabled() for c in options.values()
-    ):
+    page = stack.currentWidget()
+    required = page.findChildren(qt.QCheckBox)
+    options = {c.text(): c for c in page.findChildren(qt.QRadioButton)}
+    main, no_sources = TARGET_CHOICES
+    # MO2 renders a single SelectExactlyOne option as a locked, checked
+    # checkbox. The two script-source options remain ordinary radio buttons.
+    if (len(required) != 1 or required[0].text() != main
+            or required[0].isEnabled() or not required[0].isChecked()
+            or set(options) != {no_sources, "Yes (For Mod Developers)"}
+            or not all(c.isEnabled() for c in options.values())):
         return None
     combo.setEditText(intent["modName"])
-    for text in TARGET_CHOICES:
-        options[text].setChecked(True)
+    if not options[no_sources].isChecked():
+        options[no_sources].click()
     if (
         not button.isEnabled()
         or combo.currentText() != intent["modName"]
-        or {k for k, v in options.items() if v.isChecked()} != set(TARGET_CHOICES)
+        or {k for k, v in options.items() if v.isChecked()} != {no_sources}
     ):
         return None
     intent["nameConfirmed"] = True

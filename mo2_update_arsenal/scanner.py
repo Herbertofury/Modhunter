@@ -14,6 +14,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -26,6 +27,8 @@ API = "https://api.nexusmods.com/v1"
 DAY = 24 * 3600
 MAX_RESPONSE_BYTES = 8_000_000
 MAX_NEXUS_WORKERS = 5
+PUBLIC_BATCH_SIZE = 16
+PUBLIC_BATCH_WORKERS = 3
 STARTUP_CACHE_SECONDS = 4 * 3600
 LOG = logging.getLogger(__name__)
 
@@ -314,7 +317,21 @@ def public_project_metadata(game, mod_id, project, files):
             "author": project.get("author"), "fileCatalog": {"providerGroups": True, "files": compact}}
 
 
-def public_nexus_query(query, variables):
+def public_batch_metadata(game, mid, raw):
+    project = public_project_metadata(game, mid, raw, [])
+    del project["fileCatalog"]
+    if not raw.get("name") or not project["version"] or project["status"] != "published":
+        raise NexusError("Public Nexus project is not available")
+    if "updatedAt" in raw:
+        stamp = datetime.fromisoformat(raw["updatedAt"].replace("Z", "+00:00"))
+        if stamp.utcoffset() is None:
+            raise NexusError("Public Nexus returned a timestamp without a timezone")
+        project.update(updated_time=raw["updatedAt"], updated_timestamp=int(stamp.timestamp()))
+    project.update(name=raw["name"], available=True)
+    return project
+
+
+def public_nexus_query(query, variables, *, partial=False):
     body = json.dumps({"query": query, "variables": variables}).encode()
     request = urllib.request.Request("https://api.nexusmods.com/v2/graphql", data=body,
                                      headers={"Content-Type": "application/json", "User-Agent": "Modhunter"})
@@ -324,8 +341,22 @@ def public_nexus_query(query, variables):
         if len(raw) > MAX_RESPONSE_BYTES:
             raise NexusError("Public Nexus response exceeded safe limit")
         data = json.loads(raw)
-        if not isinstance(data, dict) or data.get("errors") or not isinstance(data.get("data"), dict):
+        if not isinstance(data, dict):
             raise NexusError("Public Nexus could not complete the requested lookup")
+        errors = data.get("errors", [])
+        if not isinstance(errors, list):
+            raise NexusError("Invalid public Nexus response")
+        for error in errors:
+            extension = error.get("extensions") if isinstance(error, dict) else None
+            if isinstance(extension, dict) and extension.get("code") in ("RATE_LIMITED", "RATE_LIMIT_EXCEEDED", "TOO_MANY_REQUESTS", 429):
+                raise QuotaDepleted("Nexus rate limit reached")
+        if not isinstance(data.get("data"), dict):
+            raise NexusError("Public Nexus could not complete the requested lookup")
+        for error in errors:
+            path = error.get("path") if isinstance(error, dict) else None
+            if not partial or not isinstance(path, list) or not path or not isinstance(path[0], str):
+                raise NexusError("Public Nexus could not complete the requested lookup")
+            data["data"].pop(path[0], None)  # Even a partial file list cannot establish exact coverage.
         return data["data"]
     except urllib.error.HTTPError as exc:
         if exc.code == 429:
@@ -359,6 +390,24 @@ class PublicNexusClient:
         result = self.request(query, {"g": self.game_id, "m": mid})
         return public_project_metadata(self.game, mid, result.get("mod"), result.get("modFiles"))
 
+    def get_projects(self, ids):
+        # Only validated integer Nexus IDs become GraphQL aliases. Signed V1
+        # supplies full file lists and successor edges for installed receipts.
+        if (not 0 < len(ids) <= PUBLIC_BATCH_SIZE or any(type(mid) is not int or mid <= 0 for mid in ids)
+                or len(set(ids)) != len(ids)):
+            raise ValueError("Invalid public Nexus batch")
+        fields = "modId game{domainName} name version status pictureUrl author updatedAt"
+        query = "query($g:ID!){" + " ".join(f"p{mid}:mod(gameId:$g,modId:{mid}){{{fields}}}" for mid in ids) + "}"
+        result = self.request(query, {"g": self.game_id}, partial=True)
+        projects = {}
+        for mid in ids:
+            raw = result.get(f"p{mid}")
+            try:
+                projects[mid] = public_batch_metadata(self.game, mid, raw)
+            except (KeyError, AttributeError, TypeError, ValueError, OverflowError, NexusError):
+                continue
+        return projects
+
 
 class NativeScanCatalog:
     """Read version-only public fields before asking MO2 to render a full file list."""
@@ -369,6 +418,9 @@ class NativeScanCatalog:
         self.client = None
         self.unavailable = False
         self.lock = threading.Lock()
+        self.public_requests = 0
+        self.batch_failures = 0
+        self.rate_limit = None
 
     def for_installed_files(self, mod_id, metadata, items):
         # MO2 owns authenticated metadata, access decisions and downloads. Its
@@ -382,12 +434,14 @@ class NativeScanCatalog:
                     return None
                 if self.client is None:
                     try:
+                        self.public_requests += 1  # Resolve the exact game domain.
                         self.client = self.client_factory(self.game)
                     except QuotaDepleted:
                         raise
                     except NexusError:
                         self.unavailable = True
                         return None
+                self.public_requests += 1
             project = self.client.get(f"/v1/games/{self.game}/mods/{mod_id}.json")
         except QuotaDepleted:
             raise
@@ -404,6 +458,100 @@ class NativeScanCatalog:
         index = NexusFileIndex(catalog)
         return all(index.resolve(item).get("evidenceScope") == "exact-file"
                    for item in items if item.get("installedFiles") or item.get("installationArchive"))
+
+    def batch(self, ids):
+        with self.lock:
+            if self.rate_limit is not None:
+                raise QuotaDepleted(self.rate_limit)
+            if self.unavailable:
+                return {}
+            if self.client is None:
+                try:
+                    self.public_requests += 1
+                    self.client = self.client_factory(self.game)
+                except QuotaDepleted as error:
+                    self.rate_limit = str(error)
+                    raise
+                except NexusError:
+                    self.unavailable = True
+                    return {}
+            self.public_requests += 1
+        try:
+            projects = self.client.get_projects(ids)
+        except QuotaDepleted as error:
+            with self.lock:
+                self.rate_limit = str(error)
+            raise
+        except NexusError:
+            with self.lock:
+                self.batch_failures += 1
+                if self.batch_failures >= PUBLIC_BATCH_WORKERS:
+                    self.unavailable = True
+            return {}
+        with self.lock:
+            self.batch_failures = 0
+        return projects
+
+    def matches_published(self, mid, project, previous):
+        if (not isinstance(project, dict) or project.get("mod_id") != mid or project.get("domain_name") != self.game
+                or project.get("status") != "published" or not project.get("version")):
+            return False
+        prior = (previous or {}).get("meta") or {}
+        return not prior or (metadata_identity_matches(prior, self.game, mid) and prior.get("available") is not False
+                             and prior.get("status") in (None, "published", "Published") and prior.get("version") == project["version"])
+
+
+def _project_results(ids, native_fetch, batch, verify, stopped, stats):
+    """Interleave completed public batches and exact native fallbacks in bounded windows."""
+    waiting = deque()
+    cursor = 0
+    native_jobs, public_jobs = {}, {}
+    def fetch_batch(group):
+        return {} if stopped() else batch(group)
+    with (concurrent.futures.ThreadPoolExecutor(max_workers=MAX_NEXUS_WORKERS) as native_pool,
+          concurrent.futures.ThreadPoolExecutor(max_workers=PUBLIC_BATCH_WORKERS) as public_pool):
+        while native_jobs or public_jobs or ((cursor < len(ids) or waiting) and not stopped()):
+            while not stopped() and len(native_jobs) < MAX_NEXUS_WORKERS and (waiting or (batch is None and cursor < len(ids))):
+                if waiting:
+                    mid, metadata = waiting.popleft()
+                else:
+                    mid = ids[cursor]
+                    metadata = None
+                    cursor += 1
+                native_jobs[native_pool.submit(native_fetch, mid, metadata)] = mid
+            while (batch is not None and not stopped() and cursor < len(ids) and len(public_jobs) < PUBLIC_BATCH_WORKERS
+                   and len(waiting) < PUBLIC_BATCH_SIZE * PUBLIC_BATCH_WORKERS):
+                group = ids[cursor:cursor + PUBLIC_BATCH_SIZE]
+                cursor += len(group)
+                public_jobs[public_pool.submit(fetch_batch, group)] = group
+                stats["publicBatches"] += 1
+            pending = native_jobs.keys() | public_jobs.keys()
+            if not pending:
+                break
+            finished, _ = concurrent.futures.wait(pending, return_when=concurrent.futures.FIRST_COMPLETED)
+            for future in finished:
+                if future in native_jobs:
+                    yield native_jobs.pop(future), None, future
+                    continue
+                group = public_jobs.pop(future)
+                if stopped():
+                    continue
+                try:
+                    projects = future.result()
+                except QuotaDepleted:
+                    yield group[0], None, future
+                    continue
+                except NexusError:
+                    projects = {}
+                for mid in group:
+                    if stopped():
+                        break
+                    project, metadata = verify(mid, projects.get(mid))
+                    if project is None:
+                        waiting.append((mid, metadata))
+                    else:
+                        stats["publicMetadataOnlyProjects"] += 1
+                        yield mid, project, None
 
 
 class UpdateScanner:
@@ -480,7 +628,7 @@ class UpdateScanner:
                      and (mod_id not in identifiable or isinstance(metadata.get("fileCatalog"), dict))
                      and 0 <= now - checked_at < STARTUP_CACHE_SECONDS)
             if fresh and self.native_catalog is not None and metadata.get("fileCatalogRoute") == "public-file-groups":
-                fresh = self.native_catalog.covers(metadata["fileCatalog"], grouped[mod_id])
+                fresh = (mode != "startup" and self.native_catalog.covers(metadata["fileCatalog"], grouped[mod_id]))
             should = (mode == "deep" or (mod_id in candidate_ids and mode == "quick")
                       or (mode == "startup" and not fresh)
                       or (cached is not None and (not metadata_identity_matches(metadata, game, mod_id)
@@ -515,14 +663,20 @@ class UpdateScanner:
         def stopped() -> bool:
             return halt.is_set() or cancelled()
 
-        def fetch_one(mod_id: int) -> dict | None:
+        use_batches = self.native_catalog is not None and mode == "startup" and bool(total)
+
+        def fetch_one(mod_id: int, published: dict | None) -> dict | None:
             nonlocal queried
             with query_lock:
                 if stopped():
                     return None
                 queried += 1
+                if self.native_catalog is not None:
+                    stats["nativeProjects"] += 1
+                if published is None and not isinstance(self.client, PublicNexusClient):
+                    stats["providerProjectRequests"] += 1
             try:
-                metadata = self.client.get(f"/v1/games/{game}/mods/{mod_id}.json")
+                metadata = published if published is not None else self.client.get(f"/v1/games/{game}/mods/{mod_id}.json")
             except (QuotaDepleted, MissingAuth):
                 halt.set()
                 raise
@@ -534,13 +688,17 @@ class UpdateScanner:
                 metadata = {key: value for key, value in metadata.items() if key != "fileCatalog"}
             if (mod_id in identifiable and "fileCatalog" not in metadata and metadata.get("available") is not False
                     and metadata.get("status") in (None, "published", "Published") and not stopped()):
-                if self.native_catalog is not None:
+                if self.native_catalog is not None and not use_batches:
                     catalog = self.native_catalog.for_installed_files(mod_id, metadata, grouped[mod_id])
                     if catalog is not None:
                         return {**metadata, "fileCatalog": catalog, "fileCatalogRoute": "public-file-groups"}
                     if stopped():
                         return None
                 try:
+                    with query_lock:
+                        if stopped():
+                            return None
+                        stats["providerFileRequests"] += 1
                     payload = self.client.get(f"/v1/games/{game}/mods/{mod_id}/files.json")
                 except (QuotaDepleted, MissingAuth):
                     halt.set()
@@ -554,6 +712,10 @@ class UpdateScanner:
                     history = [{k: edge.get(k) for k in ("old_file_id", "new_file_id", "old_file_name", "new_file_name")}
                                if isinstance(edge, dict) else {} for edge in history]
                 metadata = {**metadata, "fileCatalog": {"files": compact, "file_updates": history}}
+                if published is not None:
+                    metadata["fileCatalogRoute"] = "public-metadata-native-v1"
+            if stopped():
+                return None
             return metadata
 
         def record(mid: int, info: dict) -> None:
@@ -562,54 +724,55 @@ class UpdateScanner:
                 item_records[str(item.get("id", ""))] = info
 
         checked = 0
-        cursor = 0
-        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_NEXUS_WORKERS) as pool:
-            pending = {}
-            while pending or (cursor < total and not stopped()):
-                while len(pending) < MAX_NEXUS_WORKERS and cursor < total and not stopped():
-                    mid = uncached[cursor]
-                    cursor += 1
-                    pending[pool.submit(fetch_one, mid)] = mid
-                if not pending:
-                    break
-                finished, _ = concurrent.futures.wait(pending, return_when=concurrent.futures.FIRST_COMPLETED)
-                for future in finished:
-                    mid = pending.pop(future)
-                    try:
-                        meta = future.result()
-                        if meta is None:
-                            continue  # Submitted before cancellation, never queried.
-                        checked += 1
-                        consecutive_failures = 0
-                        checked_at = time.time()
-                        if not self.cache.set_for_scan(game, mid, {"checkedAt": checked_at, "meta": meta},
-                                                       epoch=cache_epoch, cancel_event=cancel_event):
-                            continue  # Superseded work must not overwrite a newer cache.
-                        summarize(mid, meta, checked_at)
-                    except (QuotaDepleted, MissingAuth) as ex:
-                        checked += 1
-                        halt.set()
-                        if str(ex) not in errors:
-                            errors.append(str(ex))
-                        halt_info = {"availability": "authentication-required" if isinstance(ex, MissingAuth) else "rate-limited",
-                                     "reason": str(ex)}
-                        record(mid, {"verdict": "unknown", "source": "nexus-api", **halt_info})
-                    except (NexusError, ValueError) as ex:
-                        checked += 1
-                        errors.append(f"{mid}: {ex}")
-                        consecutive_failures += 1
-                        if mode == "startup" and consecutive_failures >= MAX_NEXUS_WORKERS:
-                            halt.set()
-                            halt_info = {"availability": "unavailable", "reason": "Automatic Nexus checks paused after repeated failures. Check the connection, then retry Check for updates."}
-                        record(mid, {"verdict": "unknown", "source": "nexus-api",
-                                     "availability": "unavailable", "reason": str(ex)})
-                    if progress and not cancelled():
-                        # Publish only this finished project's owned rows. Never
-                        # copy the entire growing result for every completion.
-                        delta = {str(item.get("id", "")): item_records[str(item.get("id", ""))]
-                                 for item in grouped[mid] if str(item.get("id", "")) in item_records}
-                        progress({"checked": checked, "total": total, "phase": "querying-nexus",
-                                  "itemRecords": delta})
+        stats = {"publicBatches": 0, "publicMetadataOnlyProjects": 0, "nativeProjects": 0, "providerProjectRequests": 0, "providerFileRequests": 0}
+        public_requests_before = self.native_catalog.public_requests if self.native_catalog is not None else 0
+        bulk = self.native_catalog.batch if use_batches else None
+        def verify_public(mid, project):
+            previous = self.cache.get(game, mid)
+            if not self.native_catalog.matches_published(mid, project, previous):
+                return None, None
+            # Public release groups omit V1 successor edges, even for a
+            # seemingly current file. Keep the complete signed response.
+            return (None, project) if mid in identifiable else (project, None)
+        for mid, public, future in _project_results(uncached, fetch_one, bulk, verify_public, stopped, stats):
+            try:
+                meta = public if future is None else future.result()
+                if future is None:
+                    with query_lock:
+                        queried += 1
+                if meta is None:
+                    continue  # Submitted before cancellation, never queried.
+                checked += 1
+                consecutive_failures = 0
+                checked_at = time.time()
+                if not self.cache.set_for_scan(game, mid, {"checkedAt": checked_at, "meta": meta},
+                                               epoch=cache_epoch, cancel_event=cancel_event):
+                    continue  # Superseded work must not overwrite a newer cache.
+                summarize(mid, meta, checked_at)
+            except (QuotaDepleted, MissingAuth) as ex:
+                checked += 1
+                halt.set()
+                if str(ex) not in errors:
+                    errors.append(str(ex))
+                halt_info = {"availability": "authentication-required" if isinstance(ex, MissingAuth) else "rate-limited",
+                             "reason": str(ex)}
+                record(mid, {"verdict": "unknown", "source": "nexus-api", **halt_info})
+            except (NexusError, ValueError) as ex:
+                checked += 1
+                errors.append(f"{mid}: {ex}")
+                consecutive_failures += 1
+                if mode == "startup" and consecutive_failures >= MAX_NEXUS_WORKERS:
+                    halt.set()
+                    halt_info = {"availability": "unavailable", "reason": "Automatic Nexus checks paused after repeated failures. Check the connection, then retry Check for updates."}
+                record(mid, {"verdict": "unknown", "source": "nexus-api",
+                             "availability": "unavailable", "reason": str(ex)})
+            if progress and not cancelled():
+                # Publish only this finished project's owned rows. Never
+                # copy the entire growing result for every completion.
+                delta = {str(item.get("id", "")): item_records[str(item.get("id", ""))]
+                         for item in grouped[mid] if str(item.get("id", "")) in item_records}
+                progress({"checked": checked, "total": total, "phase": "querying-nexus",
+                          "itemRecords": delta})
         for mid in uncached:
             if str(mid) not in output:
                 record(mid, {"verdict": "unknown", "source": "nexus-api",
@@ -621,7 +784,9 @@ class UpdateScanner:
         was_cancelled = not self.cache.persist_for_scan(game, epoch=cache_epoch, cancel_event=cancel_event)
         if was_cancelled:
             errors.append("Nexus audit was cancelled; verification incomplete")
-        return {"records": output, "itemRecords": item_records, "uniqueNexusMods": len(ids),
+        if self.native_catalog is not None:
+            stats["publicGraphRequests"] = self.native_catalog.public_requests - public_requests_before
+        return {"records": output, "itemRecords": item_records, "uniqueNexusMods": len(ids), **stats,
                 "queried": queried, "fromCache": len(ids) - total, "deferredNexusProjects": total - queried,
                 "cachedOrDeferred": len(ids) - queried, "cancelled": was_cancelled,
                 "mode": mode, "errors": errors, "checkedAt": datetime.now(timezone.utc).isoformat(),

@@ -47,9 +47,9 @@ class QuotaDepleted(NexusError):
     def __init__(self, message, retry_after=None):
         super().__init__(message)
         now = time.time()
-        # MO2 exposes the status code without HTTP headers. Defer for one
-        # hourly quota window unless the provider supplies a deadline.
-        delay = 3600
+        # MO2 exposes the status code without headers. Nexus documents hourly
+        # quota resets on the UTC hour. This is an estimate for a bare 429.
+        delay = 3601 - now % 3600
         self.estimated = True
         if retry_after is not None:
             try:
@@ -61,6 +61,25 @@ class QuotaDepleted(NexusError):
             except (OverflowError, ValueError, TypeError, OSError):
                 pass
         self.retry_at = now + delay
+
+    @classmethod
+    def from_headers(cls, headers):
+        headers = headers or {}
+        result = cls("Nexus rate limit reached", headers.get("Retry-After"))
+        if not result.estimated:
+            return result
+        for period in ("Hourly", "Daily"):
+            if str(headers.get(f"X-RL-{period}-Remaining", "")).strip() != "0":
+                continue
+            raw = headers.get(f"X-RL-{period}-Reset")
+            try:
+                stamp = datetime.fromisoformat(raw.replace("Z", "+00:00").replace(" +", "+"))
+                if stamp.utcoffset() is not None and stamp.timestamp() > time.time():
+                    result.retry_at, result.estimated = stamp.timestamp(), False
+                    return result
+            except (AttributeError, OverflowError, TypeError, ValueError, OSError):
+                continue
+        return result
 
 
 def version_verdict(installed: str, latest: str) -> str:
@@ -129,7 +148,7 @@ class NexusClient:
                 return json.loads(content)
         except urllib.error.HTTPError as ex:
             if ex.code == 429:
-                raise QuotaDepleted("Nexus rate limit reached", (ex.headers or {}).get("Retry-After")) from ex
+                raise QuotaDepleted.from_headers(ex.headers) from ex
             if ex.code in (401, 403):
                 raise MissingAuth("Nexus API key is invalid or is not authorized") from ex
             if ex.code == 404:
@@ -394,7 +413,7 @@ def public_nexus_query(query, variables, *, partial=False):
         for error in errors:
             extension = error.get("extensions") if isinstance(error, dict) else None
             if isinstance(extension, dict) and extension.get("code") in ("RATE_LIMITED", "RATE_LIMIT_EXCEEDED", "TOO_MANY_REQUESTS", 429):
-                raise QuotaDepleted("Nexus rate limit reached")
+                raise QuotaDepleted("Nexus rate limit reached", extension.get("retryAfterSeconds", extension.get("retryAfter")))
         if not isinstance(data.get("data"), dict):
             raise NexusError("Public Nexus could not complete the requested lookup")
         for error in errors:
@@ -405,7 +424,7 @@ def public_nexus_query(query, variables, *, partial=False):
         return data["data"]
     except urllib.error.HTTPError as exc:
         if exc.code == 429:
-            raise QuotaDepleted("Nexus rate limit reached", (exc.headers or {}).get("Retry-After")) from exc
+            raise QuotaDepleted.from_headers(exc.headers) from exc
         if exc.code in (401, 403):
             raise MissingAuth("Nexus requires authenticated access to this data") from exc
         raise NexusError(f"Public Nexus returned HTTP {exc.code}") from exc

@@ -180,6 +180,16 @@ class BulkStartupTests(unittest.TestCase):
         self.assertEqual({r["availability"] for r in result["itemRecords"].values()}, {"rate-limited"})
         self.assertTrue(result["rateLimitRetryEstimated"])
 
+    def test_explicit_provider_reset_headers_and_estimated_hourly_boundary(self):
+        with patch("mo2_update_arsenal.scanner.time.time", return_value=1000):
+            quota = {"X-RL-Hourly-Remaining": "0", "X-RL-Hourly-Reset": "1970-01-01 01:00:00 +0000"}
+            scheduled = QuotaDepleted.from_headers(quota)
+            self.assertEqual((scheduled.retry_at, scheduled.estimated), (3600, False))
+            preferred = QuotaDepleted.from_headers({**quota, "Retry-After": "42"})
+            self.assertEqual((preferred.retry_at, preferred.estimated), (1042, False))
+            unknown = QuotaDepleted.from_headers({})
+            self.assertEqual((unknown.retry_at, unknown.estimated), (3601, True))
+
     def test_explicit_quota_deadline_survives_restart_and_preserves_signed_results(self):
         snapshot = {"game": GAME, "items": [row(1), row(2)]}
         saved = {**project(1), "fileCatalog": {"files": [{"fileId": 101, "name": "Known file", "version": "1", "category": 1}], "file_updates": []}}

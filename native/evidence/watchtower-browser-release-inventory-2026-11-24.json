@@ -1,0 +1,72 @@
+{
+  "verifiedDateUtc": "2026-11-24",
+  "productCommit": "f08b66bf027ef14b9b71f78ed2b3b3bed6884c2a",
+  "scope": "Owned signed-in WebView2 browser. Complete bounded release batches, anonymous-account separation, cancellations and session-reset rejection. No public network or downloads.",
+  "reportSha256": "9fcbe28d0e336ea8b6258c69072ca674bccdaffebc86370fb373b40a8d776b13",
+  "sourceFilesBound": 131,
+  "executableSha256": "ef8ae2e37fba3c61dad89caef00ee37bd6ad91a0b8e356a52dbc6eac9e76d407",
+  "mode": "--verify-session-release-inventory",
+  "nativeEnvironment": "Windows x64 Rust dev build, actual WebView2 manager, separate noninteractive Windows desktop and temporary browser account storage",
+  "fixture": {
+    "exactFiles": 641,
+    "minimumUrlAndIdentityBytes": 2121710,
+    "protectedPageReturnedLoginBeforeAuthentication": true,
+    "authentication": "Owned loopback service issued an HTTP-only cookie to the selected account. Its sign-in view remained open during the inventory and interruption checks.",
+    "identityCheck": "Every filename and SHA-256 of the watch URL, separator and exact source-file identity matched independently constructed values.",
+    "replacement": "The interrupted release used 641 distinct replacement URLs with different names. The original offer IDs and keys remained visible and could not authorize opening a download.",
+    "publicProviderRequests": 0,
+    "downloads": 0
+  },
+  "bounds": {
+    "maximumRowsPerMessage": 128,
+    "maximumEncodedBytesPerMessage": 131072,
+    "maximumEncodedBytesPerInventory": 67108864,
+    "publication": "Atomic after all rows, navigation, session and operation ownership are verified."
+  },
+  "elapsedSeconds": 6.623,
+  "nativeChecks": [
+    {
+      "batchesRead": 18,
+      "completeIdentitiesRetained": 641,
+      "lastCursor": 641,
+      "nativeMillis": 885,
+      "ok": true,
+      "phase": "complete",
+      "previousOffersIneligible": false,
+      "renderedCompleteList": true
+    },
+    {
+      "batchesRead": 1,
+      "completeIdentitiesRetained": 641,
+      "lastCursor": 37,
+      "nativeMillis": 944,
+      "ok": true,
+      "phase": "cancel",
+      "previousOffersIneligible": true,
+      "renderedCompleteList": false
+    },
+    {
+      "batchesRead": 1,
+      "completeIdentitiesRetained": 641,
+      "lastCursor": 37,
+      "nativeMillis": 914,
+      "ok": true,
+      "phase": "reset",
+      "previousOffersIneligible": true,
+      "renderedCompleteList": false
+    }
+  ],
+  "regressionTests": {
+    "nativeDesktopRust": 76,
+    "watchtowerJavascript": 42,
+    "selectedPatreonEntitledMedia": 385,
+    "genericTailAfterUnrelatedAnchors": 10001
+  },
+  "productionAppDataReadback": {
+    "before": 584,
+    "after": 584,
+    "filesComparedByHashAndMtime": 546,
+    "exclusivelyLockedFilesComparedByIdSizeAndMtime": 38,
+    "differences": 0
+  }
+}

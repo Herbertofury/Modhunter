@@ -18,10 +18,11 @@ class ModhunterSmokeDataChecker(mobase.ModDataChecker):
         if len(entries) != 3:
             return mobase.ModDataChecker.INVALID
         named = {entry.name(): entry for entry in entries}
-        if set(named) != {"smoke-fixture.txt", "ModhunterSmoke.esp", "textures"}:
+        plugin = "ModhunterQANew.esp" if "ModhunterQANew.esp" in named else "ModhunterSmoke.esp"
+        if set(named) != {"smoke-fixture.txt", plugin, "textures"}:
             return mobase.ModDataChecker.INVALID
         if any(isinstance(named[name], mobase.IFileTree)
-               for name in ("smoke-fixture.txt", "ModhunterSmoke.esp")):
+               for name in ("smoke-fixture.txt", plugin)):
             return mobase.ModDataChecker.INVALID
         textures = named["textures"]
         if not isinstance(textures, mobase.IFileTree):

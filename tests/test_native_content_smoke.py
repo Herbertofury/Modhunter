@@ -77,6 +77,11 @@ class FixtureDataCheckerRegistrationTests(unittest.TestCase):
         organizer.accept_feature = False
         self.assertFalse(self.game.init(organizer))
 
+    def test_new_install_fixture_accepts_exact_new_plugin_only(self):
+        values = [self.entries[0], FixtureEntry("ModhunterQANew.esp"), self.entries[2]]
+        self.assertEqual(self.checker.dataLooksValid(values), self.checker.VALID)
+        self.assertEqual(self.checker.dataLooksValid(values + [self.entries[1]]), self.checker.INVALID)
+
     def test_content_definition_rejects_unknown_missing_or_directory_aliased_files(self):
         for entries in (self.entries[:-1], self.entries + [FixtureEntry("other.esp")],
                         [FixtureTree("smoke-fixture.txt", []), *self.entries[1:]],
@@ -109,7 +114,7 @@ class NativeInstallerSmokeGuardTests(unittest.TestCase):
         self.content = SimpleNamespace(_lock=threading.RLock(), _lease="review-1-1", _jobs={"review-1-1": {
             "downloadId": "download-fixture", "profileId": "profile-fixture", "modName": "Smoke Disabled",
             "state": "installing", "nativeStarted": True, "backupId": "backup-fixture"}})
-        self.plugin = SimpleNamespace(_installer_probe=None, _installer_probe_lock=threading.Lock(),
+        self.plugin = SimpleNamespace(_new_fixture_name="MODHUNTER_QA__native__test", _installer_probe=None, _installer_probe_lock=threading.Lock(),
             _on_qt_thread=lambda: True, server=SimpleNamespace(content=self.content),
             org=SimpleNamespace(profileName=lambda: "Modhunter Smoke", basePath=lambda: str(self.root), modsPath=lambda: str(self.root / "mods"),
                 modList=lambda: SimpleNamespace(getMod=lambda name: SimpleNamespace(absolutePath=lambda: str(self.target)))))

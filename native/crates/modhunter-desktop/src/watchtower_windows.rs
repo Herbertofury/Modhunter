@@ -284,6 +284,11 @@ pub fn setup(app: &tauri::AppHandle) -> Result<()> {
     setup_paths(app, config, data, true)
 }
 
+pub(super) fn setup_desktop_smoke(app: &tauri::AppHandle, root: &Path) -> Result<()> {
+    app.manage(smoke::ManagerProfile(root.join("manager-webview")));
+    setup_paths(app, root.join("config"), root.join("data"), false)
+}
+
 fn setup_paths(
     app: &tauri::AppHandle,
     config: PathBuf,

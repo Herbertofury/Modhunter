@@ -28,6 +28,21 @@ public static class ModhunterSmokeWindow {
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
 }
 '@
+# The executable places fixture configuration and WebView2 storage under its
+# own temporary root. Independently check the user's persistent preferences.
+function Get-NormalPreferenceState {
+  $root = Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'com.modhunter.desktop'
+  foreach ($name in @('native-preferences.json','watchtower.json','watchtower-notifications.json','maintenance.json')) {
+    $item = Join-Path $root $name
+    if (Test-Path -LiteralPath $item -PathType Leaf) {
+      $hash = (Get-FileHash -LiteralPath $item -Algorithm SHA256).Hash
+      "$name $hash $([IO.File]::GetLastWriteTimeUtc($item).Ticks)"
+    } else {
+      "$name absent"
+    }
+  }
+}
+$normalSettings = @(Get-NormalPreferenceState)
 $process = Start-Process -FilePath $Executable -ArgumentList @("`"--smoke-profile=$modlist`"", "`"--smoke-output=$report`"") -RedirectStandardOutput "$Output\stdout.log" -RedirectStandardError "$Output\stderr.log" -PassThru
 try {
   $deadline = (Get-Date).AddSeconds(75)
@@ -61,6 +76,9 @@ try {
   } finally { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($activation) }
   if (!$process.WaitForExit(5000)) { throw 'Native app did not acknowledge completed desktop capture.' }
   if ($process.ExitCode -ne 0) { throw "Native app rejected desktop capture. Exit=$($process.ExitCode)" }
+  if (Compare-Object $normalSettings @(Get-NormalPreferenceState)) {
+    throw 'The normal application settings changed while the desktop fixture was running.'
+  }
   python "$PSScriptRoot/bind_native_proof.py" --executable $Executable --checkpoint $checkpoint --report $report
   if ($LASTEXITCODE -ne 0) { throw 'Native desktop receipt does not match unchanged source and executable.' }
   Get-Content -Raw $report

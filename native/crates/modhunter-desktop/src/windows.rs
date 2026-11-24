@@ -65,6 +65,8 @@ struct Model {
     shell_ready: bool,
 }
 
+struct DesktopSmokeStorage(tempfile::TempDir);
+
 struct Runtime {
     model: Mutex<Model>,
     save_guard: Mutex<()>,
@@ -1102,6 +1104,10 @@ fn open_tab(app: &tauri::AppHandle, mode: Mode) -> Result<u64> {
             }
             notify(&load_app);
         });
+    let builder = match app.try_state::<DesktopSmokeStorage>() {
+        Some(storage) => builder.data_directory(storage.0.path().join("dashboard-webview")),
+        None => builder,
+    };
     if let Err(e) = window.add_child(
         builder,
         tauri::LogicalPosition::new(0.0, BAR_HEIGHT),
@@ -1576,7 +1582,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
             }
             // MO2 assigns a fresh local port after restart. A stale saved
             // address must not prevent discovery of the new live session.
-            if state.smoke_output.is_none()
+            if app.try_state::<DesktopSmokeStorage>().is_none()
                 && let Ok(result) = execute(app, "discover", Value::Null)
             {
                 return Ok(result);
@@ -1868,8 +1874,26 @@ pub fn run() {
                     .map_err(std::io::Error::other)?;
                 return Ok(());
             }
-            crate::watchtower_windows::setup(app.handle()).map_err(std::io::Error::other)?;
-            let prefs_path = app.path().app_config_dir()?.join("native-preferences.json");
+            let smoke_profile = std::env::args()
+                .skip(1)
+                .find_map(|arg| arg.strip_prefix("--smoke-profile=").map(PathBuf::from));
+            let smoke_output = std::env::args()
+                .skip(1)
+                .find_map(|arg| arg.strip_prefix("--smoke-output=").map(PathBuf::from));
+            let config = if smoke_profile.is_some() || smoke_output.is_some() {
+                let directory = tempfile::Builder::new()
+                    .prefix("modhunter-desktop-smoke-")
+                    .tempdir()?;
+                crate::watchtower_windows::setup_desktop_smoke(app.handle(), directory.path())
+                    .map_err(std::io::Error::other)?;
+                let config = directory.path().join("config");
+                app.manage(DesktopSmokeStorage(directory));
+                config
+            } else {
+                crate::watchtower_windows::setup(app.handle()).map_err(std::io::Error::other)?;
+                app.path().app_config_dir()?
+            };
+            let prefs_path = config.join("native-preferences.json");
             let mut prefs: Preferences = std::fs::File::open(&prefs_path)
                 .ok()
                 .and_then(|f| {
@@ -1879,23 +1903,13 @@ pub fn run() {
                 .filter(|b| b.len() <= 64_000)
                 .and_then(|b| serde_json::from_slice(&b).ok())
                 .unwrap_or_default();
-            let mut smoke_output = None;
-            for arg in std::env::args().skip(1) {
-                if let Some(path) = arg.strip_prefix("--smoke-profile=") {
-                    prefs.profile = Some(ImportRequest {
-                        modlist_path: PathBuf::from(path),
-                        ini_path: None,
-                        mods_path: None,
-                        workers: Some(4),
-                    });
-                    prefs.ini_path = None;
-                    prefs.mods_path = None;
-                    prefs.endpoint = None;
-                    prefs.eslifier_data_path = None;
-                }
-                if let Some(path) = arg.strip_prefix("--smoke-output=") {
-                    smoke_output = Some(PathBuf::from(path));
-                }
+            if let Some(modlist_path) = smoke_profile {
+                prefs.profile = Some(ImportRequest {
+                    modlist_path,
+                    ini_path: None,
+                    mods_path: None,
+                    workers: Some(4),
+                });
             }
             app.manage(Runtime {
                 save_guard: Mutex::new(()),
@@ -1977,6 +1991,10 @@ pub fn run() {
                 })
                 .on_navigation(|u| policy::local_asset(u, "/shell.html"))
                 .on_new_window(|_, _| NewWindowResponse::Deny);
+            let chrome = match app.try_state::<DesktopSmokeStorage>() {
+                Some(storage) => chrome.data_directory(storage.0.path().join("dashboard-webview")),
+                None => chrome,
+            };
             window.add_child(
                 chrome,
                 tauri::LogicalPosition::new(0.0, 0.0),

@@ -331,15 +331,30 @@ log_level=0
         $Managed.ArgumentList.Add('--verify-public-skyrim-offers')
         $Managed.ArgumentList.Add('--retain-public-acquisitions')
         $Browser = [Diagnostics.Process]::Start($Managed)
-        if (!$Browser.WaitForExit(120000)) {
-            $Browser.Kill()
-            throw 'The isolated public archive manager exceeded its deadline.'
+        try {
+            if (!$Browser.WaitForExit(120000)) {
+                $Browser.Kill()
+                throw 'The isolated public archive manager exceeded its deadline.'
+            }
+            if (!(Test-Path -LiteralPath $PublicOutput -PathType Leaf)) {
+                throw "The isolated manager exited with code $($Browser.ExitCode) without writing a receipt."
+            }
+            $PublicProof = Get-Content -Raw -LiteralPath $PublicOutput | ConvertFrom-Json
+            if ($Browser.ExitCode -ne 0 -or $PublicProof.ok -ne $true) {
+                throw "The isolated public archive manager exited with code $($Browser.ExitCode): $($PublicProof.error)"
+            }
         }
-        if ($Browser.ExitCode -ne 0 -or !(Test-Path -LiteralPath $PublicOutput -PathType Leaf)) {
-            throw 'The isolated manager did not produce its verified public acquisition.'
+        finally {
+            if (Test-Path -LiteralPath $PublicOutput -PathType Leaf) {
+                Copy-Item -LiteralPath $PublicOutput -Destination (Join-Path $RunEvidence 'public-acquisition.json')
+            }
+            $PublicEvents = Join-Path (Split-Path -Parent $PublicOutput) 'watchtower-smoke.events.jsonl'
+            if (Test-Path -LiteralPath $PublicEvents -PathType Leaf) {
+                Copy-Item -LiteralPath $PublicEvents -Destination (Join-Path $RunEvidence 'public-acquisition.events.jsonl')
+            }
+            $Browser.Dispose()
         }
         $StartInfo.Environment['MODHUNTER_VERIFY_PUBLIC_FOMOD'] = '1'
-        Copy-Item -LiteralPath $PublicOutput -Destination (Join-Path $RunEvidence 'public-acquisition.json')
     } else { $StartInfo.Environment.Remove('MODHUNTER_VERIFY_PUBLIC_FOMOD') | Out-Null }
     $StartInfo.Environment['PYTHONNOUSERSITE'] = '1'
     $StartInfo.Environment.Remove('PYTHONHOME') | Out-Null

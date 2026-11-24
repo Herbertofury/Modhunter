@@ -10,6 +10,8 @@ Record revision, hardware, software, fixture or real profile, row and file count
 
 Run targeted benchmarks with each change to scanning, matching, extraction, catalog delivery, search, sorting, native bridge or installation preparation. Run full-scale end-to-end benchmarks for release candidates. The full collection is the workload. A count cap, hidden row, skipped file, virtualized viewport, weaker validation, older cached answer or early dispatch receipt invalidates a speed comparison.
 
+The weekly public matching run uses all 61 captured files from the Bone Wolf regression project and eight known installation cases repeated over 11,325 rows. Each trial checks the expected verdict and target for every row. The downloadable report records the engine commit, fixture hash, full-result digest, CPU time, process peak memory, throughput, row latency and whole-batch duration. The private full-collection audit remains a separate release check. [Weekly matching results](https://github.com/Herbertofury/Modhunter/actions/workflows/exact-file-benchmark.yml) · [Weekly extraction results](https://github.com/Herbertofury/Modhunter/actions/workflows/extraction-benchmarks.yml)
+
 ## Product workstreams and acceptance
 
 - **Exact-file updates.** Identify game, project, installed file and provider update chain. Resolve metadata, archive identity, versions, historical releases and variant information against the same file. Retain MO2's assessment and any evidence that supersedes it. An independently versioned sibling must never supply a target. Cover patches, translations, different runtimes, withdrawn files, prereleases and unresolved identities. Keep the AE Bone Wolf optional patch as a permanent regression.

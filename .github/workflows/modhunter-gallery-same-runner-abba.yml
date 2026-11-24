@@ -1,0 +1,103 @@
+# Proposed additive diagnostics only. Do not merge or publish this YAML from scratch.
+name: ModHunter native Gallery same-runner ABBA
+
+on:
+  push:
+    branches:
+      - diagnostics/modhunter-gallery-same-runner-abba
+    paths:
+      - '.github/workflows/modhunter-gallery-same-runner-abba.yml'
+      - 'qa/native-gallery-ab/**'
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: modhunter-gallery-same-runner-abba
+  cancel-in-progress: false
+
+jobs:
+  compare:
+    if: github.repository == 'Herbertofury/Modhunter' && github.ref == 'refs/heads/diagnostics/modhunter-gallery-same-runner-abba' && github.event_name == 'push' && github.run_attempt == 1
+    runs-on: windows-2025
+    timeout-minutes: 48
+    env:
+      GIT_CONFIG_COUNT: '1'
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: 'false'
+      PYTHONDONTWRITEBYTECODE: '1'
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          path: diagnostic
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - id: pins
+        name: Read exact pre-reviewed candidate pins
+        run: |
+          $area = Join-Path $env:GITHUB_WORKSPACE 'diagnostic/qa/native-gallery-ab'
+          $command = "import pair; p=pair.load_json(pair.Path('candidate-pins.json')); pair.candidate_pins(p); print(p['commit'])"
+          Push-Location $area
+          try { $commit = python -c $command; if ($LASTEXITCODE -ne 0) { throw 'Incomplete candidate source/artifact pins' } }
+          finally { Pop-Location }
+          "commit=$commit" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ec9da4a0322deb9435ac223f605e7bf1a4b2f34f
+          path: a-source
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+          ref: ${{ steps.pins.outputs.commit }}
+          path: b-source
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+      - name: Download only the two immutable original archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # PowerShell 7.4+ keeps native-command bytes unmodified in redirection.
+          if ($PSVersionTable.PSVersion -lt [version]'7.4') { throw 'Binary-safe redirection unavailable' }
+          $area = Join-Path $env:RUNNER_TEMP 'modhunter-gallery-ab-intake'
+          if (Test-Path -LiteralPath $area) { throw 'Intake root not fresh' }
+          New-Item -ItemType Directory -Path $area | Out-Null
+          $qa = Join-Path $env:GITHUB_WORKSPACE 'diagnostic/qa/native-gallery-ab'
+          $pin = Get-Content -LiteralPath (Join-Path $qa 'candidate-pins.json') -Raw | ConvertFrom-Json
+          $endpoint = "repos/Herbertofury/Modhunter/actions/artifacts/$($pin.artifactId)"
+          $meta = gh api --method GET $endpoint | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or !$meta -or $meta.expired -ne $false -or
+              $meta.name -cne 'Modhunter-Rust-Windows' -or $meta.id -ne $pin.artifactId -or
+              $meta.size_in_bytes -ne $pin.artifactBytes -or
+              $meta.digest -cne "sha256:$($pin.artifactSha256)" -or
+              $meta.workflow_run.head_sha -cne $pin.commit -or
+              "https://github.com/Herbertofury/Modhunter/actions/runs/$($meta.workflow_run.id)" -cne $pin.workflow) {
+            throw 'Existing candidate Actions artifact metadata or source does not match exact pins'
+          }
+          gh api --method GET "$endpoint/zip" > (Join-Path $area 'candidate.zip')
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate original artifact unavailable; stop without rebuilding/substituting' }
+          Invoke-WebRequest -Uri 'https://github.com/Herbertofury/Modhunter/releases/download/v0.12.4-test.2/Modhunter-Rust-Windows.zip' -OutFile (Join-Path $area 'test2.zip') -TimeoutSec 120
+      - name: Run the exact original launcher in clean disjoint worktrees
+        run: |
+          $tools = Join-Path $env:RUNNER_TEMP 'modhunter-gallery-ab-node'
+          npm install --prefix $tools --no-audit --no-fund playwright@1.57.0
+          if ($LASTEXITCODE -ne 0) { throw 'Original Playwright client unavailable' }
+          $env:NODE_PATH = Join-Path $tools 'node_modules'
+          $area = Join-Path $env:RUNNER_TEMP 'modhunter-gallery-ab-intake'
+          $qa = Join-Path $env:GITHUB_WORKSPACE 'diagnostic/qa/native-gallery-ab'
+          python (Join-Path $qa 'pair.py') --a-src (Join-Path $env:GITHUB_WORKSPACE 'a-source') --b-src (Join-Path $env:GITHUB_WORKSPACE 'b-source') --baseline (Join-Path $area 'test2.zip') --candidate (Join-Path $area 'candidate.zip') --pins (Join-Path $qa 'candidate-pins.json') --out (Join-Path $env:RUNNER_TEMP 'modhunter-gallery-ab-output')
+          if ($LASTEXITCODE -ne 0) { throw 'Strict same-runner trial refused an integrity, isolation or geometry mismatch' }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: success()
+        with:
+          name: Modhunter-native-gallery-ABBA-diagnostic-only
+          path: ${{ runner.temp }}/modhunter-gallery-ab-output/comparison.json
+          if-no-files-found: error
+          retention-days: 7

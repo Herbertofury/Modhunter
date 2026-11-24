@@ -1,0 +1,12 @@
+{
+  "commit": "47750704abfd8037b2b564a2e906d32051446df5",
+  "tree": "0234f088ab8b9ed647f00b6ed5dc85015df1912e",
+  "version": "0.12.5",
+  "workflow": "https://github.com/Herbertofury/Modhunter/actions/runs/45309442574",
+  "portableBytes": 17113862,
+  "portableSha256": "307589181845fc0db61971e8e3260a18f1d6feff7aeee54199ebf8b5d7cb76d2",
+  "executableSha256": "60fd7b223e3ec98236310e82499a221195c25f389fb06346dd7442f4d8361a3b",
+  "artifactId": 14883272090,
+  "artifactBytes": 24290925,
+  "artifactSha256": "f625e44f2f71e61ca2962360c70f9fc853bc6ee18abdee6305da637dd41d0aea"
+}

@@ -43,6 +43,12 @@ class FixtureRunner:
             self.records[ident] = {"id": ident, "state": "prepared", "root": root, "before": self.tree(root), "copy": destination}
             return {"ok": True, "backup": {"id": ident, "state": "prepared", "includesModFiles": True}}
         record = self.records.get(request.get("id"))
+        if action == "observeNativeInstall":
+            files = self.tree(root)
+            payload = {name: hashlib.sha256(data).hexdigest() for name, data in files.items() if name != "meta.ini"}
+            meta = files.get("meta.ini")
+            return {"ok": True, "payloadSha256": hashlib.sha256(canonical_json(payload)).hexdigest(),
+                    "metadataSha256": "" if meta is None else hashlib.sha256(meta).hexdigest()}
         if action == "verifyPrepared":
             if self.before_verify:
                 self.before_verify()
@@ -599,6 +605,54 @@ class ActualRustContentTests(unittest.TestCase):
         self.assertTrue(restored["ok"], restored)
         self.assertEqual(FixtureRunner.tree(f.mod), before)
         self.assertFalse(restored["refreshRequired"])
+
+    def test_fomod_refresh_metadata_is_sealed_and_later_user_edits_block_restore(self):
+        f = self.fixture
+        meta = f.mod / "meta.ini"
+        def finalize_metadata():
+            meta.write_bytes(b"[General]\nversion=2.0.0.0\n[installedFiles]\nsize=0\n")
+            f.refresh()  # Synchronous native callback precedes refresh() return.
+        f.org.refresh = finalize_metadata
+        data = f.payload()
+        data["review"]["requiresInstaller"] = True
+        installed = f.wait(f.service.content.start_install(data)["jobId"], 10)
+        self.assertTrue(installed["ok"], installed)
+        sealed_bytes = meta.read_bytes()
+        meta.write_bytes(sealed_bytes + b"notes=Keep this edit\n")
+        refused = self.operation("restore", backup=installed["backupId"], confirm="RESTORE")
+        self.assertFalse(refused["ok"], refused)
+        self.assertTrue(meta.read_bytes().endswith(b"notes=Keep this edit\n"))
+        meta.write_bytes(sealed_bytes)
+        f.org.refresh = f.refresh
+        restored = self.operation("restore", backup=installed["backupId"], confirm="RESTORE")
+        self.assertTrue(restored["ok"], restored)
+        self.assertEqual(meta.read_text(), "version=1")
+
+    def test_fomod_metadata_changed_between_refresh_and_callback_refuses_seal(self):
+        f = self.fixture
+        meta = f.mod / "meta.ini"
+        called = threading.Event()
+        f.defer_refresh = True
+        def finalize_metadata():
+            meta.write_text("version=2.0.0.0")
+            f.refresh()
+        f.org.refresh = finalize_metadata
+        def deliver(request):
+            f.deliver(request)
+            if request.cmd == "content-refresh":
+                called.set()  # The native call returned; acknowledgement is pending.
+        f.service.ui_call = deliver
+        data = f.payload()
+        data["review"]["requiresInstaller"] = True
+        accepted = f.service.content.start_install(data)
+        self.assertTrue(called.wait(4))
+        meta.write_text("user change after refresh")
+        f.finish_refresh()
+        job = f.wait(accepted["jobId"], 10)
+        self.assertEqual(job["state"], "unknown", job)
+        self.assertTrue(job["backupRetained"])
+        self.assertFalse(job["backup"]["undoAvailable"])
+        self.assertEqual(meta.read_text(), "user change after refresh")
 
     def test_real_helper_rejects_later_file_changes_and_preserves_backup(self):
         f = self.fixture

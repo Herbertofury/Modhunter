@@ -950,7 +950,25 @@ class ContentRecovery:
         if not result.get("ok") or not result.get("exactTarget"):
             return {"ok": False, "state": "unknown" if result.get("nativeStarted") else "cancelled" if cancel.is_set() else "failed", "backupRetained": True,
                     "installedName": result.get("installedName", ""), "error": result.get("error", "MO2 did not confirm the exact reviewed target; original bytes remain in the prepared backup")}
-        sealed = self.runner.run(self._request(context, "sealNew" if context.get("newTarget") else "seal", id=backup["id"]))
+        refresh_payload = {"jobId": job["jobId"], "context": context}
+        seal_args = {"id": backup["id"]}
+        refreshed = None
+        if review.get("requiresInstaller") is True or data.get("_nativeArchive"):
+            # MO2's refresh may finalize FOMOD/native metadata. Bind every
+            # non-metadata file before this exact Qt call, then seal the full
+            # result only if its root meta.ini matches the native observation.
+            observed = self.runner.run(self._request(context, "observeNativeInstall", id=backup["id"]))
+            if observed.get("ok") is not True:
+                return {"ok": False, "state": "unknown", "installedName": result["installedName"], "filesInstalled": True,
+                        "refreshRequired": True, "backupRetained": True, "error": observed.get("error", "Native installed files could not be verified before refresh")}
+            self._update(job, state="refreshing", installedName=result["installedName"])
+            refreshed = self._ui("content-refresh", {**refresh_payload, "metadataBefore": observed["metadataSha256"]}, timeout=75)
+            if not refreshed.get("ok") or "metadataAfter" not in refreshed:
+                return {"ok": False, "state": "unknown", "installedName": result["installedName"], "filesInstalled": True,
+                        "refreshRequired": True, "backupRetained": True, "error": refreshed.get("error", "Native metadata refresh was not acknowledged; the prepared backup is retained")}
+            identity = observed["payloadSha256"] + "\0" + refreshed["metadataAfter"]
+            seal_args["expectedDigest"] = hashlib.sha256(identity.encode("ascii")).hexdigest()
+        sealed = self.runner.run(self._request(context, "sealNew" if context.get("newTarget") else "seal", **seal_args))
         sealed_backup = sealed.get("backup") or {}
         if (sealed.get("ok") is not True or sealed_backup.get("id") != backup["id"]
                 or sealed_backup.get("state") != ("sealedNew" if context.get("newTarget") else "sealed")
@@ -959,7 +977,8 @@ class ContentRecovery:
                     "refreshRequired": True, "backupRetained": True,
                     "error": sealed.get("error", "Native files were installed, but the exact undo checkpoint could not be sealed. The prepared backup remains retained for recovery review.")}
         self._update(job, state="refreshing", backup=sealed.get("backup", backup), installedName=result["installedName"])
-        refreshed = self._ui("content-refresh", {"jobId": job["jobId"], "context": context}, timeout=75)
+        if refreshed is None:
+            refreshed = self._ui("content-refresh", refresh_payload, timeout=75)
         if not refreshed.get("ok"):
             return {"ok": False, "state": "failed", "installedName": result["installedName"], "filesInstalled": True,
                     "refreshRequired": True, "backupRetained": True, "error": refreshed.get("error", "MO2 refresh failed after install")}
@@ -1451,8 +1470,23 @@ class NativeContent:
         self._require_lease(request.payload)
         key = request.payload["jobId"]
         context = request.payload["context"]
+        attest = "metadataBefore" in request.payload
+        acknowledged = False
+        returned = False
+        metadata_after = ""
+        def metadata():
+            path = Path(context["modRoot"]) / "meta.ini"
+            if not path.exists():
+                return ""
+            if path.stat().st_size > 4 * 1024 * 1024:
+                raise ValueError("Native metadata exceeds the verification limit")
+            return file_identity(path)["sha256"]
         def finished():
+            nonlocal acknowledged
             if key not in self._refresh_callbacks:
+                return
+            if attest and not returned:
+                acknowledged = True
                 return
             self._refresh_callbacks.pop(key, None)
             try:
@@ -1461,6 +1495,10 @@ class NativeContent:
                 if self._game_identity() != (context["game"], context["gameRuntime"], context["nativeGameBinary"]):
                     raise ValueError("Native game changed while content refresh was running")
                 result = self.plugin._refresh_snapshot(force_metadata=True)
+                if attest:
+                    if metadata() != metadata_after:
+                        raise ValueError("Native metadata changed after MO2 refreshed the target")
+                    result = {**result, "metadataAfter": metadata_after}
                 request.finish(result)
             except Exception as exc:
                 request.finish({"ok": False, "error": "MO2 refresh completion failed: " + str(exc), "refreshRequired": True})
@@ -1470,10 +1508,17 @@ class NativeContent:
                 request.finish({"ok": False, "error": "MO2 did not acknowledge its next refresh; files are retained and a manual refresh is required", "refreshRequired": True})
         self._refresh_callbacks[key] = finished
         try:
+            if attest and metadata() != request.payload["metadataBefore"]:
+                raise ValueError("Native target metadata changed before MO2 refresh; the backup is retained")
             if self.plugin.org.onNextRefresh(finished, False) is False:
                 raise RuntimeError("Native next-refresh callback was rejected")
             timer.singleShot(60000, expired)
             self.plugin.org.refresh()
+            if attest:
+                metadata_after = metadata()
+                returned = True
+                if acknowledged:
+                    finished()
         except Exception:
             self._refresh_callbacks.pop(key, None)
             raise

@@ -100,6 +100,37 @@ fn unsealed_restore_refused() {
     assert!(execute(f.req("restore", Some(&id), Some("RESTORE")), || false).is_err());
 }
 #[test]
+fn native_refresh_seal_witness_pins_payload_then_allows_only_its_final_metadata() {
+    let f = Fixture::new();
+    let id = f.backup();
+    let meta = f.root.join("meta.ini");
+    let payload = f.root.join("mesh.nif");
+    fs::write(&meta, "temporary").unwrap();
+    let observation = execute(f.req("observeNativeInstall", Some(&id), None), || false).unwrap();
+    let original_payload = observation["payloadSha256"].as_str().unwrap();
+    let final_metadata = format!("{:x}", Sha256::digest(b"canonical"));
+    assert_ne!(observation["metadataSha256"], final_metadata);
+    let seal = || {
+        let mut request = f.req("seal", Some(&id), None);
+        request.expected_digest = Some(format!(
+            "{:x}",
+            Sha256::digest(format!("{original_payload}\0{final_metadata}").as_bytes())
+        ));
+        execute(request, || false)
+    };
+    assert!(seal().is_err());
+    fs::write(&meta, "canonical").unwrap();
+    fs::write(&payload, "edit during refresh").unwrap();
+    assert!(seal().is_err());
+    fs::write(&payload, "original").unwrap();
+    seal().unwrap();
+    assert!(seal().is_err());
+    assert!(execute(f.req("observeNativeInstall", Some(&id), None), || false).is_err());
+    fs::write(&meta, "later user metadata edit").unwrap();
+    assert!(execute(f.req("restore", Some(&id), Some("RESTORE")), || false).is_err());
+    assert_eq!(fs::read(meta).unwrap(), b"later user metadata edit");
+}
+#[test]
 fn restore_real_files() {
     let f = Fixture::new();
     let id = f.updated();

@@ -2865,8 +2865,49 @@ function renderStats(){const c=counts();SET('sidePercent',c.percent+'%');$('side
 }
 function tokenizeQuery(raw){const out=[];const re=/"([^"]+)"|(\S+)/g;let m;while((m=re.exec(raw)))out.push((m[1]||m[2]).trim().toLowerCase());return out}
 function healthFilterMatches(mod,filter){return filter==='all'||(filter.startsWith('source-')?Boolean(SOURCES?.matches(mod,filter)):!INSIGHTS||INSIGHTS.matches(mod,filter))}
-function textMatches(m,query,terms){if(!query)return true;const dependencies=[CATALOG_RENDER_REVISION,m.localAnalysis,m.modHealth,m.update,sourceTimePhase(m)],cached=SEARCH_CACHE.get(m);let base=cached&&dependencies.every((value,index)=>Object.is(value,cached.dependencies[index]))?cached.base:null;if(!base){base={text:[m.name,m.installedVersion,m.screenshotNote,m.author,m.group,m.priority,(m.flags||[]).join(' '),INSIGHTS?.searchText(m)||'',SOURCES?.searchText(m)||''].join(' ').toLowerCase(),author:txt(m.author).toLowerCase(),group:txt(m.group).toLowerCase(),flags:(m.flags||[]).join(' ').toLowerCase(),version:txt(m.installedVersion).toLowerCase()};SEARCH_CACHE.set(m,{dependencies,base})}const row=getRow(m.id),str=base.text+' '+txt(row.note).toLowerCase()+' '+txt(row.installed).toLowerCase();return(terms||tokenizeQuery(query)).every(part=>{const ix=part.indexOf(':');if(ix>0){const p=part.slice(0,ix),v=part.slice(ix+1);if(p==='health'||p==='esl')return (INSIGHTS?.searchText(m)||'').includes(v);if(p==='source'||p==='provider')return (SOURCES?.searchText(m)||'').includes(v);if(p==='author')return (base.author+' '+(SOURCES?.searchText(m)||'')).includes(v);if(p==='section'||p==='group')return base.group.includes(v);if(p==='flag')return base.flags.includes(v);if(p==='priority')return txt(m.priority).includes(v);if(p==='status')return getStatus(m).includes(v);if(p==='version')return base.version.includes(v);if(p==='note')return (m.screenshotNote+' '+txt(getRow(m.id).note)).toLowerCase().includes(v);}return str.includes(part)})}
-function filtered(){const f=STORE.prefs.filter,terms=tokenizeQuery(STORE.prefs.query);return DATA.items.filter(m=>healthFilterMatches(m,STORE.prefs.insight||'all')&&((STORE.prefs.provider||'all')==='all'||getSrc(m).type===STORE.prefs.provider)&&textMatches(m,STORE.prefs.query,terms)&&(
+const SEARCH_TERM_FIELDS=new Map([
+ ['health',1],['esl',1],['source',2],['provider',2],['author',3],['section',4],['group',4],
+ ['flag',5],['priority',6],['status',7],['version',8],['note',9]
+]);
+function compileSearchTerms(query){
+ return tokenizeQuery(query).map(part=>{
+  const ix=part.indexOf(':'),field=ix>0?SEARCH_TERM_FIELDS.get(part.slice(0,ix)):undefined;
+  return field===undefined?[0,part]:[field,part.slice(ix+1)];
+ });
+}
+function textMatches(m,query,terms){
+ if(!query)return true;
+ const revision=CATALOG_RENDER_REVISION,localAnalysis=m.localAnalysis,modHealth=m.modHealth,update=m.update,phase=sourceTimePhase(m),cached=SEARCH_CACHE.get(m);
+ let base=cached&&Object.is(revision,cached.revision)&&Object.is(localAnalysis,cached.localAnalysis)&&
+  Object.is(modHealth,cached.modHealth)&&Object.is(update,cached.update)&&Object.is(phase,cached.phase)?cached.base:null;
+ if(!base){
+  const flags=(m.flags||[]).join(' ');
+  base={text:[m.name,m.installedVersion,m.screenshotNote,m.author,m.group,m.priority,flags,INSIGHTS?.searchText(m)||'',SOURCES?.searchText(m)||''].join(' ').toLowerCase(),author:txt(m.author).toLowerCase(),group:txt(m.group).toLowerCase(),flags:flags.toLowerCase(),version:txt(m.installedVersion).toLowerCase()};
+  SEARCH_CACHE.set(m,{revision,localAnalysis,modHealth,update,phase,base});
+ }
+ let str;
+ for(const [field,value] of terms){
+  let text;
+  switch(field){
+   case 1:text=INSIGHTS?.searchText(m)||'';break;
+   case 2:text=SOURCES?.searchText(m)||'';break;
+   case 3:text=base.author+' '+(SOURCES?.searchText(m)||'');break;
+   case 4:text=base.group;break;
+   case 5:text=base.flags;break;
+   case 6:text=txt(m.priority);break;
+   case 7:text=getStatus(m);break;
+   case 8:text=base.version;break;
+   case 9:text=(m.screenshotNote+' '+txt(getRow(m.id).note)).toLowerCase();break;
+   default:{
+    if(str===undefined){const row=getRow(m.id);str=base.text+' '+txt(row.note).toLowerCase()+' '+txt(row.installed).toLowerCase()}
+    text=str;
+   }
+  }
+  if(!text.includes(value))return false;
+ }
+ return true;
+}
+function filtered(){const f=STORE.prefs.filter,terms=compileSearchTerms(STORE.prefs.query);return DATA.items.filter(m=>healthFilterMatches(m,STORE.prefs.insight||'all')&&((STORE.prefs.provider||'all')==='all'||getSrc(m).type===STORE.prefs.provider)&&textMatches(m,STORE.prefs.query,terms)&&(
  f==='all'||(f==='maintenance'&&detectedStatus(m).maintenance)||(f==='attention'&&detectedStatus(m).attention)||(f==='current'&&detectedStatus(m).current)||(f==='pending'&&getStatus(m)==='pending')||(f==='done'&&isDone(m))||(f==='review'&&isReview(m))||(f==='risky'&&isRisk(m))||(f==='unlinked'&&!getSrc(m).verified)||(f==='favorites'&&isFav(m))||(f==='updates'&&isUpdate(m))));}
 function classFor(m){const s=getStatus(m);return s==='done'?'done':s==='review'?'needs-review':s==='skipped'?'skipped':''}
 function assessmentHTML(m){const audit=getAudit(m),out=[];

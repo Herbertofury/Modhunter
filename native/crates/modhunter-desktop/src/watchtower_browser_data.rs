@@ -198,7 +198,13 @@ pub(super) fn clear_all_caches(app: &tauri::AppHandle) -> Result<Value> {
     // Public external hosts are ephemeral too, but a view can close long before
     // the application. Remember every origin opened in this run so cleanup
     // includes those profiles without walking or guessing browser directories.
-    let mut origins = state.anonymous_origins.lock().map_err(err)?.clone();
+    let mut origins: std::collections::BTreeSet<_> = state
+        .anonymous_origins
+        .lock()
+        .map_err(err)?
+        .keys()
+        .cloned()
+        .collect();
     origins.extend(
         snapshot["watches"]
             .as_array()

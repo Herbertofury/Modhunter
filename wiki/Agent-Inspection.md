@@ -16,6 +16,20 @@ In the mod library, **File review** shows rows where the installed archive, prov
 
 The local tools also accept `--bsa ALIAS PATH` and `--plugin ALIAS PATH` to expose selected launch-time BSA directory and plugin header snapshots. `spid_preview` parses text supplied by the caller. These inspection tools operate independently of a running MO2 connection.
 
+### Search a historical Nexus snapshot offline
+
+From a source checkout, export the native profile catalog and its recorded public Nexus observations to one local HTML file. Choose a private output directory. The file contains your installed mod names, versions, project and file IDs, public source links, decision reasons and observation times. Open it in a browser to search the entire profile or select a verdict. The report embeds its data and makes no network requests. Opening a source link is an explicit browser navigation.
+
+```powershell
+python native/scripts/export_nexus_history.py --catalog "D:\Private\catalog.json" --observations "D:\Private\public-nexus-cache.sqlite" --output "D:\Private\Nexus history.html"
+```
+
+The catalog is the complete native `modhunter-cli import --modlist <absolute modlist.txt> [--ini <ModOrganizer.ini>] [--mods <directory>]` JSON output. The exporter requires `catalog.offline`, a profile ID, an import timestamp with a time zone, and unique names and IDs in `catalog.items`. The report records the SHA-256 of the original catalog bytes.
+
+The read-only SQLite observation source has a `projects(game TEXT, mod_id INTEGER, payload TEXT, errors TEXT, seen TEXT)` table, keyed by `(game, mod_id)`. The game is the Nexus domain slug. Each `payload` is JSON containing the public GraphQL project and its complete file list as `[project, files]`. Successful responses carry `errors=[]`. Failed provider observations retain their error strings in a JSON array. The `seen` value is the ISO 8601 observation time with its UTC offset. The exporter runs the product's exact-file resolver against those saved observations. Missing observations stay unverified. Every verdict describes the evidence available at the recorded time.
+
+To independently cross-check an earlier complete census, add `--verify-rows "D:\Private\decisions.jsonl" --catalog-sha256 <original-catalog-sha256>`. Each JSONL record carries `name`, `installed`, `mo2Newest`, `sourceGame`, `nexusId`, `sourceUrl`, `observedAt`, optional `failure`, and the product `decision` object. The exporter verifies coverage, mod and provider identity, dates, source links, verdicts, reasons, versions and resolved file IDs before replacing the report. An unavailable or unverified row remains visible alongside rows with exact file matches.
+
 ### Public Watchtower watches
 
 Use `--watchtower read CONFIG_DIRECTORY` to inspect the saved Watchtower configuration chosen at launch. Use `--watchtower manage CONFIG_DIRECTORY` to also register anonymous JSON or RSS/Atom sources and explicitly check one source. The directory must exist. An empty directory supports an independent Watchtower store.

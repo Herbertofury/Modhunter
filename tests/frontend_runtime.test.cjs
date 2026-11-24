@@ -1195,3 +1195,18 @@ test('dashboard counts and filters identify the exact installed-file review and 
  h.api.updatePrefs({filter:'file-review'});
  assert.deepEqual(Array.from(h.api.filtered(),m=>m.id),['item-0']);
 });
+
+test('the installed mods workbench shows dated offline counts and clears them on the next import', async()=>{
+ const h=harness({live:false});await h.settle();
+ const profile={...catalog('history',1),offline:true};
+ profile.items[0].update={verdict:'unknown'};
+ profile.historicalNexus={lastObservation:'2026-11-24T18:37:31Z',totals:{candidate:1}};
+ h.api.importOfflineCatalog(profile);
+ assert.equal(h.context.document.getElementById('historicalSummary').hidden,false);
+ assert.match(h.context.document.getElementById('historicalSummary').textContent,/2026-11-24 18:37:31 UTC · 1 actionable/);
+ assert.equal(h.context.document.getElementById('liveUpdateCount').textContent,'Not remotely verified');
+ assert.equal(h.qa.getCatalog().items[0].update.verdict,'unknown');
+ h.api.importOfflineCatalog({...catalog('other',1),offline:true});
+ assert.equal(h.context.document.getElementById('historicalSummary').hidden,true);
+ assert.equal(h.context.document.getElementById('historicalSummary').textContent,'');
+});

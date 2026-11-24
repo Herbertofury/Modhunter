@@ -1133,6 +1133,7 @@ function activateLiveCatalog(c){
  const newExecutionContext=newProfile||(Number.isSafeInteger(LIVE_CATALOG?.executionEpoch)&&Number.isSafeInteger(c.executionEpoch)&&LIVE_CATALOG.executionEpoch!==c.executionEpoch);
  CATALOG_REQUEST++;WORKSHOP_REQUEST++;GAME_REQUEST++;CATALOG_RENDER_REVISION++;LOCAL_PLAN_CACHE=null;
  if(newProfile&&(SAVE_TIMER!==null||(STORAGE.startsWith('mo2-update-arsenal:')&&PROGRESS_READY)))save();
+ $('historicalSummary').textContent='';$('historicalSummary').hidden=true;
  LIVE_CATALOG=c;DATA=c;ITEM_MAP=new Map(c.items.map(m=>[m.id,m]));GROUP_MAP=new Map(c.groups.map(g=>[g.id,g]));STORAGE='mo2-update-arsenal:v2:'+c.profileId;
  if(newExecutionContext){cancelLibraryLayoutChange();STARTUP_RETRY_AT=0;STARTUP_ERROR='';PROFILE_EPOCH++;SCAN_OPERATION++;QUICK_OPERATION++;WORKSHOP_OPERATION++;clearTimeout(SCAN_TIMER);SCAN_TIMER=null;SCAN_START_BUSY=false;LIVE_SCAN=null;WORKSHOP_BUSY=false;}
  if(newProfile){SOURCE_EDIT_REVISION=0;SOURCE_SYNCED_REVISION=0;clearTimeout(SAVE_TIMER);SAVE_TIMER=null;clearTimeout(PROGRESS_TIMER);PROGRESS_READY=false;GAME=null;GAME_SIGNATURE='';GAME_SEEN=-1;NATIVE_SELECTED='';focusedRowId='';STORE=structuredClone(BASE);load();for(const row of Object.values(STORE.rows))if(row.url)markSourceEdit('',row.url);}
@@ -1992,13 +1993,9 @@ function importOfflineCatalog(c){
  $('liveSync').textContent='On-demand read-only profile import';
  $('liveState').textContent='Imported your real MO2 modlist.txt and installed metadata. Re-import to refresh from disk; connect the optional MO2 plugin for native Nexus checks and downloads.';
  $('heroSummary').textContent='Imported '+c.items.length+' actual mods from MO2 profile '+c.profileName+'. This desktop-only snapshot is read-only. Review exact sources, versions, and compatibility notes; native updating requires the MO2 plugin.';
- if(c.historicalNexus&&INSIGHTS){
-  const summary=document.createElement('strong');
-  summary.dataset.historicalSummary='';
-  summary.style.display='block';
-  summary.textContent=INSIGHTS.historicalSummary(c.historicalNexus);
-  $('heroSummary').appendChild(summary);
- }
+ const historical=$('historicalSummary');
+ historical.textContent=INSIGHTS?.historicalSummary(c.historicalNexus)||'';
+ historical.hidden=!historical.textContent;
  $('runtimeBadge').innerHTML='<span class="status-light"></span><div><strong>'+escapeHTML(c.game)+' / '+escapeHTML(c.profileName)+'</strong><span>Local snapshot · target runtime '+escapeHTML(c.gameRuntime||'unknown')+'</span></div><span class="runtime-lock">IMPORTED</span>';
  $('referenceLinks').textContent='Profile runtime: '+(c.gameRuntime||'unknown')+' · Check requirements on each mod source.';
  $('advisoryToggle').querySelector('b').textContent='IMPORTED PROFILE CHECKS';

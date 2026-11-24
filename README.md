@@ -14,6 +14,8 @@
 
 ---
 
+Modhunter pursues exact-file update intelligence, universal monitoring, evidence-based Mod Health, agent-controlled MO2 workflows and continuous zero-loss performance improvements. The aspirational target for individual local operations is **0.1 ms** wherever achievable. [Permanent roadmap and acceptance criteria](wiki/Intelligence-and-Performance-Roadmap.md)
+
 ## OLED 0.12.1 · Ready for everyday mod maintenance
 
 **[Download the Windows installer](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.1/Modhunter_0.12.1_x64-setup.exe)** · **[Portable Windows app](https://github.com/Herbertofury/Modhunter/releases/download/v0.12.1/Modhunter-Rust-Windows.zip)** · **[Release and checksums](https://github.com/Herbertofury/Modhunter/releases/tag/v0.12.1)**

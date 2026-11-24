@@ -31,3 +31,5 @@
 * [✨ Rewards & Integrity](Rewards-and-Integrity)
 * [⛓️ Architecture](Architecture)
 * [🧭 Troubleshooting](Troubleshooting)
+
+* [Intelligence and performance roadmap](Intelligence-and-Performance-Roadmap)

@@ -1,3 +1,4 @@
+use crate::offline_startup::Preferences;
 use crate::policy::{self, BAR_HEIGHT, MAX_TABS, Mode};
 use modhunter_core::{BridgeClient, BridgeHealth, CoreError, ImportRequest, ProfileImporter};
 use serde::{Deserialize, Serialize};
@@ -21,21 +22,6 @@ use tauri_plugin_opener::OpenerExt;
 use url::Url;
 
 type Result<T> = std::result::Result<T, String>;
-
-#[derive(Clone, Default, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct Preferences {
-    #[serde(default)]
-    profile: Option<ImportRequest>,
-    #[serde(default)]
-    ini_path: Option<PathBuf>,
-    #[serde(default)]
-    mods_path: Option<PathBuf>,
-    #[serde(default)]
-    endpoint: Option<String>,
-    #[serde(default)]
-    eslifier_data_path: Option<PathBuf>,
-}
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1173,7 +1159,17 @@ impl Drop for ImportGuard<'_> {
     }
 }
 
-fn import_profile(app: &tauri::AppHandle, refresh: bool, deep: bool) -> Result<Value> {
+enum ProfileSelection {
+    Choose,
+    Remembered,
+    Exact(ImportRequest),
+}
+
+fn import_profile(
+    app: &tauri::AppHandle,
+    selection: ProfileSelection,
+    deep: bool,
+) -> Result<Value> {
     let state = app.state::<Runtime>();
     {
         let _model = state.model.lock().map_err(err)?;
@@ -1209,29 +1205,33 @@ fn import_profile(app: &tauri::AppHandle, refresh: bool, deep: bool) -> Result<V
         )
     };
     notify(app);
-    let request = if refresh {
-        let mut request = old.ok_or("Import a profile first.")?;
-        request.ini_path = ini_path;
-        request.mods_path = mods_path;
-        request
-    } else {
-        let file = app
-            .dialog()
-            .file()
-            .set_title(crate::watchtower_windows::localized(
-                app,
-                "Choose an MO2 profile's modlist.txt",
-            ))
-            .add_filter("MO2 modlist", &["txt"])
-            .blocking_pick_file();
-        let Some(file) = file else {
-            return Ok(json!({"ok": true, "canceled": true}));
-        };
-        ImportRequest {
-            modlist_path: file.into_path().map_err(err)?,
-            ini_path,
-            mods_path,
-            workers: None,
+    let request = match selection {
+        ProfileSelection::Exact(request) => request,
+        ProfileSelection::Remembered => {
+            let mut request = old.ok_or("Import a profile first.")?;
+            request.ini_path = ini_path;
+            request.mods_path = mods_path;
+            request
+        }
+        ProfileSelection::Choose => {
+            let file = app
+                .dialog()
+                .file()
+                .set_title(crate::watchtower_windows::localized(
+                    app,
+                    "Choose an MO2 profile's modlist.txt",
+                ))
+                .add_filter("MO2 modlist", &["txt"])
+                .blocking_pick_file();
+            let Some(file) = file else {
+                return Ok(json!({"ok": true, "canceled": true}));
+            };
+            ImportRequest {
+                modlist_path: file.into_path().map_err(err)?,
+                ini_path,
+                mods_path,
+                workers: None,
+            }
         }
     };
     if state.epoch.load(Ordering::Acquire) != epoch || state.import_operation.is_cancelled() {
@@ -1269,7 +1269,7 @@ fn import_profile(app: &tauri::AppHandle, refresh: bool, deep: bool) -> Result<V
         m.catalog = Some(Arc::new(result.catalog));
         m.stats = Some(serde_json::to_value(result.stats).map_err(err)?);
         m.warnings = result.warnings;
-        m.prefs.profile = Some(request);
+        m.prefs.remember_import(request);
         m.tabs
             .iter()
             .find(|t| t.mode == Mode::Dashboard)
@@ -1575,6 +1575,11 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
                 m.shell_ready = true;
                 (m.prefs.endpoint.clone(), m.prefs.profile.is_some())
             };
+            if let Some(request) =
+                crate::offline_startup::requested_profile(std::env::args().skip(1))?
+            {
+                return import_profile(app, ProfileSelection::Exact(request), false);
+            }
             if let Some(endpoint) = restore.0
                 && let Ok(result) = connect(app, &endpoint)
             {
@@ -1588,7 +1593,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
                 return Ok(result);
             }
             if restore.1
-                && let Err(error) = import_profile(app, true, false)
+                && let Err(error) = import_profile(app, ProfileSelection::Remembered, false)
             {
                 alert(app, error);
             }
@@ -1631,7 +1636,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
                 }
             }
         }
-        "importMo2" => return import_profile(app, false, false),
+        "importMo2" => return import_profile(app, ProfileSelection::Choose, false),
         "refreshProfile" | "pluginAudit" => {
             let live = { state.model.lock().map_err(err)?.endpoint.is_some() };
             if live {
@@ -1642,7 +1647,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
                 };
                 return live_dashboard_action(app, action);
             }
-            return import_profile(app, true, kind == "pluginAudit");
+            return import_profile(app, ProfileSelection::Remembered, kind == "pluginAudit");
         }
         "diagnostics" => return live_dashboard_action(app, "diagnostics"),
         "cancelImport" => {
@@ -1728,7 +1733,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
                 refresh_catalog_views(app)?;
                 notify(app);
                 if audit_now && !state.importing.load(Ordering::Acquire) {
-                    return import_profile(app, true, true);
+                    return import_profile(app, ProfileSelection::Remembered, true);
                 }
                 alert(
                     app,
@@ -1741,7 +1746,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
             refresh_catalog_views(app)?;
             notify(app);
             if audit_now && !state.importing.load(Ordering::Acquire) {
-                return import_profile(app, true, true);
+                return import_profile(app, ProfileSelection::Remembered, true);
             }
             alert(
                 app,

@@ -52,6 +52,14 @@ Automatic live discovery, current dictionary callbacks, native download handle 0
 
 ## Run
 
+To open a particular local profile in the Windows dashboard, pass the absolute path to its `modlist.txt`. Quote each argument that contains spaces. For an instance with separate configuration and mods directories, this PowerShell command supplies both optional paths.
+
+```powershell
+.\Modhunter.exe "--offline-profile=D:\MO2\profiles\My Profile\modlist.txt" "--mo2-ini=D:\Applications\MO2\ModOrganizer.ini" "--mods-dir=E:\Skyrim Mods"
+```
+
+This launch skips automatic MO2 connection and session discovery. The dashboard opens the full read-only catalog through the same importer as **Import MO2**. Omit either optional path to use the importer's automatic path resolution. A successful import remembers the profile and its path overrides for later offline launches and refreshes. The saved live endpoint remains available for normal startup. If validation or import fails, the toolbar reports the error and retains the previous profile settings.
+
 1. Extract **Modhunter-Rust-Windows.zip**. Run **Modhunter.exe**. Windows must have Microsoft Edge WebView2 Runtime; the separate NSIS installer bootstraps it if missing.
 2. For a local profile, choose **Import MO2**, then its `modlist.txt`. For a configuration/data directory in another location, select **Instance INI** first. **Mods path** is an explicit override; **Auto paths** clears the overrides. Import is read-only.
 3. Use **Refresh** to reload profile metadata. **Plugin audit** performs deeper record and fresh-hash inspection in the background. **CANCEL** interrupts either operation; **CANCELING…** stays visible while workers settle, preserving the last complete catalog and allowing another refresh/audit afterward. **ESLIFIER DATA** selects the converter data folder for provenance checks. Unchanged `meta.ini` files are cached; DLL folders are checked again. The toolbar displays actual import duration and cache hits. The engine does not recursively traverse mod assets.

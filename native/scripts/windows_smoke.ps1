@@ -1,5 +1,6 @@
 param([Parameter(Mandatory=$true)][string]$Executable, [string]$Output = "$env:TEMP\modhunter-native-smoke")
 $ErrorActionPreference = 'Stop'
+$Output = [IO.Path]::GetFullPath($Output)
 New-Item -ItemType Directory -Force -Path "$Output\fixture\profiles\Native QA", "$Output\fixture\mods" | Out-Null
 Set-Content -Encoding UTF8 -Path "$Output\fixture\ModOrganizer.ini" -Value "[General]`ngameName=Skyrim Special Edition`n[Settings]`n"
 $entries = @('# Native Windows WebView2 fixture only')
@@ -43,7 +44,13 @@ function Get-NormalPreferenceState {
   }
 }
 $normalSettings = @(Get-NormalPreferenceState)
-$process = Start-Process -FilePath $Executable -ArgumentList @("`"--smoke-profile=$modlist`"", "`"--smoke-output=$report`"") -RedirectStandardOutput "$Output\stdout.log" -RedirectStandardError "$Output\stderr.log" -PassThru
+$profileArgs = @(
+  "`"--offline-profile=$modlist`""
+  "`"--mo2-ini=$Output\fixture\ModOrganizer.ini`""
+  "`"--mods-dir=$Output\fixture\mods`""
+  "`"--smoke-output=$report`""
+)
+$process = Start-Process -FilePath $Executable -ArgumentList $profileArgs -RedirectStandardOutput "$Output\stdout.log" -RedirectStandardError "$Output\stderr.log" -PassThru
 try {
   $deadline = (Get-Date).AddSeconds(75)
   while (!(Test-Path $report) -and !$process.HasExited -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 400; $process.Refresh() }

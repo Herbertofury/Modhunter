@@ -7,6 +7,8 @@ mod import_operation;
 mod ini_review;
 #[cfg_attr(not(windows), allow(dead_code))]
 mod locale;
+#[cfg(any(windows, test))]
+mod offline_startup;
 mod policy;
 mod watchtower_policy;
 #[cfg(windows)]

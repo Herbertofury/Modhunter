@@ -100,7 +100,8 @@ REQUIRED_WATCHTOWER_BROWSER_CHECKS = {
     "page_add_and_targeted_check", "sessions_and_reset", "observation_acknowledgment_and_restore",
     "import_preview_and_export", "preferences_and_mutes", "native_error_recovery",
     "stale_state_and_focus", "renderer_boundary", "private_text_and_untrusted_content",
-    "responsive_complete_list",
+    "responsive_complete_list", "related_project_pages_require_review",
+    "wall_clock_minute_does_not_rebuild_unchanged_relative_labels",
 }
 WATCHTOWER_BROWSER_SOURCES = (
     "native/ui/capture-page.js", "native/ui/pick-region.js",

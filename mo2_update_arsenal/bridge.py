@@ -411,7 +411,7 @@ class ArsenalService:
                 source = item.get("source") or {}
                 return (source.get("url", ""), source.get("verified") is True, source.get("kind", ""),
                         item.get("installationArchive"), item.get("installedFiles"), item.get("updateEligible"),
-                        item.get("latestKnownVersion"))
+                        item.get("latestKnownVersion"), item.get("installedPackage"))
             versions_changed = old_items.keys() != new_items.keys() or any(
                 old_items[key].get("installedVersion") != new_items[key].get("installedVersion")
                 or old_items[key].get("nexusId") != new_items[key].get("nexusId")
@@ -777,7 +777,9 @@ class ArsenalService:
                 def scan_sources():
                     with self._guard:
                         if self._source_scanner is None:
-                            self._source_scanner = SourceScanner(cache_path=self._source_cache_path)
+                            from .github_health import GitHubAdvisories
+                            self._source_scanner = SourceScanner(cache_path=self._source_cache_path,
+                                advisory_store=GitHubAdvisories(self._source_cache_path.with_suffix(".github-advisories.sqlite")))
                         scanner = self._source_scanner
                     return scanner.scan(snapshot, progress, cancel_event=scan_cancel)
                 effective_mode = mode

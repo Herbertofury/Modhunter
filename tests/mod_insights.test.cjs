@@ -257,3 +257,19 @@ test('earlier stop in matching preserves complete summary decisions with live ev
  row.localAnalysis.plugins[0].provenance={state:'source-and-output-changed'};check();
  row.localAnalysis.plugins=[];row.modHealth.page.status='under-moderation';row.localAnalysis.needsRecheck=false;check();
 });
+
+test('published advisories retain source, applicability and freshness in the inspector', () => {
+  const url='https://github.com/fixture/arc/security/advisories/GHSA-aaaa-bbbb-cccc';
+  const row={id:'test',name:'Arc',source:{type:'github',verified:true,url:'https://github.com/fixture/arc'},
+    modHealth:{securityAdvisories:{repository:'fixture/arc',state:'checked',affectedCount:1,findings:[{
+      id:'GHSA-aaaa-bbbb-cccc',url,title:'<script>unsafe</script>',applicability:'affected',
+      package:'arc',affectedRange:'< 2.0.0',patchedVersions:'2.0.0'}]}}};
+  const html=insights.details(row);
+  assert.ok(html.includes(url));
+  assert.ok(html.includes('Installed package version affected'));
+  assert.ok(html.includes('Patched versions 2.0.0'));
+  assert.ok(!html.includes('<script>unsafe</script>'));
+  assert.ok(insights.chips(row).includes('Security advisory'));
+  row.modHealth.securityAdvisories.state='stale';
+  assert.ok(!insights.chips(row).includes('Security advisory'));
+});

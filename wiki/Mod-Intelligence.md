@@ -66,6 +66,12 @@ In the live bridge, a superseded scan also stops its own read-only helper proces
 
 The Update Workshop carries actual conversion changes and active master/record problems into its existing compatibility review. Bug-report counts and a valid light header do not independently become installation blockers. CSV exports include light/full/override counts, candidate/compaction/conversion/master facts and observation times; JSON update-plan exports carry the row evidence.
 
+## Published GitHub security advisories
+
+For installed mods with a verified GitHub repository, the source check also reads every page of published repository security advisories. Mod Health shows the GHSA link, affected package and range, severity, publication date, observation time and any patched version supplied by the publisher. Duplicate installations share a cached repository observation. Failed or rate-limited checks keep their status and the last successful observation time.
+
+An affected-version badge requires the installed root npm package manifest to identify the advisory's package by name and its version to satisfy every supported numeric release constraint. Other package ecosystems, prereleases, unsupported range expressions, and installations without a matching manifest show unverified applicability. A repository name or MO2 folder version alone cannot establish which package was installed. [GitHub repository security advisories API](https://docs.github.com/en/rest/security-advisories/repository-advisories#list-repository-security-advisories)
+
 ## Nexus checks and freshness
 
 Opening a Nexus-backed mod's inspector requests its public Bugs page, reusing fresh cached evidence. **Refresh Bugs page** explicitly checks again, subject to provider rate limits. The last observed result also appears on the checklist and Workshop row. Modhunter does not fetch thousands of public mod pages during startup.

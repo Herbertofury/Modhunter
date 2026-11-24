@@ -767,6 +767,21 @@ def build_mod_health(item: dict, *, game: str = "", now: float | None = None,
         detail = ("The latest public check could not confirm the retained bug evidence. Refresh before relying on it."
                   if last_good else "Some observations are old or have an inconsistent timestamp. Refresh before relying on them.")
         add("refresh-health", "info", "Refresh health evidence", detail, "refresh-health", evidence="Observation timestamps")
+    advisory = (item.get("update") or {}).get("securityAdvisories")
+    if provider == "github" and isinstance(advisory, dict):
+        from .github_health import repository
+        if advisory.get("repository") and advisory.get("repository") == repository(source):
+            report = deepcopy(advisory)
+            if report.get("state") == "checked" and freshness(report.get("checkedAt"), now, 4 * 3600)["state"] != "fresh":
+                report["state"] = "stale"
+            affected = {n.get("id"): n for n in report.get("findings", []) if n.get("applicability") == "affected"}
+            report["affectedCount"] = len(affected) if "findings" in report else int(report.get("affectedCount") or 0)
+            result["securityAdvisories"] = report
+            if report.get("state") == "checked":
+                for code, notice in affected.items():
+                    add("review-"+code,"warning","Review "+code,
+                        "The installed package version is in the published affected range.",
+                        "open-url", notice["url"], "GitHub repository security advisory")
     actions.extend(_local_actions(item, local_analysis))
     actions.sort(key=lambda action: 0 if action["severity"] == "warning" else 1)
     return result

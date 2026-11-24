@@ -39,6 +39,7 @@ function bugLabel(bugs={}){
 function chips(mod){
  const s=summary(mod),a=mod.localAnalysis||{},health=mod.modHealth||{},bugs=health.bugs||{},parts=[];
  const add=(label,tone,title)=>parts.push('<button type="button" class="insight-chip '+tone+'" data-insight-act="inspect" data-id="'+esc(mod.id)+'" title="'+esc(title)+'">'+esc(label)+'</button>');
+ if(health.securityAdvisories?.state==='checked'&&health.securityAdvisories?.affectedCount)add('Security advisory','danger','The installed package version is in a published advisory range.');
  if(s.stale)add('ESLifier needs review','warning','Recorded source, output, or winning plugin changed. Open details before trusting the converted copy.');
  if(s.masterIssues)add(s.masterIssues+' master issue'+(s.masterIssues===1?'':'s'),'danger','Missing, inactive, or late-loading masters in the current profile.');
  if(s.blocked)add('ESL check blocked','danger','The current plugin failed one or more format, runtime, or dependency checks. Inspect the exact reasons.');
@@ -100,6 +101,16 @@ function details(mod,{live=false,game='',auditState={}}={}){
  if(health.page?.source==='nexus-api')html+='<p class="insight-note">Project availability comes from the last Nexus update audit. Refresh Bugs page checks the public bug tab separately.</p>';
  if(Number.isSafeInteger(bugs.displayedCount)&&bugs.displayedCount>=0)html+='<p class="insight-note">Nexus displayed tab count: '+esc(bugs.displayedCount)+'. Open, resolved and total counts are not established by this badge. Reports can concern other versions or setups.</p>';
  html+='<div class="insight-links">'+link(links.bugs,'Bugs / issues')+link(links.requirements,'Requirements')+link(links.changelog,'Changelog')+link(links.files,'Files')+'</div></div>';
+ const advisories=health.securityAdvisories;
+ if(advisories){
+  html+='<div class="insight-section"><h4>Published security advisories</h4><p>'+esc(advisories.repository)+' · '+esc(advisories.state)+' · '+esc(checked(advisories.checkedAt))+'</p>';
+  if(advisories.state==='checked'&&Array.isArray(advisories.findings)&&!advisories.findings.length)html+='<p>No published repository advisories were returned at the last check.</p>';
+  for(const n of list(advisories.findings)){
+   const applicability=({'affected':'Installed package version affected','outside-range':'Installed package version outside the published range','unverified':'Installed package or version applicability unverified'})[n.applicability];
+   html+='<div class="plugin-fact"><strong>'+link(n.url,n.id)+'</strong> '+esc(n.title||'')+'<p>'+esc(n.severity||'Severity unknown')+' · '+esc(n.publishedAt||'Publication date unknown')+'</p><p>'+esc(n.package||'Package unspecified')+' · '+esc(n.affectedRange||'Affected range unspecified')+' · '+esc(applicability||'Unverified')+'</p>'+(n.patchedVersions?'<p>Patched versions '+esc(n.patchedVersions)+'</p>':'')+'</div>';
+  }
+  html+='</div>';
+ }
  if(list(a.warnings).length)html+='<ul class="insight-evidence">'+a.warnings.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>';
  return html+'</section>';
 }

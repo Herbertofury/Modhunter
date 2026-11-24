@@ -14,6 +14,7 @@ from typing import Any
 
 from .model import COLORS, LocalMetadataCache, call_str, identity, inspect_local_flags, source_url, installed_file_fields
 from .source_registry import discover_local_source, source_record
+from .github_health import package_manifest
 
 
 @dataclass(frozen=True, slots=True)
@@ -297,6 +298,7 @@ def project_snapshot(captured: SnapshotInput, *,
             "group": group["name"],
             "audit": {"verdict": "check", "note": hint, "evidence": "MO2 local metadata only"} if flags else {},
             "source": actual_source,
+            **package_manifest(mod.path, actual_source),
             "repository": mod.repository,
             "screenshot": 0,
         })

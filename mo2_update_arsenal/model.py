@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from .source_registry import discover_local_source, source_record
+from .github_health import package_manifest
 
 COLORS = ("mint", "violet", "sky", "pink", "ochre", "green", "slate", "rose", "gold", "cyan", "blue")
 
@@ -222,6 +223,7 @@ def take_snapshot(organizer: Any, target_runtime: str = "unknown", *,
             "group": group["name"],
             "audit": {"verdict": "check", "note": hint, "evidence": "MO2 local metadata only"} if flags else {},
             "source": actual_source,
+            **package_manifest(mod_path, actual_source),
             "repository": call_str(mod, "repository"),
             "screenshot": 0,
         })

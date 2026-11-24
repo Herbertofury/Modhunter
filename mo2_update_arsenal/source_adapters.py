@@ -343,6 +343,11 @@ def compact_source_update(update: dict) -> dict:
     compatibility = update.get("compatibility")
     if isinstance(compatibility, dict):
         result["compatibility"] = {key: deepcopy(value) for key, value in compatibility.items() if key in {"status", "reason"}}
+    advisory = update.get("securityAdvisories")
+    if isinstance(advisory, dict):
+        result["securityAdvisories"] = {key: advisory[key] for key in ("repository", "state", "checkedAt") if key in advisory}
+        result["securityAdvisories"]["affectedCount"] = len({row["id"] for row in advisory.get("findings", [])
+                                                             if row.get("applicability") == "affected"})
     result["summary"] = str(update.get("summary") or "")[:300]
     provider = str(update.get("provider") or "")
     artwork = next((preview_image_url(media.get("url"), provider)

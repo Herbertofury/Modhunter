@@ -190,6 +190,9 @@ class ModIntelligence:
                           if key in ("status", "updatedAt", "checkedAt", "changedSincePrevious", "freshness")}
         result["bugs"] = {key: owned(value) for key, value in health.get("bugs", {}).items()
                           if key in ("state", "displayedCount", "checkedAt", "changedSincePrevious", "freshness", "reasonCode")}
+        if "securityAdvisories" in health:
+            result["securityAdvisories"] = {k:v for k,v in health["securityAdvisories"].items()
+                                            if k in ("repository","state","checkedAt","affectedCount")}
         result["detailsAvailable"] = True
         return result
 
@@ -247,7 +250,8 @@ class ModIntelligence:
                 key = f"{identity[0]}/{identity[1]}" if identity else ""
                 cache, cache_revision = self.service.cache.get_with_revision(*identity) if identity else (None, 0)
                 evidence = self._evidence.get(key)
-                if not detailed and not cache and not evidence:
+                advisory = (item.get("update") or {}).get("securityAdvisories")
+                if not detailed and not cache and not evidence and not advisory:
                     # No observation means this public projection is a pure
                     # function of the provider and the current job. Build the
                     # final owned shape directly, without caching or copying a
@@ -269,7 +273,7 @@ class ModIntelligence:
                 update = item.get("update") or {}
                 summary_key = (snapshot.get("profileId"), identity_key, self._epoch,
                     update.get("source"), update.get("verdict"), update.get("checkedAt"), update.get("latestVersion"),
-                    item.get("installedVersion"), (cache or {}).get("checkedAt"), cache_revision,
+                    item.get("installedVersion"), (advisory or {}).get("checkedAt"), (advisory or {}).get("state"), (cache or {}).get("checkedAt"), cache_revision,
                     (evidence or {}).get("checkedAt"), (analysis or {}).get("checkedAt"),
                     self._state.get("state"), int(now // 15))
                 saved_summary = self._summary_cache.get(str(item.get("id"))) if not detailed else None

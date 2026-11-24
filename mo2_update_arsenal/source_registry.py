@@ -275,7 +275,8 @@ def release_verdict(item: dict, data: Any, provider: str, project: str) -> dict:
 
 
 class SourceScanner:
-    def __init__(self, fetch_json: Callable[[str], Any] | None = None, *, runner=None, cache_path: Path | None = None):
+    def __init__(self, fetch_json: Callable[[str], Any] | None = None, *, runner=None, cache_path: Path | None = None, advisory_store=None):
+        self.advisory_store = advisory_store
         self.fetch_json = fetch_json or _get_json
         self._injected_fetch = fetch_json is not None
         self.runner = runner or RustSourceRunner(timeout=130)
@@ -345,6 +346,13 @@ class SourceScanner:
         return items
 
     def scan(self, snapshot: dict, progress: Callable[[dict], None] | None = None, *, cancel_event=None, force=False) -> dict:
+        cancel_event = cancel_event if cancel_event is not None else threading.Event()
+        result = self._scan_releases(snapshot, progress, cancel_event=cancel_event, force=force)
+        if self.advisory_store and not result.get("cancelled") and not cancel_event.is_set():
+            self.advisory_store.annotate(snapshot.get("items", []), result.get("itemRecords", {}), cancel_event)
+        return result
+
+    def _scan_releases(self, snapshot, progress, *, cancel_event, force):
         """Check exact external sources with Rust; keep missing helpers recoverable."""
         cancel_event = cancel_event if cancel_event is not None else threading.Event()
         cancelled_result = {"records": {}, "itemRecords": {}, "mode": "sources", "queried": 0, "errors": [], "cancelled": True}

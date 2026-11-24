@@ -1,0 +1,67 @@
+{
+  "verifiedDate": "2026-11-24",
+  "scope": "Local deployment and offline read of the existing profile. The actual beta12 process was closed during installation and analysis.",
+  "plugin": {
+    "version": "0.12.6",
+    "source": "ae151e996f78e8192bed659f3c5fc6f67bacd972",
+    "distribution": "plugin-only",
+    "zipSha256": "fc4059504c2d68db917136a8bdbf52338661a0b365e749d1a3b056f93f266949",
+    "installedRegularFiles": 40,
+    "installedDirectories": 4,
+    "installedFilesMatchPackage": true,
+    "atomicDirectoryRenames": 1,
+    "originalFilesAndDirectoriesReopened": 2601501,
+    "unexplainedOriginalChanges": 0,
+    "unexplainedVolumeJournalRecords": 0,
+    "actualBeta12PluginLoaded": false
+  },
+  "desktopReadOnly": {
+    "binarySource": "ae151e996f78e8192bed659f3c5fc6f67bacd972",
+    "binarySha256": "0450fe8692e6ced2a465b3da739a7af20509cd8b70eaf0ec3994876200b039aa",
+    "separateWindowsDesktop": true,
+    "rowsRendered": 11325,
+    "chaptersVerified": true,
+    "bytesRead": 73052189,
+    "filesRead": 21668,
+    "pluginCopiesRead": 10352,
+    "importMs": 1320.1569,
+    "warnings": 0,
+    "runtimeToRenderedDashboardAndVerifiedExportSeconds": 7.346,
+    "normalAppDataFilesCompared": 578,
+    "normalAppDataDifferences": 0,
+    "activeMO2Connection": false
+  },
+  "distributorReads": {
+    "engine": "houseCARL 2.2.0 through Modhunter MCP",
+    "skypatcher": {
+      "iniFiles": 406,
+      "appliedFiles": 240,
+      "patchLines": 7236,
+      "modeledSetConflicts": 365
+    },
+    "spid": {
+      "files": 292,
+      "lines": 12994
+    },
+    "kid": {
+      "files": 382,
+      "lines": 32005
+    },
+    "bos": {
+      "files": 204,
+      "lines": 7409
+    },
+    "flm": {
+      "files": 86,
+      "lines": 1621
+    },
+    "qualification": "The engine models configuration rules. Counts do not establish in-game crashes."
+  },
+  "recordChecks": {
+    "engine": "houseCARL 2.2.0 through Modhunter MCP",
+    "dialogueTopic": "000E3C:Skyrim.esm",
+    "acceptedAllFourFamiliesOnSelectedRecords": true,
+    "rejectedWeaponAsDialogueSeed": true,
+    "pluginsExcludedByUpstreamParser": 1
+  }
+}

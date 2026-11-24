@@ -838,3 +838,49 @@ test('catalog replacement clears cold rows before epoch changes, including same-
   }
  }
 });
+
+test('unchanged catalog order is reused without recollation, while filters, ties and ownership stay exact',()=>{
+ const h=harness({live:false,count:1});
+ const data=catalog('order-a',8);data.offline=true;
+ for(const [i,name] of ['Zulu','Élan','Alpha','Alpha','Élan','Beta','Ödyssey','Alpha'].entries()){
+  data.items[i].name=name;
+  data.items[i].installedVersion=['2.1','1.19','1.9'][i%3];
+  if(i%2){data.items[i].groupId='other';data.items[i].group='Second'}
+ }
+ data.groups[0].count=4;
+ data.groups.push({id:'other',name:'Second',count:4,startPriority:1,color:'cyan'});
+ h.api.importOfflineCatalog(data);
+ vm.runInContext(`
+  const fixtureLocaleCompare=String.prototype.localeCompare;
+  window.__sortCollationCalls=0;
+  String.prototype.localeCompare=function(...args){window.__sortCollationCalls++;return fixtureLocaleCompare.apply(this,args)};
+ `,h.context);
+ const renderIds=()=>[...h.nodes.get('modList').innerHTML.matchAll(/<article class="mod-row[^"]*" id="row-([^"]*)"/g)].map(m=>m[1]);
+ const expected=(items,key)=>[...items].sort((a,b)=>String(a[key]??'').localeCompare(String(b[key]??''))).map(m=>m.id);
+ h.api.updatePrefs({libraryView:'gallery',sort:'name'});
+ assert.deepEqual(renderIds(),expected(data.items,'name'));
+ const first=h.context.__sortCollationCalls;
+ assert.ok(first>0,'first publication pays for the complete sort');
+ // These are real rendering changes, not a skipped render or a detached row.
+ h.api.setRow(data.items[6].id,{favorite:true,status:'review',note:'Verify user-specific patch priority'});
+ h.api.render();
+ assert.equal(h.context.__sortCollationCalls,first);
+ assert.match(h.nodes.get('modList').innerHTML,/Verify user-specific patch priority/);
+ assert.match(h.nodes.get('modList').innerHTML,/favorite-btn active/);
+ assert.deepEqual(renderIds(),expected(data.items,'name'));
+ h.context.navigator.language='sv-SE';h.api.render();
+ assert.ok(h.context.__sortCollationCalls>first,'changed host language invalidates cached ordering');
+ assert.deepEqual(renderIds(),expected(data.items,'name'));
+ h.api.updatePrefs({filter:'favorites'});
+ assert.deepEqual(renderIds(),[data.items[6].id]);
+ h.api.updatePrefs({filter:'all'});
+ assert.deepEqual(renderIds(),expected(data.items,'name'));
+ h.api.updatePrefs({galleryGrouping:'chapters',sort:'version'});
+ assert.deepEqual(renderIds(),data.groups.flatMap(group=>expected(data.items.filter(m=>m.groupId===group.id),'installedVersion')));
+ h.api.updatePrefs({collapsed:['other']});
+ assert.deepEqual(renderIds(),expected(data.items.filter(m=>m.groupId==='group'),'installedVersion'));
+ const other=catalog('order-b',2);other.offline=true;
+ other.items[0].name='ZZZ';other.items[1].name='AAA';
+ h.api.importOfflineCatalog(other);h.api.updatePrefs({libraryView:'gallery',sort:'name'});
+ assert.deepEqual(renderIds(),['item-1','item-0']);
+});

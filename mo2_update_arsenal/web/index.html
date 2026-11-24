@@ -2871,7 +2871,38 @@ function buildModHTML(m){const compact=document.body.dataset.layout==='compact',
 let GROUP_PROGRESS=new Map();function groupProgress(){GROUP_PROGRESS=new Map(DATA.groups.map(g=>[g.id,{done:0,total:0}]));for(const m of DATA.items){if(!GROUP_PROGRESS.has(m.groupId))GROUP_PROGRESS.set(m.groupId,{done:0,total:0});const o=GROUP_PROGRESS.get(m.groupId);o.total++;if(isDone(m))o.done++}}
 function renderChapters(){let needle=$('chapterSearch').value.trim().toLowerCase();const groups=DATA.groups.filter(g=>!needle||g.name.toLowerCase().includes(needle));const html=groups.map(g=>{const num=GROUP_PROGRESS.get(g.id)?.done||0;return `<button class="chapter-link" data-chapter="${escapeHTML(g.id)}" title="Jump to ${escapeHTML(g.name)}"><i></i><span>${escapeHTML(g.name)}</span><em>${num}/${g.count}</em></button>`}).join('');const container=$('chapters');setHTML(container,html||'<div class="drawer-micro">No chapter found.</div>');for(const node of container.querySelectorAll('.chapter-link')){const group=GROUP_MAP.get(node.dataset.chapter);node.style.setProperty('--group-clr',PALETTE[group?.color]||PALETTE.slate)}}
 let VISIBLE_ROW_IDS=[];
-function sortMods(items){const sorted=[...items];if(STORE.prefs.sort==='name')sorted.sort((a,b)=>txt(a.name).localeCompare(txt(b.name)));else if(STORE.prefs.sort==='version')sorted.sort((a,b)=>txt(a.installedVersion).localeCompare(txt(b.installedVersion)));else sorted.sort((a,b)=>a.priority-b.priority);return sorted}
+let LIBRARY_SORT_CACHE=null;
+function sortMods(items,scope){
+ const mode=STORE.prefs.sort;
+ // Priority is already cheap on the normal load-order sequence. The native
+ // comparator stays untouched for unknown or malformed imported priorities.
+ if(mode!=='name'&&mode!=='version')return [...items].sort((a,b)=>a.priority-b.priority);
+ const key=mode==='name'?'name':'installedVersion',language=navigator.language||'';
+ // The inputs are the new, ordered arrays of matches from renderList. Keep
+ // one stable order per scope for the current catalog/mode; local changes
+ // such as bookmarking must not recollate every unchanged name/version.
+ if(!LIBRARY_SORT_CACHE||LIBRARY_SORT_CACHE.items!==DATA.items||
+   LIBRARY_SORT_CACHE.revision!==CATALOG_RENDER_REVISION||LIBRARY_SORT_CACHE.mode!==mode||LIBRARY_SORT_CACHE.language!==language)
+  LIBRARY_SORT_CACHE={items:DATA.items,revision:CATALOG_RENDER_REVISION,mode,language,scopes:new Map()};
+ const scopes=LIBRARY_SORT_CACHE.scopes,previous=scopes.get(scope);
+ if(previous&&items.length===previous.items.length){
+  let at=0;
+  while(at<items.length&&items[at]===previous.items[at]&&Object.is(items[at][key],previous.keys[at]))at++;
+  if(at===items.length)return previous.sorted;
+ }
+ const sorted=[...items];
+ if(mode==='name')sorted.sort((a,b)=>txt(a.name).localeCompare(txt(b.name)));
+ else sorted.sort((a,b)=>txt(a.installedVersion).localeCompare(txt(b.installedVersion)));
+ const keys=new Array(items.length);
+ for(let i=0;i<items.length;i++){
+  const value=items[i][key],type=typeof value;
+  // Malformed/coercible objects can change sort keys in place. Do not cache.
+  if(value!==null&&(type==='object'||type==='function')){scopes.delete(scope);return sorted;}
+  keys[i]=value;
+ }
+ scopes.set(scope,{items,keys,sorted});
+ return sorted;
+}
 function renderList(){
  refreshGalleryLabelStyles();
  const visible=filtered(),byGroup=new Map();for(const m of visible){if(!byGroup.has(m.groupId))byGroup.set(m.groupId,[]);byGroup.get(m.groupId).push(m)}
@@ -2885,7 +2916,7 @@ function renderList(){
   const gd=GROUP_PROGRESS.get(g.id)?.done||0,collapsed=STORE.prefs.collapsed.includes(g.id),pct=Math.round((gd/(g.count||1))*100);
   entries.push({key:'group:'+g.id,html:`<button class="chapterbar ${collapsed?'closed':''}" id="section-${escapeHTML(g.id)}" data-chapter-toggle="${escapeHTML(g.id)}" aria-expanded="${!collapsed}" data-completion="${g.count>0&&gd>=g.count?'complete':gd>0?'partial':'empty'}" title="Manual checklist: ${gd} of ${g.count} cleared"><span class="diamond" aria-hidden="true">◆</span><strong>${escapeHTML(g.name)}</strong><span class="chapter-count">${gd}/${g.count}</span><span class="chapter-mini-progress"><i></i></span><span class="chapter-priority">#${g.startPriority}</span></button>`});
   chapterPaint.push({id:g.id,color:PALETTE[g.color]||PALETTE.slate,pct});
-  if(!collapsed)for(const m of sortMods(ms))addMod(m);
+  if(!collapsed)for(const m of sortMods(ms,g))addMod(m);
  }
  setRows($('modList'),entries,`<div class="empty-state"><div class="empty-icon">ᛟ</div><h3>No foes in this chamber.</h3><p>Nothing matches your current search and filters.</p><button id="emptyReset">Clear filters</button></div>`);
  // The packaged page's nonce policy rejects HTML style attributes. Direct

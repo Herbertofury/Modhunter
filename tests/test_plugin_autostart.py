@@ -140,10 +140,12 @@ class StartupTests(unittest.TestCase):
             self.assertEqual(self.timers[0][0],0)
             self.timers.pop()[1]();ensure.assert_called_once()
     def test_startup_failure_has_bounded_retries_and_shutdown_stops_retry(self):
-        with patch.object(self.plugin,"_ensure_service",side_effect=OSError("fixture")),self.assertLogs("modhunter-lifecycle-test",level="WARNING"):
+        with patch.object(self.plugin,"_ensure_service",side_effect=OSError("fixture")),self.assertLogs("modhunter-lifecycle-test",level="WARNING") as messages:
             self.plugin._on_ui_initialized(object())
             while self.timers:self.timers.pop(0)[1]()
         self.assertEqual(self.plugin._startup_attempts,5)
+        self.assertEqual([record.msg for record in messages.records], [
+            f"Modhunter bridge startup attempt {attempt} failed (OSError)" for attempt in range(1, 6)])
         self.assertEqual(self.plugin._snapshot_error,"OSError")
         self.plugin._shutdown()
         with patch.object(self.plugin,"_ensure_service") as ensure:

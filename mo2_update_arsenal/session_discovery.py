@@ -69,14 +69,14 @@ class SessionDiscovery:
                 self._path, self._written = destination, encoded
                 return True
             except (OSError, ValueError, TypeError) as exc:
-                LOG.warning("Modhunter MO2 session discovery could not be written: %s", exc)
+                LOG.warning(f"Modhunter MO2 session discovery could not be written: {exc}")
                 return False
             finally:
                 if temporary is not None:
                     try:
                         temporary.unlink(missing_ok=True)
                     except OSError as exc:
-                        LOG.warning("Modhunter discovery temporary file could not be removed: %s", exc)
+                        LOG.warning(f"Modhunter discovery temporary file could not be removed: {exc}")
 
     def close(self) -> None:
         with self._lock:
@@ -93,4 +93,4 @@ class SessionDiscovery:
             except FileNotFoundError:
                 pass
             except OSError as exc:
-                LOG.warning("Modhunter MO2 session discovery could not be removed: %s", exc)
+                LOG.warning(f"Modhunter MO2 session discovery could not be removed: {exc}")

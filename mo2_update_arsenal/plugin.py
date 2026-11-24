@@ -164,7 +164,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
             return True
         except Exception as exc:
             self._subscription_errors.append(name + ": " + type(exc).__name__)
-            LOG.warning("Modhunter callback %s unavailable (%s)", name, type(exc).__name__)
+            LOG.warning(f"Modhunter callback {name} unavailable ({type(exc).__name__})")
             return False
 
     def _on_about_to_run(self, binary, working_directory, arguments):
@@ -266,8 +266,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
             self._ensure_service()
         except Exception as exc:
             self._snapshot_error = type(exc).__name__
-            LOG.warning("Modhunter bridge startup attempt %d failed (%s)",
-                        self._startup_attempts, type(exc).__name__)
+            LOG.warning(f"Modhunter bridge startup attempt {self._startup_attempts} failed ({type(exc).__name__})")
             if self._startup_attempts < 5:
                 QtCore.QTimer.singleShot(1000, self._start_automatically)
 
@@ -285,8 +284,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
                         f"Could not open Modhunter: {type(exc).__name__}: {exc}")
             return
         self._snapshot_error = str(result.get("error") or "Could not start Modhunter")
-        LOG.warning("Modhunter bridge startup attempt %d failed (%s)",
-                    self._startup_attempts, self._snapshot_error)
+        LOG.warning(f"Modhunter bridge startup attempt {self._startup_attempts} failed ({self._snapshot_error})")
         if self._startup_attempts < 5:
             self._schedule_startup(0 if self._startup_invalidated else 1000)
         elif self._startup_open:
@@ -345,8 +343,8 @@ class ModUpdateArsenal(mobase.IPluginTool):
         self._snapshot_ms = (time.perf_counter() - started) * 1000
         self._bind_native_selection()
         self._publish_diagnostics()
-        LOG.info("Modhunter %s ready: %d mods, Qt %s; desktop discovery enabled",
-                 VERSION, len(snap["items"]), QtCore.qVersion())
+        # MO2's Python proxy forwards LogRecord.msg without applying args.
+        LOG.info(f"Modhunter {VERSION} ready with {len(snap['items'])} mods, Qt {QtCore.qVersion()}, desktop discovery enabled")
         return address
 
     def _publish_diagnostics(self):
@@ -522,7 +520,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
                 self._schedule_refresh()
             self._snapshot_error = type(exc).__name__
             self._publish_diagnostics()
-            LOG.warning("Modhunter profile refresh failed (%s)", type(exc).__name__)
+            LOG.warning(f"Modhunter profile refresh failed ({type(exc).__name__})")
             return {"ok": False, "error": f"MO2 profile refresh failed: {exc}"}
 
     def _download(self, mod_id: int, file_id: int):

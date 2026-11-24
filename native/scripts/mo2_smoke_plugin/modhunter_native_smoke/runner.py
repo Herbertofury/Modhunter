@@ -457,6 +457,33 @@ class NativeSmokePlugin(ModUpdateArsenal):
             self._check("queued_refresh", refresh.get("ok") is True
                         and refresh.get("catalog", {}).get("profileId") == catalog["profileId"]
                         and refresh.get("count", 0) >= len(EXPECTED_MODS))
+            if rust_cli:
+                requests = [
+                    {"id": 1, "method": "initialize", "params": {"protocolVersion": "2025-11-25", "capabilities": {},
+                     "clientInfo": {"name": "modhunter-mo2-native-acceptance", "version": "1"}}},
+                    {"method": "notifications/initialized"},
+                    {"id": 2, "method": "tools/list"},
+                    {"id": 3, "method": "tools/call", "params": {"name": "mo2_mods", "arguments": {}}},
+                    {"id": 4, "method": "tools/call", "params": {"name": "set_mod_enabled", "arguments": {}}},
+                ]
+                frames = "".join(json.dumps({"jsonrpc": "2.0", **r}) + "\n" for r in requests)
+                received = subprocess.run(
+                    [rust_cli, "mcp-stdio", "--legacy-2025-11-25", "--mo2", catalog["profileId"], address],
+                    input=frames, capture_output=True, text=True, encoding="utf-8", errors="strict",
+                    timeout=20, check=True, creationflags=subprocess.CREATE_NO_WINDOW)
+                replies = {reply["id"]: reply for reply in map(json.loads, received.stdout.splitlines())}
+                page = replies[3]["result"]["structuredContent"]
+                rows = {row["mo2InternalName"]: row for row in page["items"]}
+                self._check("rust_mcp_live_inventory",
+                            any(t["name"] == "mo2_mods" for t in replies[2]["result"]["tools"])
+                            and page["profileId"] == catalog["profileId"]
+                            and page["total"] == len(catalog["items"]) and page["nextOffset"] is None
+                            and set(rows) == set(by_name)
+                            and all((rows[name]["id"], rows[name]["enabled"], rows[name]["installedVersion"])
+                                    == (item["id"], item["enabled"], item["installedVersion"]) for name, item in by_name.items())
+                            and replies[4]["error"]["code"] == -32602,
+                            comparedMods=len(rows), profileMatched=page["profileId"] == catalog["profileId"],
+                            rejectedMutation=replies[4]["error"]["code"] == -32602)
             target = by_name["Smoke Disabled"]
             focus = api("/api/focus", {"id": target["id"], "profileId": catalog["profileId"]})
             self._check("queued_focus", focus.get("ok") is True

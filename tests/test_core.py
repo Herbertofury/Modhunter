@@ -137,7 +137,8 @@ class TestScanner(unittest.TestCase):
 
     def test_cached_profile(self):
         s={'items':[{'nexusId':5,'installedVersion':'1.0','latestKnownVersion':'2.0'}]}
-        self.assertEqual(local_mo2_candidates(s)['records']['5']['verdict'],'candidate')
+        result = local_mo2_candidates(s)['records']['5']
+        self.assertEqual((result['verdict'], result['projectVersion'], result['latestVersion']), ('review', '2.0', ''))
         with self.assertRaises(ValueError):safe_game_slug('../../evil')
 
 if __name__=='__main__':unittest.main()

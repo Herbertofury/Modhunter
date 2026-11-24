@@ -432,7 +432,8 @@ class ArsenalService:
                 source = item.get("source") or {}
                 return (source.get("url", ""), source.get("verified") is True, source.get("kind", ""),
                         item.get("installationArchive"), item.get("installedFiles"), item.get("updateEligible"),
-                        item.get("latestKnownVersion"), item.get("ignoredVersion"), item.get("installedPackage"),
+                        item.get("latestKnownVersion"), item.get("ignoredVersion"), item.get("mo2FileStatus"),
+                        item.get("installedPackage"),
                         item.get("installedFileEvidenceIncomplete"))
             versions_changed = old_items.keys() != new_items.keys() or any(
                 old_items[key].get("installedVersion") != new_items[key].get("installedVersion")
@@ -770,9 +771,12 @@ class ArsenalService:
                 def scan_nexus(which):
                     if which == "local" or (which == "quick" and native_nexus and not key):
                         return local_mo2_candidates(snapshot), "local"
+                    native_catalog = None
                     if key:
                         client = NexusClient(key)
                     elif native_nexus:
+                        from .scanner import NativeScanCatalog
+                        native_catalog = NativeScanCatalog(snapshot.get("game", "skyrimspecialedition"))
                         import re
                         game = snapshot.get("game", "skyrimspecialedition")
                         def mo2_nexus_get(path):
@@ -803,7 +807,7 @@ class ArsenalService:
                         client = PublicNexusClient(snapshot.get("game", ""))
                     else:
                         raise MissingAuth("Connect to Nexus in MO2 Settings > Nexus or use a fallback API key.")
-                    return UpdateScanner(self.cache, client).scan(
+                    return UpdateScanner(self.cache, client, native_catalog=native_catalog).scan(
                         snapshot, which, progress, cancel_event=scan_cancel), which
 
                 def scan_sources():

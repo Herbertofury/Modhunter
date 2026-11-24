@@ -300,10 +300,57 @@ class PublicNexusClient:
         return public_project_metadata(self.game, mid, result.get("mod"), result.get("modFiles"))
 
 
+class NativeScanCatalog:
+    """Read version-only public fields before asking MO2 to render a full file list."""
+
+    def __init__(self, game, client_factory=PublicNexusClient):
+        self.game = game
+        self.client_factory = client_factory
+        self.client = None
+        self.unavailable = False
+        self.lock = threading.Lock()
+
+    def for_installed_files(self, mod_id, metadata, items):
+        # MO2 owns authenticated metadata, access decisions and downloads. Its
+        # requestFiles also translates every remote description into BBCode HTML
+        # on the GUI thread, even when the caller only consumes raw version data.
+        if metadata.get("mod_id") != mod_id or metadata.get("domain_name") != self.game:
+            return None
+        try:
+            with self.lock:
+                if self.unavailable:
+                    return None
+                if self.client is None:
+                    try:
+                        self.client = self.client_factory(self.game)
+                    except QuotaDepleted:
+                        raise
+                    except NexusError:
+                        self.unavailable = True
+                        return None
+            project = self.client.get(f"/v1/games/{self.game}/mods/{mod_id}.json")
+        except QuotaDepleted:
+            raise
+        except NexusError:
+            return None
+        if (project["status"] != "published" or not metadata.get("version")
+                or project["version"] != metadata["version"]):
+            return None
+        catalog = project["fileCatalog"]
+        return catalog if self.covers(catalog, items) else None
+
+    @staticmethod
+    def covers(catalog, items):
+        index = NexusFileIndex(catalog)
+        return all(index.resolve(item).get("evidenceScope") == "exact-file"
+                   for item in items if item.get("installedFiles") or item.get("installationArchive"))
+
+
 class UpdateScanner:
-    def __init__(self, cache: Cache, client: NexusClient):
+    def __init__(self, cache: Cache, client: NexusClient, *, native_catalog=None):
         self.cache = cache
         self.client = client
+        self.native_catalog = native_catalog
 
     def scan(self, snapshot: dict, mode: str = "quick", progress: Callable[[dict], None] | None = None,
              *, cancel_event: threading.Event | None = None) -> dict:
@@ -371,6 +418,8 @@ class UpdateScanner:
                      and metadata.get("status") in (None, "published", "Published")
                      and (mod_id not in identifiable or isinstance(metadata.get("fileCatalog"), dict))
                      and 0 <= now - checked_at < STARTUP_CACHE_SECONDS)
+            if fresh and self.native_catalog is not None and metadata.get("fileCatalogRoute") == "public-file-groups":
+                fresh = self.native_catalog.covers(metadata["fileCatalog"], grouped[mod_id])
             should = (mode == "deep" or (mod_id in candidate_ids and mode == "quick")
                       or (mode == "startup" and not fresh)
                       or (cached is not None and (not metadata_identity_matches(metadata, game, mod_id)
@@ -419,6 +468,12 @@ class UpdateScanner:
                 metadata = {key: value for key, value in metadata.items() if key != "fileCatalog"}
             if (mod_id in identifiable and "fileCatalog" not in metadata and metadata.get("available") is not False
                     and metadata.get("status") in (None, "published", "Published") and not stopped()):
+                if self.native_catalog is not None:
+                    catalog = self.native_catalog.for_installed_files(mod_id, metadata, grouped[mod_id])
+                    if catalog is not None:
+                        return {**metadata, "fileCatalog": catalog, "fileCatalogRoute": "public-file-groups"}
+                    if stopped():
+                        return None
                 try:
                     payload = self.client.get(f"/v1/games/{game}/mods/{mod_id}/files.json")
                 except (QuotaDepleted, MissingAuth):
@@ -526,7 +581,9 @@ def local_mo2_candidates(snapshot: dict) -> dict:
         verdict = version_verdict(item.get("installedVersion", ""), latest) if latest else "unverified"
         if verdict in ("current", "newer-installed"):
             verdict = "unverified"  # Cached equality cannot prove current server truth.
-        info={"verdict": verdict, "latestVersion": latest, "source": "mo2-cached-metadata", "reason": "Cached MO2 metadata only. Connect Nexus for a verified current check."}
+        info = {"verdict": "review" if verdict == "candidate" else verdict, "projectVersion": latest,
+                "latestVersion": "", "source": "mo2-cached-metadata", "evidenceScope": "project-only",
+                "reason": "Cached MO2 metadata only. Check the exact installed Nexus file to verify the current release."}
         if latest and item.get("mo2FileStatus") in (1, 2, 3, 5):
             info["mo2Verdict"] = version_verdict(item.get("installedVersion", ""), latest)
         respect_ignored_version(item, info)

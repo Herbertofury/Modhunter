@@ -158,6 +158,8 @@ Required observations include:
 
 The Windows desktop job also supplies `-VerifyPublicFomod`. It runs the anonymous public Watchtower acquisition in the marked instance's own storage, then uses the original Tiered Casters release file and its real download receipt in place. The released FOMOD selects “Standard (recommended)” and “Restoration Self-Heal”. The test checks every installed configuration path and hash, native state callbacks, unchanged fixture profile files and removal through the production recovery operation. The disposable BasicGame instance exercises MO2 and the actual native installer. Gameplay requires Skyrim and SPID.
 
+Pass `-VerifyPublicVersions` with the desktop and Rust CLI to exercise a genuine update from Chairrows 2.0.0 to 2.0.1. Both author releases use `MarkekrausChairrows.7z`. Watchtower must approve each tagged source independently and verify each archive. The native test installs the older release into a fresh disabled fixture target, checks the registered GitHub source, approves its exact newer asset through the update queue, and uses MO2's own downloader and installer. It checks the selected ESP and BSA hashes, the updated installed version, the new source verdict and restoration of the previous complete mod tree. The Skyrim mod's contents are never launched in the disposable BasicGame instance. [Chairrows 2.0.0](https://github.com/markekraus/ChairrowsSkyrimSEMod/releases/tag/v2.0.0) · [Chairrows 2.0.1](https://github.com/markekraus/ChairrowsSkyrimSEMod/releases/tag/v2.0.1)
+
 An unexpected modal dialog, failed assertion, missing callback, missing native
 receipt, timeout or abnormal process exit fails the command. There is no mock
 fallback and no conversion of native failures into skipped or passing checks.
@@ -215,14 +217,10 @@ The pinned MO2 source establishes the remaining startup contract:
   supplies the exact merge control; the harness also requires the previously
   observed fixture name because this dialog does not display the target name.
 
-A passing run validates this specific native connection and dispatch path. It
-does not validate Nexus sign-in, remote scan results, downloading a mod archive,
-FOMOD/manual installer choices, a real game's runtime or launching a game. The
-native installer acceptance covers only the owned simple-ZIP fixture merge.
-Those additional workflows require
-separate authorized integration tests. Local Python compilation of these test
-files is not evidence that the Windows native smoke passed; use the CI receipt
-and process exit for that conclusion.
+A passing default run validates the native connection, fixture ZIP installation
+and rollback. The optional public checks record their own source, installer and
+version evidence. Nexus sign-in, manual installer choices and gameplay require
+separate tests. Inspect the CI receipt and process exit for each check.
 
 The portable tests in `tests/test_content_recovery.py` run these same HTTP and
 Rust protocols with a substituted organizer and synthetic dialog events.

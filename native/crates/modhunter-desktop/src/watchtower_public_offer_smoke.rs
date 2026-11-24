@@ -1,6 +1,4 @@
-//! Explicit opt-in proof using two author-published Skyrim configuration-only
-//! FOMODs. The caller initializes a new isolated manager store; no MO2 bridge
-//! or installation is involved.
+//! Approved author-published archives in an isolated Watchtower manager store.
 use super::*;
 use tauri::Listener;
 
@@ -15,7 +13,7 @@ pub(super) fn run(app: &tauri::AppHandle, output: &Path, checks: &mut Vec<Value>
         Instant::now() + Duration::from_secs(15),
         |v| v == true,
     )?;
-    for (project, tag, filename, expected_hash, expected_bytes) in [
+    let mut releases = vec![
         (
             "3pvxiozkua/skyrim-tiered-casters",
             "v1.0.0",
@@ -30,7 +28,28 @@ pub(super) fn run(app: &tauri::AppHandle, output: &Path, checks: &mut Vec<Value>
             "80bb9e57790973f0c14060986d597fbc29cbcc6cf97923104000fbeb604b1892",
             10956u64,
         ),
-    ] {
+    ];
+    if std::env::args().any(|arg| arg == "--verify-public-release-history") {
+        // Same filename across two genuine releases. Each approval and receipt
+        // must stay bound to the selected tag's exact source and SHA-256.
+        releases.extend([
+            (
+                "markekraus/ChairrowsSkyrimSEMod",
+                "v2.0.0",
+                "MarkekrausChairrows.7z",
+                "318d6e4f2952ced680ac4f1a673eeae723172d34e8643c31a8b58fc5e94420b0",
+                2_734_912,
+            ),
+            (
+                "markekraus/ChairrowsSkyrimSEMod",
+                "v2.0.1",
+                "MarkekrausChairrows.7z",
+                "bf7922674ef241ffa491bb79a7e85c80733ebc63e5f297e6663102688e4fe46e",
+                2_734_932,
+            ),
+        ]);
+    }
+    for (project, tag, filename, expected_hash, expected_bytes) in releases {
         let source = format!("https://github.com/{project}/releases/expanded_assets/{tag}");
         let execute = |kind: &str, value: Value| -> Result<Value> {
             event(output, kind);
@@ -126,7 +145,7 @@ pub(super) fn run(app: &tauri::AppHandle, output: &Path, checks: &mut Vec<Value>
                 receipt["state"], receipt["bytes"]
             ));
         }
-        checks.push(json!({"ok":true,"source":source,"filename":filename,"offerKey":offer["sourceFileKey"],"receipt":receipt}));
+        checks.push(json!({"ok":true,"source":source,"releaseTag":tag,"filename":filename,"offerKey":offer["sourceFileKey"],"receipt":receipt}));
     }
     Ok(())
 }

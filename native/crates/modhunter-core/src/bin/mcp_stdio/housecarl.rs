@@ -482,14 +482,14 @@ mod tests {
     #[test]
     fn dialogue_check_uses_the_upstream_seed_scope() {
         let check: Diagnostic = serde_json::from_value(json!({
-            "kind":"check", "family":"dialogue", "formId":"0F1AC1:Skyrim.esm"
+            "kind":"check", "family":"dialogue", "formId":"000E3C:Skyrim.esm"
         }))
         .unwrap();
         let (tool, args) = check.arguments(Path::new(".")).unwrap();
         assert_eq!(tool, "housecarl_check");
         assert_eq!(
             args,
-            json!({"seeds":["0F1AC1:Skyrim.esm"],"findings":["dialogue"]})
+            json!({"seeds":["000E3C:Skyrim.esm"],"findings":["dialogue"]})
         );
     }
 }

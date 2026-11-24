@@ -117,7 +117,7 @@ fn config(
     payload: &Value,
     previous: Option<&Watch>,
     now: u64,
-    infer_feed: bool,
+    infer_structured_source: bool,
 ) -> Result<Watch, String> {
     if !payload.is_object() {
         return Err("Each watch must be an object.".into());
@@ -204,20 +204,27 @@ fn config(
     }
     // Persist the extraction choice on creation so existing rendered histories
     // and an explicit choice to clear the selector retain their meaning.
-    if infer_feed
+    if infer_structured_source
         && previous.is_none()
         && watch.selector.is_empty()
         && !watch.requires_session
         && watch.ignore_selectors.is_empty()
-        && url::Url::parse(&watch.url).is_ok_and(|url| {
-            let path = url.path().to_ascii_lowercase();
-            path.ends_with(".rss") || path.ends_with(".atom")
-        })
     {
-        watch.selector = "feed:".into();
+        let url = url::Url::parse(&watch.url).map_err(|_| "Invalid public source URL")?;
+        let path = url.path().to_ascii_lowercase();
+        if path.ends_with(".atom") || path.ends_with(".rss") {
+            watch.selector = "feed:".into();
+        } else if path.ends_with(".json") || path.ends_with(".jsonld") {
+            watch.selector = "json:".into();
+        }
     }
-    if watch.selector == "feed:" && (watch.requires_session || !watch.ignore_selectors.is_empty()) {
-        return Err("Public feed extraction requires an anonymous watch without ignored DOM regions. Clear the page region to use a browser session.".into());
+    if super::super::PublicFormat::from_selector(&watch.selector).is_some()
+        && (watch.requires_session || !watch.ignore_selectors.is_empty())
+    {
+        return Err("Public structured extraction requires an anonymous watch without ignored DOM regions. Clear the page region to use a browser session.".into());
+    }
+    if watch.selector == "jsonld:" && !watch.ignore_selectors.is_empty() {
+        return Err("JSON-LD reads all declared data blocks. Clear ignored regions or choose a DOM selector.".into());
     }
     if let Some(association) = payload.get("association") {
         watch.association = if association.is_null() {

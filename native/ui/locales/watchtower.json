@@ -151,7 +151,6 @@
     "Installed mod association": "Asociación con mod instalado",
     "Keep this page enabled": "Mantener esta página activa",
     "Keep your site sessions in one place.": "Mantén tus sesiones de sitios en un solo lugar.",
-    "Leave blank to compare readable page text. Select a stable region to avoid changing navigation, counters, or ads.": "Déjalo vacío para comparar el texto legible. Elige una región estable para evitar cambios de navegación, contadores o anuncios.",
     "Lists and acknowledgement history show site names instead.": "Las listas y el historial de revisión mostrarán los nombres de los sitios.",
     "Manual checks are the default. Optional background checks run while Modhunter is open, with a bounded queue and per-site pacing.": "Las comprobaciones manuales son la opción predeterminada. Las comprobaciones opcionales en segundo plano funcionan mientras Modhunter está abierto, con cola limitada y ritmo por sitio.",
     "Manual checks · ready when you are": "Comprobaciones manuales · cuando tú quieras",
@@ -581,7 +580,8 @@
     "Published advisories": "Avisos publicados",
     "Project files": "Archivos del proyecto",
     "Bug reports": "Informes de errores",
-    "Project changelog": "Registro de cambios del proyecto"
+    "Project changelog": "Registro de cambios del proyecto",
+    "Leave blank for readable text. Use feed: for public RSS or Atom, json: for public JSON, or jsonld: for structured data on a rendered page.": "Déjalo vacío para el texto legible. Usa feed: para RSS o Atom públicos, json: para JSON público o jsonld: para los datos estructurados de una página renderizada."
   },
   "it": {
     "Preferences": "Preferenze",
@@ -735,7 +735,6 @@
     "Installed mod association": "Collegamento alla mod installata",
     "Keep this page enabled": "Mantieni attiva questa pagina",
     "Keep your site sessions in one place.": "Tieni le sessioni dei siti in un unico posto.",
-    "Leave blank to compare readable page text. Select a stable region to avoid changing navigation, counters, or ads.": "Lascia vuoto per confrontare il testo leggibile. Scegli un'area stabile per escludere variazioni di menu, contatori o pubblicità.",
     "Lists and acknowledgement history show site names instead.": "Gli elenchi e la cronologia delle conferme mostreranno i nomi dei siti.",
     "Manual checks are the default. Optional background checks run while Modhunter is open, with a bounded queue and per-site pacing.": "I controlli manuali sono predefiniti. Quelli opzionali in background funzionano mentre Modhunter è aperto, con coda limitata e frequenza per sito.",
     "Manual checks · ready when you are": "Controlli manuali · quando vuoi",
@@ -1165,7 +1164,8 @@
     "Published advisories": "Avvisi pubblicati",
     "Project files": "File del progetto",
     "Bug reports": "Segnalazioni di bug",
-    "Project changelog": "Registro modifiche del progetto"
+    "Project changelog": "Registro modifiche del progetto",
+    "Leave blank for readable text. Use feed: for public RSS or Atom, json: for public JSON, or jsonld: for structured data on a rendered page.": "Lascia vuoto per il testo leggibile. Usa feed: per RSS o Atom pubblici, json: per JSON pubblico o jsonld: per i dati strutturati di una pagina visualizzata."
   },
   "zh-TW": {
     "Preferences": "偏好設定",
@@ -1319,7 +1319,6 @@
     "Installed mod association": "已安裝模組的關聯",
     "Keep this page enabled": "保持啟用此頁面",
     "Keep your site sessions in one place.": "集中管理你的網站工作階段。",
-    "Leave blank to compare readable page text. Select a stable region to avoid changing navigation, counters, or ads.": "留空以比較可閱讀的頁面文字。選擇穩定區域可避免導覽列、計數器或廣告的變動。",
     "Lists and acknowledgement history show site names instead.": "清單與確認紀錄將改為顯示網站名稱。",
     "Manual checks are the default. Optional background checks run while Modhunter is open, with a bounded queue and per-site pacing.": "預設採用手動檢查。選用的背景檢查只會在 Modhunter 開啟時執行，並限制佇列大小與每個網站的請求頻率。",
     "Manual checks · ready when you are": "手動檢查 · 隨時開始",
@@ -1749,7 +1748,8 @@
     "Published advisories": "已發佈的安全公告",
     "Project files": "專案檔案",
     "Bug reports": "錯誤回報",
-    "Project changelog": "專案變更記錄"
+    "Project changelog": "專案變更記錄",
+    "Leave blank for readable text. Use feed: for public RSS or Atom, json: for public JSON, or jsonld: for structured data on a rendered page.": "留空以擷取可讀文字。公開 RSS 或 Atom 請用 feed:，公開 JSON 請用 json:，網頁中的結構化資料請用 jsonld:。"
   },
   "en": {
     "Preferences": "Preferences",
@@ -1903,7 +1903,6 @@
     "Installed mod association": "Installed mod association",
     "Keep this page enabled": "Keep this page enabled",
     "Keep your site sessions in one place.": "Keep your site sessions in one place.",
-    "Leave blank to compare readable page text. Select a stable region to avoid changing navigation, counters, or ads.": "Leave blank to compare readable page text. Select a stable region to avoid changing navigation, counters, or ads.",
     "Lists and acknowledgement history show site names instead.": "Lists and acknowledgement history show site names instead.",
     "Manual checks are the default. Optional background checks run while Modhunter is open, with a bounded queue and per-site pacing.": "Manual checks are the default. Optional background checks run while Modhunter is open, with a bounded queue and per-site pacing.",
     "Manual checks · ready when you are": "Manual checks · ready when you are",
@@ -2333,6 +2332,7 @@
     "Published advisories": "Published advisories",
     "Project files": "Project files",
     "Bug reports": "Bug reports",
-    "Project changelog": "Project changelog"
+    "Project changelog": "Project changelog",
+    "Leave blank for readable text. Use feed: for public RSS or Atom, json: for public JSON, or jsonld: for structured data on a rendered page.": "Leave blank for readable text. Use feed: for public RSS or Atom, json: for public JSON, or jsonld: for structured data on a rendered page."
   }
 }

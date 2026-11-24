@@ -10,6 +10,14 @@ A page observation does not establish a new compatible mod version. Watchtower k
 
 Adding a new anonymous URL ending in .rss or .atom selects native feed extraction. For a feed at another address, enter `feed:` in **Page region**. The reader compares all RSS 2.0 items or Atom entries, including identifiers, text and attachment links. Feed build-timestamp churn alone produces no release notice. It reuses HTTPS connections and revalidates cached public representations using ETag or Last-Modified. A failed request or incomplete feed preserves the last successful observation. Use the final public HTTPS address. Clear the selector to use rendered HTML and browser sign-in instead.
 
+## Watching structured data
+
+New public URLs ending in `.json` or `.jsonld` use the native HTTP reader. Enter `json:` in **Page region** for a JSON endpoint at another address. The reader compares every field and array element, preserves numeric identifiers and spaces inside strings, and ignores JSON formatting whitespace. Field reordering and differences in escape spelling can produce a change. A malformed document retains the last successful observation.
+
+For a rendered page, use `jsonld:` to compare all declared JSON-LD blocks, including content the site added with JavaScript. A site sign-in can be used for this rendered mode. A missing or malformed block set produces an unsuccessful check. Clear ignored regions when using a structured mode.
+
+GitHub repository and Nexus project addresses are identified in the Add page form. Open a saved project's details to start a separate watch for its release feed, issues, published advisories, files, bugs or changelog as applicable. Each suggested URL opens for review before saving. Availability and access are established by checking that URL.
+
 ## Comparing page regions
 
 In **Page region**, enter a CSS selector to track its first match, or prefix an XPath element expression with `xpath:` to track every matched region in document order. For example, `xpath://article[@data-release]` compares each release article. Nested matches contribute their text once. **Ignore regions** accepts one CSS selector or prefixed XPath expression per line. Failed or empty selection retains the previous complete observation.

@@ -1046,3 +1046,15 @@ fn new_anonymous_feeds_route_to_native_reader_without_changing_edited_regions() 
     command(&store, "saveWatch", json!({"id":id,"selector":""}), 11);
     assert_eq!(store.watch(&id).unwrap().selector, "");
 }
+
+#[test]
+fn new_public_json_watches_use_structured_reads_without_rewriting_existing_regions() {
+    let (_dir, store) = fresh();
+    let id = add(&store, "https://example.com/releases.json", 10);
+    assert_eq!(store.watch(&id).unwrap().selector, "json:");
+    let first = observe(&store, &id, r#"{"name":"two  spaces"}"#, 20);
+    let changed = observe(&store, &id, r#"{"name":"two spaces"}"#, 30);
+    assert_ne!(first.hash, changed.hash);
+    command(&store, "saveWatch", json!({"id":id,"selector":""}), 11);
+    assert_eq!(store.watch(&id).unwrap().selector, "");
+}

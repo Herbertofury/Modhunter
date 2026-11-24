@@ -411,7 +411,11 @@ impl WatchStore {
         if login_redirect(&job.url, &final_url) {
             return self.fail_check(job,"signInRequired","The page redirected to sign-in. Open the site's session and sign in before checking again.",now_ms);
         }
-        let normalized = normalize_text(&observed.text);
+        let normalized = if matches!(job.selector.as_str(), "json:" | "jsonld:") {
+            observed.text
+        } else {
+            normalize_text(&observed.text)
+        };
         if normalized.is_empty() {
             return self.fail_check(job,"selectorMissing","The selected page region contained no readable text. Check the selector or finish signing in; the previous baseline is unchanged.",now_ms);
         }

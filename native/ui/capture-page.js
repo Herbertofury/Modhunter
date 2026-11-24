@@ -9,6 +9,30 @@ const title=result.title.toLowerCase();
 if(/(^|\.)patreon\.com$/.test(here.hostname)&&/\/posts\//.test(here.pathname)&&/unlock this post|join to unlock|become a member to unlock/i.test(String(document.body?.innerText||'').slice(0,32768)))return fail('accessRestricted','This release is not readable by the selected account. Sign-in and release access are separate; the previous complete observation is retained.');
 if(/just a moment|checking your browser|verify you are human|security verification|attention required/.test(title)||[...document.querySelectorAll('#challenge-running,#challenge-stage,[data-cf-beacon]~#challenge-form')].some(visible))return fail('challenge','This site needs an interactive check. Open its session to complete it.');
 if(/access denied|403 forbidden|429 too many requests|this site can.t be reached|can.t reach this page/.test(title)||document.documentURI.startsWith('chrome-error:'))return fail('unavailable','The site declined or could not complete this request. Review it in the site session and retry later.');
+if (cfg.selector === 'jsonld:') {
+    if (cfg.ignore.length) return fail('selectorMissing', 'Clear ignored regions to read the complete JSON-LD.');
+    const blocks = [];
+    let total = 0;
+    for (const script of document.querySelectorAll('script[type]')) {
+        if (script.type.split(';')[0].trim().toLowerCase() !== 'application/ld+json') continue;
+        const raw = script.textContent;
+        if (raw.length > 2 * 1024 * 1024) return fail('tooLarge', 'JSON-LD block exceeds the reader limit.');
+        try {
+            const data = JSON.parse(raw);
+            if (data === null || typeof data !== 'object') throw new Error();
+        } catch {
+            return fail('selectorMissing', 'A declared JSON-LD block is malformed. The prior observation was retained.');
+        }
+        // Keep numeric lexemes, escaped characters and spaces inside strings intact.
+        const compact = raw.replace(/"(?:\\.|[^"\\])*"|[ \t\r\n]+/g, token => token[0] === '"' ? token : '');
+        total += new TextEncoder().encode(compact).length + (blocks.length ? 1 : 0);
+        if (total > 262144) return fail('tooLarge', 'Complete JSON-LD exceeds the observation limit.');
+        blocks.push(compact);
+    }
+    if (!blocks.length) return fail('selectorMissing', 'The page declares no JSON-LD blocks.');
+    result.text = blocks.join('\n');
+    return result;
+}
 // CSS regions preserve the original first-match behavior. XPath can select
 // several release sections. Handle their union once, in document order.
 function regions(expression, firstCssMatch) {

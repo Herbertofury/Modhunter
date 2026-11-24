@@ -1226,14 +1226,15 @@ fn run_check(
         return Err("This check has been superseded.".into());
     }
     let url = Url::parse(&canonical_page_url(&job.url)?).map_err(err)?;
-    if job.selector == "feed:" {
-        static FEEDS: std::sync::OnceLock<Result<modhunter_core::watchtower::PublicFeedReader>> =
-            std::sync::OnceLock::new();
-        let reader = FEEDS
-            .get_or_init(modhunter_core::watchtower::PublicFeedReader::new)
+    if let Some(format) = modhunter_core::watchtower::PublicFormat::from_selector(&job.selector) {
+        static DOCUMENTS: std::sync::OnceLock<
+            Result<modhunter_core::watchtower::PublicDocumentReader>,
+        > = std::sync::OnceLock::new();
+        let reader = DOCUMENTS
+            .get_or_init(modhunter_core::watchtower::PublicDocumentReader::new)
             .as_ref()
             .map_err(Clone::clone)?;
-        return reader.observe(&url, job.filtered_resources);
+        return reader.observe(&url, format, job.filtered_resources);
     }
     let load = Arc::new(Load::default());
     let mut context = SiteContext::production(job.session.clone(), &url)?;

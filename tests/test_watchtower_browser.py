@@ -134,6 +134,18 @@ class WatchtowerBrowserTests(unittest.TestCase):
             site.locator("main").evaluate("el => { for(let i=0;i<2200;i++) el.append(document.createElement('aside')); }")
             self.assertEqual(capture("main", ["aside"])["text"], "A\nfirst\nB\nupdated")
 
+            self.assertEqual(capture("jsonld:")["status"], "selectorMissing")
+            def add_data(raw):
+                site.evaluate("""raw => { const block = document.createElement('script');
+                    block.type = 'application/ld+json'; block.textContent = raw; document.head.append(block) }""", raw)
+
+            add_data('{ "version": 90071992547409931234, "name": "two  spaces" }')
+            add_data('[{"alternate":true}]')
+            self.assertEqual(capture("jsonld:")["text"],
+                             '{"version":90071992547409931234,"name":"two  spaces"}\n[{"alternate":true}]')
+            add_data('{"broken":')
+            self.assertEqual(capture("jsonld:")["status"], "selectorMissing")
+
     def tearDown(self):
         result = self._outcome.result
         failed = self.errors or any(test is self for test, _ in result.errors + result.failures)

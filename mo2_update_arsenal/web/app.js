@@ -24,6 +24,7 @@ let STARTUP_REQUEST=null,STARTUP_ACCEPTED='',STARTUP_RETRY_AT=0,STARTUP_ERROR=''
 const DETECTED_CACHE=new WeakMap();
 let SEARCH_FRAME=null,WORKSHOP_SEARCH_FRAME=null,SAVE_TIMER=null,SAVE_REVISION=0,PROGRESS_SYNC_CHAIN=Promise.resolve();
 let RENDER_COUNTS=null,LOCAL_PLAN_CACHE=null,CATALOG_RENDER_REVISION=0;
+let SCAN_LIBRARY_RENDER=null;
 let APPLIED_FX_KEY='';
 let APPLIED_LIBRARY_APPEARANCE=null,LIBRARY_LAYOUT_CHANGE=null,LIBRARY_LAYOUT_GENERATION=0;
 let GALLERY_LABEL_CACHE=null,GALLERY_LABEL_OWNER=null;
@@ -183,17 +184,40 @@ function selectWorkspace(panel){
  $all('.workspace-tabs [data-workspace]').forEach(button=>{const on=button.dataset.workspace===panel;button.classList.toggle('active',on);button.setAttribute('aria-pressed',String(on))});
  if(panel==='downloads')void refreshDownloads();if(panel==='history')void refreshActivity();
 }
-function renderWorkspace(){
+function nextScanEvidenceChange(mod,now){
+ const expires=Math.ceil(Number(mod.update?.expiresAt)*1000),retry=Math.ceil(Number(mod.update?.retryAt)*1000);
+ return Math.min(expires>now?expires:Infinity,retry>now?retry:Infinity,
+  INSIGHTS?.nextAdvisoryChange(mod.modHealth?.securityAdvisories,now)??Infinity);
+}
+function renderWorkspace(scanTime){
+ let nextChange=Infinity;
  const aggregate={all:DATA.items.length,updates:0,maintenance:0,security:0,fileReview:0,attention:0,current:0};
- for(const mod of DATA.items){const d=detectedStatus(mod);aggregate.updates+=Number(d.updateAvailable);aggregate.maintenance+=Number(d.maintenance);aggregate.security+=Number(d.security);aggregate.fileReview+=Number(d.fileReview);aggregate.attention+=Number(d.attention);aggregate.current+=Number(d.current)}
+ for(const mod of DATA.items){
+  const d=detectedStatus(mod);aggregate.updates+=Number(d.updateAvailable);aggregate.maintenance+=Number(d.maintenance);aggregate.security+=Number(d.security);aggregate.fileReview+=Number(d.fileReview);aggregate.attention+=Number(d.attention);aggregate.current+=Number(d.current);
+  if(scanTime!==undefined)nextChange=Math.min(nextChange,nextScanEvidenceChange(mod,scanTime));
+ }
  for(const [key,value] of Object.entries(aggregate))SET('detected'+key[0].toUpperCase()+key.slice(1),value.toLocaleString());
  SET('workspaceProfile',LIVE_CATALOG?LIVE_CATALOG.profileName+' / '+(LIVE_CATALOG.game||'MO2')+' / '+DATA.items.length.toLocaleString()+(DATA.items.length===1?' mod':' mods'):DATA.offline?(DATA.profileName||'Imported profile')+' / read only':'Demo library / not your installed mods');
+ renderWorkspaceScan();
+ return nextChange;
+}
+function scanTimingAndDeferrals(state){
+ const parts=[];
+ if(Number.isSafeInteger(state?.deferredNexusProjects)&&state.deferredNexusProjects>0){
+  const n=state.deferredNexusProjects;
+  parts.push(n.toLocaleString()+' Nexus project'+(n===1?'':'s')+' deferred');
+ }
+ if(Number.isFinite(state?.elapsedSeconds)&&state.elapsedSeconds>=0)parts.push(state.elapsedSeconds.toLocaleString()+' s elapsed');
+ return parts.length?' · '+parts.join(' · '):'';
+}
+function renderWorkspaceScan(){
  const state=LIVE_SCAN?.state,active=state==='running',starting=SCAN_START_BUSY,connected=BRIDGE.active&&LIVE_CONNECTED;
  const scanErrors=(LIVE_SCAN?.errors||[]).length;
  const feedback=!connected?'offline':starting||active?'busy':STARTUP_ERROR||state==='error'?'error':state==='cancelled'?'cancelled':state==='partial'||state==='unknown'||scanErrors?'warning':state==='completed'?'complete':'connected';
  let status=!BRIDGE.active?'Read-only library':!LIVE_CONNECTED?'MO2 disconnected':starting?'Starting source check':active?'Checking sources':STARTUP_ERROR?'Automatic check unavailable':state==='error'?'Check failed':state==='cancelled'?'Check cancelled':state==='partial'||(state==='completed'&&scanErrors)?'Check finished with issues':state==='unknown'?'Check status unavailable':state==='completed'?'Check complete':!PROGRESS_READY?'Loading saved preferences':sourceLinksPending()?'Syncing source edits':STORE.prefs.autoCheckOnLaunch?'Preparing automatic check':'Automatic checks off';
  SET('workspaceCheckStatus',status);
- SET('workspaceCheckDetail',starting?'Waiting for MO2 to begin the check':active?(LIVE_SCAN.checked||0)+' / '+(LIVE_SCAN.total||'?')+' checked'+(LIVE_SCAN.fromCache?' / '+LIVE_SCAN.fromCache+' cached':''):STARTUP_ERROR||LIVE_SCAN?.error||(scanErrors?(scanErrors+' source errors; see affected mods'):'Updates never install without approval'));
+ const detail=starting?'Waiting for MO2 to begin the check':active?(LIVE_SCAN.checked||0)+' / '+(LIVE_SCAN.total||'?')+' checked'+(LIVE_SCAN.fromCache?' / '+LIVE_SCAN.fromCache+' cached':''):STARTUP_ERROR||LIVE_SCAN?.error||(scanErrors?(scanErrors+' source errors; see affected mods'):'Updates never install without approval');
+ SET('workspaceCheckDetail',detail+(starting?'':scanTimingAndDeferrals(LIVE_SCAN)));
  const button=$('unifiedScan');if(button){button.disabled=BRIDGE.active&&(!LIVE_CONNECTED||starting||active);button.textContent=connected&&(starting||active)?'Checking...':BRIDGE.active?'Check for updates':'Connect MO2';button.setAttribute('aria-busy',String(connected&&(starting||active)));button.dataset.state=connected?(starting?'starting':active?'running':'idle'):'idle'}
  const dot=$('workspaceDot');if(dot)dot.dataset.state=feedback;
  const checkline=$('workspaceCheckLine');if(checkline)checkline.dataset.state=feedback;
@@ -755,7 +779,7 @@ async function refreshModHealth(mod,force=true){
    current.modHealth=result.health;
    if(Object.hasOwn(result,'localAnalysis'))current.localAnalysis=result.localAnalysis;
    if(result.pluginAuditState)DATA.pluginAuditState=result.pluginAuditState;
-   SEARCH_CACHE.delete(current);LOCAL_PLAN_CACHE=null;
+   SEARCH_CACHE.delete(current);LOCAL_PLAN_CACHE=null;SCAN_LIBRARY_RENDER=null;
    refreshInspectorInsights();renderList();renderWorkshop();
    if(force&&result.health?.job?.state==='running')toast('Checking the public Nexus page. Results will appear on this mod.');
   }catch(ex){if(force&&contextIsCurrent(context))toast(ex.message);}
@@ -775,7 +799,7 @@ async function loadModInsights(mod){
    const current=ITEM_MAP.get(mod.id);if(!current||current!==mod)return;
    current.modHealth=result.health;current.localAnalysis=result.localAnalysis;
    if(result.pluginAuditState)DATA.pluginAuditState=result.pluginAuditState;
-   SEARCH_CACHE.delete(current);refreshInspectorInsights();renderList();renderWorkshop();
+   SEARCH_CACHE.delete(current);SCAN_LIBRARY_RENDER=null;refreshInspectorInsights();renderList();renderWorkshop();
   }catch(ex){if(contextIsCurrent(context)&&openedId===mod.id)toast('Mod details: '+ex.message);}
  })();
  INSIGHT_REQUESTS.set(key,task);try{return await task}finally{if(INSIGHT_REQUESTS.get(key)===task)INSIGHT_REQUESTS.delete(key)}
@@ -1150,7 +1174,7 @@ function activateLiveCatalog(c){
  $('advisoryBody').innerHTML='<div><span>01 / RUNTIME</span><strong>Match executable + script extender.</strong><p>Native DLL releases must match this game runtime. Check each file description.</p></div><div><span>02 / DEPENDENCIES</span><strong>Check masters and requirements.</strong><p>Verify mod dependencies, ESL records, plugins and update steps.</p></div><div><span>03 / SAVE SAFETY</span><strong>Read changelogs before upgrades.</strong><p>Save-breaking changes, FOMOD variants, mid-save warnings and generated behaviors may require special handling.</p></div><div><span>04 / CONTROLLED INSTALL</span><strong>MO2 stays in charge.</strong><p>Back up the profile, download through MO2 and install with normal prompts. Nothing silently overwrites your load order.</p></div>';
  $('riskSubtitle').textContent='DLLs + runtime + risky masters';document.querySelector('.pagefooter').children[1].textContent='LOCAL-FIRST ARSENAL · LIVE MO2 + NEXUS INTELLIGENCE · PROFILE SAVE';document.querySelector('.pagefooter').firstElementChild.textContent=`ᛟ MO2 LIVE / ${c.game} / ${c.profileName}`;
  SET('liveProfile',c.profileName+' / '+c.game);SET('liveCount',c.items.length+(c.items.length===1?' mod':' mods')+' · '+c.groups.length+(c.groups.length===1?' chapter':' chapters'));setBridgeConnection(true,'Live session. Your active MO2 profile is authoritative; the checklist is saved per profile.');
- $('liveSync').textContent='Snapshot: '+new Date().toLocaleTimeString();
+ $('liveSync').textContent='Snapshot: '+new Date().toLocaleTimeString()+(['completed','partial'].includes(LIVE_SCAN?.state)?scanTimingAndDeferrals(LIVE_SCAN):'');
  const chosen=STORE.prefs.filter;if(chosen==='updates'&&!c.items.some(isUpdate))STORE.prefs.filter='all';
  if(newProfile){closeInspector(false);}else{refreshInspectorInsights();if(openedId&&ITEM_MAP.has(openedId)){void loadModInsights(ITEM_MAP.get(openedId));void loadSourceDetails(ITEM_MAP.get(openedId));}}
  if(newExecutionContext||changedRuntime||changedMods){WORKSHOP_PLAN=null;WORKSHOP_CHOICES.clear();QUEUE_PENDING=null;$('queueReviewVeil').hidden=true;INSTALL_PREVIEW_ID=null;$('installPreviewVeil').hidden=true;closeFilePicker();}
@@ -1222,7 +1246,7 @@ function renderWorkshopJourney(){
  const installed=tickets.filter(t=>t.status==='installed').length;
  const scanned=BRIDGE.active&&['completed','partial'].includes(LIVE_SCAN?.state);
  const steps=[
-  ['01','DISCOVER',scanned?'Scan complete':BRIDGE.active?'Check sources':'Connect MO2',scanned],
+  ['01','DISCOVER',scanned?(LIVE_SCAN.state==='partial'?'Partial results':'Scan complete'):BRIDGE.active?'Check sources':'Connect MO2',scanned&&LIVE_SCAN.state==='completed'],
   ['02','REVIEW',selected?selected+' reviewed':s.candidates+' candidates',selected>0||tickets.length>0],
   ['03','INSTALL',installing?installing+' in MO2':ready?ready+' ready':installed?installed+' installed':downloading?downloading+' downloading':'Native installer',installed>0]
  ];
@@ -1234,7 +1258,7 @@ function renderWorkshopJourney(){
  else if(selected){action='queue';title=selected+' exact file'+(selected===1?' is':'s are')+' reviewed';hint='Send the approved archives to MO2 Downloads. Installation is always a separate action.';label='Queue reviewed downloads';}
  else if(downloading){action='downloads';title=downloading+' download'+(downloading===1?' is':'s are')+' in MO2';hint='Watch download status here, then install when complete.';label='View downloads';}
  else if(s.candidates){action='quick';title=s.candidates+' update candidate'+(s.candidates===1?'':'s')+' found';hint='Matched releases download in MO2 immediately. Ambiguous editions remain available for file selection.';label='Update matched mods';}
- else if(scanned){action='scan';title='No verified updates to queue';hint=(s.review+s.manual)+' mod'+(s.review+s.manual===1?'':'s')+' still need manual verification.';label='Run scan again';}
+ else if(scanned){action='scan';title=LIVE_SCAN.state==='partial'?'Scan returned partial results':'No verified updates to queue';hint=(s.review+s.manual)+' mod'+(s.review+s.manual===1?'':'s')+' still need manual verification.';label='Run scan again';}
  $('workshopNextTitle').textContent=title;$('workshopNextHint').textContent=hint;
  const btn=$('workshopNextAction');btn.dataset.action=action;btn.textContent=label;
  btn.disabled=WORKSHOP_BUSY||(BRIDGE.active&&!LIVE_CONNECTED)||(LIVE_SCAN?.state==='running'&&action==='scan')||(sourceLinksPending()&&['quick','queue','install','scan'].includes(action));
@@ -1572,7 +1596,32 @@ async function initLiveBridge(){
  }catch(ex){setBridgeConnection(false,'Could not reach MO2: '+ex.message);return false}})();
  try{return await LIVE_INIT_PROMISE}finally{LIVE_INIT_PROMISE=null}
 }
-function updateScanUI(state){if(!state)return;LIVE_SCAN=state;const status=state.state||'idle',progress=state.checked||0,total=state.total||0;SET('liveScanProgress',status==='running'?`Scanning ${progress}/${total||'?'}…`:status==='completed'?'✓ Scan complete':status==='partial'?'⚠ Partial results':status==='error'?'⚠ Scan failed':'Awaiting action');if(status==='error')toast('Scan: '+(state.error||'error'),null,null,'error');if(status==='completed'||status==='partial'){SET('liveSync',state.mode+' · '+(state.queried||0)+' queried · '+(state.fromCache||0)+' cached');renderLiveStats();renderQuest()}for(const id of ['liveQuick','liveDeep','liveLocal','liveAll'])$(id).disabled=!LIVE_CONNECTED||SCAN_START_BUSY||status==='running';renderWorkshopJourney();renderWorkspace();renderList()}
+function updateScanUI(state){
+ if(!state)return;
+ LIVE_SCAN=state;
+ const status=state.state||'idle',running=status==='running',progress=state.checked||0,total=state.total||0;
+ const label=running?`Scanning ${progress}/${total||'?'}…`:status==='completed'?'✓ Scan complete':status==='partial'?'⚠ Partial results':status==='error'?'⚠ Scan failed':'Awaiting action';
+ SET('liveScanProgress',label+scanTimingAndDeferrals(state));
+ if(status==='error')toast('Scan: '+(state.error||'error'),null,null,'error');
+ if(status==='completed'||status==='partial'){
+  SET('liveSync',state.mode+' · '+(state.queried||0)+' queried · '+(state.fromCache||0)+' cached'+scanTimingAndDeferrals(state));
+  renderLiveStats();renderQuest();
+ }
+ for(const id of ['liveQuick','liveDeep','liveLocal','liveAll'])$(id).disabled=!LIVE_CONNECTED||SCAN_START_BUSY||running;
+ renderWorkshopJourney();
+ const now=Date.now(),previous=SCAN_LIBRARY_RENDER;
+ // Progress counters cannot change a row. Catalog replacement and entering or
+ // leaving the running state can. Time-based evidence can change between polls.
+ const evidenceCurrent=previous&&previous.revision===CATALOG_RENDER_REVISION&&previous.at<=now&&now<previous.nextChange;
+ if(evidenceCurrent&&previous.running===running&&previous.connected===LIVE_CONNECTED){
+  renderWorkspaceScan();
+ }else{
+  const nextChange=renderWorkspace(evidenceCurrent?undefined:now);
+  renderList();
+  SCAN_LIBRARY_RENDER={revision:CATALOG_RENDER_REVISION,running,connected:LIVE_CONNECTED,at:now,
+   nextChange:evidenceCurrent?previous.nextChange:nextChange};
+ }
+}
 function startScanPolling(mode,context=profileContext()){
  clearTimeout(SCAN_TIMER);const operation=++SCAN_OPERATION;
  const active=()=>operation===SCAN_OPERATION&&contextIsCurrent(context);
@@ -1583,7 +1632,7 @@ function startScanPolling(mode,context=profileContext()){
    updateScanUI(v.scan);
    if(v.scan.state==='completed'||v.scan.state==='partial'){
     finish();const snap=await requestLiveCatalog();if(!snap||!active())return;
-    await snap.ready;if(active())toast('ϟ '+mode+' sweep complete!');
+    await snap.ready;if(active())toast(v.scan.state==='partial'?'⚠ '+mode+' scan returned partial results'+scanTimingAndDeferrals(v.scan):'ϟ '+mode+' sweep complete!');
    }else if(v.scan.state==='running'){SCAN_TIMER=setTimeout(poll,1200)}else{finish()}
   }catch(ex){if(active()){finish();updateScanUI({...LIVE_SCAN,state:'unknown',error:ex.message});SET('liveScanProgress','Scan status unavailable · retry to reconnect');toast('Scan interrupted: '+ex.message,null,null,'error')}}
  };

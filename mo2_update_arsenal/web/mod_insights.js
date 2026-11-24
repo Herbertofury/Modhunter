@@ -10,10 +10,16 @@ const eligibilityLabels={'already-light':'Already light','flag-only-candidate':'
 const provenanceLabels={current:'Matches recorded ESLifier output','source-changed':'Original changed · review conversion','output-changed':'Converted output changed','source-and-output-changed':'Original and converted output changed','winner-changed':'Recorded conversion no longer wins','not-configured':'ESLifier records not connected','not-recorded':'No ESLifier conversion record',unknown:'Conversion history unverified','review-required':'Conversion history needs review'};
 function checked(value){if(value===null||value===undefined||value==='')return'Not checked';const d=new Date(typeof value==='number'?value*1000:value);return Number.isFinite(d.getTime())?d.toLocaleString():'Check time unavailable'}
 function isNexus(mod){if(mod.modHealth?.provider)return mod.modHealth.provider==='nexus';const source=mod.source||{};if(source.verified&&source.url){try{const url=new URL(source.url);return url.protocol==='https:'&&['www.nexusmods.com','nexusmods.com'].includes(url.hostname)&&/^\/[a-z0-9_-]+\/mods\/[1-9]\d*\/?$/.test(url.pathname)}catch{return false}}return Number.isSafeInteger(Number(mod.nexusId))&&Number(mod.nexusId)>0}
+const ADVISORY_CLOCK_SKEW=300,ADVISORY_LIFETIME=14400;
 function advisoryState(report,now=Date.now()/1000){
  if(report?.state!=='checked')return report?.state||'unknown';
  const age=now-Number(report.checkedAt);
- return !report.checkedAt||!Number.isFinite(age)||age < -300||age>14400?'stale':'checked';
+ return !report.checkedAt||!Number.isFinite(age)||age < -ADVISORY_CLOCK_SKEW||age>ADVISORY_LIFETIME?'stale':'checked';
+}
+function nextAdvisoryChange(report,nowMs){
+ if(report?.state!=='checked'||!report.checkedAt)return Infinity;
+ const checked=Number(report.checkedAt),start=Math.ceil((checked-ADVISORY_CLOCK_SKEW)*1000),end=Math.floor((checked+ADVISORY_LIFETIME)*1000)+1;
+ return nowMs<start?start:nowMs<end?end:Infinity;
 }
 function affectedAdvisory(mod){
  const report=mod.modHealth?.securityAdvisories;
@@ -207,6 +213,6 @@ function matches(mod,filter){
 }
 function searchText(mod){const s=summary(mod);return[list(mod.localAnalysis?.plugins).map(p=>[p.name,p.eligibility?.status,p.provenance?.state,...list(p.masterIssues).map(x=>x.name+' '+x.status)].join(' ')).join(' '),s.security?'security advisory affected':'',s.fileReview?'installed file review':'',mod.update?.installedFileId,mod.update?.targetFileId,s.light?'already light esl':'',s.stale?'stale conversion eslifier update rebuild':'',s.lightOverrides?'light override eslified':'',bugLabel(mod.modHealth?.bugs),mod.modHealth?.page?.status].join(' ').toLowerCase()}
 function csv(mod){const s=summary(mod),known=!!mod.localAnalysis;return[known?s.light:'',known?s.full:'',known?s.lightOverrides:'',known?s.candidates:'',known?s.compaction:'',known?s.stale:'',known?s.masterIssues:'',mod.localAnalysis?.checkedAt||'',s.bugState,s.bugCount??'',mod.modHealth?.bugs?.checkedAt||'']}
-const api={historicalBadge,historicalSummary,advisoryState,summary,chips,details,matches,searchText,csv,bugLabel,isNexus};
+const api={historicalBadge,historicalSummary,advisoryState,nextAdvisoryChange,summary,chips,details,matches,searchText,csv,bugLabel,isNexus};
 root.ModhunterInsights=api;if(typeof module==='object'&&module.exports)module.exports=api;
 })(typeof window==='object'?window:globalThis);

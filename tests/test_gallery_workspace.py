@@ -181,6 +181,7 @@ class GalleryWorkspaceTests(unittest.TestCase):
             # responses expose real request, retry and cancellation UI paths.
             boot = boot.replace('prefs:{autoCheckOnLaunch:false}',
                                 'prefs:{autoCheckOnLaunch:false,vfxIntensity:"off",vfxShake:false,vfxTrails:false,sound:false}')
+            boot = boot.replace('profileId:c.profileId,records:[]','profileId:c.profileId,records:x.activity||[]')
             start = boot.index("else if(path==='scan'){")
             end = boot.index("else if(path==='quick-update')", start)
             boot = boot[:start] + """else if(path==='scan'){
@@ -1030,6 +1031,88 @@ class GalleryWorkspaceTests(unittest.TestCase):
         self.assertEqual(self.page.evaluate('__ARSENAL_QA__.game()?.score||0'), 0)
         for action in ('POST install','POST download','POST quick-update','POST update-queue'):
             self.assertEqual(self.page.evaluate('key=>__RESP__.counts[key]||0', action), 0)
+
+    def test_progress_only_skips_rows_but_clock_filter_and_catalog_changes_stay_live(self):
+        self.html = self.html.replace("window.__ARSENAL_QA__={",
+                                      "window.__testScanTick=updateScanUI;window.__testRefreshHealth=refreshModHealth;window.__ARSENAL_QA__={")
+        self.open(count=12, group_count=3, feedback=True)
+        self.page.evaluate("""() => {
+          __RESP__.activity=[{key:'operation-17',status:'installed',verifiedUpdate:true,modName:'Recorded fixture update',
+             lastAt:'2026-11-24T12:00:00Z',events:[]}];
+          document.querySelector('.workspace-tabs [data-workspace="history"]').click();
+        }""")
+        self.page.wait_for_function("document.querySelector('#activityResults').textContent.includes('Recorded fixture update')")
+        self.page.evaluate("document.querySelector('.workspace-tabs [data-workspace=\"mods\"]').click()")
+        result = self.page.evaluate("""async () => {
+          const c=structuredClone(__ARSENAL_QA__.getCatalog()), t=Math.ceil(Date.now()/1000)*1000;
+          c.items[0].update={source:'nexus',verdict:'current',checkedAt:t/1000,expiresAt:t/1000+5};
+          c.items[1].update={source:'modrinth',verdict:'current',checkedAt:t/1000,retryAt:t/1000+3};
+          c.items[2].modHealth={securityAdvisories:{state:'checked',checkedAt:t/1000-14400+4,affectedCount:1}};
+          await __ARSENAL_QA__.setCatalog(c);
+          const history=document.querySelector('#activityResults').innerHTML,clock=Date.now;let now=t,reads=0;
+          const mod=c.items[0],update=mod.update;
+          Object.defineProperty(mod,'update',{configurable:true,get(){reads++;return update}});
+          const tick=n=>__testScanTick({state:'running',mode:'all',checked:n,total:12,elapsedSeconds:n});
+          const label=i=>document.querySelector('#row-item-'+i+' .detected-status')?.textContent;
+          Date.now=()=>now;
+          try{
+            tick(1);const row=document.querySelector('#row-item-0'),control=row.querySelector('button');
+            control.focus();reads=0;now+=1000;tick(2);
+            const progress={reads,focus:document.activeElement===control,sameRow:document.querySelector('#row-item-0')===row,
+              status:label(0),cooldown:label(1),security:document.querySelector('#detectedSecurity').textContent};
+            now=t+3000;tick(3);const retry=label(1);
+            now=t+4000;tick(4);const before=document.querySelector('#detectedSecurity').textContent;
+            now++;tick(5);const after=document.querySelector('#detectedSecurity').textContent;
+            now=t+5000;tick(6);const expires=label(0);
+            now=t+1000;tick(7);const reversed=label(0);
+            document.querySelector('[data-filter="done"]').click();
+            const filtered=document.querySelectorAll('#modList .mod-row').length;tick(8);
+            const kept=document.querySelectorAll('#modList .mod-row').length;
+            document.querySelector('[data-filter="all"]').click();
+            document.querySelector('.workspace-tabs [data-workspace="updates"]').click();tick(9);
+            const panel=document.body.dataset.workspace;
+            const revised=structuredClone(c);revised.items[0].update={...update,verdict:'candidate',expiresAt:t/1000+60};
+            await __ARSENAL_QA__.setCatalog(revised);tick(10);
+            const fetcher=window.fetch;
+            window.fetch=(url,options)=>url==='/api/mod-health'?Promise.resolve(Response.json({ok:true,profileId:c.profileId,
+              health:{securityAdvisories:{state:'checked',checkedAt:now/1000-14400+1,affectedCount:1}}})):fetcher(url,options);
+            let detailBefore,detailAfter;
+            try{
+              await __testRefreshHealth(revised.items[3]);tick(11);
+              detailBefore=document.querySelector('#detectedSecurity').textContent;
+              now+=1001;tick(12);detailAfter=document.querySelector('#detectedSecurity').textContent;
+            }finally{window.fetch=fetcher}
+            return {progress,retry,before,after,expires,reversed,filtered,kept,panel,changed:label(0),
+              detailBefore,detailAfter,count:document.querySelectorAll('#modList .mod-row').length,
+              historyUnchanged:document.querySelector('#activityResults').innerHTML===history};
+          }finally{Date.now=clock}
+        }""")
+        self.assertEqual(result["progress"], {"reads":0, "focus":True, "sameRow":True, "status":"Up to date",
+                                              "cooldown":"Provider cooldown", "security":"1"})
+        self.assertEqual((result["retry"],result["before"],result["after"]), ("Up to date","1","0"))
+        self.assertEqual((result["expires"],result["reversed"]), ("Rechecking","Up to date"))
+        self.assertEqual((result["filtered"],result["kept"],result["panel"],result["changed"],result["count"]),
+                         (0,0,"updates","Update available",12))
+        self.assertTrue(result["historyUnchanged"])
+        self.assertEqual((result["detailBefore"],result["detailAfter"]),("2","1"))
+
+    def test_partial_poll_reports_deferred_projects_and_elapsed_after_updated_verdict(self):
+        self.open(count=12, group_count=3, feedback=True)
+        self.page.locator('#unifiedScan').click()
+        self.page.wait_for_function("document.querySelector('#unifiedScan').dataset.state==='running'")
+        self.page.evaluate("""() => {
+          const x=__RESP__;x.catalog.items[0].update={verdict:'current',source:'nexus',checkedAt:Date.now()/1000};
+          x.scan={...x.scan,state:'partial',checked:9,total:12,deferredNexusProjects:3,elapsedSeconds:9.25};
+        }""")
+        self.page.wait_for_function("""() => [...document.querySelectorAll('#toastWrap .toast')]
+           .some(t=>t.textContent.includes('scan returned partial results'))""")
+        for selector in ('#workspaceCheckDetail','#liveScanProgress','#liveSync','#toastWrap .toast'):
+            value=self.page.locator(selector).all_text_contents()
+            self.assertTrue(any('3 Nexus projects deferred' in s and '9.25 s elapsed' in s for s in value), value)
+        self.assertIn("Partial results",self.page.locator('#workshopJourney').text_content())
+        self.assertEqual(self.page.locator('#row-item-0 .detected-status').text_content(),"Up to date")
+        self.assertFalse(self.page.locator('#workspaceScanProgress').is_visible())
+        self.assertEqual(self.page.locator('#unifiedScan').get_attribute('aria-busy'),'false')
 
     def test_scan_start_and_real_progress_have_visible_accessible_feedback(self):
         self.open(count=12, group_count=3, feedback=True)

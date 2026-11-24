@@ -1,0 +1,148 @@
+{
+  "date": "2026-11-24",
+  "baseline": "550a1722ac75b327076050f80ee6c80a46feca52",
+  "dashboardSha256": "1628d49f98e4f9e1d22af3c416708d5713a3ceedd6d7a1905c43bdb5dd61d175",
+  "implementation": "Recompute library rows and workspace totals for a changed catalog, changed checking/connection state, in-place health changes, or an actual expiry/retry/advisory boundary. Ordinary progress updates refresh the controls.",
+  "scope": "Local 64-bit Windows Chromium. Each run used a fresh browser context for each packaged dashboard. The calls ran back-to-back to isolate UI work. Native provider request time, full remote scan duration and total process RAM are outside these UI timings.",
+  "reproduction": "python tests/benchmark_scan_progress.py --baseline 550a1722ac75b327076050f80ee6c80a46feca52 --samples 61 --output scan-progress.json",
+  "method": "Synchronous measures the real scan UI function. Through-layout also forces a geometry read. Two frames includes Chromium scheduling and the Playwright round trip. The CDP renderer task figure includes work outside that function. Retained heap and node counts follow explicit Chromium garbage collection. Entry, completion and revised-catalog times are single observations.",
+  "workloads": {
+    "privateNativeImport": {
+      "samplesPerVersion": 81,
+      "rows": 11325,
+      "renderedNonemptyChapterHeaders": 724,
+      "completeDOMParity": true,
+      "baseline": {
+        "progressSynchronous": {
+          "medianMs": 21.7,
+          "p95Ms": 24.4,
+          "maxMs": 43.5
+        },
+        "progressThroughLayout": {
+          "medianMs": 22,
+          "p95Ms": 24.8,
+          "maxMs": 43.9
+        },
+        "progressThroughTwoFramesAndRoundTrip": {
+          "medianMs": 45.308,
+          "p95Ms": 92.229,
+          "maxMs": 103.545
+        },
+        "rendererTaskMsPerTick": 48.79,
+        "retainedJavaScriptHeapMiB": 125.033,
+        "retainedDOMNodes": 403823,
+        "firstRunningTransitionMs": {
+          "sync": 552.6,
+          "layout": 1923.8,
+          "twoFrames": 4003.295
+        },
+        "completedStateTransitionMs": {
+          "sync": 608.9,
+          "layout": 1841,
+          "twoFrames": 2225.926
+        },
+        "changedCatalogThroughDisplayMs": 893.5
+      },
+      "candidate": {
+        "progressSynchronous": {
+          "medianMs": 0.1,
+          "p95Ms": 0.2,
+          "maxMs": 0.2
+        },
+        "progressThroughLayout": {
+          "medianMs": 0.3,
+          "p95Ms": 0.4,
+          "maxMs": 0.4
+        },
+        "progressThroughTwoFramesAndRoundTrip": {
+          "medianMs": 33.412,
+          "p95Ms": 36.05,
+          "maxMs": 83.57
+        },
+        "rendererTaskMsPerTick": 23.49,
+        "retainedJavaScriptHeapMiB": 125.082,
+        "retainedDOMNodes": 403823,
+        "firstRunningTransitionMs": {
+          "sync": 529.6,
+          "layout": 1828,
+          "twoFrames": 4042.174
+        },
+        "completedStateTransitionMs": {
+          "sync": 610.9,
+          "layout": 1702.5,
+          "twoFrames": 2050.898
+        },
+        "changedCatalogThroughDisplayMs": 545.1
+      }
+    },
+    "reproducibleSynthetic": {
+      "samplesPerVersion": 61,
+      "rows": 11325,
+      "renderedNonemptyChapterHeaders": 834,
+      "completeDOMParity": true,
+      "baseline": {
+        "progressSynchronous": {
+          "medianMs": 20.9,
+          "p95Ms": 29.1,
+          "maxMs": 36
+        },
+        "progressThroughLayout": {
+          "medianMs": 21.2,
+          "p95Ms": 29.5,
+          "maxMs": 36.4
+        },
+        "progressThroughTwoFramesAndRoundTrip": {
+          "medianMs": 47.336,
+          "p95Ms": 67.959,
+          "maxMs": 121.932
+        },
+        "rendererTaskMsPerTick": 51.82,
+        "retainedJavaScriptHeapMiB": 200.606,
+        "retainedDOMNodes": 462438,
+        "firstRunningTransitionMs": {
+          "sync": 119.8,
+          "layout": 120.9,
+          "twoFrames": 2145.363
+        },
+        "completedStateTransitionMs": {
+          "sync": 207.8,
+          "layout": 209.6,
+          "twoFrames": 335.238
+        },
+        "changedCatalogThroughDisplayMs": 744.9
+      },
+      "candidate": {
+        "progressSynchronous": {
+          "medianMs": 0.1,
+          "p95Ms": 0.2,
+          "maxMs": 0.2
+        },
+        "progressThroughLayout": {
+          "medianMs": 0.3,
+          "p95Ms": 0.4,
+          "maxMs": 0.6
+        },
+        "progressThroughTwoFramesAndRoundTrip": {
+          "medianMs": 33.462,
+          "p95Ms": 52.992,
+          "maxMs": 91.441
+        },
+        "rendererTaskMsPerTick": 28.93,
+        "retainedJavaScriptHeapMiB": 200.609,
+        "retainedDOMNodes": 462438,
+        "firstRunningTransitionMs": {
+          "sync": 120.7,
+          "layout": 121.8,
+          "twoFrames": 1981.348
+        },
+        "completedStateTransitionMs": {
+          "sync": 208.1,
+          "layout": 209.6,
+          "twoFrames": 263.784
+        },
+        "changedCatalogThroughDisplayMs": 758.1
+      }
+    }
+  },
+  "browserVersion": "143.0.7499.4"
+}

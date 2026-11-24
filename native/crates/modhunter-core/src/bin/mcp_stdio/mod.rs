@@ -22,8 +22,9 @@ const BSA_PAGE_SIZE: usize = 64;
 const PLUGIN_TOOL: &str = "plugin_header";
 const PLUGIN_MASTER_LIMIT: usize = 256;
 const PLUGIN_MASTER_NAME_LIMIT: usize = 255;
+const ENABLE_TOOL: &str = "mo2_set_enabled";
 const LIVE_TOOL: &str = "mo2_mods";
-const USAGE: &str = "mcp-stdio [--legacy-2025-11-25] [--bsa ALIAS PATH] [--plugin ALIAS PATH] [--mo2 PROFILE_ID LOOPBACK_URL] [--housecarl EXE DIRECTORIES_JSON]";
+const USAGE: &str = "mcp-stdio [--legacy-2025-11-25] [--bsa ALIAS PATH] [--plugin ALIAS PATH] [--mo2 PROFILE_ID LOOPBACK_URL] [--allow-mod PROFILE_ID INTERNAL_NAME] [--housecarl EXE DIRECTORIES_JSON]";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mode {
@@ -84,6 +85,7 @@ impl PluginSnapshot {
 }
 
 struct LiveProfile {
+    permitted_names: Vec<String>,
     profile_id: String,
     endpoint: String,
     client: BridgeClient,
@@ -114,8 +116,16 @@ fn configuration(args: &[String]) -> Result<(Mode, Selections), &'static str> {
     }
     let (mut archive, mut plugin) = (None, None);
     let mut live = None;
+    let mut permissions = Vec::new();
     let mut companion = None;
     for [flag, alias, path] in triples {
+        if flag == "--allow-mod" {
+            if alias.is_empty() || path.is_empty() || path.chars().any(char::is_control) {
+                return Err(USAGE);
+            }
+            permissions.push((alias.as_str(), path.clone()));
+            continue;
+        }
         if flag == "--housecarl" {
             if companion.replace((alias, path)).is_some() {
                 return Err(USAGE);
@@ -131,6 +141,7 @@ fn configuration(args: &[String]) -> Result<(Mode, Selections), &'static str> {
                 return Err(USAGE);
             }
             live = Some(LiveProfile {
+                permitted_names: Vec::new(),
                 profile_id: alias.clone(),
                 endpoint: validate_bridge_endpoint(path)
                     .map_err(|_| "Invalid MO2 loopback endpoint")?,
@@ -145,6 +156,15 @@ fn configuration(args: &[String]) -> Result<(Mode, Selections), &'static str> {
         };
         if !alias_name(alias) || slot.replace((alias, path)).is_some() {
             return Err(USAGE);
+        }
+    }
+    for (profile, name) in permissions {
+        let selected = live
+            .as_mut()
+            .filter(|selected| selected.profile_id == profile)
+            .ok_or("Mod permissions require a matching --mo2 profile ID")?;
+        if !selected.permitted_names.contains(&name) {
+            selected.permitted_names.push(name);
         }
     }
     if let (Some((archive, _)), Some((plugin, _))) = (archive, plugin)
@@ -250,7 +270,18 @@ struct LivePage {
     revision: Option<String>,
 }
 
+#[derive(Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct SetEnabled {
+    item_id: String,
+    name: String,
+    revision: String,
+    expected_enabled: bool,
+    enabled: bool,
+}
+
 enum ToolRequest {
+    SetEnabled(SetEnabled),
     Skyrim(housecarl::Query),
     Live(LivePage),
     Spid(DeclarationRequest),
@@ -266,6 +297,7 @@ struct Work {
 struct InFlight {
     id: Value,
     cancelled: bool,
+    mutation_dispatched: bool,
 }
 
 struct Wire<W> {
@@ -275,7 +307,11 @@ struct Wire<W> {
 
 impl<W: Write> Wire<W> {
     fn cancel(&mut self, id: &Value) {
-        if let Some(call) = self.inflight.as_mut().filter(|call| call.id == *id) {
+        if let Some(call) = self
+            .inflight
+            .as_mut()
+            .filter(|call| call.id == *id && !call.mutation_dispatched)
+        {
             call.cancelled = true;
         }
     }
@@ -306,8 +342,17 @@ impl<W: Write> Wire<W> {
     }
 }
 
-fn server_info() -> Value {
-    json!({"name":"modhunter-read-only","version":env!("CARGO_PKG_VERSION")})
+fn server_info(selections: &Selections) -> Value {
+    let name = if selections
+        .live
+        .as_ref()
+        .is_some_and(|live| !live.permitted_names.is_empty())
+    {
+        "modhunter-scoped-control"
+    } else {
+        "modhunter-read-only"
+    };
+    json!({"name":name,"version":env!("CARGO_PKG_VERSION")})
 }
 
 fn ok(id: Value, result: Value) -> Value {
@@ -333,10 +378,10 @@ fn unsupported(id: Value, requested: &str) -> Value {
         "data":{"supported":[MODERN],"requested":requested}}})
 }
 
-fn complete(mode: Mode, mut result: Value) -> Value {
+fn complete(mode: Mode, selections: &Selections, mut result: Value) -> Value {
     if mode == Mode::Modern {
         result["resultType"] = json!("complete");
-        result["_meta"] = json!({SERVER_KEY: server_info()});
+        result["_meta"] = json!({SERVER_KEY: server_info(selections)});
     }
     result
 }
@@ -378,6 +423,20 @@ fn list(mode: Mode, selections: &Selections) -> Value {
             .expect("tools array")
             .extend(housecarl::tools());
     }
+    if let Some(live) = selections
+        .live
+        .as_ref()
+        .filter(|live| !live.permitted_names.is_empty())
+    {
+        result["tools"].as_array_mut().expect("tools array").push(json!({
+            "name":ENABLE_TOOL, "title":"Set an explicitly permitted MO2 mod's enabled state",
+            "description":"Use an exact item from a freshly read live inventory. Both the launcher and MO2 settings must permit the exact name. Inspect the inventory again after a change or uncertain response.",
+            "inputSchema":{"type":"object","required":["itemId","name","revision","expectedEnabled","enabled"],"additionalProperties":false,
+                "properties":{"itemId":{"type":"string"},"name":{"enum":live.permitted_names,"type":"string"},"revision":{"type":"string"},
+                     "expectedEnabled":{"type":"boolean"},"enabled":{"type":"boolean"}}},
+            "annotations":{"readOnlyHint":false,"destructiveHint":true,"idempotentHint":false,"openWorldHint":false}
+        }));
+    }
     if selections.live.is_some() {
         result["tools"].as_array_mut().expect("tools array").push(json!({
             "name":LIVE_TOOL,
@@ -394,7 +453,7 @@ fn list(mode: Mode, selections: &Selections) -> Value {
         result["ttlMs"] = json!(0);
         result["cacheScope"] = json!("private");
     }
-    complete(mode, result)
+    complete(mode, selections, result)
 }
 
 fn archive_page(selection: &ArchiveSnapshot, request: ArchivePageRequest) -> Result<Value, String> {
@@ -444,6 +503,18 @@ fn execute(mode: Mode, request: ToolRequest, selections: &Selections) -> Value {
             .as_ref()
             .expect("registered houseCARL")
             .read(query),
+        ToolRequest::SetEnabled(request) => selections
+            .live
+            .as_ref()
+            .filter(|live| live.permitted_names.contains(&request.name))
+            .ok_or_else(|| "The launcher did not permit this mod".to_owned())
+            .and_then(|live| {
+                let mut body = serde_json::to_value(request).map_err(|e| e.to_string())?;
+                body["profileId"] = json!(live.profile_id);
+                live.client
+                    .native_content(&live.endpoint, "agent-set-enabled", &body)
+                    .map_err(|e| e.to_string())
+            }),
         ToolRequest::Live(page) => selections
             .live
             .as_ref()
@@ -482,11 +553,13 @@ fn execute(mode: Mode, request: ToolRequest, selections: &Selections) -> Value {
     match generated {
         Ok(report) => complete(
             mode,
+            selections,
             json!({"content":[{"type":"text","text":report.to_string()}],
                                 "structuredContent":report,"isError":false}),
         ),
         Err(reason) => complete(
             mode,
+            selections,
             json!({"content":[{"type":"text","text":reason}],"isError":true}),
         ),
     }
@@ -575,7 +648,7 @@ fn handle<W: Write>(
             return reply(ok(
                 id,
                 json!({"protocolVersion":LEGACY,"capabilities":{"tools":{}},
-                                      "serverInfo":server_info()}),
+                                      "serverInfo":server_info(selections)}),
             ));
         }
         if method == "server/discover" {
@@ -590,12 +663,13 @@ fn handle<W: Write>(
             id,
             complete(
                 mode,
+                selections,
                 json!({
                     "supportedVersions":[MODERN],"capabilities":{"tools":{}},"ttlMs":0,"cacheScope":"private"
                 }),
             ),
         )),
-        "ping" => reply(ok(id, complete(mode, json!({})))),
+        "ping" => reply(ok(id, complete(mode, selections, json!({})))),
         "tools/list" if params.get("cursor").is_none() => reply(ok(id, list(mode, selections))),
         "tools/list" => reply(error(id, -32602, "No next tool catalog page")),
         "tools/call" => {
@@ -623,6 +697,14 @@ fn handle<W: Write>(
                         .map(housecarl::Query::Status)
                         .map(ToolRequest::Skyrim)
                 }
+                Some(ENABLE_TOOL)
+                    if selections
+                        .live
+                        .as_ref()
+                        .is_some_and(|live| !live.permitted_names.is_empty()) =>
+                {
+                    serde_json::from_value(arguments).map(ToolRequest::SetEnabled)
+                }
                 Some(LIVE_TOOL) if selections.live.is_some() => {
                     serde_json::from_value(arguments).map(ToolRequest::Live)
                 }
@@ -649,6 +731,7 @@ fn handle<W: Write>(
             live.inflight = Some(InFlight {
                 id: id.clone(),
                 cancelled: false,
+                mutation_dispatched: false,
             });
             if worker
                 .try_send(Work {
@@ -685,6 +768,16 @@ fn serve(
             while let Ok(Work { id, request }) = rx.recv() {
                 // CPU work is bounded by the actual parser. If a cancellation
                 // arrives during it, discard its output rather than replying.
+                if matches!(request, ToolRequest::SetEnabled(_)) {
+                    let mut locked = wire.lock().unwrap();
+                    if let Some(active) = locked.inflight.as_mut() {
+                        if active.cancelled {
+                            locked.inflight = None;
+                            continue;
+                        }
+                        active.mutation_dispatched = true;
+                    }
+                }
                 let result = execute(mode, request, selections);
                 wire.lock().unwrap().finish(id, result)?;
             }
@@ -738,6 +831,7 @@ mod tests {
             inflight: Some(InFlight {
                 id: json!("call-1"),
                 cancelled: false,
+                mutation_dispatched: false,
             }),
         };
         wire.cancel(&json!("not-call-1"));
@@ -747,6 +841,7 @@ mod tests {
         wire.inflight = Some(InFlight {
             id: json!("call-2"),
             cancelled: false,
+            mutation_dispatched: false,
         });
         wire.cancel(&json!("call-2"));
         wire.finish(json!("call-2"), json!({"fixture":2})).unwrap();

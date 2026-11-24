@@ -1,0 +1,157 @@
+{
+  "verifiedDateUtc": "2026-11-24",
+  "scope": "Anonymous GitHub release discovery and explicitly approved browser-saved public archive acquisition on Windows x64",
+  "productCommit": "c840b05c7215477ca4b9a8189da500faf1ae9590",
+  "desktopExeSha256": "c6136ee56db4236aa1c5429d3f477d7e844689685d562e9c54dde0242d9ae463",
+  "build": "Windows Rust dev build with locked Cargo dependencies",
+  "officialReferences": [
+    "https://docs.github.com/en/rest/releases/releases#get-a-release-by-tag-name",
+    "https://docs.github.com/en/rest/releases/assets#list-release-assets"
+  ],
+  "nativeManager": {
+    "elapsedSeconds": 9.439,
+    "receiptSha256": "b269b230d1dab2c725a9c83f9abe757800bc3e83c7e9f0f310f99277e8bd179b",
+    "sourceFilesBound": 130,
+    "isolatedNoninteractiveDesktop": true,
+    "productionAppDataReadback": {
+      "preexistingAppDataFilesBefore": 584,
+      "preexistingAppDataFilesAfter": 584,
+      "sameExclusiveFilesComparedByIdentitySizeAndMtime": 38,
+      "otherFilesComparedBySha256AndMtime": 546,
+      "membershipHashOrMetadataDifferences": 0
+    },
+    "completeRenderedRows": 1444,
+    "checks": [
+      {
+        "assetIdentitySha256": "cdba16da7c56a2371799935e6234eee031bc574cd53b23d655e013378f451ce7",
+        "assets": 453,
+        "elapsedMs": 2413,
+        "manual": 1,
+        "manualActionsRejected": true,
+        "ok": true,
+        "phase": "completePublicReleaseInventory",
+        "rendered": 453,
+        "selectable": 452,
+        "source": "https://github.com/be5invis/Iosevka/releases/tag/v34.9.1"
+      },
+      {
+        "assetIdentitySha256": "276d6bb41ee6b1319d9216eb78584c121f8982e506ae21c1e4f01cdd8fcc9b58",
+        "assets": 991,
+        "elapsedMs": 5202,
+        "manual": 991,
+        "manualActionsRejected": true,
+        "ok": true,
+        "phase": "completePublicReleaseInventory",
+        "rendered": 991,
+        "selectable": 0,
+        "source": "https://github.com/astral-sh/python-build-standalone/releases/tag/20261124"
+      }
+    ]
+  },
+  "independentOfficialMetadata": [
+    {
+      "release": "https://github.com/be5invis/Iosevka/releases/tag/v34.9.1",
+      "api": "https://api.github.com/repos/be5invis/Iosevka/releases/tags/v34.9.1",
+      "idsNamesBytesAndEligibilityMatch": true,
+      "assetPages": 5,
+      "rows": 453,
+      "selectable": 452,
+      "manual": 1,
+      "canonicalSortedIdNameEligibilitySha256": "cdba16da7c56a2371799935e6234eee031bc574cd53b23d655e013378f451ce7"
+    },
+    {
+      "release": "https://github.com/astral-sh/python-build-standalone/releases/tag/20261124",
+      "api": "https://api.github.com/repos/astral-sh/python-build-standalone/releases/tags/20261124",
+      "idsNamesBytesAndEligibilityMatch": true,
+      "assetPages": 10,
+      "rows": 991,
+      "selectable": 0,
+      "manual": 991,
+      "canonicalSortedIdNameEligibilitySha256": "276d6bb41ee6b1319d9216eb78584c121f8982e506ae21c1e4f01cdd8fcc9b58"
+    },
+    {
+      "release": "https://github.com/3pvxiozkua/skyrim-tiered-casters/releases/tag/v1.0.0",
+      "api": "https://api.github.com/repos/3pvxiozkua/skyrim-tiered-casters/releases/tags/v1.0.0",
+      "idsNamesBytesAndEligibilityMatch": true,
+      "assetPages": 1,
+      "rows": 1,
+      "selectable": 1,
+      "manual": 0,
+      "canonicalSortedIdNameEligibilitySha256": "8a720deb5fda38b208e53c11f6367b3375333570522de1239dff4e9fc7615a90"
+    }
+  ],
+  "directPublicAcquisition": {
+    "elapsedSeconds": 5.189,
+    "receiptSha256": "100b07b7f1c8214fffa24ae1b7f6ab324f9ae13ae9cbf8cfd609c15b02da6477",
+    "sourceFilesBound": 130,
+    "isolatedNoninteractiveDesktop": true,
+    "productionAppDataReadback": {
+      "preexistingAppDataFilesBefore": 584,
+      "preexistingAppDataFilesAfter": 584,
+      "sameExclusiveFilesComparedByIdentitySizeAndMtime": 38,
+      "otherFilesComparedBySha256AndMtime": 546,
+      "membershipHashOrMetadataDifferences": 0
+    },
+    "browserApprovedAndHashedArchives": 2
+  },
+  "historicalPublicAcquisition": {
+    "elapsedSeconds": 7.652,
+    "receiptSha256": "9103f5b71c57e14360690268b819ca54e307da4fc467b981d5bcaa2c1d465b26",
+    "sourceFilesBound": 130,
+    "isolatedNoninteractiveDesktop": true,
+    "productionAppDataReadback": {
+      "preexistingAppDataFilesBefore": 584,
+      "preexistingAppDataFilesAfter": 584,
+      "sameExclusiveFilesComparedByIdentitySizeAndMtime": 38,
+      "otherFilesComparedBySha256AndMtime": 546,
+      "membershipHashOrMetadataDifferences": 0
+    },
+    "approvedDownloadReceipts": [
+      {
+        "source": "https://github.com/3pvxiozkua/skyrim-tiered-casters/releases/expanded_assets/v1.0.0",
+        "tag": "v1.0.0",
+        "filename": "skyrim-tiered-casters-1.0.0.zip",
+        "sourceFileKey": "0fc2f0c752dbc1ce4bd65f5fbc049006a5eaa0e69771633755281a9b5f1d4148",
+        "bytes": 16202,
+        "sha256": "a9e7bfdc1c849d7a25d20d51b476046b41667b27bac5bfc2939c8de8f09632c7",
+        "state": "ready"
+      },
+      {
+        "source": "https://github.com/kxgcayh/waccf-simonrim-skypatcher-patch/releases/expanded_assets/v0.1.2",
+        "tag": "v0.1.2",
+        "filename": "waccf-simonrim-skypatcher-patch-0.1.2.zip",
+        "sourceFileKey": "73e37460feb3bc37ec82778987c28ff483e6acacd27437bb3a7a2d982e5c0590",
+        "bytes": 10956,
+        "sha256": "80bb9e57790973f0c14060986d597fbc29cbcc6cf97923104000fbeb604b1892",
+        "state": "ready"
+      },
+      {
+        "source": "https://github.com/markekraus/ChairrowsSkyrimSEMod/releases/expanded_assets/v2.0.0",
+        "tag": "v2.0.0",
+        "filename": "MarkekrausChairrows.7z",
+        "sourceFileKey": "5bb22a4fd4bd2e6f03a50a2e69b842065bfaa0f50c22c48d26597d7e4d262c7b",
+        "bytes": 2734912,
+        "sha256": "318d6e4f2952ced680ac4f1a673eeae723172d34e8643c31a8b58fc5e94420b0",
+        "state": "ready"
+      },
+      {
+        "source": "https://github.com/markekraus/ChairrowsSkyrimSEMod/releases/expanded_assets/v2.0.1",
+        "tag": "v2.0.1",
+        "filename": "MarkekrausChairrows.7z",
+        "sourceFileKey": "e10e836163d57fc413898f32b4ee274f9f3d4eda1906c56a7d76737a20817e1e",
+        "bytes": 2734932,
+        "sha256": "bf7922674ef241ffa491bb79a7e85c80733ebc63e5f297e6663102688e4fe46e",
+        "state": "ready"
+      }
+    ]
+  },
+  "automatedTests": {
+    "core": 319,
+    "desktop": 76
+  },
+  "limits": [
+    "The authenticated and generic rendered-page paths retain their bounded 200-offer policy. Explicit account selection uses the selected browser profile.",
+    "The public resolver uses an all-or-nothing result, a metadata byte budget and a network deadline. Metadata exhaustion, provider changes or inaccessible asset pages require a successful later refresh.",
+    "The public transfer fixture saved and verified publisher archives in private temporary app storage. It did not install any mod or authenticate to a third-party service."
+  ]
+}

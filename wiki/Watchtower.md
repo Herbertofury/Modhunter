@@ -66,6 +66,10 @@ Recommendations show their reason and provider date. Unknown dates stay unknown;
 
 A creator group can opt into discovery of linked new releases and mute that creator on selected site origins. New releases remain separate choices until you classify them. Creator opt-in, an account login or a similar filename does not connect a new mod to an installed one. Saved creator preferences and exact file choices survive restart and watchlist JSON interchange; account observations are local and are not imported.
 
+For a public GitHub release, track its tag page, expanded-assets page or `releases/latest` and choose **Find files**. Watchtower resolves the release ID and reads every asset page from GitHub. The list shows the observed tag and file size for each entry. Uploaded ZIP, 7z and RAR files with an exact release download address are eligible for the normal browser download workflow. Other published assets appear as **Manual release asset**. Opening an eligible archive still requires classification and a separate download approval. The read-only CLI command `modhunter-cli watch-github-release --url GITHUB_RELEASE` returns the same structured public inventory. [GitHub release assets API](https://docs.github.com/en/rest/releases/assets#list-release-assets)
+
+Selecting a site account explicitly uses that account's browser session. The general browser discovery path supports up to 200 accessible file choices per page. If GitHub pagination fails after a release is identified, Watchtower retains the previous complete list and requires a successful refresh before opening an offer.
+
 Choose **Find files** from the tracked page to inspect its accessible archives. Each returned file has its own durable identity and one explicit relationship:
 
 - **Installed update** names the exact installed target and still requires confirmed source compatibility.

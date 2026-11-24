@@ -179,6 +179,9 @@ class _NexusMarkup(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.game, self.mod_id, self.url = game, mod_id, url
         self.stack: list[dict] = []
+        self._nav_frame: dict | None = None
+        self._bug_region = False
+        self._captures: list[dict] = []
         self.nodes = 0
         self.tabs: list[dict] = []
         self.title = ""
@@ -196,8 +199,8 @@ class _NexusMarkup(HTMLParser):
         node_id = values.get("id") or ""
         classes = set((values.get("class") or "").split())
         ignored = tag in _IGNORED_TAGS or bool(self.stack and self.stack[-1]["ignored"])
-        nav = next((p for p in reversed(self.stack) if p["id"].startswith("mod-page-tab-")), None)
-        bug_region = any(p["id"] == "tab-modbugs" for p in self.stack)
+        nav = self._nav_frame
+        bug_region = self._bug_region
         if tag == "link" and "canonical" in (values.get("rel") or "").split():
             canonical = urllib.parse.urljoin(self.url, values.get("href") or "")
             self.canonical_seen = True
@@ -215,16 +218,27 @@ class _NexusMarkup(HTMLParser):
         is_bug_anchor = bool(nav and nav["id"] == "mod-page-tab-bugs" and same
                              and urllib.parse.parse_qs(urllib.parse.urlsplit(href).query).get("tab") == ["bugs"])
         notice = bug_region and not ignored and (values.get("role") in {"alert", "status"} or bool(classes & {"alert", "notice", "message"}))
-        frame = {"tag": tag, "id": node_id, "ignored": ignored, "text": [], "size": 0,
-                 "capture": tag == "title" or is_bug_anchor or (tag == "span" and "alert" in classes and bool(nav)) or notice,
-                 "bug_anchor": is_bug_anchor, "count": tag == "span" and "alert" in classes and bool(nav),
-                 "counts": [], "notice": notice, "hidden": "hidden" in values or values.get("aria-hidden") == "true",
+        count = tag == "span" and "alert" in classes and bool(nav)
+        capture = tag == "title" or is_bug_anchor or count or notice
+        frame = {"tag": tag, "id": node_id, "ignored": ignored, "text": [] if capture else None, "size": 0,
+                 "capture": capture, "bug_anchor": is_bug_anchor, "count": count,
+                 "counts": [] if is_bug_anchor else None, "notice": notice,
+                 "hidden": "hidden" in values or values.get("aria-hidden") == "true",
                  "disabled": "disabled" in values or values.get("aria-disabled") == "true"}
         if is_bug_anchor and nav:
             frame["hidden"] = frame["hidden"] or nav["hidden"]
             frame["disabled"] = frame["disabled"] or nav["disabled"]
         if tag not in _VOID_TAGS:
+            # Record the previous scope so even a mis-nested closing tag can
+            # pop frames without leaking nav, notice or text capture scope.
+            frame["parentNav"], frame["parentBugRegion"] = nav, bug_region
             self.stack.append(frame)
+            if node_id.startswith("mod-page-tab-"):
+                self._nav_frame = frame
+            if node_id == "tab-modbugs":
+                self._bug_region = True
+            if capture:
+                self._captures.append(frame)
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         self.handle_starttag(tag, attrs)
@@ -234,19 +248,27 @@ class _NexusMarkup(HTMLParser):
     def handle_data(self, data: str) -> None:
         if self.stack and self.stack[-1]["ignored"]:
             return
-        for frame in self.stack:
-            if frame["capture"] and frame["size"] < 4096:
+        for frame in self._captures:
+            if frame["size"] < 4096:
                 value = data[:4096 - frame["size"]]
                 frame["text"].append(value)
                 frame["size"] += len(value)
 
     def handle_endtag(self, tag: str) -> None:
-        matching = next((i for i in range(len(self.stack) - 1, -1, -1) if self.stack[i]["tag"] == tag), None)
-        if matching is None:
+        if not self.stack:
             return
+        matching = len(self.stack) - 1
+        if self.stack[matching]["tag"] != tag:
+            matching = next((i for i in range(matching - 1, -1, -1) if self.stack[i]["tag"] == tag), None)
+            if matching is None:
+                return
         while len(self.stack) > matching:
             frame = self.stack.pop()
-            text = " ".join(" ".join(frame["text"]).split())
+            self._nav_frame, self._bug_region = frame["parentNav"], frame["parentBugRegion"]
+            text = ""
+            if frame["capture"]:
+                self._captures.pop()
+                text = " ".join(" ".join(frame["text"]).split())
             if frame["tag"] == "title":
                 self.title = text[:300]
             if frame["count"]:

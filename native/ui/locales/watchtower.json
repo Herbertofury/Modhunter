@@ -581,7 +581,9 @@
     "Project files": "Archivos del proyecto",
     "Bug reports": "Informes de errores",
     "Project changelog": "Registro de cambios del proyecto",
-    "Leave blank for readable text. Use feed: for public RSS or Atom, json: for public JSON, or jsonld: for structured data on a rendered page.": "Déjalo vacío para el texto legible. Usa feed: para RSS o Atom públicos, json: para JSON público o jsonld: para los datos estructurados de una página renderizada."
+    "Leave blank for readable text. Use feed: for public RSS or Atom, json: for public JSON, or jsonld: for structured data on a rendered page.": "Déjalo vacío para el texto legible. Usa feed: para RSS o Atom públicos, json: para JSON público o jsonld: para los datos estructurados de una página renderizada.",
+    "Choose region on page": "Elegir región en la página",
+    "Click a page region. Press Escape to cancel.": "Haz clic en una región. Pulsa Esc para cancelar."
   },
   "it": {
     "Preferences": "Preferenze",
@@ -1165,7 +1167,9 @@
     "Project files": "File del progetto",
     "Bug reports": "Segnalazioni di bug",
     "Project changelog": "Registro modifiche del progetto",
-    "Leave blank for readable text. Use feed: for public RSS or Atom, json: for public JSON, or jsonld: for structured data on a rendered page.": "Lascia vuoto per il testo leggibile. Usa feed: per RSS o Atom pubblici, json: per JSON pubblico o jsonld: per i dati strutturati di una pagina visualizzata."
+    "Leave blank for readable text. Use feed: for public RSS or Atom, json: for public JSON, or jsonld: for structured data on a rendered page.": "Lascia vuoto per il testo leggibile. Usa feed: per RSS o Atom pubblici, json: per JSON pubblico o jsonld: per i dati strutturati di una pagina visualizzata.",
+    "Choose region on page": "Scegli area sulla pagina",
+    "Click a page region. Press Escape to cancel.": "Fai clic su un’area. Premi Esc per annullare."
   },
   "zh-TW": {
     "Preferences": "偏好設定",
@@ -1749,7 +1753,9 @@
     "Project files": "專案檔案",
     "Bug reports": "錯誤回報",
     "Project changelog": "專案變更記錄",
-    "Leave blank for readable text. Use feed: for public RSS or Atom, json: for public JSON, or jsonld: for structured data on a rendered page.": "留空以擷取可讀文字。公開 RSS 或 Atom 請用 feed:，公開 JSON 請用 json:，網頁中的結構化資料請用 jsonld:。"
+    "Leave blank for readable text. Use feed: for public RSS or Atom, json: for public JSON, or jsonld: for structured data on a rendered page.": "留空以擷取可讀文字。公開 RSS 或 Atom 請用 feed:，公開 JSON 請用 json:，網頁中的結構化資料請用 jsonld:。",
+    "Choose region on page": "在網頁上選取範圍",
+    "Click a page region. Press Escape to cancel.": "按一下頁面範圍。按 Esc 取消。"
   },
   "en": {
     "Preferences": "Preferences",
@@ -2333,6 +2339,8 @@
     "Project files": "Project files",
     "Bug reports": "Bug reports",
     "Project changelog": "Project changelog",
-    "Leave blank for readable text. Use feed: for public RSS or Atom, json: for public JSON, or jsonld: for structured data on a rendered page.": "Leave blank for readable text. Use feed: for public RSS or Atom, json: for public JSON, or jsonld: for structured data on a rendered page."
+    "Leave blank for readable text. Use feed: for public RSS or Atom, json: for public JSON, or jsonld: for structured data on a rendered page.": "Leave blank for readable text. Use feed: for public RSS or Atom, json: for public JSON, or jsonld: for structured data on a rendered page.",
+    "Choose region on page": "Choose region on page",
+    "Click a page region. Press Escape to cancel.": "Click a page region. Press Escape to cancel."
   }
 }

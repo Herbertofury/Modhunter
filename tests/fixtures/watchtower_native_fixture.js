@@ -102,6 +102,7 @@
         if (f.defer[kind]) await new Promise(resolve => f.pending.push({kind, resolve}));
         if (kind === 'state') return {ok: true, state: captured};
         if (kind === 'detail') return {ok: true, state: snapshot(), watch: clone(enrich(find(value.id)))};
+        if (kind === 'pickRegion') return {ok:true,selector:'#chosen-section'};
         if (kind === 'saveWatch') {
           const duplicate = state.watches.find(w => w.url === value.url && w.sessionId === value.sessionId && w.id !== value.id);
           if (duplicate) return {ok: true, state: snapshot(), duplicate: true, watchId: duplicate.id};

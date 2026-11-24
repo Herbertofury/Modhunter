@@ -26,7 +26,7 @@ UI = ROOT / "native/ui"
 VERSION = json.loads((ROOT / "native/crates/modhunter-desktop/tauri.conf.json").read_text("utf-8"))["version"]
 OUTPUT = Path(os.environ.get("MODHUNTER_QA_OUTPUT", ROOT / "native/target/watchtower-browser"))
 BOOT = (ROOT / "tests/fixtures/watchtower_native_fixture.js").read_text("utf-8")
-SOURCE_FILES = ("native/ui/capture-page.js", "native/ui/watchtower.html", "native/ui/watchtower.css", "native/ui/watchtower.js",
+SOURCE_FILES = ("native/ui/capture-page.js", "native/ui/pick-region.js", "native/ui/watchtower.html", "native/ui/watchtower.css", "native/ui/watchtower.js",
                 "tests/fixtures/watchtower_native_fixture.js", "tests/test_watchtower_browser.py")
 
 
@@ -135,6 +135,13 @@ class WatchtowerBrowserTests(unittest.TestCase):
             self.assertEqual(capture("main", ["aside"])["text"], "A\nfirst\nB\nupdated")
 
             self.assertEqual(capture("jsonld:")["status"], "selectorMissing")
+            picker = (UI / "pick-region.js").read_text("utf8")
+            site.evaluate("promptText => " + picker, "Choose a region")
+            site.locator("article").nth(1).locator("em").click()
+            choice = site.evaluate("window.__modhunterReadPickedRegion()")
+            self.assertEqual(site.locator(choice["selector"]).inner_text(), "updated")
+            self.assertEqual(capture(choice["selector"])["text"], "updated")
+
             def add_data(raw):
                 site.evaluate("""raw => { const block = document.createElement('script');
                     block.type = 'application/ld+json'; block.textContent = raw; document.head.append(block) }""", raw)
@@ -200,6 +207,10 @@ class WatchtowerBrowserTests(unittest.TestCase):
         self.page.locator("#pageTags").fill("release, changelog")
         self.page.locator("#pageNotes").fill("Review the release before installing")
         self.page.locator(".advanced summary").click()
+        self.page.locator("#pickRegion").click()
+        self.page.wait_for_function("document.querySelector('#pageSelector').value === '#chosen-section'")
+        self.assertEqual(self.calls("pickRegion")[0]["value"]["url"], "https://mods.example.com/ReleaseCase?File=A")
+        self.assertEqual(self.calls("saveWatch"), [])
         self.page.locator("#pageSelector").fill("#releases")
         self.page.locator("#pageIgnore").fill(".counter\n.advertisement")
         self.page.locator("#savePage").click()

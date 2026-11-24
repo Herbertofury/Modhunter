@@ -103,7 +103,7 @@ REQUIRED_WATCHTOWER_BROWSER_CHECKS = {
     "responsive_complete_list",
 }
 WATCHTOWER_BROWSER_SOURCES = (
-    "native/ui/capture-page.js",
+    "native/ui/capture-page.js", "native/ui/pick-region.js",
     "native/ui/watchtower.html", "native/ui/watchtower.css", "native/ui/watchtower.js",
     "tests/fixtures/watchtower_native_fixture.js", "tests/test_watchtower_browser.py",
 )

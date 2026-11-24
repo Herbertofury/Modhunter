@@ -495,6 +495,19 @@
  $('creatorDialog').addEventListener('close',()=>{if(creatorDraft?.sourceId&&sourceDraft?.id===creatorDraft.sourceId&&watchById.has(sourceDraft.id))openDialog('sourceDialog')});
  for(const id of ['sourceGame','sourceRuntime','sourceVariant'])$(id).addEventListener('input',()=>{$('sourceCompatibility').checked=false});
  $('sourceForm').onsubmit=saveSourceChoices;$('creatorForm').onsubmit=saveCreatorChoices;$('sourceAssociation').onchange=()=>{sourceCreatorChoices('');$('sourceCompatibility').checked=false;$('sourcePreferred').checked=false};$('sourceCreator').onchange=()=>updateCreatorButton();$('manageCreator').onclick=openCreatorChoices;
+ $('pickRegion').onclick=async()=>{
+  let url;
+  try { url=validPage($('pageUrl').value); } catch(error) { formError('pageError',errorText(error));return; }
+  const generation=pageFormGeneration,address=$('pageUrl').value,session=$('pageSession').value,prior=$('pageSelector').value;
+  $('pickRegion').disabled=true;
+  try {
+   const picked=await command('pickRegion',{url,sessionId:session||null},true);
+   if(generation!==pageFormGeneration||!$('pageDialog').open||address!==$('pageUrl').value||
+      session!==$('pageSession').value||prior!==$('pageSelector').value)return;
+   if(!picked.ok)formError('pageError',picked.error);
+   else if(picked.selector){$('pageSelector').value=picked.selector;formError('pageError','');$('pageSelector').focus();}
+  } finally {$('pickRegion').disabled=false;}
+ };
  $('pageForm').onsubmit=savePage;$('sessionForm').onsubmit=saveSession;$('pageUrl').addEventListener('input',()=>{sessionChoices();identifyPage()});$('pageSession').addEventListener('change',()=>{if(editWatch)editWatch.requiresSession=false});
  for(const button of document.querySelectorAll('[data-close-dialog]'))button.onclick=()=>closeDialog(button.dataset.closeDialog);
  $('confirmProceed').onclick=()=>finishConfirm(true);$('confirmCancel').onclick=()=>finishConfirm(false);$('confirmDialog').addEventListener('cancel',event=>{event.preventDefault();finishConfirm(false)});

@@ -1217,6 +1217,89 @@ fn capture(
     Ok(result)
 }
 
+fn pick_region(app: &tauri::AppHandle, value: &Value) -> Result<Value> {
+    let runtime = app.state::<WatchRuntime>();
+    let store = &runtime.store;
+    let url = canonical_page_url(value["url"].as_str().ok_or("Enter a page address first.")?)?;
+    let url = Url::parse(&url).map_err(err)?;
+    let session = value["sessionId"]
+        .as_str()
+        .map(|id| {
+            store
+                .session(id)
+                .ok_or("The chosen site sign-in no longer exists.")
+        })
+        .transpose()?;
+    let context = SiteContext::production(session.clone(), &url)?;
+    let load = Arc::new(Load::default());
+    let window = WindowGuard(site_window(
+        app,
+        context,
+        url.clone(),
+        true,
+        None,
+        load.clone(),
+    )?);
+    let cancel = AtomicBool::new(false);
+    wait_loaded(&window.0, &load, &cancel, Instant::now() + CHECK_DEADLINE)?;
+    let exact_page = || -> Result<bool> {
+        let mut current = window.0.url().map_err(err)?;
+        current.set_fragment(None);
+        Ok(current == url)
+    };
+    if !exact_page()? {
+        return Err(
+            "The page redirected. Review its final address before choosing a region.".into(),
+        );
+    }
+    let deadline = Instant::now() + Duration::from_secs(180);
+    let prompt = localized(app, "Click a page region. Press Escape to cancel.");
+    let script = format!(
+        "(()=>{{const promptText={};return {};}})()",
+        serde_json::to_string(&prompt).map_err(err)?,
+        include_str!("../../../ui/pick-region.js")
+    );
+    if eval_json(&window.0, script, &cancel, deadline)? != true {
+        return Err("The page could not start region selection.".into());
+    }
+    while Instant::now() < deadline {
+        if runtime.stopping.load(Ordering::Acquire)
+            || app.get_webview_window("watchtower").is_none()
+        {
+            return Err("The Watchtower manager was closed.".into());
+        }
+        if !exact_page()? {
+            return Err("The page changed address during region selection.".into());
+        }
+        if let Some(ref session) = session
+            && store
+                .session(&session.id)
+                .is_none_or(|s| s.storage_generation != session.storage_generation)
+        {
+            return Err("The chosen site sign-in changed during region selection.".into());
+        }
+        let result = eval_json(&window.0,
+            "(()=>{const read=window.__modhunterReadPickedRegion;if(typeof read!=='function')return {cancelled:true};const r=read();if(!r||r.cancelled)return r;if(typeof r.selector==='string'&&r.selector.length<=1000&&document.querySelectorAll(r.selector).length===1)return {selector:r.selector};return {cancelled:true}})()".into(),
+            &cancel, deadline)?;
+        if result["cancelled"] == true {
+            return Ok(json!({"ok":true,"cancelled":true}));
+        }
+        if let Some(selector) = result["selector"].as_str()
+            && !selector.is_empty()
+            && selector.len() <= 1000
+            && !selector.chars().any(char::is_control)
+            && !["xpath:", "feed:", "json:", "jsonld:"]
+                .iter()
+                .any(|s| selector.starts_with(s))
+            && exact_page()?
+        {
+            return Ok(json!({"ok":true,"selector":selector}));
+        }
+        std::thread::sleep(Duration::from_millis(300));
+    }
+    Err("Region selection timed out. Reopen the picker when ready.".into())
+}
+
 fn run_check(
     app: &tauri::AppHandle,
     job: &CheckJob,
@@ -1727,6 +1810,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
                 ));
             }
         }
+        "pickRegion" => return pick_region(app, &value),
         "openSession" => {
             open_session(app, id(&value)?, None)?;
             result["message"] = json!(

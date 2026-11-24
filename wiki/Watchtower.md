@@ -20,6 +20,8 @@ GitHub repository and Nexus project addresses are identified in the Add page for
 
 ## Comparing page regions
 
+Choose **Choose region on page** to open the exact address in the selected site session. Click a highlighted element, or focus a link and press Enter. The proposed CSS selector appears in the form for review. Press Escape to cancel. Save the form to apply a selection.
+
 In **Page region**, enter a CSS selector to track its first match, or prefix an XPath element expression with `xpath:` to track every matched region in document order. For example, `xpath://article[@data-release]` compares each release article. Nested matches contribute their text once. **Ignore regions** accepts one CSS selector or prefixed XPath expression per line. Failed or empty selection retains the previous complete observation.
 
 ## Add and check a page

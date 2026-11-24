@@ -60,7 +60,7 @@ REQUIRED_MO2_CHECKS = {
     "native_profile_snapshot", "loopback_health", "protected_snapshot_authentication",
     "queued_refresh", "queued_focus", "native_dispatch_thread", "native_view_selection",
     "native_window_screenshot", "compact_game_response", "rust_cli_live_probe", "rust_plugin_audit",
-    "rust_content_recovery", "native_content_install",
+    "rust_content_recovery", "native_content_install", "rust_mcp_live_inventory",
 }
 LIVE_DESKTOP_SOURCES = ('native/scripts/verify_live_desktop.cjs', 'native/ui/shell.js', 'native/ui/shell.html', 'native/ui/native.css', 'native/crates/modhunter-desktop/src/windows.rs', 'native/crates/modhunter-desktop/src/policy.rs', 'mo2_update_arsenal/plugin.py', 'mo2_update_arsenal/bridge.py', 'mo2_update_arsenal/download_ids.py', 'mo2_update_arsenal/scanner.py', 'mo2_update_arsenal/gameplay.py', 'mo2_update_arsenal/native_nexus.py', 'mo2_update_arsenal/web/atelier.css', 'mo2_update_arsenal/web/app.js', 'mo2_update_arsenal/web/app.template.html')
 LIVE_DESKTOP_CHECKS = {"compact_workspace", "automatic_source_check", "automatic_discovery", "live_catalog_not_demo", "toolbar_refresh", "toolbar_plugin_audit", "connection_details", "content_native_ipc_denied", "manual_rediscovery", "disconnected_welcome", "setup_reconnect", "native_layout_1440_dark", "native_layout_900_light", "native_gallery_retains_live_catalog", "native_inspector_returns_focus", "native_dashboard_theme_control_acknowledged"}

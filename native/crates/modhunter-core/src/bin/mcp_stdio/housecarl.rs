@@ -13,6 +13,7 @@ use std::{
 };
 
 pub(super) const TOOL: &str = "skyrim_record";
+pub(super) const INSPECT: &str = "skyrim_inspect";
 pub(super) const STATUS: &str = "skyrim_load_order";
 const STATUS_UPSTREAM: &str = "housecarl_load_order_status";
 const RECORD_UPSTREAM: &str = "housecarl_records";
@@ -69,10 +70,11 @@ impl Companion {
         })
     }
 
-    pub(super) fn read(&self, record: Option<Record>) -> Result<Value, String> {
-        let (name, arguments) = match record {
-            None => (STATUS_UPSTREAM, json!({})),
-            Some(request) => (RECORD_UPSTREAM, request.arguments()?),
+    pub(super) fn read(&self, query: Query) -> Result<Value, String> {
+        let (name, arguments) = match query {
+            Query::Status(_) => (STATUS_UPSTREAM, json!({})),
+            Query::Record(record) => (RECORD_UPSTREAM, record.arguments()?),
+            Query::Inspect(inspect) => inspect.arguments()?,
         };
         let mut runtime = self
             .runtime
@@ -125,28 +127,32 @@ enum View {
     Everything,
 }
 
+fn validate_form_id(form_id: &str) -> Result<(), String> {
+    let valid_hex = |s: &str| s.bytes().all(|b| b.is_ascii_hexdigit());
+    let valid = match form_id.split_once(':') {
+        None => form_id.len() == 8 && valid_hex(form_id),
+        Some((id, plugin)) => {
+            (6..=8).contains(&id.len())
+                && valid_hex(id)
+                && !plugin.is_empty()
+                && !plugin.contains(['/', '\\', ':', '@'])
+                && !plugin.chars().any(char::is_control)
+                && [".esm", ".esp", ".esl"]
+                    .iter()
+                    .any(|ext| plugin.to_ascii_lowercase().ends_with(ext))
+        }
+    };
+    if !valid {
+        return Err(
+            "Use an eight-digit runtime FormID or a hex ID followed by a plugin filename".into(),
+        );
+    }
+    Ok(())
+}
+
 impl Record {
     fn arguments(self) -> Result<Value, String> {
-        let valid_hex = |s: &str| s.bytes().all(|b| b.is_ascii_hexdigit());
-        let valid = match self.form_id.split_once(':') {
-            None => self.form_id.len() == 8 && valid_hex(&self.form_id),
-            Some((id, plugin)) => {
-                (6..=8).contains(&id.len())
-                    && valid_hex(id)
-                    && !plugin.is_empty()
-                    && !plugin.contains(['/', '\\', ':', '@'])
-                    && !plugin.chars().any(char::is_control)
-                    && [".esm", ".esp", ".esl"]
-                        .iter()
-                        .any(|ext| plugin.to_ascii_lowercase().ends_with(ext))
-            }
-        };
-        if !valid {
-            return Err(
-                "Use an eight-digit runtime FormID or a hex ID followed by a plugin filename"
-                    .into(),
-            );
-        }
+        validate_form_id(&self.form_id)?;
         Ok(json!({"formids":[self.form_id],"project":{"form":self.view}}))
     }
 }
@@ -155,11 +161,93 @@ impl Record {
 #[serde(deny_unknown_fields)]
 pub(super) struct NoArguments {}
 
-pub(super) fn tools() -> [Value; 2] {
+pub(super) enum Query {
+    Status(NoArguments),
+    Record(Record),
+    Inspect(Diagnostic),
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
+pub(super) enum Diagnostic {
+    Asset {
+        path: String,
+    },
+    Nif {
+        path: String,
+    },
+    Facegen {
+        #[serde(rename = "formId")]
+        form_id: String,
+    },
+    Distributor {
+        layer: Layer,
+        filter: Option<String>,
+    },
+    Skse {
+        filter: Option<String>,
+    },
+}
+
+#[derive(Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub(super) enum Layer {
+    Skypatcher,
+    Spid,
+    Kid,
+    Bos,
+    Flm,
+}
+
+impl Diagnostic {
+    fn arguments(self) -> Result<(&'static str, Value), String> {
+        match self {
+            Self::Asset { ref path } | Self::Nif { ref path } => {
+                if path.starts_with('@')
+                    || path.contains(':')
+                    || path.chars().any(char::is_control)
+                    || path
+                        .split(['/', '\\'])
+                        .any(|p| p.is_empty() || p == "." || p == "..")
+                {
+                    return Err("Select a Data-relative asset path".into());
+                }
+                let upstream = if matches!(self, Self::Nif { .. }) {
+                    if !path.to_ascii_lowercase().ends_with(".nif") {
+                        return Err("Select a Data-relative NIF file".into());
+                    }
+                    "housecarl_nif_inspect"
+                } else {
+                    "housecarl_asset_status"
+                };
+                Ok((upstream, json!({"paths":[path]})))
+            }
+            Self::Facegen { form_id } => {
+                validate_form_id(&form_id)?;
+                Ok(("housecarl_asset_status", json!({"formids":[form_id]})))
+            }
+            Self::Distributor { layer, filter } => Ok((
+                "housecarl_layer",
+                json!({"distributor":[layer],"filter":filter}),
+            )),
+            Self::Skse { filter } => Ok(("housecarl_skse", json!({"filter":filter}))),
+        }
+    }
+}
+
+pub(super) fn tools() -> [Value; 3] {
     let annotations = json!({"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false});
     [
         json!({"name":STATUS,"title":"Inspect Skyrim load-order status","description":"Read active plugins and reported load failures from the configured houseCARL engine.",
         "inputSchema":{"type":"object","properties":{},"additionalProperties":false},"annotations":annotations}),
+        json!({"name":INSPECT,"title":"Inspect Skyrim assets, FaceGen, SKSE and distributor rules",
+            "description":"Resolve an asset winner, inspect a NIF, compare an NPC's FaceGen providers, read distributor rules or inspect the configured SKSE layer.",
+            "inputSchema":{"type":"object","required":["kind"],"oneOf":[
+                {"properties":{"kind":{"enum":["asset","nif"]},"path":{"type":"string"}},"required":["path"],"additionalProperties":false},
+                {"properties":{"kind":{"const":"facegen"},"formId":{"type":"string"}},"required":["formId"],"additionalProperties":false},
+                {"properties":{"kind":{"const":"distributor"},"layer":{"enum":["skypatcher","spid","kid","bos","flm"]},"filter":{"type":"string"}},"required":["layer"],"additionalProperties":false},
+                {"properties":{"kind":{"const":"skse"},"filter":{"type":"string"}},"additionalProperties":false}
+            ]},"annotations":annotations}),
         json!({"name":TOOL,"title":"Inspect a Skyrim record and its overrides","description":"Read a selected Skyrim record from the configured profile. The tree view compares providers and identifies the winner. Preserve any upstream exclusions.",
         "inputSchema":{"type":"object","required":["formId"],"additionalProperties":false,
         "properties":{"formId":{"type":"string"},"view":{"type":"string","enum":["summary","tree","everything"]}}},"annotations":annotations}),

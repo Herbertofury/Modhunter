@@ -344,7 +344,7 @@ log_level=0
     $RequiredChecks = @('native_bridge_autostart', 'native_callback_subscriptions', 'native_plugin_initialized', 'native_nexus_gateway_created', 'native_nexus_qt_binding', 'native_ui_initialized',
         'native_profile_snapshot', 'loopback_health', 'protected_snapshot_authentication', 'queued_refresh',
         'queued_focus', 'native_dispatch_thread', 'native_view_selection', 'native_window_screenshot', 'compact_game_response')
-    if ($RustCliPath) { $RequiredChecks += @('rust_cli_live_probe', 'rust_plugin_audit') }
+    if ($RustCliPath) { $RequiredChecks += @('rust_cli_live_probe', 'rust_plugin_audit', 'rust_mcp_live_inventory') }
     if ($DesktopExecutable) { $RequiredChecks += 'native_desktop_live_workflow' }
     foreach ($RequiredCheck in $RequiredChecks) {
         if (!(@($Receipt.checks | Where-Object { $_.name -eq $RequiredCheck -and $_.passed }).Count)) {

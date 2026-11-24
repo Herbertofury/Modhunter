@@ -251,8 +251,7 @@ struct LivePage {
 }
 
 enum ToolRequest {
-    SkyrimRecord(housecarl::Record),
-    SkyrimStatus(housecarl::NoArguments),
+    Skyrim(housecarl::Query),
     Live(LivePage),
     Spid(DeclarationRequest),
     Bsa(ArchivePageRequest),
@@ -440,16 +439,11 @@ fn plugin_header(selection: &PluginSnapshot, request: PluginRequest) -> Result<V
 
 fn execute(mode: Mode, request: ToolRequest, selections: &Selections) -> Value {
     let generated = match request {
-        ToolRequest::SkyrimRecord(record) => selections
+        ToolRequest::Skyrim(query) => selections
             .housecarl
             .as_ref()
             .expect("registered houseCARL")
-            .read(Some(record)),
-        ToolRequest::SkyrimStatus(_) => selections
-            .housecarl
-            .as_ref()
-            .expect("registered houseCARL")
-            .read(None),
+            .read(query),
         ToolRequest::Live(page) => selections
             .live
             .as_ref()
@@ -615,10 +609,19 @@ fn handle<W: Write>(
                     serde_json::from_value(arguments).map(ToolRequest::Bsa)
                 }
                 Some(housecarl::TOOL) if selections.housecarl.is_some() => {
-                    serde_json::from_value(arguments).map(ToolRequest::SkyrimRecord)
+                    serde_json::from_value(arguments)
+                        .map(housecarl::Query::Record)
+                        .map(ToolRequest::Skyrim)
+                }
+                Some(housecarl::INSPECT) if selections.housecarl.is_some() => {
+                    serde_json::from_value(arguments)
+                        .map(housecarl::Query::Inspect)
+                        .map(ToolRequest::Skyrim)
                 }
                 Some(housecarl::STATUS) if selections.housecarl.is_some() => {
-                    serde_json::from_value(arguments).map(ToolRequest::SkyrimStatus)
+                    serde_json::from_value(arguments)
+                        .map(housecarl::Query::Status)
+                        .map(ToolRequest::Skyrim)
                 }
                 Some(LIVE_TOOL) if selections.live.is_some() => {
                     serde_json::from_value(arguments).map(ToolRequest::Live)

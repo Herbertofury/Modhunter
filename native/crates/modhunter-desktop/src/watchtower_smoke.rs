@@ -167,7 +167,10 @@ fn respond(mut stream: TcpStream, token: &str, version: u64) -> Result<()> {
             "<main><div class=outside>Outside selected release</div><article class=release><p>Authenticated release version {version}</p><p>Build ready for review</p><span class=noise>Changing noise {}</span><span hidden>Hidden private debug must be ignored</span><form><label>Private form text<input value=private-fixture-field></label><textarea>Private textarea text</textarea></form></article></main>",
             now()
         ),
-        "/tracked" => {
+        "/batched-release" | "/batched-replacement" if authenticated => {
+            browser_inventory::release_html(path == "/batched-replacement")
+        }
+        "/tracked" | "/batched-release" | "/batched-replacement" => {
             "<main><h1>Sign in required</h1><label>Password <input type=password></label></main>"
                 .into()
         }
@@ -285,6 +288,8 @@ fn wait_closed(app: &tauri::AppHandle, label: &str) -> Result<()> {
     Err("A fixture browser did not close in time.".into())
 }
 
+#[path = "watchtower_browser_inventory_smoke.rs"]
+mod browser_inventory;
 #[path = "watchtower_acquisition_smoke.rs"]
 mod download_fixture;
 #[path = "watchtower_public_offer_smoke.rs"]
@@ -606,10 +611,13 @@ pub fn start(app: &tauri::AppHandle, output: PathBuf) -> Result<()> {
     std::thread::spawn(move || {
         let mut checks = Vec::new();
         let inventory = std::env::args().any(|arg| arg == "--verify-public-release-inventory");
+        let batched = std::env::args().any(|arg| arg == "--verify-session-release-inventory");
         let public =
             inventory || std::env::args().any(|arg| arg == "--verify-public-skyrim-offers");
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            if public {
+            if batched {
+                browser_inventory::run(&handle, &output, &mut checks)
+            } else if public {
                 public_offers::run(&handle, &output, &mut checks)
             } else {
                 run(&handle, &output, root.path(), &mut checks)
@@ -617,7 +625,9 @@ pub fn start(app: &tauri::AppHandle, output: PathBuf) -> Result<()> {
         }))
         .unwrap_or_else(|_| Err("The native fixture stopped unexpectedly.".into()));
         let ok = result.is_ok();
-        let scope = if inventory {
+        let scope = if batched {
+            "Owned signed-in WebView2 browser. Complete bounded release batches, anonymous-account separation, cancellations and session-reset rejection. No public network or downloads."
+        } else if inventory {
             "Complete pinned public GitHub release asset inventories in the native manager. Manual actions are rejected. No download or installation."
         } else if public {
             "Public publisher-hosted Skyrim release archives. Trusted manager discovery, exact offer selection, approval and receipt validation in isolated app storage."

@@ -10,15 +10,13 @@ window[cfg.key] = {state:'pending'};
  const visible = element => element.getClientRects().length && getComputedStyle(element).visibility !== 'hidden';
  if ([...document.querySelectorAll('input[type=password]')].some(visible)) fail('Sign in to this site, then find files again.');
  const files = [], identities = new Map();
+ const encoder = new TextEncoder();
+ const batchBytes = 128 * 1024, inventoryBytes = 64 * 1024 * 1024;
+ let retainedBytes = 0;
  const archive = /\.(zip|7z|rar)$/i;
  function releaseDate(raw) {
   if(typeof raw!=='string'||!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(raw))return '';
   const value=Date.parse(raw);return Number.isFinite(value)&&value>0&&value<=Date.now()?raw:'';
- }
- function boundedNodes(root, selector, limit) {
-  const nodes = [...root.querySelectorAll(selector)];
-  if (nodes.length > limit) fail('This page has too many links to inspect completely. Track a specific release page.');
-  return nodes;
  }
  function externalIdentity(url) {
   if (url.hostname === 'drive.google.com') {
@@ -61,13 +59,14 @@ window[cfg.key] = {state:'pending'};
    }
    return;
   }
-  if (files.length >= 200) fail('This release has more than 200 file choices. Track a narrower release page; the complete previous result is retained.');
   const label = String(name || 'Review download').replace(/[\u0000-\u001f\u007f]/g,' ').trim();
   if (label.length > 240) fail('A source filename is too long to identify safely. Review the release page.');
   const row = {url:url.href, name:label || 'Review download', identity, related:!!metadata.related,
    sourcePostId:metadata.sourcePostId || '', publishedAt:releaseDate(metadata.publishedAt),
    publicationEvidence:metadata.publicationEvidence || '',accessEvidence:metadata.accessEvidence || 'visibleLink',
    kind:metadata.kind || (/^(?:drive|mega):folder:/.test(externalIdentity(url)) ? 'folder' : externalIdentity(url) ? 'external' : 'attachment')};
+  retainedBytes += encoder.encode(JSON.stringify(row)).length + 1;
+  if (retainedBytes > inventoryBytes) fail('The complete release exceeds the browser inventory byte budget. The previous complete list is retained.');
   identities.set(identity,row); files.push(row);
  }
  async function json(url) {
@@ -99,14 +98,18 @@ window[cfg.key] = {state:'pending'};
    if (doc.data?.id !== expectedId || doc.data?.attributes?.current_user_can_view !== true) fail('A linked release is unavailable to this account. Review it before using a partial result.');
    const a = doc.data.attributes;
    const references = doc.data.relationships?.attachments_media?.data || [];
-   if (!Array.isArray(references) || references.length > 200) fail('The release attachment relationship is incomplete or too large.');
+   if (!Array.isArray(references)) fail('The release attachment relationship is incomplete.');
    const included = doc.included || [];
-   if (!Array.isArray(included) || included.length > 1000) fail('The release metadata cannot be inspected completely.');
+   if (!Array.isArray(included)) fail('The release metadata cannot be inspected completely.');
+   const media = new Map();
+   for (const item of included) {
+    if (item.type === 'media') media.set(item.id,media.has(item.id) ? null : item);
+   }
    for (const reference of references) {
     if (reference.type !== 'media' || typeof reference.id !== 'string') fail('The release attachment relationship is invalid.');
-    const matches = included.filter(item => item.type === 'media' && item.id === reference.id);
-    if (matches.length !== 1) fail('The source omitted or duplicated an attachment record. Refresh the release page.');
-    const file = matches[0].attributes || {};
+    const record = media.get(reference.id);
+    if (!record) fail('The source omitted or duplicated an attachment record. Refresh the release page.');
+    const file = record.attributes || {};
     if (archive.test(file.file_name || '')) add(file.download_url,file.file_name,{identity:'patreon:post:' + expectedId + ':media:' + reference.id,related,sourcePostId:expectedId,publishedAt:a.published_at || '',publicationEvidence:'patreonPost',accessEvidence:'patreonAttachment'});
    }
    if (archive.test(a.post_file?.name || '')) add(a.post_file.url,a.post_file.name,{identity:'patreon:post:' + expectedId + ':post-file:' + a.post_file.name,related,sourcePostId:expectedId,publishedAt:a.published_at || '',publicationEvidence:'patreonPost',accessEvidence:'patreonAttachment'});
@@ -115,7 +118,7 @@ window[cfg.key] = {state:'pending'};
   const links = [];
   if (typeof attributes.content === 'string' && attributes.content.length > 1000000) fail('The release description is too large to inspect completely.');
   const parsed = new DOMParser().parseFromString(String(attributes.content || ''),'text/html');
-  for (const node of boundedNodes(parsed,'a[href]',1000)) links.push(node.getAttribute('href'));
+  for (const node of parsed.querySelectorAll('a[href]')) links.push(node.getAttribute('href'));
   if (attributes.content_json_string) {
    if (typeof attributes.content_json_string !== 'string' || attributes.content_json_string.length > 1000000) fail('The structured release description is too large to inspect completely.');
    let content; try { content = JSON.parse(attributes.content_json_string); } catch { fail('The release description is incomplete. Refresh the source page.'); }
@@ -152,7 +155,7 @@ window[cfg.key] = {state:'pending'};
   // date. General page clocks, comments and the time of this check are ignored.
   function releaseMetadata() {
    const dates=new Set();let total=0,visited=0;
-   for(const script of boundedNodes(document,'script[type="application/ld+json"]',50)) {
+   for(const script of document.querySelectorAll('script[type="application/ld+json"]')) {
     const text=script.textContent||'';total+=text.length;if(total>1000000)fail('Release date metadata is too large to inspect completely.');
     let data;try{data=JSON.parse(text)}catch{continue}
     const pending=[data];while(pending.length){if(++visited>500)fail('Release date metadata is too large to inspect completely.');const item=pending.pop();
@@ -170,7 +173,7 @@ window[cfg.key] = {state:'pending'};
   const releasePublishedAt=releaseMetadata();
   function choices(root) {
    const rows=[];
-   for (const link of boundedNodes(root,'a[href]',10000)) {
+   for (const link of root.querySelectorAll('a[href]')) {
     let url; try { url = new URL(link.getAttribute('href'),here); } catch { continue; }
     if (url.origin !== here.origin || /\/files\/file\/(\d+)/.exec(url.pathname)?.[1] !== id || url.searchParams.get('do') !== 'download') continue;
     const row=link.closest('li,tr,.ipsDataItem');
@@ -210,7 +213,7 @@ window[cfg.key] = {state:'pending'};
   }
 
  } else {
-  for (const link of boundedNodes(document,'a[href]',10000)) {
+  for (const link of document.querySelectorAll('a[href]')) {
    let url; try { url = new URL(link.getAttribute('href'),here); } catch { continue; }
    let name = link.getAttribute('download');
    if (!name) { try { name = decodeURIComponent(url.pathname.split('/').pop() || ''); } catch { name = url.pathname.split('/').pop() || ''; } }
@@ -218,5 +221,21 @@ window[cfg.key] = {state:'pending'};
    else if (externalIdentity(url)) add(url.href,link.textContent.trim() || 'Review external host');
   }
  }
- window[cfg.key] = {state:'ready',files};
+ // Snapshot before publishing the descriptor. The native reader receives
+ // one bounded batch per message, and only publishes after the complete run.
+ for (const row of files) Object.freeze(row);
+ Object.freeze(files);
+ const total = files.length;
+ function read(start) {
+  if (!Number.isSafeInteger(start) || start < 0 || start >= total) fail('Invalid release inventory cursor.');
+  const rows=[]; let bytes=128; // Reserve the cursor, total and envelope delimiters.
+  for (let i=start; i<total && rows.length<128; i++) {
+   const size=encoder.encode(JSON.stringify(files[i])).length+1;
+   if (size+128>batchBytes) fail('One release file exceeds the browser message budget.');
+   if (bytes+size>batchBytes) break;
+   bytes+=size; rows.push(files[i]);
+  }
+  return {start,total,rows};
+ }
+ Object.defineProperty(window,cfg.key,{value:Object.freeze({state:'ready',total,read}),writable:false,configurable:false});
 })().catch(error => { window[cfg.key] = {state:'error',message:String(error.message || error).slice(0,500)}; });

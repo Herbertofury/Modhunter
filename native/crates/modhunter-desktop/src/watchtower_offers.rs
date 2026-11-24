@@ -212,6 +212,15 @@ pub(super) fn snapshot(app: &tauri::AppHandle) -> Value {
         "discoveries":discoveries.iter().map(|(id,d)|json!({"watchId":id,"state":d.state})).collect::<Vec<_>>()})
 }
 pub(super) fn resolve_files(app: &tauri::AppHandle, value: &Value) -> Result<Value> {
+    resolve_files_with(app, value, |url, watch, context, preparation| {
+        browser_release_rows(app, url, watch, context, preparation, |_| Ok(()))
+    })
+}
+pub(in crate::watchtower_windows) fn resolve_files_with(
+    app: &tauri::AppHandle,
+    value: &Value,
+    browser: impl FnOnce(&Url, &str, &SiteContext, &Preparation) -> Result<Vec<Value>>,
+) -> Result<Value> {
     let watch_id = id(value)?.to_owned();
     let runtime = app.state::<WatchRuntime>();
     let watch = runtime
@@ -236,7 +245,7 @@ pub(super) fn resolve_files(app: &tauri::AppHandle, value: &Value) -> Result<Val
     drop(gate);
     registry.revision.fetch_add(1, Ordering::AcqRel);
     notify(app);
-    let result = resolve_files_inner(app, value, attempt, &preparation);
+    let result = resolve_files_inner(app, value, attempt, &preparation, browser);
     if result.is_err() {
         let gate = registry.preparations.lock().map_err(err)?;
         if gate.current(&preparation.ticket)
@@ -255,6 +264,7 @@ fn resolve_files_inner(
     value: &Value,
     attempt: u64,
     preparation: &Preparation,
+    browser: impl FnOnce(&Url, &str, &SiteContext, &Preparation) -> Result<Vec<Value>>,
 ) -> Result<Value> {
     let runtime = app.state::<WatchRuntime>();
     let watch = runtime
@@ -324,7 +334,7 @@ fn resolve_files_inner(
         }
     }
     if !official {
-        rows = browser_release_rows(app, &url, &watch.id, &context, preparation)?;
+        rows = browser(&url, &watch.id, &context, preparation)?;
     }
     binding(app, &context)?;
     if !runtime.store.watch_eligible(&watch.id) {
@@ -480,12 +490,13 @@ fn resolve_files_inner(
         json!({"message":if official { format!("GitHub lists {accepted} release assets: {archives} supported archives and {} manual entries.", accepted - archives) } else if accepted>0{format!("Found {accepted} file choices. Classify exact files before opening them; ignored and separate-content choices are retained.")}else{"No accessible archive links found. Open the source page to choose a file or finish sign-in.".into()}}),
     )
 }
-fn browser_release_rows(
+pub(in crate::watchtower_windows) fn browser_release_rows(
     app: &tauri::AppHandle,
     url: &Url,
     watch_id: &str,
     context: &SiteContext,
     preparation: &Preparation,
+    mut after_batch: impl FnMut(usize) -> Result<()>,
 ) -> Result<Vec<Value>> {
     let runtime = app.state::<WatchRuntime>();
     let load = Arc::new(Load::default());
@@ -495,6 +506,11 @@ fn browser_release_rows(
     let cancel = preparation.cancel();
     let deadline = Instant::now() + CHECK_DEADLINE;
     wait_loaded(&view.0, &load, &cancel, deadline)?;
+    let navigation = load.navigation.lock().map_err(err)?.revision;
+    let document = view.0.url().map_err(err)?;
+    if document.origin() != url.origin() {
+        return Err("This release redirected to a different site.".into());
+    }
     let key = format!(
         "__modhunterOffers{}",
         runtime.sequence.fetch_add(1, Ordering::AcqRel)
@@ -506,52 +522,95 @@ fn browser_release_rows(
             include_str!("../../../ui/resolve-offers.js")
         ))
         .map_err(err)?;
-    let mut reply = loop {
+    let current = || -> Result<()> {
         binding(app, context)?;
-        if !runtime.store.watch_eligible(watch_id) {
-            return Err("Source checks were paused or account verification is required. The previous complete files remain available.".into());
+        if cancel.load(Ordering::Acquire) || Instant::now() >= deadline {
+            return Err("The current browser inventory was cancelled or timed out.".into());
         }
-        let reply = eval_json(
+        let same_navigation = {
+            let progress = load.navigation.lock().map_err(err)?;
+            navigation == progress.revision && progress.ready()
+        };
+        if !same_navigation || view.0.url().map_err(err)? != document {
+            return Err(
+                "The source navigated during file discovery. Refresh the complete release.".into(),
+            );
+        }
+        if !runtime.store.watch_eligible(watch_id) {
+            return Err("Source checks were paused or account verification is required.".into());
+        }
+        if let Some(session) = &context.session
+            && runtime
+                .store
+                .session(&session.id)
+                .is_none_or(|saved| saved.storage_generation != session.storage_generation)
+        {
+            return Err("The selected site session changed during file discovery.".into());
+        }
+        Ok(())
+    };
+    let key = serde_json::to_string(&key).map_err(err)?;
+    let descriptor = format!(
+        "(()=>{{const v=window[{key}];return v?{{state:v.state,total:v.total,message:v.message}}:null}})()"
+    );
+    let total = loop {
+        current()?;
+        let result = eval_json(&view.0, descriptor.clone(), &cancel, deadline)?;
+        match result["state"].as_str() {
+            Some("pending") | None => std::thread::sleep(Duration::from_millis(70)),
+            Some("ready") => {
+                break result["total"]
+                    .as_u64()
+                    .and_then(|n| usize::try_from(n).ok())
+                    .ok_or("Invalid browser inventory size.")?;
+            }
+            _ => {
+                return Err(result["message"]
+                    .as_str()
+                    .unwrap_or("Open the source page to review its accessible files.")
+                    .chars()
+                    .take(500)
+                    .collect());
+            }
+        }
+    };
+    const MAX_BATCH_BYTES: usize = 128 * 1024;
+    const MAX_INVENTORY_BYTES: usize = 64 * 1024 * 1024;
+    let mut rows = Vec::new();
+    let mut bytes = 0;
+    while rows.len() < total {
+        current()?;
+        let start = rows.len();
+        let mut batch = eval_json(
             &view.0,
             format!(
-                "window[{}]||null",
-                serde_json::to_string(&key).map_err(err)?
+                "(()=>{{const v=window[{key}];return v?.state==='ready'&&typeof v.read==='function'?v.read({start}):null}})()"
             ),
             &cancel,
             deadline,
         )?;
-        if reply.is_object() && reply["state"] != "pending" {
-            break reply;
+        if batch["start"].as_u64() != Some(start as u64)
+            || batch["total"].as_u64() != Some(total as u64)
+        {
+            return Err("The browser release inventory changed between batches.".into());
         }
-        if Instant::now() >= deadline {
+        let batch_bytes = serde_json::to_vec(&batch).map_err(err)?.len();
+        let Value::Array(part) = batch["rows"].take() else {
+            return Err("Missing browser inventory batch.".into());
+        };
+        if part.is_empty() || part.len() > 128 || part.len() > total - start {
             return Err(
-                "Source file discovery timed out; open the page to finish sign-in or verification."
-                    .into(),
+                "The browser returned a non-advancing or inconsistent inventory batch.".into(),
             );
         }
-        std::thread::sleep(Duration::from_millis(100));
-    };
-    binding(app, context)?;
-    if reply["state"] != "ready" {
-        return Err(reply["message"]
-            .as_str()
-            .unwrap_or("Open the page to review its accessible files.")
-            .chars()
-            .take(500)
-            .collect());
+        bytes += batch_bytes;
+        if batch_bytes > MAX_BATCH_BYTES || bytes > MAX_INVENTORY_BYTES {
+            return Err("Browser inventory exceeded its complete metadata byte budget.".into());
+        }
+        rows.extend(part);
+        after_batch(rows.len())?;
     }
-    let rows = reply
-        .get_mut("files")
-        .map(Value::take)
-        .and_then(|v| match v {
-            Value::Array(r) => Some(r),
-            _ => None,
-        })
-        .ok_or("Source did not return a complete file list.")?;
-    if rows.len() > 200 {
-        return Err("Source returned too many files. Select a narrower source page; the previous complete result is retained.".into());
-    }
-
+    current()?;
     Ok(rows)
 }
 fn current_offer(app: &tauri::AppHandle, value: &Value) -> Result<Offer> {

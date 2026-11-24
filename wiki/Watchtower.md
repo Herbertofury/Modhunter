@@ -68,7 +68,7 @@ A creator group can opt into discovery of linked new releases and mute that crea
 
 For a public GitHub release, track its tag page, expanded-assets page or `releases/latest` and choose **Find files**. Watchtower resolves the release ID and reads every asset page from GitHub. The list shows the observed tag and file size for each entry. Uploaded ZIP, 7z and RAR files with an exact release download address are eligible for the normal browser download workflow. Other published assets appear as **Manual release asset**. Opening an eligible archive still requires classification and a separate download approval. The read-only CLI command `modhunter-cli watch-github-release --url GITHUB_RELEASE` returns the same structured public inventory. [GitHub release assets API](https://docs.github.com/en/rest/releases/assets#list-release-assets)
 
-Selecting a site account explicitly uses that account's browser session. The general browser discovery path supports up to 200 accessible file choices per page. If GitHub pagination fails after a release is identified, Watchtower retains the previous complete list and requires a successful refresh before opening an offer.
+Selecting a site account uses that account's browser session. Watchtower reads the complete signed-in file list in bounded batches and publishes it after checking the source, session and file identities. If inspection is interrupted or the selected account changes, the previous complete list remains visible and its actions require a successful refresh.
 
 Choose **Find files** from the tracked page to inspect its accessible archives. Each returned file has its own durable identity and one explicit relationship:
 

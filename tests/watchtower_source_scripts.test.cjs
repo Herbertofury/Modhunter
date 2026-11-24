@@ -14,10 +14,16 @@ function documentFixture({title='Release',links=[],passwords=[],content='A compl
 }
 const parser=class {parseFromString(html){const links=[...html.matchAll(/href=["']([^"']+)["']/g)].map(match=>link(match[1].replaceAll('&amp;','&')));return documentFixture({links});}};
 async function discover({url='https://www.patreon.com/posts/release-111',source=url,docs={},responses={},document=documentFixture(),includeNewContent=false}={}){
- const requests=[];const sandbox={window:{},cfg:{key:'result',source,includeNewContent},location:new URL(url),document,URL,Set,Map,DOMParser:parser,getComputedStyle:()=>({visibility:'visible'}),AbortSignal,TextDecoder,Uint8Array,fetch:async(target,options)=>{requests.push(target);assert.equal(options.credentials,'include');assert.equal(options.redirect,'error');if(responses[target]){const {body,status=200,headers={}}=responses[target];return new Response(body,{status,headers});}const id=/\/api\/posts\/(\d+)/.exec(target)?.[1];if(!docs[id])throw Error('Unexpected fixture request '+target);return new Response(JSON.stringify(docs[id]),{status:200});}};
+ const requests=[];const sandbox={window:{},cfg:{key:'result',source,includeNewContent},location:new URL(url),document,URL,Set,Map,DOMParser:parser,getComputedStyle:()=>({visibility:'visible'}),AbortSignal,TextDecoder,TextEncoder,Uint8Array,fetch:async(target,options)=>{requests.push(target);assert.equal(options.credentials,'include');assert.equal(options.redirect,'error');if(responses[target]){const {body,status=200,headers={}}=responses[target];return new Response(body,{status,headers});}const id=/\/api\/posts\/(\d+)/.exec(target)?.[1];if(!docs[id])throw Error('Unexpected fixture request '+target);return new Response(JSON.stringify(docs[id]),{status:200});}};
  vm.runInNewContext(resolver,sandbox,{timeout:1000});
  for(let i=0;i<100&&sandbox.window.result?.state==='pending';i++)await new Promise(setImmediate);
- assert.notEqual(sandbox.window.result?.state,'pending','resolver did not settle');return {result:JSON.parse(JSON.stringify(sandbox.window.result)),requests};
+ assert.notEqual(sandbox.window.result?.state,'pending','resolver did not settle');
+ const descriptor=sandbox.window.result, result=JSON.parse(JSON.stringify(descriptor)), batches=[];
+ if(result.state==='ready'){
+  result.files=[];
+  while(result.files.length<result.total){const part=descriptor.read(result.files.length);assert.equal(part.start,result.files.length);assert.equal(part.total,result.total);assert.ok(part.rows.length&&part.rows.length<=128);assert.ok(Buffer.byteLength(JSON.stringify(part))<=128*1024);batches.push(part.rows.length);result.files.push(...JSON.parse(JSON.stringify(part.rows)));}
+ }
+ return {result,requests,batches};
 }
 function post(id='111',media=['10'],extra={}){
  return {data:{id,type:'post',attributes:{current_user_can_view:true,published_at:'2026-01-01T00:00:00Z',content:'',...extra},relationships:{campaign:{data:{id:'creator-1',type:'campaign'}},attachments_media:{data:media.map(id=>({id,type:'media'}))}}},included:media.map(id=>({id,type:'media',attributes:{file_name:'release-'+id+'.zip',download_url:'https://www.patreon.com/files/'+id+'.zip?token=private',created_at:'2026-01-01T00:00:00Z'}}))};
@@ -52,13 +58,21 @@ test('a linked release from another creator is never folded into this creator',a
  const current=post('111',[],{content:'<a href="https://www.patreon.com/posts/other-222">Other creator</a>'}),linked=post('222',['20']);linked.data.relationships.campaign.data.id='another-creator';
  const {result}=await discover({docs:{111:current,222:linked}});assert.equal(result.state,'ready');assert.equal(result.files.length,0);
 });
-test('a bounded result rejects a 201st file rather than silently dropping it',async()=>{
- const links=Array.from({length:201},(_,i)=>link('https://mods.example.com/'+i+'.zip'));
- const {result}=await discover({url:'https://mods.example.com/release',document:documentFixture({links})});assert.equal(result.state,'error');assert.match(result.message,/more than 200/);assert.equal(result.files,undefined);
+test('large generic releases retain all exact identities across byte-sized batches',async()=>{
+ const links=Array.from({length:641},(_,i)=>link('https://mods.example.com/'+i+'.zip?part='+'x'.repeat(1600)));
+ const {result,batches}=await discover({url:'https://mods.example.com/release',document:documentFixture({links})});
+ assert.equal(result.state,'ready');assert.equal(result.files.length,641);assert.ok(batches.length>10);
+ assert.deepEqual(result.files.map(row=>row.identity),links.map(a=>'url:'+a.getAttribute('href')));
 });
-test('a page over the full link inspection limit does not claim a complete empty result',async()=>{
- const links=Array.from({length:10001},()=>link('https://mods.example.com/other'));
- const {result}=await discover({url:'https://mods.example.com/release',document:documentFixture({links})});assert.equal(result.state,'error');assert.match(result.message,/too many links/);
+test('a selected Patreon release retains more than 200 exact entitled media relationships',async()=>{
+ const ids=Array.from({length:385},(_,i)=>String(1000+i));
+ const {result,batches}=await discover({docs:{111:post('111',ids)}});
+ assert.equal(result.state,'ready');assert.ok(batches.length>1);
+ assert.deepEqual(result.files.map(row=>row.identity),ids.map(id=>'patreon:post:111:media:'+id));
+});
+test('a release link after ten thousand unrelated anchors stays visible',async()=>{
+ const links=Array.from({length:10001},()=>link('https://mods.example.com/other'));links.push(link('https://mods.example.com/tail.zip'));
+ const {result}=await discover({url:'https://mods.example.com/release',document:documentFixture({links})});assert.equal(result.state,'ready');assert.deepEqual(result.files.map(row=>row.name),['tail.zip']);
 });
 test('LoversLab inspects the complete chooser even when the page already exposes one attachment',async()=>{
  const url='https://www.loverslab.com/files/file/111-mod/';

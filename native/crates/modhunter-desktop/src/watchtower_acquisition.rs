@@ -965,7 +965,7 @@ pub(super) fn cancel_all(app: &tauri::AppHandle) {
 #[path = "watchtower_mega.rs"]
 mod mega;
 #[path = "watchtower_offers.rs"]
-mod offers;
+pub(super) mod offers;
 pub(super) use offers::begin_preparation;
 use offers::{open_offer, resolve_files};
 

@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
-from contextlib import closing
+from contextlib import closing, contextmanager
+from hashlib import sha256
+import os
 import json
 import re
-import sqlite3
+import tempfile
+
+try:
+    import sqlite3
+except ImportError:
+    sqlite3 = None  # Some stock MO2 embedded Python distributions omit a required DLL.
 from email.utils import parsedate_to_datetime
 import time
 from pathlib import Path
@@ -13,6 +20,8 @@ from urllib.parse import urlsplit
 
 from .source_registry import _get_json, canonical_source_url
 from .version_evidence import normalized_version
+
+_DATABASE_ERROR = sqlite3.Error if sqlite3 is not None else OSError
 
 
 def repository(source):
@@ -152,9 +161,45 @@ class GitHubAdvisories:
     def __init__(self, path, fetch=_get_json):
         self.path, self.fetch = Path(path), fetch
 
-    def observe(self, project, cancel):
+    @contextmanager
+    def _cache(self, project):
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        now = time.time()
+        if sqlite3 is None:
+            # One atomic document per project avoids losing unrelated entries when
+            # multiple embedded hosts share the Mod Hunter cache directory.
+            root = self.path.with_name(self.path.name + ".records")
+            root.mkdir(exist_ok=True)
+            key = sha256(project.encode("utf-8")).hexdigest()
+
+            def read(name):
+                try:
+                    return json.loads((root / name).read_text(encoding="utf-8"))
+                except FileNotFoundError:
+                    return None
+
+            def save(name, value):
+                temporary = None
+                try:
+                    with tempfile.NamedTemporaryFile(
+                        dir=root, delete=False, mode="w", encoding="utf-8"
+                    ) as stream:
+                        temporary = Path(stream.name)
+                        json.dump(value, stream)
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                    temporary.replace(root / name)
+                finally:
+                    if temporary is not None:
+                        temporary.unlink(missing_ok=True)
+
+            yield (
+                read(key),
+                read("backoff"),
+                lambda row: save(key, row),
+                lambda until: save("backoff", until),
+            )
+            return
+
         with closing(sqlite3.connect(self.path)) as db, db:
             db.execute(
                 "CREATE TABLE IF NOT EXISTS advisories (project TEXT PRIMARY KEY, checked REAL, evidence TEXT)"
@@ -162,22 +207,44 @@ class GitHubAdvisories:
             saved = db.execute(
                 "SELECT checked, evidence FROM advisories WHERE project=?", (project,)
             ).fetchone()
-            if saved and 0 <= now - saved[0] < 4 * 3600:
-                return json.loads(saved[1])
-            endpoint = f"https://api.github.com/repos/{project}/security-advisories"
             db.execute(
                 "CREATE TABLE IF NOT EXISTS backoff (provider TEXT PRIMARY KEY, until REAL)"
             )
             backoff = db.execute(
                 "SELECT until FROM backoff WHERE provider='github'"
             ).fetchone()
-            if backoff and now < backoff[0]:
-                prior = json.loads(saved[1]) if saved else {}
+
+            def save_result(result):
+                db.execute(
+                    "INSERT OR REPLACE INTO advisories VALUES (?,?,?)",
+                    (project, result["checkedAt"], json.dumps(result)),
+                )
+
+            def save_backoff(until):
+                db.execute(
+                    "INSERT OR REPLACE INTO backoff VALUES ('github',?)", (until,)
+                )
+
+            yield (
+                json.loads(saved[1]) if saved else None,
+                backoff[0] if backoff else None,
+                save_result,
+                save_backoff,
+            )
+
+    def observe(self, project, cancel):
+        now = time.time()
+        with self._cache(project) as (prior, backoff, save_result, save_backoff):
+            prior = prior or {}
+            if prior and 0 <= now - prior["checkedAt"] < 4 * 3600:
+                return prior
+            endpoint = f"https://api.github.com/repos/{project}/security-advisories"
+            if backoff and now < backoff:
                 return {
                     **prior,
                     "repository": project,
                     "state": "rate-limited",
-                    "retryAt": backoff[0],
+                    "retryAt": backoff,
                     "attemptedAt": now,
                     "sourceUrl": endpoint,
                     "findings": prior.get("findings", []),
@@ -206,13 +273,9 @@ class GitHubAdvisories:
                     "sourceUrl": endpoint,
                     "findings": rows,
                 }
-                db.execute(
-                    "INSERT OR REPLACE INTO advisories VALUES (?,?,?)",
-                    (project, now, json.dumps(result)),
-                )
+                save_result(result)
                 return result
             except (OSError, ValueError, TypeError, AttributeError) as exc:
-                prior = json.loads(saved[1]) if saved else {}
                 code = getattr(exc, "code", None)
                 headers = getattr(exc, "headers", {}) or {}
                 limited = (
@@ -239,10 +302,7 @@ class GitHubAdvisories:
                     except (ValueError, TypeError, OverflowError):
                         reset = 0
                     retry_at = max(now + 1, retry_at or reset or now + 60)
-                    db.execute(
-                        "INSERT OR REPLACE INTO backoff VALUES ('github',?)",
-                        (retry_at,),
-                    )
+                    save_backoff(retry_at)
                 return {
                     **prior,
                     "repository": project,
@@ -282,7 +342,7 @@ class GitHubAdvisories:
                 else:
                     try:
                         shared[project] = self.observe(project, cancel)
-                    except (sqlite3.Error, OSError, ValueError):
+                    except (OSError, ValueError, TypeError, KeyError, _DATABASE_ERROR):
                         shared[project] = {
                             "repository": project,
                             "state": "unavailable",

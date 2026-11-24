@@ -5,6 +5,7 @@ import json
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 from urllib.error import HTTPError
 
 from mo2_update_arsenal.bridge import ArsenalService
@@ -42,6 +43,25 @@ NOTICE = {
 
 
 class AdvisoryChecks(unittest.TestCase):
+    @patch("mo2_update_arsenal.github_health.sqlite3", None)
+    def test_embedded_cache_without_sqlite_preserves_evidence_and_provider_backoff(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "advisories.sqlite"
+            path.write_bytes(b"existing cache from another runtime")
+            cancel = threading.Event()
+            observed = GitHubAdvisories(path, lambda _: [NOTICE]).observe(REPO, cancel)
+            self.assertEqual(observed["findings"][0]["id"], ID)
+            restored = GitHubAdvisories(path, lambda _: self.fail("unexpected fetch"))
+            self.assertEqual(restored.observe(REPO, cancel), observed)
+
+            def limited(_):
+                raise HTTPError("https://api.github.com", 429, "", {"Retry-After": "60"}, None)
+
+            backoff = GitHubAdvisories(path, limited).observe("second/project", cancel)
+            self.assertEqual(backoff["state"], "rate-limited")
+            self.assertEqual(restored.observe("third/project", cancel)["retryAt"], backoff["retryAt"])
+            self.assertEqual(path.read_bytes(), b"existing cache from another runtime")
+
     def test_untested_ranges_are_explicitly_unknown(self):
         for version, spec, expected in [
             ("1.2.0", ">= 1.0.0, < 2.0.0", True),

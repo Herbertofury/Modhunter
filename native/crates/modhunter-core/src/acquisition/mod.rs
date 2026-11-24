@@ -317,7 +317,7 @@ impl Store {
     pub fn verify(&self, id: &str, cancel: impl Fn() -> bool) -> Result<PathBuf> {
         let row = self.row(id)?;
         if row.state != "ready" {
-            return Err("Download is not ready.".into());
+            return Err(format!("Download is {}. {}", row.state, row.message));
         }
         let path = self.directory(id)?.join(format!(
             "archive.{}",
@@ -576,6 +576,27 @@ pub fn atomic_json(path: &Path, value: &impl Serialize) -> Result<()> {
     serde_json::to_writer(&mut tmp, value).map_err(error)?;
     tmp.flush().map_err(error)?;
     tmp.as_file().sync_all().map_err(error)?;
+    #[cfg(windows)]
+    {
+        // Windows readers that omit FILE_SHARE_DELETE temporarily prevent
+        // atomic replacement, even after the new receipt has been synced.
+        // Retain and retry exactly those same bytes. A lasting denial remains
+        // an error and the last accepted document stays in place.
+        for delay_ms in [4, 8, 16, 32, 64, 128, 192] {
+            match tmp.persist(path) {
+                Ok(_) => return Ok(()),
+                Err(e) if matches!(e.error.raw_os_error(), Some(5 | 32 | 33)) => {
+                    tmp = e.file;
+                    std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+                    reject_link(parent)?;
+                    if path.exists() {
+                        reject_link(path)?;
+                    }
+                }
+                Err(e) => return Err(error(e)),
+            }
+        }
+    }
     tmp.persist(path).map_err(error)?;
     Ok(())
 }

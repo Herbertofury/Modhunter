@@ -71,6 +71,34 @@ fn durable_ready_hash() {
     assert_eq!(reopened.row(&r.id).unwrap().state, "ready");
     assert!(reopened.verify(&r.id, || false).is_ok());
 }
+
+#[cfg(windows)]
+#[test]
+fn terminal_receipt_survives_a_reader_temporarily_denying_delete_sharing() {
+    use std::{os::windows::fs::OpenOptionsExt, time::Duration};
+    let (dir, mut store, receipt) = start();
+    let path = dir.path().join("receipts.json");
+    let reader = OpenOptions::new()
+        .read(true)
+        .share_mode(3)
+        .open(&path)
+        .unwrap();
+    let blocked = tempfile::NamedTempFile::new_in(dir.path())
+        .unwrap()
+        .persist(&path)
+        .unwrap_err();
+    assert!(matches!(blocked.error.raw_os_error(), Some(5 | 32 | 33)));
+    std::thread::scope(|scope| {
+        scope.spawn(move || {
+            std::thread::sleep(Duration::from_millis(70));
+            drop(reader);
+        });
+        ready(&mut store, &receipt);
+    });
+    let reopened = Store::open(dir.path());
+    assert_eq!(reopened.row(&receipt.id).unwrap().state, "ready");
+    assert!(reopened.verify(&receipt.id, || false).is_ok());
+}
 #[test]
 fn reject_tampered_archive() {
     let (_d, mut s, r) = start();

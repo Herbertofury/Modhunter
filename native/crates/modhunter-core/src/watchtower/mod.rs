@@ -2,6 +2,8 @@
 //!
 //! These are change observations, never mod-version or installation authority.
 //! Browser/network work is supplied by the desktop after a check lease begins.
+mod feed;
+pub use feed::PublicFeedReader;
 mod source_choice;
 mod store;
 mod types;

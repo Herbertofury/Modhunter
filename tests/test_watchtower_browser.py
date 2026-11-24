@@ -26,7 +26,7 @@ UI = ROOT / "native/ui"
 VERSION = json.loads((ROOT / "native/crates/modhunter-desktop/tauri.conf.json").read_text("utf-8"))["version"]
 OUTPUT = Path(os.environ.get("MODHUNTER_QA_OUTPUT", ROOT / "native/target/watchtower-browser"))
 BOOT = (ROOT / "tests/fixtures/watchtower_native_fixture.js").read_text("utf-8")
-SOURCE_FILES = ("native/ui/watchtower.html", "native/ui/watchtower.css", "native/ui/watchtower.js",
+SOURCE_FILES = ("native/ui/capture-page.js", "native/ui/watchtower.html", "native/ui/watchtower.css", "native/ui/watchtower.js",
                 "tests/fixtures/watchtower_native_fixture.js", "tests/test_watchtower_browser.py")
 
 
@@ -106,6 +106,34 @@ class WatchtowerBrowserTests(unittest.TestCase):
                 request.abort()
         self.context.route("**/*", route)
 
+    def assert_region_capture(self):
+        # This is the same script embedded into a remote WebView2 page.
+        body = (UI / "capture-page.js").read_text("utf-8")
+        with self.context.new_page() as site:
+            site.route("https://source.invalid/releases", lambda route: route.fulfill(
+                content_type="text/html", body="<main><article>A<i>first</i><aside>x</aside></article>"
+                "<article>B<em>second</em></article></main>"))
+            site.goto("https://source.invalid/releases")
+
+            def capture(selector, ignore=()):
+                return site.evaluate("cfg => {" + body + "}",
+                                     {"url": site.url, "selector": selector, "ignore": ignore})
+
+            self.assertEqual(capture("article", ["aside"])["text"], "A\nfirst")
+            selected = "xpath://article | //article/i"
+            self.assertEqual(capture(selected, ["xpath://aside"])["text"], "A\nfirst\nB\nsecond")
+            site.locator("aside").evaluate("node => node.textContent = 'new counter'")
+            self.assertEqual(capture(selected, ["aside"])["text"], "A\nfirst\nB\nsecond")
+            site.locator("em").evaluate("node => node.textContent = 'updated'")
+            self.assertTrue(capture(selected, ["aside"])["text"].endswith("B\nupdated"))
+            self.assertEqual(capture("xpath://article/text()")["status"], "selectorMissing")
+            self.assertEqual(capture("xpath:count(//article)")["status"], "selectorMissing")
+            self.assertEqual(capture("main", ["xpath://missing["])["status"], "selectorMissing")
+            self.assertEqual(capture("xpath://unknown")["status"], "selectorMissing")
+            self.assertEqual(capture("article", ["main"])["status"], "selectorMissing")
+            site.locator("main").evaluate("el => { for(let i=0;i<2200;i++) el.append(document.createElement('aside')); }")
+            self.assertEqual(capture("main", ["aside"])["text"], "A\nfirst\nB\nupdated")
+
     def tearDown(self):
         result = self._outcome.result
         failed = self.errors or any(test is self for test, _ in result.errors + result.failures)
@@ -147,6 +175,7 @@ class WatchtowerBrowserTests(unittest.TestCase):
         self.page.screenshot(path=str(OUTPUT / name), full_page=False)
 
     def test_page_add_and_targeted_check(self):
+        self.assert_region_capture()
         self.open(snapshot(0))
         self.page.locator("#addPage").click()
         self.page.locator("#pageUrl").fill("http://mods.example.com/ReleaseCase?File=A")

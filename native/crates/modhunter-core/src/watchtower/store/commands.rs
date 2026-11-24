@@ -117,6 +117,7 @@ fn config(
     payload: &Value,
     previous: Option<&Watch>,
     now: u64,
+    infer_feed: bool,
 ) -> Result<Watch, String> {
     if !payload.is_object() {
         return Err("Each watch must be an object.".into());
@@ -201,6 +202,23 @@ fn config(
     if watch.requires_session && watch.session_id.is_none() {
         watch.enabled = false;
     }
+    // Persist the extraction choice on creation so existing rendered histories
+    // and an explicit choice to clear the selector retain their meaning.
+    if infer_feed
+        && previous.is_none()
+        && watch.selector.is_empty()
+        && !watch.requires_session
+        && watch.ignore_selectors.is_empty()
+        && url::Url::parse(&watch.url).is_ok_and(|url| {
+            let path = url.path().to_ascii_lowercase();
+            path.ends_with(".rss") || path.ends_with(".atom")
+        })
+    {
+        watch.selector = "feed:".into();
+    }
+    if watch.selector == "feed:" && (watch.requires_session || !watch.ignore_selectors.is_empty()) {
+        return Err("Public feed extraction requires an anonymous watch without ignored DOM regions. Clear the page region to use a browser session.".into());
+    }
     if let Some(association) = payload.get("association") {
         watch.association = if association.is_null() {
             None
@@ -269,7 +287,7 @@ fn save_watch(doc: &mut Document, payload: &Value, now: u64) -> Result<Value, St
         return Err("This page was edited elsewhere. Reload its settings before saving.".into());
     }
     let previous = index.map(|i| &doc.watches[i]);
-    let mut watch = config(doc, payload, previous, now)?;
+    let mut watch = config(doc, payload, previous, now, true)?;
     if let Some(duplicate) = doc
         .watches
         .iter()
@@ -937,7 +955,7 @@ fn import_config(doc: &Document, value: &Value) -> Result<Watch, String> {
     if requires {
         clean["enabled"] = json!(false);
     }
-    let watch = config(doc, &clean, None, 0)?;
+    let watch = config(doc, &clean, None, 0, value.get("selector").is_none())?;
     sources::validate_import_choices(&watch, value)?;
     Ok(watch)
 }

@@ -108,8 +108,7 @@ test('observations return only categorical facts, never page content or identifi
 });
 
 test('visible Patreon membership restrictions cannot become a new page baseline',()=>{
- const policy=fs.readFileSync(path.join(root,'native/crates/modhunter-desktop/src/watchtower_policy.rs'),'utf8');
- const body=/const CAPTURE_BODY: &str = r#"([\s\S]*?)"#;/.exec(policy)[1];
+ const body=fs.readFileSync(path.join(root,'native/ui/capture-page.js'),'utf8');
  const location=new URL('https://www.patreon.com/posts/release-111');
  const document=documentFixture({body:'Join to unlock this post'});document.readyState='complete';document.documentURI=location.href;
  const result=vm.runInNewContext('(()=>{'+body+'})()',{cfg:{url:location.href,selector:'',ignore:[]},location,document,URL,getComputedStyle:()=>({visibility:'visible',display:'block'})});

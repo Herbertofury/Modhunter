@@ -127,31 +127,7 @@ pub fn capture_script(url: &str, selector: &str, ignore: &[String]) -> String {
     format!("(()=>{{const cfg={args};{CAPTURE_BODY}}})()")
 }
 
-const CAPTURE_BODY: &str = r#"
-const here=new URL(location.href);here.hash='';
-const result={finalUrl:here.href,title:String(document.title||'').slice(0,240),text:'',status:'ok',message:'',httpStatus:null,truncated:false};
-const fail=(status,message)=>Object.assign(result,{status,message});
-if(here.origin!==new URL(cfg.url).origin)return fail('redirected','This page redirected to another site. Open the saved page and review its address.');
-if(document.readyState==='loading')return fail('loading','The page is still loading.');
-const visible=e=>{if(!e)return false;const s=getComputedStyle(e);return s.display!=='none'&&s.visibility!=='hidden'&&s.contentVisibility!=='hidden'&&e.getClientRects().length>0};
-if([...document.querySelectorAll('input[type="password"]')].slice(0,100).some(visible))return fail('signInRequired','Sign in in this site session, then check the page again.');
-const title=result.title.toLowerCase();
-if(/(^|\.)patreon\.com$/.test(here.hostname)&&/\/posts\//.test(here.pathname)&&/unlock this post|join to unlock|become a member to unlock/i.test(String(document.body?.innerText||'').slice(0,32768)))return fail('accessRestricted','This release is not readable by the selected account. Sign-in and release access are separate; the previous complete observation is retained.');
-if(/just a moment|checking your browser|verify you are human|security verification|attention required/.test(title)||[...document.querySelectorAll('#challenge-running,#challenge-stage,[data-cf-beacon]~#challenge-form')].some(visible))return fail('challenge','This site needs an interactive check. Open its session to complete it.');
-if(/access denied|403 forbidden|429 too many requests|this site can.t be reached|can.t reach this page/.test(title)||document.documentURI.startsWith('chrome-error:'))return fail('unavailable','The site declined or could not complete this request. Review it in the site session and retry later.');
-let root;try{root=cfg.selector?document.querySelector(cfg.selector):(document.querySelector('main,article,[role="main"]')||document.body)}catch{return fail('selectorMissing','The CSS selector is invalid. Edit this watched page.');}
-if(!root)return fail('selectorMissing','The selected page region was not found. The last successful result is retained.');
-if(root.closest('[aria-busy="true"]')||root.querySelector('[aria-busy="true"]'))return fail('loading','The selected page region is still loading.');
-let ignores=[];try{for(const selector of cfg.ignore){ignores.push(...document.querySelectorAll(selector));if(ignores.length>2000)return fail('error','Too many ignored regions; narrow the ignored selectors.');}}catch{return fail('selectorMissing','An ignored CSS selector is invalid.');}
-const ignored=e=>ignores.some(n=>n===e||n.contains(e));
-const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);let node,count=0,chars=0;const chunks=[],started=performance.now();
-while((node=walker.nextNode())){if(++count>100000||(count%100===0&&performance.now()-started>1000)){result.truncated=true;break;}const parent=node.parentElement;if(!parent||parent.closest('script,style,noscript,template,iframe,form,input,textarea,select,[aria-hidden="true"]')||ignored(parent)||!visible(parent))continue;const text=String(node.nodeValue||'').replace(/\s+/g,' ').trim();if(!text)continue;chars+=text.length+1;if(chars>262144){result.truncated=true;break;}chunks.push(text);}
-result.text=chunks.join('\n');
-if(new TextEncoder().encode(result.text).length>262144){result.text='';result.truncated=true;}
-if(result.truncated){result.status='tooLarge';result.message='The selected content exceeded the complete-capture limit. Select a smaller region.';}
-if(!result.text&&!result.truncated)return fail('selectorMissing','No readable content was found. Select a page region or finish sign-in.');
-return result;
-"#;
+const CAPTURE_BODY: &str = include_str!("../../../ui/capture-page.js");
 
 #[cfg(test)]
 mod tests {

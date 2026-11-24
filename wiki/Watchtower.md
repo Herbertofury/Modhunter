@@ -6,6 +6,14 @@ Watchtower is the Rust desktop's page and account-session manager. Track a mod r
 
 A page observation does not establish a new compatible mod version. Watchtower keeps page observations, exact file choices, downloaded archives and installation reviews as separate steps. Updating an installed mod requires an explicit source relationship, a compatible exact target and a reviewed archive; a changed page never starts an installation.
 
+## Watching public feeds
+
+Adding a new anonymous URL ending in .rss or .atom selects native feed extraction. For a feed at another address, enter `feed:` in **Page region**. The reader compares all RSS 2.0 items or Atom entries, including identifiers, text and attachment links. Feed build-timestamp churn alone produces no release notice. It reuses HTTPS connections and revalidates cached public representations using ETag or Last-Modified. A failed request or incomplete feed preserves the last successful observation. Use the final public HTTPS address. Clear the selector to use rendered HTML and browser sign-in instead.
+
+## Comparing page regions
+
+In **Page region**, enter a CSS selector to track its first match, or prefix an XPath element expression with `xpath:` to track every matched region in document order. For example, `xpath://article[@data-release]` compares each release article. Nested matches contribute their text once. **Ignore regions** accepts one CSS selector or prefixed XPath expression per line. Failed or empty selection retains the previous complete observation.
+
 ## Add and check a page
 
 1. Open **Watchtower** from the native toolbar and choose **Add page**.

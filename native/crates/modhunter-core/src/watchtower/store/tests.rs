@@ -1028,3 +1028,21 @@ fn legacy_session_ids_load_while_namespaced_ids_preserve_sequence_validation() {
         "the nonce cannot hide a reused sequence counter"
     );
 }
+
+#[test]
+fn complete_observations_keep_unicode_whitespace_and_line_semantics() {
+    assert_eq!(
+        normalize_text("  abc\tdef\r\n \r\n beta\u{a0}二  "),
+        "abc def\nbeta 二"
+    );
+    assert_eq!(normalize_text("\n\t \r\n"), "");
+}
+
+#[test]
+fn new_anonymous_feeds_route_to_native_reader_without_changing_edited_regions() {
+    let (_dir, store) = fresh();
+    let id = add(&store, "https://example.com/releases.atom", 10);
+    assert_eq!(store.watch(&id).unwrap().selector, "feed:");
+    command(&store, "saveWatch", json!({"id":id,"selector":""}), 11);
+    assert_eq!(store.watch(&id).unwrap().selector, "");
+}

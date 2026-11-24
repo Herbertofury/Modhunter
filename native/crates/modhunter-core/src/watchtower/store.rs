@@ -1069,12 +1069,21 @@ fn bounded_text(value: &str, max: usize) -> String {
     value[..end].to_owned()
 }
 fn normalize_text(value: &str) -> String {
-    value
-        .lines()
-        .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
-        .filter(|line| !line.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n")
+    let mut normalized = String::with_capacity(value.len());
+    for line in value.lines() {
+        let mut words = line.split_whitespace();
+        if let Some(first) = words.next() {
+            if !normalized.is_empty() {
+                normalized.push('\n');
+            }
+            normalized.push_str(first);
+            for word in words {
+                normalized.push(' ');
+                normalized.push_str(word);
+            }
+        }
+    }
+    normalized
 }
 fn login_redirect(original: &str, final_url: &str) -> bool {
     let Ok(original) = url::Url::parse(original) else {

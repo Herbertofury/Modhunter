@@ -1,4 +1,5 @@
 //! Read-only subprocess MCP. Files are selectable only before stdio starts.
+mod housecarl;
 use modhunter_core::{BridgeClient, validate_bridge_endpoint};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -22,7 +23,7 @@ const PLUGIN_TOOL: &str = "plugin_header";
 const PLUGIN_MASTER_LIMIT: usize = 256;
 const PLUGIN_MASTER_NAME_LIMIT: usize = 255;
 const LIVE_TOOL: &str = "mo2_mods";
-const USAGE: &str = "mcp-stdio [--legacy-2025-11-25] [--bsa ALIAS PATH] [--plugin ALIAS PATH] [--mo2 PROFILE_ID LOOPBACK_URL]";
+const USAGE: &str = "mcp-stdio [--legacy-2025-11-25] [--bsa ALIAS PATH] [--plugin ALIAS PATH] [--mo2 PROFILE_ID LOOPBACK_URL] [--housecarl EXE DIRECTORIES_JSON]";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mode {
@@ -89,6 +90,7 @@ struct LiveProfile {
 }
 
 struct Selections {
+    housecarl: Option<housecarl::Companion>,
     live: Option<LiveProfile>,
     archive: Option<ArchiveSnapshot>,
     plugin: Option<PluginSnapshot>,
@@ -112,7 +114,14 @@ fn configuration(args: &[String]) -> Result<(Mode, Selections), &'static str> {
     }
     let (mut archive, mut plugin) = (None, None);
     let mut live = None;
+    let mut companion = None;
     for [flag, alias, path] in triples {
+        if flag == "--housecarl" {
+            if companion.replace((alias, path)).is_some() {
+                return Err(USAGE);
+            }
+            continue;
+        }
         if flag == "--mo2" {
             if live.is_some()
                 || alias.is_empty()
@@ -161,6 +170,11 @@ fn configuration(args: &[String]) -> Result<(Mode, Selections), &'static str> {
             archive,
             plugin,
             live,
+            housecarl: companion
+                .map(|(exe, config)| {
+                    housecarl::Companion::configure(Path::new(exe), Path::new(config))
+                })
+                .transpose()?,
         },
     ))
 }
@@ -237,6 +251,8 @@ struct LivePage {
 }
 
 enum ToolRequest {
+    SkyrimRecord(housecarl::Record),
+    SkyrimStatus(housecarl::NoArguments),
     Live(LivePage),
     Spid(DeclarationRequest),
     Bsa(ArchivePageRequest),
@@ -357,6 +373,12 @@ fn list(mode: Mode, selections: &Selections) -> Value {
             "annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false}
         }));
     }
+    if selections.housecarl.is_some() {
+        result["tools"]
+            .as_array_mut()
+            .expect("tools array")
+            .extend(housecarl::tools());
+    }
     if selections.live.is_some() {
         result["tools"].as_array_mut().expect("tools array").push(json!({
             "name":LIVE_TOOL,
@@ -418,6 +440,16 @@ fn plugin_header(selection: &PluginSnapshot, request: PluginRequest) -> Result<V
 
 fn execute(mode: Mode, request: ToolRequest, selections: &Selections) -> Value {
     let generated = match request {
+        ToolRequest::SkyrimRecord(record) => selections
+            .housecarl
+            .as_ref()
+            .expect("registered houseCARL")
+            .read(Some(record)),
+        ToolRequest::SkyrimStatus(_) => selections
+            .housecarl
+            .as_ref()
+            .expect("registered houseCARL")
+            .read(None),
         ToolRequest::Live(page) => selections
             .live
             .as_ref()
@@ -581,6 +613,12 @@ fn handle<W: Write>(
                 Some(TOOL) => serde_json::from_value(arguments).map(ToolRequest::Spid),
                 Some(BSA_TOOL) if selections.archive.is_some() => {
                     serde_json::from_value(arguments).map(ToolRequest::Bsa)
+                }
+                Some(housecarl::TOOL) if selections.housecarl.is_some() => {
+                    serde_json::from_value(arguments).map(ToolRequest::SkyrimRecord)
+                }
+                Some(housecarl::STATUS) if selections.housecarl.is_some() => {
+                    serde_json::from_value(arguments).map(ToolRequest::SkyrimStatus)
                 }
                 Some(LIVE_TOOL) if selections.live.is_some() => {
                     serde_json::from_value(arguments).map(ToolRequest::Live)

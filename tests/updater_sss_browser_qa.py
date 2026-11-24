@@ -469,6 +469,31 @@ with sync_playwright() as pw:
     recovery.screenshot(path=str(OUTPUT/'recovery-cockpit.png'),full_page=False)
     assert not recovery_errors,recovery_errors
     recovery.close()
+    # A blocked source at the top must not starve a later eligible exact reviewer.
+    guided_catalog=copy.deepcopy(source_catalog)
+    guided_catalog['items'][0]['update']['expiresAt']=1
+    guided=browser.new_page(viewport={"width":1440,"height":1000})
+    guided_errors=[]
+    guided.on('pageerror',lambda e:guided_errors.append(str(e)))
+    guided.set_content(fixture_html({**source_mock,"catalog":guided_catalog,
+        "plan":plan_updates(guided_catalog),"sourceDetails":{}}),wait_until='load',timeout=30000)
+    show(guided, 'updates')
+    blocked_row=guided.locator('[data-workshop-id="live-a"]')
+    expect(blocked_row).to_contain_text('Refresh needed')
+    blocked_row.get_by_role('button',name='Review source status').click()
+    expect(guided.locator('#drawerTitle')).to_have_text('Arcane Example')
+    guided.locator('#drawerClose').click()
+    guided.locator('#workshopReviewNext').click()
+    expect(guided.locator('#filePickerTitle')).to_have_text('Quest Example')
+    expect(guided.locator('#filePickerFiles')).to_contain_text('Exact latest main')
+    guided.locator('#filePickerClose').click()
+    guided.keyboard.press('Alt+r')
+    expect(guided.locator('#filePickerVeil')).to_be_visible()
+    expect(guided.locator('#filePickerTitle')).to_have_text('Quest Example')
+    assert guided.evaluate("window.__SSS_MOCK__.reads.filter(s=>s.startsWith('files?')).every(s=>s.includes('modId=45&itemId=live-b'))")
+    assert guided.evaluate("window.__SSS_MOCK__.calls.length")==0
+    assert not guided_errors,guided_errors
+    guided.close()
     # Real browser acceptance of compact source rows, lazy details and exact archive review.
     source_page=browser.new_page(viewport={"width":1440,"height":1000})
     source_errors=[]

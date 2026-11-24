@@ -18,10 +18,10 @@ function catalog(profile='a',count=3){
   items:Array.from({length:count},(_,i)=>({id:'item-'+i,name:'Fixture '+i,groupId:'group',group:'Fixtures',priority:i,author:'Test Author',installedVersion:'1.0',screenshotNote:'',flags:[],audit:{},nexusId:i+1,source:{type:'nexus',verified:true,url:'https://www.nexusmods.com/skyrimspecialedition/mods/'+(i+1)},update:{verdict:'candidate',latestVersion:'2.0'}}))};
 }
 function harness({live=true,failSnapshots=0,count=3,storedRows={},progressRows={},progressReadFailures=0,nativeWatch=false}={}){
- const nodes=new Map(),timers=new Map(),pending=new Map(),calls=[],active=new Map(),maximum=new Map(),nativeNavigations=[],windowListeners=new Map();
+ const nodes=new Map(),timers=new Map(),pending=new Map(),calls=[],active=new Map(),maximum=new Map(),nativeNavigations=[],windowListeners=new Map(),documentListeners=new Map();
  let timerId=0;
  const state={catalog:catalog('a',count),generation:1,failSnapshots,progressRows,progressReadFailures,score:0,scan:{state:'idle'},defer:new Set()};
- const document={hidden:false,activeElement:null,addEventListener(){},querySelectorAll(){return[]},createElement:name=>element(name),getElementById:id=>node(id),querySelector:selector=>node(selector)};
+ const document={hidden:false,activeElement:null,addEventListener(type,listener){if(!documentListeners.has(type))documentListeners.set(type,[]);documentListeners.get(type).push(listener)},dispatchEvent(event){for(const listener of documentListeners.get(event.type)||[])listener(event);return true},querySelectorAll(){return[]},createElement:name=>element(name),getElementById:id=>node(id),querySelector:selector=>node(selector)};
  function element(id){
   const classes=new Set();let html='';
   return{id,textContent:'',value:'',checked:false,disabled:false,hidden:true,dataset:{},writes:0,
@@ -375,6 +375,41 @@ test('profile and execution changes cancel owned layout frames before advancing 
    assert.equal(frames().length,0);
   }
  }
+});
+
+test('Workshop next review advances past blocked public candidates for button and keyboard',async()=>{
+ const h=harness({count:4});await h.settle();const data=catalog('a',4);
+ const blocks=[{expiresAt:1},{availability:'rate-limited'},{compatibility:{status:'incompatible'}}];
+ for(const [i,block] of blocks.entries()){
+  data.items[i].source={type:'gitlab',verified:true,url:'https://gitlab.com/studio/project-'+i};
+  data.items[i].update={provider:'gitlab',verdict:'candidate',latestVersion:'2.0',releaseAssetCount:1,checkedAt:1700000000,...block};
+ }
+ h.state.catalog=data;await h.qa.setCatalog(data);
+ assert.equal(h.api.nextWorkshopCandidate().id,'item-3');
+ assert.equal(h.nodes.get('workshopReviewNext').disabled,false);
+ const html=h.nodes.get('workshopResults').innerHTML;
+ assert.equal((html.match(/Review source status/g)||[]).length,3);
+ assert.match(html,/Refresh needed/);assert.match(html,/Provider cooldown/);assert.match(html,/Game \/ loader mismatch/);
+ const calls=()=>h.calls.filter(c=>c.endpoint.startsWith('files?')||c.endpoint.startsWith('source-details?'));
+ const before=calls().length;
+ h.nodes.get('workshopReviewNext').onclick();await h.settle();
+ assert.equal(calls().length,before+1);assert.match(calls().at(-1).endpoint,/^files\?modId=4&itemId=item-3&/);
+ h.api.closeFilePicker();let prevented=false;
+ const shortcut={type:'keydown',key:'r',altKey:true,target:{matches:()=>false},preventDefault(){prevented=true}};
+ h.context.document.dispatchEvent(shortcut);await h.settle();
+ assert.equal(prevented,true);assert.equal(calls().length,before+2);
+ assert.match(calls().at(-1).endpoint,/^files\?modId=4&itemId=item-3&/);
+ h.api.closeFilePicker();
+
+ h.state.catalog=catalog('b',3);
+ h.state.catalog.items=data.items.slice(0,3);
+ await h.qa.setCatalog(h.state.catalog);
+ assert.equal(h.api.nextWorkshopCandidate(),null);
+ assert.equal(h.nodes.get('workshopReviewNext').disabled,true);
+ h.context.document.dispatchEvent(shortcut);await h.settle();
+ assert.match(h.nodes.get('workshopStatus').textContent,/No update is ready for exact-file review/);
+ assert.equal(calls().length,before+2);
+ assert.equal(h.calls.some(c=>c.method==='POST'&&/download|install|quick-update/.test(c.endpoint)),false);
 });
 
 test('a completed prior release does not hide the next update or manual file selection',async()=>{

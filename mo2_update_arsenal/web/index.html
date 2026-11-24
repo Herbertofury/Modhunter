@@ -2438,6 +2438,7 @@ function trackModPage(mod,typedSource=''){
 }
 const isRisk=(m)=>{const {verdict}=getAudit(m);return ['hold','check','avoid','ae-only'].includes(verdict)||(m.flags||[]).some(f=>['HARD_ESP','HARD_ESM','DLL','NEMESIS'].includes(f))};
 const isUpdate=(m)=>m.update&&m.update.verdict==='candidate'&&!(sourceTimePhase(m)&1)&&!(Number(m.update.retryAt)>Date.now()/1000);
+const isNativeNexusFileSource=m=>Boolean(INSIGHTS?.isNexus(m)&&(!SOURCES||SOURCES.provider(m)==='nexus'));
 const hasReleaseAssets=m=>SOURCES?SOURCES.hasAssets(m):Boolean(m.update?.releaseAssets?.length||m.releaseAssets?.length);
 const providerLabel=p=>p==='lookup'?'Source needed':SOURCES?.label(p)||p||'Original provider';
 
@@ -3596,6 +3597,8 @@ function blocksNextUpdate(ticket){
  const mod=ITEM_MAP.get(ticket.itemId);
  return ticket.status!=='installed'||!mod||String(mod.installedVersion||'')===String(ticket.installedVersion||'');
 }
+function hasWorkshopFiles(mod){return Boolean(mod&&(isNativeNexusFileSource(mod)||hasReleaseAssets(mod)));}
+function workshopSourceReviewReady(mod){return !['github','gitlab','modrinth','thunderstore'].includes(SOURCES?.provider(mod))||SOURCES.canReview(mod);}
 function workshopEntry(m,ticket){
   const choice=WORKSHOP_CHOICES.get(m.id);
   const match=ITEM_MAP.get(m.id)||{id:m.id,name:m.name,group:m.group,nexusId:m.nexusId,source:{}};
@@ -3604,7 +3607,7 @@ function workshopEntry(m,ticket){
   const source=getSrc(match),official=validUrl(m.sourceUrl),src=source.custom?source.url:(official||source.url);
   const exactSource=Boolean(official||source.verified);
   const release=validUrl(m.releaseUrl),hasAlternateRelease=Boolean(release&&release!==src);
-  const sourceReady=!['github','gitlab','modrinth','thunderstore'].includes(SOURCES?.provider(match))||SOURCES.canReview(match);
+  const sourceReady=workshopSourceReviewReady(match);
   const compatible=m.lane==='candidate',warning=m.risks?.length;
   const quickHint=quickReason&&!ticket?'<span class="workshop-choice-hint" title="'+escapeHTML(quickReason)+'">Choose edition · '+escapeHTML(quickReason)+'</span>':'';
   const ticketTag=ticket?'<span class="workshop-ticket-note">MO2 · '+escapeHTML(String(ticket.status||'').toUpperCase())+'</span>':'';
@@ -3657,9 +3660,9 @@ async function exportWorkshop(){
  workshopSetStatus('Download requested for the complete plan with source evidence, manual/unlinked mods and exact file selections.');
 }
 async function reviewWorkshopFile(id){
- const m=ITEM_MAP.get(id);if(!m||!BRIDGE.active||(!INSIGHTS?.isNexus(m)&&!hasReleaseAssets(m)))return;
+ const m=ITEM_MAP.get(id);if(!BRIDGE.active||!hasWorkshopFiles(m))return;
  const plan=currentWorkshopPlan(),record=plan.items.find(x=>x.id===id);
- if(!record||record.lane!=='candidate'||(['github','gitlab','modrinth','thunderstore'].includes(SOURCES?.provider(m))&&!SOURCES.canReview(m))){toast('This mod needs a fresh source check or compatibility review.');return}
+ if(!record||record.lane!=='candidate'||!workshopSourceReviewReady(m)){toast('This mod needs a fresh source check or compatibility review.');return}
  WORKSHOP_REVIEW_ID=id;
  await openFilePicker(m);
  if(FILE_PICKER_MOD!==m||WORKSHOP_REVIEW_ID!==id)return;
@@ -3794,12 +3797,16 @@ function nextWorkshopCandidate(){
  if(!BRIDGE.active||!LIVE_CATALOG)return null;
  const plan=currentWorkshopPlan(),busyIds=new Set(Object.values(WORKSHOP_TICKETS)
    .filter(blocksNextUpdate).map(t=>t.itemId));
- return plan.items.find(row=>row.lane==='candidate'&&!WORKSHOP_CHOICES.has(row.id)
-   &&!busyIds.has(row.id)&&(INSIGHTS?.isNexus(ITEM_MAP.get(row.id)||row)||hasReleaseAssets(row)))||null;
+ return plan.items.find(row=>{
+  if(row.lane!=='candidate'||WORKSHOP_CHOICES.has(row.id)||busyIds.has(row.id))return false;
+  const mod=ITEM_MAP.get(row.id);
+  // A stale plan entry or unavailable release must not trap Review next.
+  return hasWorkshopFiles(mod)&&workshopSourceReviewReady(mod);
+ })||null;
 }
 function reviewNextWorkshopCandidate(){
  const row=nextWorkshopCandidate();
- if(!row){workshopSetStatus('All available update candidates have been reviewed or queued. Check other lanes for manual sources.');return;}
+ if(!row){workshopSetStatus('No update is ready for exact-file review. Use Review source status or check the other lanes.');return;}
  $('workshopFilter').value='candidate';$('workshopSearch').value='';renderWorkshop();
  const target=[...$('workshopResults').querySelectorAll('[data-workshop-id]')].find(el=>el.dataset.workshopId===row.id);
  target?.scrollIntoView({behavior:'smooth',block:'center'});
@@ -4090,7 +4097,7 @@ function filePickerArchive(j,files){
  return {state:'unknown'};
 }
 async function openFilePicker(m){
- const nativeNexus=Boolean(INSIGHTS?.isNexus(m)&&(!SOURCES||SOURCES.provider(m)==='nexus'));
+ const nativeNexus=isNativeNexusFileSource(m);
  if(!BRIDGE.active||(!nativeNexus&&!hasReleaseAssets(m))){toast('No verified download assets for this source.');return}
  const context=profileContext(),view=++FILE_PICKER_VIEW;FILE_PICKER_MOD=m;
  const current=()=>view===FILE_PICKER_VIEW&&FILE_PICKER_MOD===m&&contextIsCurrent(context)&&ITEM_MAP.get(m.id)===m;

@@ -158,7 +158,7 @@ fn verify_inventory(manager: &WebviewWindow, output: &Path, checks: &mut Vec<Val
     // inside its WebView rather than copying every unrelated Watchtower state
     // field and thousands of duplicated UI labels through the debug observer.
     let script = r#"async(url) => {
-        const cmd=(kind,value)=>window.__TAURI__.core.invoke('watchtower_command',{kind,value});
+        const cmd=(kind,value)=>window.__TAURI__.core.invoke('watchtower_command',{kind,value}).catch(e=>({ok:false,error:String(e)}));
         const saved=await cmd('saveWatch',{url,title:'Release inventory fixture',enabled:true});
         if(!saved.ok)throw Error(saved.error);
         const listed=await cmd('resolveFiles',{id:saved.watchId});
@@ -168,8 +168,17 @@ fn verify_inventory(manager: &WebviewWindow, output: &Path, checks: &mut Vec<Val
         if(!manual||offers.some(x=>!x.current||!x.githubRelease||x.supported!==(x.kind!=='manual')))throw Error('Incomplete native release offers');
         const decision=await cmd('decideOffer',{id:manual.id,kind:'newContent'});
         const opened=await cmd('openOffer',{id:manual.id});
-        if(decision.ok||opened.ok)throw Error('Manual asset acquired file authority');
-        return {rows:offers.map(x=>[x.githubRelease.assetId,x.name,x.supported]).sort((a,b)=>a[0]-b[0]),manualControlsRejected:true};
+        if(decision.ok||opened.ok||!String(decision.error).includes('exact attachment')||!String(opened.error).includes('not supported'))throw Error('Manual asset did not receive the expected classification and download denials');
+        const until=Date.now()+12000;
+        let rendered;
+        do {
+            rendered=new Map(Array.from(document.querySelectorAll('#pageDownloadList article[data-download-id]'),el=>[el.dataset.downloadId,el]));
+            if(offers.every(x=>rendered.has(x.id)))break;
+            await new Promise(done=>setTimeout(done,50));
+        } while(Date.now()<until);
+        if(!offers.every(x=>rendered.has(x.id)))throw Error('The manager omitted rendered release rows');
+        if(offers.some(x=>x.kind==='manual'&&rendered.get(x.id).querySelector('[data-action=download-offer]')))throw Error('Manual release row rendered a managed-download control');
+        return {rows:offers.map(x=>[x.githubRelease.assetId,x.name,x.supported]).sort((a,b)=>a[0]-b[0]),manualControlsRejected:true,rendered:offers.length};
     }"#;
     for (project, tag, total, archives, expected) in [
         (
@@ -211,11 +220,12 @@ fn verify_inventory(manager: &WebviewWindow, output: &Path, checks: &mut Vec<Val
             || rows.iter().filter(|r| r[2] == true).count() != archives
             || fingerprint != expected
             || answer["manualControlsRejected"] != true
+            || answer["rendered"].as_u64() != Some(total as u64)
         {
             return Err("Manager release inventory differs from the pinned provider IDs, names or file eligibility.".into());
         }
         checks.push(json!({"ok":true,"phase":"completePublicReleaseInventory","source":source,"assets":total,"selectable":archives,
-            "manual":total-archives,"assetIdentitySha256":fingerprint,"manualActionsRejected":true,"elapsedMs":start.elapsed().as_millis()}));
+            "manual":total-archives,"assetIdentitySha256":fingerprint,"manualActionsRejected":true,"rendered":total,"elapsedMs":start.elapsed().as_millis()}));
     }
     Ok(())
 }

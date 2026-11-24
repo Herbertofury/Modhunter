@@ -333,9 +333,12 @@ class HealthEvaluationTests(unittest.TestCase):
         self.assertEqual(freshness(NOW + 1000, NOW)["state"], "clock-skew")
 
     def test_nexus_inspector_candidate_expires_at_the_same_boundary_as_watchtower(self):
-        target = item(id="live-inspected")
+        from mo2_update_arsenal.file_advisor import NexusFileIndex
+        target = item(id="live-inspected", installedFiles=[[MID, 91]])
+        files = NexusFileIndex({"files":[{"fileId":91, "name":"Mod", "version":"2.0", "category":1}],
+                                "file_updates":[]})
         target["update"] = summary_from_metadata(target, {"version": "2.0", "status": "published"},
-                                                 NOW - STARTUP_CACHE_SECONDS)
+                                                 NOW - STARTUP_CACHE_SECONDS, files)
         expires = target["update"]["expiresAt"]
         self.assertEqual(expires, NOW)
         context = {"profileId": "fixture-profile", "profileName": "Fixture", "game": GAME,

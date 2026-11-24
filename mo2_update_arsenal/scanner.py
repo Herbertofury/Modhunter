@@ -17,7 +17,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from .version_evidence import compare_versions
+from .version_evidence import compare_versions, normalized_version
+from .file_advisor import NexusFileIndex
+from .native_nexus import normalize_native_files
 
 API = "https://api.nexusmods.com/v1"
 DAY = 24 * 3600
@@ -38,28 +40,27 @@ class QuotaDepleted(NexusError):
     pass
 
 
-def normalized_version(value: str) -> tuple[int, ...] | None:
-    """Only compare unambiguous numeric versions, never sort alpha builds blindly."""
-    v = str(value or "").strip().lower().removeprefix("v")
-    if len(v) > 96 or not re.fullmatch(r"[0-9]{1,10}(?:\.[0-9]{1,10}){0,5}", v):
-        return None
-    return tuple(map(int, v.split(".")))
-
-
 def version_verdict(installed: str, latest: str) -> str:
     return compare_versions(installed, latest)["verdict"]
 
 
-def summary_from_metadata(item: dict, meta: dict, checked_at: float) -> dict[str, Any]:
+def summary_from_metadata(item: dict, meta: dict, checked_at: float, files: NexusFileIndex | None = None) -> dict[str, Any]:
     if not isinstance(meta, dict) or not meta:
         return {"verdict": "unknown", "checkedAt": checked_at, "reason": "No Nexus metadata"}
-    if meta.get("status") not in (None, "published", "Published"):
-        return {"verdict": "review", "checkedAt": checked_at, "reason": "Nexus listing status: " + str(meta.get("status"))[:80], "latestVersion": str(meta.get("version") or "")}
-    latest = str(meta.get("version") or "")
-    comparison = compare_versions(item.get("installedVersion", ""), latest)
-    result = comparison["verdict"]
-    summary = {"versionComparison": comparison, "verdict": result, "checkedAt": checked_at,
-            "expiresAt": checked_at + STARTUP_CACHE_SECONDS, "freshness": "fresh", "latestVersion": latest, "latestFileUpdate": meta.get("updated_timestamp"), "reason": "Review exact FILE selection and installed option; project versions alone are not an install guarantee." if result == "candidate" else comparison["reason"], "source": "nexus-api"}
+    if meta.get("available") is False or meta.get("status") not in (None, "published", "Published"):
+        return {"verdict": "review", "checkedAt": checked_at, "reason": "Nexus listing status: " + str(meta.get("status"))[:80], "latestVersion": "", "projectVersion": str(meta.get("version") or ""), "source": "nexus-api"}
+    summary = {"checkedAt": checked_at, "expiresAt": checked_at + STARTUP_CACHE_SECONDS,
+               "freshness": "fresh", "projectVersion": str(meta.get("version") or ""),
+               "latestFileUpdate": meta.get("updated_timestamp"), "source": "nexus-api"}
+    if files is not None:
+        summary.update(files.resolve(item))
+    else:
+        summary.update(verdict="review", latestVersion="",
+                       reason="Project metadata alone cannot identify the installed Nexus file.")
+    if summary["verdict"] == "review" and item.get("latestKnownVersion"):
+        summary["mo2Comparison"] = compare_versions(item.get("installedVersion"), item["latestKnownVersion"])
+        if summary["mo2Comparison"]["verdict"] == "current":
+            summary["reason"] += " MO2's last known version matches your installation."
     from .source_adapters import preview_image_url
     image = preview_image_url(meta.get("picture_url"), "nexus")
     if image:
@@ -222,6 +223,73 @@ def metadata_identity_matches(metadata: object, game: str, mod_id: int) -> bool:
             and metadata.get("domain_name", game) == game)
 
 
+def public_project_metadata(game, mod_id, project, files):
+    """Convert a complete, project-scoped Nexus GraphQL file list into reusable evidence."""
+    from .file_advisor import nexus_file_id
+    def owned(row):
+        return (isinstance(row, dict) and nexus_file_id(row.get("modId")) == mod_id
+                and isinstance(row.get("game"), dict) and row["game"].get("domainName") == game)
+    if not owned(project) or not isinstance(files, list) or not all(owned(row) for row in files):
+        raise NexusError("Public Nexus data did not match the requested game and mod")
+    compact = []
+    for row in files:
+        file_id = nexus_file_id(row.get("fileId"))
+        if not file_id:
+            raise NexusError("Public Nexus returned an incomplete file identity")
+        compact.append({"fileId": file_id, "fileName": str(row.get("uri") or ""), "name": str(row.get("name") or ""),
+                        "version": str(row.get("version") or ""), "category": nexus_file_id(row.get("categoryId")),
+                        "groupId": nexus_file_id(row.get("groupId"))})
+    return {"mod_id": mod_id, "domain_name": game, "status": str(project.get("status") or "").lower(),
+            "version": str(project.get("version") or ""), "picture_url": project.get("pictureUrl"),
+            "author": project.get("author"), "fileCatalog": {"providerGroups": True, "files": compact}}
+
+
+def public_nexus_query(query, variables):
+    body = json.dumps({"query": query, "variables": variables}).encode()
+    request = urllib.request.Request("https://api.nexusmods.com/v2/graphql", data=body,
+                                     headers={"Content-Type": "application/json", "User-Agent": "Modhunter"})
+    try:
+        with urllib.request.urlopen(request, timeout=20) as response:
+            raw = response.read(MAX_RESPONSE_BYTES + 1)
+        if len(raw) > MAX_RESPONSE_BYTES:
+            raise NexusError("Public Nexus response exceeded safe limit")
+        data = json.loads(raw)
+        if not isinstance(data, dict) or data.get("errors") or not isinstance(data.get("data"), dict):
+            raise NexusError("Public Nexus could not complete the requested lookup")
+        return data["data"]
+    except urllib.error.HTTPError as exc:
+        if exc.code == 429:
+            raise QuotaDepleted("Nexus rate limit reached") from exc
+        if exc.code in (401, 403):
+            raise MissingAuth("Nexus requires authenticated access to this data") from exc
+        raise NexusError(f"Public Nexus returned HTTP {exc.code}") from exc
+    except (urllib.error.URLError, TimeoutError, ValueError) as exc:
+        raise NexusError("Public Nexus lookup failed: " + str(exc)) from exc
+
+
+class PublicNexusClient:
+    """Read public project/file metadata. MO2 continues to own all downloads and account access."""
+    remaining = None
+
+    def __init__(self, game, request=public_nexus_query):
+        self.game = safe_game_slug(game)
+        self.request = request
+        result = request("query($domain:String!){game(domainName:$domain){id domainName}}", {"domain": game}).get("game")
+        if not isinstance(result, dict) or result.get("domainName") != game or not result.get("id"):
+            raise NexusError("Public Nexus game identity is unavailable")
+        self.game_id = result["id"]
+
+    def get(self, path):
+        match = re.fullmatch(rf"/v1/games/{self.game}/mods/([0-9]+)\.json", path)
+        if not match:
+            raise NexusError("Unsupported public Nexus metadata request")
+        mid = int(match[1])
+        query = ("query($g:ID!,$m:ID!){mod(gameId:$g,modId:$m){modId game{domainName} name version status pictureUrl author} "
+                 "modFiles(gameId:$g,modId:$m){fileId modId game{domainName} name version categoryId groupId uri}}")
+        result = self.request(query, {"g": self.game_id, "m": mid})
+        return public_project_metadata(self.game, mid, result.get("mod"), result.get("modFiles"))
+
+
 class UpdateScanner:
     def __init__(self, cache: Cache, client: NexusClient):
         self.cache = cache
@@ -266,6 +334,17 @@ class UpdateScanner:
         else:
             candidate_ids = set(ids)
         uncached: list[int] = []
+        identifiable = {mid for mid, rows in grouped.items() if any(
+            row.get("installedFiles") or row.get("installationArchive") for row in rows)}
+
+        def summarize(mid, metadata, checked_at):
+            catalog = metadata.get("fileCatalog")
+            index = NexusFileIndex(catalog) if isinstance(catalog, dict) else None
+            for item in grouped[mid]:
+                info = summary_from_metadata(item, metadata, checked_at, index)
+                item_records[str(item.get("id", ""))] = info
+                output[str(mid)] = info
+
         for mod_id in ids:
             cached = self.cache.get(game, mod_id)
             # Deep = fresh server truth for every Nexus project, especially
@@ -277,6 +356,7 @@ class UpdateScanner:
             metadata = (cached or {}).get("meta")
             fresh = (metadata_identity_matches(metadata, game, mod_id) and bool(metadata.get("version"))
                      and metadata.get("status") in (None, "published", "Published")
+                     and (mod_id not in identifiable or isinstance(metadata.get("fileCatalog"), dict))
                      and 0 <= now - checked_at < STARTUP_CACHE_SECONDS)
             should = (mode == "deep" or (mod_id in candidate_ids and mode == "quick")
                       or (mode == "startup" and not fresh)
@@ -288,10 +368,7 @@ class UpdateScanner:
                     item_records[str(item.get("id", ""))]=info
                     output[str(mod_id)]=info
             elif cached and not should:
-                for item in grouped[mod_id]:
-                    info=summary_from_metadata(item, cached.get("meta", {}), checked_at)
-                    item_records[str(item.get("id", ""))]=info
-                    output[str(mod_id)]=info
+                summarize(mod_id, cached.get("meta", {}), checked_at)
             else:
                 uncached.append(mod_id)
         total = len(uncached)
@@ -325,6 +402,24 @@ class UpdateScanner:
                 raise NexusError(f"Unexpected metadata for {mod_id}")
             if not metadata_identity_matches(metadata, game, mod_id):
                 raise NexusError(f"Nexus metadata identity did not match project {mod_id}")
+            if not isinstance(self.client, PublicNexusClient) and "fileCatalog" in metadata:
+                metadata = {key: value for key, value in metadata.items() if key != "fileCatalog"}
+            if (mod_id in identifiable and "fileCatalog" not in metadata and metadata.get("available") is not False
+                    and metadata.get("status") in (None, "published", "Published") and not stopped()):
+                try:
+                    payload = self.client.get(f"/v1/games/{game}/mods/{mod_id}/files.json")
+                except (QuotaDepleted, MissingAuth):
+                    halt.set()
+                    raise
+                if not isinstance(payload, dict) or not isinstance(payload.get("files"), list):
+                    raise NexusError(f"Nexus file list unavailable for {mod_id}")
+                files = normalize_native_files(payload["files"])
+                compact = [{k: row[k] for k in ("fileId", "fileName", "name", "version", "category")} for row in files]
+                history = payload.get("file_updates")
+                if isinstance(history, list):
+                    history = [{k: edge.get(k) for k in ("old_file_id", "new_file_id", "old_file_name", "new_file_name")}
+                               if isinstance(edge, dict) else {} for edge in history]
+                metadata = {**metadata, "fileCatalog": {"files": compact, "file_updates": history}}
             return metadata
 
         def record(mid: int, info: dict) -> None:
@@ -355,10 +450,7 @@ class UpdateScanner:
                         if not self.cache.set_for_scan(game, mid, {"checkedAt": now, "meta": meta},
                                                        epoch=cache_epoch, cancel_event=cancel_event):
                             continue  # Superseded work must not overwrite a newer cache.
-                        for item in grouped[mid]:
-                            info = summary_from_metadata(item, meta, now)
-                            item_records[str(item.get("id", ""))] = info
-                            output[str(mid)] = info
+                        summarize(mid, meta, now)
                     except (QuotaDepleted, MissingAuth) as ex:
                         checked += 1
                         halt.set()
@@ -388,6 +480,9 @@ class UpdateScanner:
                 record(mid, {"verdict": "unknown", "source": "nexus-api",
                              "reason": "Nexus audit was interrupted; latest version could not be verified",
                              **(halt_info or {})})
+        for mid, rows in grouped.items():
+            if len(rows) > 1:
+                output[str(mid)] = {"verdict": "review", "reason": "Multiple installed files share this project. See each installed row."}
         was_cancelled = not self.cache.persist_for_scan(game, epoch=cache_epoch, cancel_event=cancel_event)
         if was_cancelled:
             errors.append("Nexus audit was cancelled; verification incomplete")
@@ -411,6 +506,11 @@ def local_mo2_candidates(snapshot: dict) -> dict:
         if verdict in ("current", "newer-installed"):
             verdict = "unverified"  # Cached equality cannot prove current server truth.
         info={"verdict": verdict, "latestVersion": latest, "source": "mo2-cached-metadata", "reason": "Cached MO2 metadata only. Connect Nexus for a verified current check."}
-        output[str(mid)] = info
+        if latest and item.get("mo2FileStatus") in (1, 2, 3, 5):
+            info["mo2Verdict"] = version_verdict(item.get("installedVersion", ""), latest)
+        if str(mid) in output:
+            output[str(mid)] = {"verdict": "review", "reason": "Several installed rows share this project."}
+        else:
+            output[str(mid)] = info
         item_records[str(item.get("id", ""))]=info
     return {"records": output, "itemRecords": item_records, "mode": "local", "queried": 0, "errors": [], "uniqueNexusMods": len(output), "checkedAt": datetime.now(timezone.utc).isoformat()}

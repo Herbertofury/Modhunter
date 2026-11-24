@@ -28,13 +28,13 @@ class StartupScannerTests(unittest.TestCase):
         self.cached(1,{'version':'1.0','status':'published'})
         events=[];calls=[]
         def request(path):
-            self.assertEqual(events[0]['itemRecords']['0']['verdict'],'current')
+            self.assertEqual(events[0]['itemRecords']['0']['verdict'],'review')
             calls.append(path);return {'version':'2.0','status':'published'}
         result=UpdateScanner(self.cache,NexusClient('fixture',request)).scan(profile(),'startup',events.append)
         self.assertEqual(calls,['/v1/games/skyrimspecialedition/mods/2.json'])
         self.assertEqual(result['fromCache'],1);self.assertEqual(result['queried'],1)
-        self.assertEqual(result['itemRecords']['1']['verdict'],'candidate')
-        self.assertEqual(events[-1]['itemRecords']['1']['verdict'],'candidate')
+        self.assertEqual(result['itemRecords']['1']['verdict'],'review')
+        self.assertEqual(events[-1]['itemRecords']['1']['verdict'],'review')
         self.assertEqual(set(events[-1]['itemRecords']),{'1'})
     def test_stale_future_invalid_and_failed_cache_entries_are_refetched(self):
         cases=[({'version':'1.0'},STARTUP_CACHE_SECONDS+1),({'version':'1.0'},-300),
@@ -46,7 +46,12 @@ class StartupScannerTests(unittest.TestCase):
                 self.assertEqual(len(calls),1);self.assertEqual(result['fromCache'],0)
     def test_shared_project_compares_each_installed_version_and_requests_once(self):
         data=profile();data['items'][1]['nexusId']=1;data['items'][1]['installedVersion']='2.0';data['items'][1]['source']=copy.deepcopy(data['items'][0]['source'])
-        result=UpdateScanner(self.cache,NexusClient('fixture',lambda p:{'version':'2.0'})).scan(data,'startup')
+        for row in data['items']: row['installedFiles']=[[1,9]]
+        def fetch(path):
+            if path.endswith('/files.json'):
+                return {'files':[{'file_id':9,'name':'Mod','version':'2.0','category_id':1}], 'file_updates':[]}
+            return {'version':'9.9'}
+        result=UpdateScanner(self.cache,NexusClient('fixture',fetch)).scan(data,'startup')
         self.assertEqual(result['queried'],1)
         self.assertEqual(result['itemRecords']['0']['verdict'],'candidate')
         self.assertEqual(result['itemRecords']['1']['verdict'],'current')
@@ -85,7 +90,7 @@ class StartupScannerTests(unittest.TestCase):
         self.cached(1,{'version':'1.0','mod_id':99})
         result=UpdateScanner(self.cache,NexusClient('fixture',lambda p:{'version':'2.0','mod_id':1})).scan(profile(1),'startup')
         self.assertEqual(result['queried'],1);self.assertEqual(result['fromCache'],0)
-        self.assertEqual(result['itemRecords']['0']['verdict'],'candidate')
+        self.assertEqual(result['itemRecords']['0']['verdict'],'review')
 
 class StartupServiceTests(unittest.TestCase):
     def setUp(self):

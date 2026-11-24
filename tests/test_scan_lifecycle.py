@@ -274,19 +274,23 @@ class ScanOwnershipTests(unittest.TestCase):
     def test_native_nexus_deep_scan_reaches_actual_scanner_with_authenticated_callback(self):
         changed = copy.deepcopy(PROFILE)
         changed["items"][0]["nexusId"] = 7
+        changed["items"][0]["installedFiles"] = [[7,9]]
         changed["items"][0]["source"] = {"type":"nexus", "verified":True, "url":"https://www.nexusmods.com/skyrimspecialedition/mods/7"}
         self.service.set_snapshot(changed)
         self.service.native_nexus_available = True
         calls = []
         def native(request):
             calls.append((request.cmd, request.payload.copy()))
-            request.finish({"ok": True, "meta": {"version": "2.0", "status": "published"}})
+            if request.cmd == "nexus-files":
+                request.finish({"ok":True,"files":[{"fileId":9,"name":"Mod","version":"2.0","category":1}],"file_updates":[]})
+            else:
+                request.finish({"ok": True, "meta": {"version": "4.0", "status": "published"}})
         self.service.ui_call = native
         index = len(self.threads)
         self.assertTrue(self.service.begin_scan("deep", "A")["ok"])
         self.threads[index].join(2)
         self.assertEqual(self.service.scan_state()["state"], "completed")
-        self.assertEqual(calls, [("nexus-metadata", {"game": "skyrimspecialedition", "modId": 7})])
+        self.assertEqual(calls, [(cmd, {"game": "skyrimspecialedition", "modId": 7}) for cmd in ("nexus-metadata","nexus-files")])
         self.assertEqual(self.service.snapshot()["items"][0]["update"]["latestVersion"], "2.0")
 
 

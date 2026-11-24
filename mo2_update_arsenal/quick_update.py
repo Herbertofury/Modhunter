@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .file_advisor import advise_nexus_files
+from .file_advisor import advise_nexus_files, nexus_file_id
 from .update_plan import risk_reasons, validate_release_asset, PlanError
 from .source_adapters import PUBLIC_API_PROVIDERS, asset_proof
 
@@ -19,7 +19,7 @@ def _requires_file_choice(item: dict) -> bool:
 
 
 def choose_nexus_file(item: dict, files: list[dict]) -> tuple[dict | None, str]:
-    """Pick exactly one latest-version MAIN file, or ask for an explicit choice."""
+    """Pick the verified successor of the installed file, or ask for an explicit choice."""
     if (item.get("update") or {}).get("source") != "nexus-api" or (item.get("update") or {}).get("verdict") != "candidate":
         return None, "Review this mod's version evidence before selecting a file"
     if _requires_file_choice(item):
@@ -27,15 +27,12 @@ def choose_nexus_file(item: dict, files: list[dict]) -> tuple[dict | None, str]:
     advice = advise_nexus_files(item, files)
     suggested = [f for f in advice["files"] if f.get("suggested") is True]
     if len(suggested) != 1:
-        return None, "Several editions or no exact main-file match; choose the file you want"
+        return None, "Exact file succession is unresolved; choose the file you want"
     picked = suggested[0]
-    try:
-        identifier = int(picked.get("fileId", 0))
-    except (ValueError, TypeError, OverflowError):
-        identifier = 0
-    if identifier <= 0 or isinstance(picked.get("fileId"), bool):
+    identifier = nexus_file_id(picked.get("fileId"))
+    if identifier <= 0:
         return None, "File ID is not valid; choose a file manually"
-    return picked, "Matched the published Nexus version to a unique main file"
+    return picked, "Matched the installed Nexus file to its verified replacement"
 
 
 def choose_release_asset(item: dict) -> tuple[dict | None, str]:

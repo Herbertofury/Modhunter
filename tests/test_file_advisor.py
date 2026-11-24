@@ -13,7 +13,8 @@ from mo2_update_arsenal.update_plan import PlanError, validate_batch_selection, 
 
 def row(ident="primary", source="nexus-api", version="2.0"):
     return {"id": ident, "nexusId": 44, "installedVersion": "1.0", "flags": ["DLL"],
-            "update": {"verdict": "candidate", "source": source, "latestVersion": version}}
+            "update": {"verdict": "candidate", "source": source, "latestVersion": version, "targetFileId":9, "evidenceScope":"exact-file",
+                       "checkedAt":time.time(), "expiresAt":time.time()+600}}
 
 
 FILES = [
@@ -65,7 +66,7 @@ class AdvisorTest(unittest.TestCase):
         result = advise_nexus_files(row(), files)
         self.assertEqual(result["reviewAdvice"]["matchingMainFiles"], 2)
         self.assertFalse(result["reviewAdvice"]["hasUniqueMainMatch"])
-        self.assertEqual(sum(bool(f["suggested"]) for f in result["files"]), 0)
+        self.assertEqual([f["fileId"] for f in result["files"] if f["suggested"]], [9])
         self.assertEqual(len(result["files"]), 5)
 
     def test_unknown_or_untrusted_project_version_cannot_suggest_file(self):

@@ -24,7 +24,7 @@ class LibraryArtworkTests(unittest.TestCase):
         summary = summary_from_metadata({"installedVersion": "1.0"}, metadata, 1000)
         self.assertEqual(summary["thumbnailUrl"], url)
         self.assertEqual(summary["author"]["name"], "Actual creator")
-        self.assertEqual(summary["verdict"], "candidate")
+        self.assertEqual(summary["verdict"], "review")
         with self.assertRaises(ValueError):
             NativeNexusGateway._metadata("skyrimspecialedition", 124, data)
 

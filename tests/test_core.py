@@ -110,7 +110,7 @@ class TestScanner(unittest.TestCase):
             if '/mods/1.json' in path:return {'version':'1.4','status':'published'}
             raise AssertionError('Should only request changed item')
         scanner=UpdateScanner(self.cache,NexusClient('test-key',request_json=fetch))
-        result=scanner.scan(self.snapshot,'quick');self.assertEqual(result['records']['1']['verdict'],'candidate');self.assertEqual(result['records']['2']['verdict'],'unverified');self.assertEqual(result['queried'],1)
+        result=scanner.scan(self.snapshot,'quick');self.assertEqual(result['records']['1']['verdict'],'review');self.assertEqual(result['records']['2']['verdict'],'unverified');self.assertEqual(result['queried'],1)
         self.assertEqual(len(calls),2)
     def test_full_makes_baseline(self):
         def fetch(path):

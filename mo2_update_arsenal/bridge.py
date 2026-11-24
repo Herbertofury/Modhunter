@@ -22,7 +22,7 @@ from html import unescape
 import re
 from .source_registry import SourceScanner, canonical_source_url, source_record
 from .update_plan import PlanError, plan_updates, validate_batch_selection, validate_release_asset, risk_reasons
-from .file_advisor import advise_nexus_files
+from .file_advisor import advise_nexus_files, index_nexus_files, nexus_file_id
 from .install_brief import build_install_brief
 from .quick_update import choose_nexus_file, choose_release_asset
 from .operation_journal import OperationJournal
@@ -384,7 +384,9 @@ class ArsenalService:
             new_items = {str(i["id"]): i for i in snapshot.get("items", [])}
             def source_identity(item):
                 source = item.get("source") or {}
-                return source.get("url", ""), source.get("verified") is True, source.get("kind", "")
+                return (source.get("url", ""), source.get("verified") is True, source.get("kind", ""),
+                        item.get("installationArchive"), item.get("installedFiles"), item.get("updateEligible"),
+                        item.get("latestKnownVersion"))
             versions_changed = old_items.keys() != new_items.keys() or any(
                 old_items[key].get("installedVersion") != new_items[key].get("installedVersion")
                 or old_items[key].get("nexusId") != new_items[key].get("nexusId")
@@ -720,10 +722,10 @@ class ArsenalService:
                             with self._guard:
                                 if not is_current():
                                     raise NexusError("MO2 scan was superseded")
-                            m = re.fullmatch(r"/v1/games/[a-z0-9_-]+/mods/([0-9]+)\.json", path)
+                            m = re.fullmatch(r"/v1/games/[a-z0-9_-]+/mods/([0-9]+)(/files)?\.json", path)
                             if m is None:
                                 raise NexusError("Unsupported native Nexus request")
-                            native = self.call_ui("nexus-metadata",
+                            native = self.call_ui("nexus-files" if m.group(2) else "nexus-metadata",
                                 {"game": game, "modId": int(m.group(1))}, timeout=70,
                                 cancel_event=scan_cancel)
                             if not native.get("ok"):
@@ -737,8 +739,11 @@ class ArsenalService:
                                     from .scanner import QuotaDepleted
                                     raise QuotaDepleted(message)
                                 raise NexusError(message)
-                            return native["meta"]
+                            return native if m.group(2) else native["meta"]
                         client = NexusClient("mo2-native", request_json=mo2_nexus_get)
+                    elif which == "deep":
+                        from .scanner import PublicNexusClient
+                        client = PublicNexusClient(snapshot.get("game", ""))
                     else:
                         raise MissingAuth("Connect to Nexus in MO2 Settings > Nexus or use a fallback API key.")
                     return UpdateScanner(self.cache, client).scan(
@@ -773,7 +778,7 @@ class ArsenalService:
                             progress({"itemRecords": nexus.get("itemRecords", {})})
                             other = sources.result()
                     else:
-                        nexus, coverage = scan_nexus("deep" if key or native_nexus else "local")
+                        nexus, coverage = scan_nexus("deep")
                         progress({"itemRecords": nexus.get("itemRecords", {}), "phase": "querying-sources"})
                         with self._guard:
                             if not is_current():
@@ -901,7 +906,7 @@ class ArsenalService:
                 if not isinstance(file, dict):
                     continue
                 try:
-                    fid = int(file.get("fileId") or file.get("file_id") or 0)
+                    fid = nexus_file_id(file.get("fileId", file.get("file_id")))
                     if fid > 0:
                         items.append({"fileId": fid, "name": str(file.get("name") or file.get("fileName") or file.get("file_name") or f"File {fid}")[:190], "version": str(file.get("version") or ""), "category": int(file.get("category", file.get("category_id", 0)) or 0), "sizeInKB": max(0, int(file.get("sizeInKB", file.get("size_kb", 0)) or 0)), "uploaded": str(file.get("uploaded_time") or ""), "fileName": str(file.get("fileName") or file.get("file_name") or "")[:190], "description": unescape(re.sub(r"<[^>]*>", " ", str(file.get("description") or "")))[:500].strip()})
                 except (TypeError, ValueError, OverflowError):
@@ -975,7 +980,7 @@ class ArsenalService:
             if expected_execution_epoch is not None and expected_execution_epoch != execution_epoch:
                 return {"ok": False, "error": "MO2 context changed; refresh before downloading"}
         files = self.fetch_files(mod_id)
-        if not files.get("ok") or file_id not in {int(f["fileId"]) for f in files["files"]}:
+        if not files.get("ok") or index_nexus_files(files.get("files")).get(file_id) is None:
             return {"ok": False, "error": "The selected file must be verified in the Nexus Files list first"}
         with self._guard:
             if self._snapshot.get("profileId") != profile or self._execution_epoch != execution_epoch:
@@ -1560,16 +1565,18 @@ class ArsenalService:
         # Preflight ALL Nexus file identities. Public assets were validated
         # against server-owned release results above, never client URLs.
         exact_files: dict[tuple[int, int], dict] = {}
+        files_by_project: dict[int, dict[int, dict | None]] = {}
         for item in approved:
-            available = self.fetch_files(item["modId"])
-            if not available.get("ok"):
+            if item["modId"] not in files_by_project:
+                available = self.fetch_files(item["modId"])
+                if not available.get("ok"):
+                    return {"ok": False, "queued": [], "failed": [{"itemId": item["itemId"],
+                            "error": available.get("error", "Nexus file list unavailable")}]}
+                files_by_project[item["modId"]] = index_nexus_files(available.get("files"))
+            matched = files_by_project[item["modId"]].get(item["fileId"])
+            if matched is None:
                 return {"ok": False, "queued": [], "failed": [{"itemId": item["itemId"],
-                        "error": available.get("error", "Nexus file list unavailable")}]}
-            matched = next((f for f in available.get("files", [])
-                            if int(f.get("fileId") or 0) == item["fileId"]), None)
-            if not matched:
-                return {"ok": False, "queued": [], "failed": [{"itemId": item["itemId"],
-                        "error": "Exact Nexus file is no longer in the live Files list"}]}
+                        "error": "Exact Nexus file is missing, invalid, or ambiguous in the live Files list"}]}
             exact_files[(item["modId"], item["fileId"])] = matched
         queued, failed = [], []
         for item in approved + sources:

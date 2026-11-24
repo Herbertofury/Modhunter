@@ -125,14 +125,14 @@ def discover_local_source(mod_directory: Path, notes: str = "") -> dict:
     candidates: list[tuple[str, str]] = []
     custom_enabled = None
     metadata_notes = ""
+    file_identity = {}
     try:
         if ini.is_file() and ini.stat().st_size <= 65536:
             text = ini.read_text(encoding="utf-8-sig", errors="replace")
-            # With interpolation disabled, parsing can only preserve a URL's
-            # literal scheme separator (continuations add a newline). Without
-            # any separator or custom-URL switch, metadata cannot affect the
-            # result. Always keep the independent organizer notes fallback.
-            if "://" in text or "hascustomurl" in text.lower():
+            lower = text.lower()
+            # A source-less INI can still own the archive and project receipts.
+            if "://" in text or any(field in lower for field in (
+                    "hascustomurl", "installationfile", "[installedfiles]", "gamename", "nexusfilestatus")):
                 parser = configparser.ConfigParser(interpolation=None, strict=False)
                 parser.read_string(text)
                 general = next((section for section in parser.sections() if section.lower() == "general"), None)
@@ -140,6 +140,17 @@ def discover_local_source(mod_directory: Path, notes: str = "") -> dict:
                     value = parser.get(general, "hascustomurl", fallback="").strip().lower()
                     custom_enabled = False if value in ("false", "0") else True if value in ("true", "1") else None
                     metadata_notes = parser.get(general, "notes", fallback="")
+                    archive = parser.get(general, "installationFile", fallback="").replace("\\", "/").rsplit("/", 1)[-1]
+                    installed = next((section for section in parser.sections() if section.lower() == "installedfiles"), None)
+                    receipts = []
+                    if installed:
+                        for key, value in parser.items(installed):
+                            index, separator, field = key.partition("\\")
+                            if separator and index.isascii() and index.isdigit() and field == "fileid":
+                                receipts.append([parser.get(installed, index + "\\modid", fallback=""), value])
+                    file_identity = {"installationArchive": archive, "installedFiles": receipts,
+                                     "game": parser.get(general, "gameName", fallback=""),
+                                     "status": parser.get(general, "nexusFileStatus", fallback="")}
                 for section in parser.sections():
                     for key in ("url", "customurl", "modurl", "updateurl", "homepage", "website", "source"):
                         if parser.has_option(section, key):
@@ -149,7 +160,7 @@ def discover_local_source(mod_directory: Path, notes: str = "") -> dict:
     for url, origin in candidates if custom_enabled is not False else []:
         record = source_record(url, origin)
         if record["verified"]:
-            return record
+            return {**record, "_mo2FileIdentity": file_identity} if file_identity else record
     for url in re.findall(r"https://[^\s<>'\"\]\)]+", (str(notes or "")[:24000] + " " + metadata_notes[:24000]), flags=re.I):
         record = source_record(url, "MO2 notes")
         if record["verified"]:
@@ -158,11 +169,11 @@ def discover_local_source(mod_directory: Path, notes: str = "") -> dict:
             record.update(verified=False, kind="advisory", label="Unverified link from MO2 notes")
             if custom_enabled is False:
                 record["customUrlEnabled"] = False
-            return record
+            return {**record, "_mo2FileIdentity": file_identity} if file_identity else record
     record = source_record("", "")
     if custom_enabled is False:
         record["customUrlEnabled"] = False
-    return record
+    return {**record, "_mo2FileIdentity": file_identity} if file_identity else record
 
 
 def _release_identity(source: dict) -> tuple[str, str, str] | None:

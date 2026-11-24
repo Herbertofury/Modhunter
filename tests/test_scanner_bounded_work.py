@@ -88,8 +88,8 @@ class BoundedNexusAuditTests(unittest.TestCase):
         self.assertEqual(len(calls), 37)
         self.assertEqual(len(set(calls)), 37)
         self.assertEqual(result["queried"], 37)
-        self.assertEqual(result["itemRecords"]["second-copy"]["verdict"], "current")
-        self.assertEqual(result["itemRecords"]["mod-0"]["verdict"], "candidate")
+        self.assertEqual(result["itemRecords"]["second-copy"]["verdict"], "review")
+        self.assertEqual(result["itemRecords"]["mod-0"]["verdict"], "review")
         self.assertFalse(result["errors"])
 
     def test_quota_or_auth_failure_does_not_dispatch_remaining_projects(self):
@@ -176,7 +176,7 @@ class BoundedNexusAuditTests(unittest.TestCase):
         self.assertFalse(worker.is_alive())
         self.assertTrue(results[0]["cancelled"])
         self.assertEqual(self.cache.get("skyrimspecialedition", 1)["meta"]["version"], "3.0")
-        self.assertEqual(current["itemRecords"]["mod-0"]["latestVersion"], "3.0")
+        self.assertEqual(current["itemRecords"]["mod-0"]["projectVersion"], "3.0")
 
 
 if __name__ == "__main__":

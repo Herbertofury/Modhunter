@@ -10,12 +10,13 @@ from __future__ import annotations
 import secrets
 import threading
 from typing import Any
+from .file_advisor import nexus_file_id
 
 
 def normalize_native_files(files: Any, *, raw_api: bool = False) -> list[dict]:
     """Convert known Nexus JSON or legacy converted file records into choices."""
     result = []
-    for row in files[:20000] if isinstance(files, (list, tuple)) else []:
+    for row in files if isinstance(files, (list, tuple)) else []:
         if isinstance(row, dict):
             fid = row.get("file_id", 0) if raw_api else row.get("fileId", row.get("file_id", 0))
             read = lambda key, default=None: row.get(key, default)
@@ -27,7 +28,7 @@ def normalize_native_files(files: Any, *, raw_api: bool = False) -> list[dict]:
         try:
             if isinstance(fid, bool):
                 continue
-            fid = int(fid)
+            fid = nexus_file_id(fid)
             if fid <= 0:
                 continue
             # Nexus's current API declares bytes and KB separately. Its old
@@ -39,10 +40,10 @@ def normalize_native_files(files: Any, *, raw_api: bool = False) -> list[dict]:
             result.append({
                 "fileId": fid,
                 "name": str(read("name") or read("fileName") or read("file_name") or f"File {fid}")[:190],
-                "version": str(read("version") or "")[:75],
+                "version": str(read("version") or ""),
                 "category": int(read("category", read("categoryID", read("category_id", 0))) or 0),
                 "sizeInKB": max(0, size_kb),
-                "fileName": str(read("fileName", read("file_name", read("uri", ""))) or "")[:190],
+                "fileName": str(read("fileName", read("file_name", read("uri", ""))) or ""),
                 "description": str(read("description") or "")[:600],
                 "uploaded_time": str(read("uploaded_time") or "")[:80],
             })
@@ -321,13 +322,13 @@ class NativeNexusGateway:
                 or not isinstance(data, dict) or not isinstance(data.get("files"), list)):
             request.finish({"ok": False, "error": "MO2 returned no usable raw Nexus file list"})
             return
-        self._finish_files(request, mod_id, data["files"], raw_api=True)
+        self._finish_files(request, mod_id, data["files"], raw_api=True, history=data.get("file_updates"))
 
     @staticmethod
-    def _finish_files(request, mod_id, data, *, raw_api):
+    def _finish_files(request, mod_id, data, *, raw_api, history=None):
         try:
             files = normalize_native_files(data, raw_api=raw_api)
-            request.finish({"ok": True, "modId": int(mod_id), "files": files, "transport": "mo2-native-nexus"})
+            request.finish({"ok": True, "modId": int(mod_id), "files": files, "file_updates": history, "transport": "mo2-native-nexus"})
         except (TypeError, ValueError, RuntimeError) as exc:
             request.finish({"ok": False, "error": "Could not decode MO2 Nexus files: " + str(exc)[:160]})
 

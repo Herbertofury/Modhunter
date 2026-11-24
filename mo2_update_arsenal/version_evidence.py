@@ -26,6 +26,14 @@ class Version:
     metadata: str = ""
 
 
+def normalized_version(value: str) -> tuple[int, ...] | None:
+    """Only compare unambiguous numeric versions, never sort alpha builds blindly."""
+    v = str(value or "").strip().lower().removeprefix("v")
+    if len(v) > 96 or not re.fullmatch(r"[0-9]{1,10}(?:\.[0-9]{1,10}){0,5}", v):
+        return None
+    return tuple(map(int, v.split(".")))
+
+
 def parse_version(value: object) -> Version | None:
     if not isinstance(value, str) or not value or len(value) > MAX_VERSION_LENGTH:
         return None

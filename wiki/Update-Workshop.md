@@ -1,5 +1,14 @@
 # ⚒ Update Workshop | MO2 Mod Updating
 
+
+### How Nexus updates are identified
+
+Mod Hunter checks the installed MO2 file receipt and archive basename within the same Nexus game and project. It follows the provider's file-update chain. Explicit deep scans with no MO2 Nexus connection or personal key can use public Nexus GraphQL project and file-group metadata. MO2 handles downloads. A withdrawn file, merged receipts, ambiguous successors or incomplete provider evidence lead to review.
+
+For example, Alternate Perspective's project version is 4.1.0. Its independently versioned Anniversary Edition - Bone Wolf Patch is file 252976 at 2.6. An installation of that file at 2.6.0.0 is current. The file picker can show other archives for manual review. A one-click recommendation requires the verified successor of the installed file, fresh evidence and a unique active file ID.
+
+MO2's upstream implementation resolves a recorded Nexus file ID or archive name, walks file-update relationships and checks file status. Its fallback to the mod-page version for unidentified files is unsuitable for verifying optional patches. [MO2 upstream source](https://github.com/ModOrganizer2/modorganizer/blob/4ba22f0d8b6f9e08e44008b8395cd774551b4ebe/src/mainwindow.cpp#L3210-L3378) · [Nexus file-group API schema](https://github.com/Nexus-Mods/Vortex/blob/master/packages/nexus-api-v3/schema/openapi.yaml)
+
 > **Modhunter Updater Expansion · MO2 login, Nexus and public release checks**
 
 Modhunter now presents a unified **Update Workshop** in the standalone HTML, Rust desktop app, and MO2 plugin's browser dashboard. **Only a live MO2 plugin connection can authorize Nexus downloads or install them.** The standalone HTML keeps its own mod checklist and can export an advisory plan without MO2.

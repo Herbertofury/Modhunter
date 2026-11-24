@@ -162,7 +162,8 @@ function detectedStatus(mod){
  else if(manual){kind='manual';label=capabilities.checkMode==='api-key'?'Provider key needed':'Page review';reason=u.reason||'This source needs page tracking or original-page review; an automatic release API is not available.'}
  else if(phase&1){kind=checking?'checking':'stale';label=checking?'Rechecking':'Recheck needed';reason='Previous source evidence expired. '+reason}
  else if(u.verdict==='candidate'){kind='update';label=remote?'Update available':'Update hinted';reason=u.reason||'A newer project version was found. Review its exact files and requirements.'}
- else if(remote&&u.verdict==='current'){kind='current';label='Up to date';reason='Installed project version matches the latest checked metadata. File/runtime compatibility is separate.'}
+ else if(remote&&u.verdict==='current'){kind='current';label='Up to date';reason=u.reason||'Installed version matches current provider evidence.'}
+ else if(u.source==='mo2-cached-metadata'&&u.mo2Verdict==='current'){kind='current';label='Current in MO2';reason='MO2 last recorded this active file at the installed version.'}
  else if(remote&&u.verdict==='newer-installed'){kind='ahead';label='Installed is newer'}
  else if(u.verdict==='review'){kind='review';label='Version review'}
  else if(u.verdict==='unknown'&&(u.checkedAt||u.reason)){kind='review';label='Needs review'}
@@ -1819,12 +1820,13 @@ async function openFilePicker(m){
   if(receiptOption)receiptOption.disabled=receipt.state!=='listed';
   const nexus=files.map(f=>{
    const recorded=receipt.state==='listed'&&Number(f.fileId)===receipt.fileId;
-   const tag=f.suggested?'◈ VERSION-MATCHED MAIN FILE':f.releaseVersionMatch?'✓ PROJECT VERSION MATCH':f.category===1?'MAIN FILE':'OPTIONAL / OTHER';
+   const tag=f.suggested?'◈ VERIFIED FILE SUCCESSOR':f.releaseVersionMatch?'✓ PROJECT VERSION MATCH':f.category===1?'MAIN FILE':'OPTIONAL / OTHER';
    return '<div class="picker-file'+(f.suggested?' picker-suggested':'')+'" data-picker-role="'+(f.category===1?'main':'other')+'" data-picker-matches="'+String(f.releaseVersionMatch===true)+'" data-picker-receipt="'+String(recorded)+'"><div class="picker-file-main"><span class="picker-match-tag">'+escapeHTML(tag)+'</span><strong>'+escapeHTML(f.name)+'</strong>'+(recorded?'<span class="picker-archive-receipt">Recorded archive</span>':'')+'<span>Nexus #'+Number(f.fileId)+' · v'+escapeHTML(f.version||'?')+' · '+escapeHTML(f.fileName||'')+' · '+escapeHTML(f.sizeInKB||'?')+' KB '+(f.category===1?' · MAIN FILE':'')+'</span>'+(f.reviewHint?'<p class="picker-hint">'+escapeHTML(f.reviewHint)+'</p>':'')+(f.description?'<p class="picker-file-desc">'+escapeHTML(f.description)+'</p>':'')+'</div><button class="button-bright" data-file-id="'+Number(f.fileId)+'" data-file-version="'+escapeHTML(f.version||'')+'" data-mod-id="'+Number(m.nexusId)+'" data-archive-name="'+escapeHTML(f.fileName||f.name)+'">Select Nexus file</button></div>';
   }).join('');
   if(!nexus&&!releaseFiles)throw Error('No files available for this project');
   $('filePickerFiles').innerHTML=(nexus?'<div class="picker-source-title">NEXUS MODS · EXACT FILES</div>'+nexus:'')+releaseFiles;
-  if(j.reviewAdvice?.hasUniqueMainMatch)$('filePickerSummary').textContent='One main Nexus file matches the published project version. Verify game/runtime, required files, and FOMOD options.';
+  if(j.reviewAdvice?.hasVerifiedSuccessor)$('filePickerSummary').textContent='Nexus identifies a successor for this installed file. Verify runtime, requirements and FOMOD options.';
+  else if(j.reviewAdvice?.hasUniqueMainMatch)$('filePickerSummary').textContent='One main file shares the reported version. Review its identity before selecting it.';
   else if(j.reviewAdvice?.matchingMainFiles>1)$('filePickerSummary').textContent='Several main files share the published version. Compare the variants carefully for your runtime and mod configuration.';
   filterFilePicker();
  }catch(ex){

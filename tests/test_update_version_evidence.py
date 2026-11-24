@@ -3,6 +3,7 @@ import copy
 import time
 import unittest
 from mo2_update_arsenal.version_evidence import compare_versions, parse_version
+from mo2_update_arsenal.file_advisor import NexusFileIndex
 from mo2_update_arsenal.scanner import normalized_version, summary_from_metadata, version_verdict
 
 
@@ -92,12 +93,14 @@ class VersionEvidenceTests(unittest.TestCase):
         self.assertIn('channel', legacy['reason'])
 
     def test_provider_summary_explains_strategy_without_mutating_identity(self):
-        item = {'id': 'installed-mod', 'nexusId': 42, 'installedVersion': 'Build 99'}
+        item = {'id': 'installed-mod', 'nexusId': 42, 'installedVersion': 'Build 99', 'installedFiles': [[42,91]]}
         original = copy.deepcopy(item)
-        evidence = summary_from_metadata(item, {'version': 'build 100', 'status': 'published'}, 123)
+        index = NexusFileIndex({"files":[{"fileId":91,"fileName":"mod.zip","name":"Mod","version":"build 100","category":1}],
+                                "file_updates":[]})
+        evidence = summary_from_metadata(item, {'version': 'build 999', 'status': 'published'}, 123, index)
         self.assertEqual(evidence['versionComparison']['strategy'], 'build')
         self.assertEqual(evidence['verdict'], 'candidate')
-        self.assertIn('exact FILE', evidence['reason'])
+        self.assertIn('exact Nexus file', evidence['reason'])
         hidden = summary_from_metadata(item, {'status': 'hidden', 'version': 'build 999'}, 124)
         self.assertEqual(hidden['verdict'], 'review')
         self.assertEqual(item, original)

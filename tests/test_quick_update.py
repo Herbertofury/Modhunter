@@ -17,6 +17,9 @@ def mod(mid, project, *, flags=None, source="nexus-api"):
     result = {"id": mid, "name": mid, "mo2InternalName": mid, "nexusId": project,
               "installedVersion": "1.0", "flags": flags or [],
               "update": {"verdict": "candidate", "latestVersion": "2.0", "source": source}}
+    if source == "nexus-api":
+        result["update"].update(evidenceScope="exact-file", targetFileId=200 + project,
+                                installedFileId=100 + project, checkedAt=time.time(), expiresAt=time.time()+600)
     if source == "github-release-api":
         result["source"] = {"type": "github", "url": "https://github.com/org/my-mod", "verified": True}
         now = time.time()
@@ -42,11 +45,11 @@ class QuickSelectionTests(unittest.TestCase):
     def test_unique_version_main_is_selected_without_hiding_alternates(self):
         selected, reason = choose_nexus_file(mod("live-a", 101), files(101))
         self.assertEqual(selected["fileId"], 301)
-        self.assertIn("unique", reason)
+        self.assertIn("verified", reason)
         self.assertEqual(len(files(101)), 2)
 
     def test_ambiguous_editions_and_risky_dll_get_a_choice_not_an_auto_queue(self):
-        for candidates in (files(101) + [dict(files(101)[0], fileId=777)], files(101)[:1]):
+        for candidates in (files(101) + [dict(files(101)[0], fileId=301)], files(101)[:1]):
             with self.subTest(candidates=candidates):
                 chosen, _ = choose_nexus_file(mod("live-a", 101), candidates)
                 self.assertEqual(bool(chosen), len(candidates) == 1)
@@ -182,7 +185,7 @@ class QuickServiceTests(unittest.TestCase):
 
     def test_ambiguous_nexus_files_never_auto_select(self):
         self.service.fetch_files = lambda mid: {"ok": True, "files": files(mid) + [
-            dict(files(mid)[0], fileId=999)]}
+            dict(files(mid)[0], fileId=200+mid)]}
         result = self.service.quick_update({"profileId": SNAP["profileId"], "itemIds": ["live-a"]})
         self.assertFalse(result["queued"])
         self.assertTrue(result["skipped"])

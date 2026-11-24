@@ -113,6 +113,7 @@ def take_snapshot(organizer: Any, target_runtime: str = "unknown", *,
     # Windows exe file versions are sometimes reported with a fourth .0 component.
     if game == "skyrimspecialedition" and target_runtime == "1.5.97.0":
         target_runtime = "1.5.97"
+    game_names = {game, call_str(game_obj, "gameShortName").casefold()}
     profile = call_str(organizer, "profileName", "Default")
     base = call_str(organizer, "basePath")
     profile_id = identity(base + "|" + game + "|" + profile)
@@ -177,6 +178,9 @@ def take_snapshot(organizer: Any, target_runtime: str = "unknown", *,
         else:
             flags = inspect_local_flags(Path(mod_path)) if mod_path else []
             detected_source = discover_local_source(Path(mod_path), notes) if mod_path else {}
+        receipt = detected_source.pop("_mo2FileIdentity", {})
+        saved_game = str(receipt.get("game") or "").casefold()
+        source_game_matches = not saved_game or saved_game in game_names
         custom_enabled = detected_source.pop("customUrlEnabled", None)
         native_url = source_record(call_str(mod, "url") if custom_enabled is not False else "", "MO2 official mod URL")
         nexus_source = source_url(game, nexus_id)
@@ -195,6 +199,10 @@ def take_snapshot(organizer: Any, target_runtime: str = "unknown", *,
             "name": label,
             "installedVersion": version,
             "latestKnownVersion": latest,
+            "installationArchive": receipt.get("installationArchive") or call_str(mod, "installationFile").replace("\\", "/").rsplit("/", 1)[-1],
+            "installedFiles": receipt.get("installedFiles", []),
+            "updateEligible": source_game_matches,
+            "mo2FileStatus": int(receipt["status"]) if receipt.get("status") in {"1", "2", "3", "4", "5", "6", "7"} else None,
             "enabled": enabled,
             "nexusId": nexus_id,
             "screenshotNote": notes,

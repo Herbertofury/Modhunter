@@ -514,16 +514,19 @@ impl ProfileImporter {
         stats.mods = items.len();
         stats.warnings = warnings.len();
         let stamp = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
-        let catalog = json!({
+        let mut catalog = json!({
             "schemaVersion":2,"catalogId":format!("offline-mo2-{profile_id}"),"profileId":profile_id,
             "profileName":profile_name,"game":game,"gameRuntime":runtime,
             "title":format!("Imported MO2 / {profile_name}"),"generatedAt":stamp,
             "build":{"count":items.len(),"groups":groups.len(),"verifiedLinks":verified_links,"unresolvedLinks":items.len()-verified_links},
-            "groups":groups,"items":items,
-            "pluginAnalysis":plugin_analysis,
             "sources":[{"kind":"offline-modlist","name":"User-selected MO2 profile · Rust engine","timestamp":stamp}],
             "offline":true,"importedAt":stamp
         });
+        // json! serializes expression values by reference. These full-sized
+        // arrays and the plugin tree are already JSON, so transfer ownership.
+        catalog["items"] = Value::Array(items);
+        catalog["groups"] = Value::Array(groups);
+        catalog["pluginAnalysis"] = plugin_analysis;
         stats.elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
         check_cancelled(cancelled)?;
         Ok(ImportResult {

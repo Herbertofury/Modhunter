@@ -588,13 +588,15 @@ pub fn start(app: &tauri::AppHandle, output: PathBuf) -> Result<()> {
         .prefix("watchtower-fixture-")
         .tempdir_in(parent)
         .map_err(err)?;
-    app.manage(ManagerProfile(root.path().join("manager-webview")));
     setup_paths(
         app,
         root.path().join("config"),
         root.path().join("data"),
         false,
     )?;
+    app.manage(ManagerProfile(
+        app.state::<WatchRuntime>().ephemeral.join("manager"),
+    ));
     // Keep the event loop alive while the worker closes/reopens every site view.
     tauri::window::WindowBuilder::new(app, "watchtower-fixture-keeper")
         .visible(false)
@@ -645,6 +647,9 @@ pub fn start(app: &tauri::AppHandle, output: PathBuf) -> Result<()> {
                 "fixture-failed"
             },
         );
+        if let Some(manager) = handle.get_webview_window("watchtower") {
+            let _ = manager.close();
+        }
         shutdown(&handle);
         if retain && written {
             let _ = root.keep();

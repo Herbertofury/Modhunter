@@ -62,6 +62,8 @@ mod notices;
 mod reset;
 pub(crate) use reset::dispatch_helper as dispatch_reset_helper;
 
+#[path = "watchtower_profile_root.rs"]
+mod profile_root;
 #[path = "watchtower_smoke.rs"]
 mod smoke;
 pub use smoke::start as start_smoke;
@@ -174,9 +176,11 @@ pub struct WatchRuntime {
     work: Mutex<Work>,
     windows: Mutex<BTreeMap<String, SiteWindow>>,
     anonymous_origins: Mutex<BTreeMap<String, usize>>,
+    temporary_sessions: Mutex<BTreeMap<String, usize>>,
     prefill: Mutex<Option<Value>>,
     profiles: PathBuf,
-    ephemeral: tempfile::TempDir,
+    ephemeral: PathBuf,
+    temporary_root: profile_root::ProfileRoot,
     ephemeral_owner: Mutex<Option<File>>,
     _ownership: Option<File>,
     ownership_error: String,
@@ -252,29 +256,38 @@ impl WatchRuntime {
         }
         snapshot
     }
+    fn session_dir(&self, session: &Session) -> Result<PathBuf> {
+        if session.id.is_empty()
+            || session.id.len() > 100
+            || !session
+                .id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return Err("This site session has an invalid storage identity.".into());
+        }
+        if session.remember {
+            return Ok(self
+                .profiles
+                .join(&session.id)
+                .join(format!("generation-{}", session.storage_generation)));
+        }
+        let mut sessions = self.temporary_sessions.lock().map_err(err)?;
+        let next = sessions.len();
+        let id = sessions.entry(session.id.clone()).or_insert(next);
+        Ok(self
+            .ephemeral
+            .join("s")
+            .join(id.to_string())
+            .join(session.storage_generation.to_string()))
+    }
+
     fn profile_dir(&self, session: Option<&Session>, origin: &str) -> Result<PathBuf> {
         let directory = match session {
-            Some(s) => {
-                if s.id.is_empty()
-                    || s.id.len() > 100
-                    || !s
-                        .id
-                        .chars()
-                        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-                {
-                    return Err("This site session has an invalid storage identity.".into());
-                }
-                let base = if s.remember {
-                    self.profiles.clone()
-                } else {
-                    self.ephemeral.path().join("sessions")
-                };
-                base.join(&s.id)
-                    .join(format!("generation-{}", s.storage_generation))
-            }
+            Some(s) => self.session_dir(s)?,
             None => {
                 let mut origins = self.anonymous_origins.lock().map_err(err)?;
-                anonymous_profile_dir(self.ephemeral.path(), &mut origins, origin)
+                anonymous_profile_dir(&self.ephemeral, &mut origins, origin)
             }
         };
         std::fs::create_dir_all(&directory).map_err(err)?;
@@ -323,14 +336,17 @@ fn setup_paths(
         Err(_)=>(None,"Another Modhunter app is using Watchtower. Close that app, then reopen this instance to change or check pages.".into()),
     };
     let profiles = data.join("watchtower-site-profiles");
-    let temporary = data.join("watchtower-temporary-profiles");
-    std::fs::create_dir_all(&temporary).map_err(err)?;
+    let temporary_root = profile_root::open(&data)?;
     if ownership.is_some() {
-        cleanup_abandoned(&temporary);
+        let legacy = data.join("watchtower-temporary-profiles");
+        if plain_directory(&legacy) {
+            cleanup_abandoned(&legacy);
+        }
+        cleanup_abandoned(&temporary_root.path);
     }
     let ephemeral = tempfile::Builder::new()
         .prefix("run-")
-        .tempdir_in(&temporary)
+        .tempdir_in(&temporary_root.path)
         .map_err(err)?;
     std::fs::write(ephemeral.path().join("run-owner.json"),serde_json::to_vec(&json!({"application":"com.modhunter.desktop.watchtower","schema":1,"pid":std::process::id()})).map_err(err)?).map_err(err)?;
     let ephemeral_owner = OpenOptions::new()
@@ -350,9 +366,11 @@ fn setup_paths(
         work: Mutex::new(Work::default()),
         windows: Mutex::new(BTreeMap::new()),
         anonymous_origins: Mutex::new(BTreeMap::new()),
+        temporary_sessions: Mutex::new(BTreeMap::new()),
         prefill: Mutex::new(None),
         profiles,
-        ephemeral,
+        ephemeral: ephemeral.keep(),
+        temporary_root,
         ephemeral_owner: Mutex::new(Some(ephemeral_owner)),
         _ownership: ownership,
         ownership_error,
@@ -1439,7 +1457,7 @@ fn cleanup_retired(state: &WatchRuntime) {
         if in_use {
             return true;
         }
-        let valid = (path.starts_with(&state.profiles) || path.starts_with(state.ephemeral.path()))
+        let valid = (path.starts_with(&state.profiles) || path.starts_with(&state.ephemeral))
             && plain_directory(path)
             && std::fs::read(path.join("modhunter-profile-owner.json"))
                 .ok()
@@ -1476,6 +1494,29 @@ fn process_alive(pid: u32) -> bool {
         CloseHandle(process);
         !known || code == 259
     }
+}
+
+fn clear_run_payload(path: &Path) -> std::io::Result<()> {
+    // Chromium may release its file handles after its window closes. Preserve
+    // both ownership records until every profile entry really is gone.
+    for entry in std::fs::read_dir(path)? {
+        let entry = entry?;
+        if entry.file_name() == "run-owner.json" || entry.file_name() == "owner.lock" {
+            continue;
+        }
+        if entry.file_type()?.is_dir() {
+            std::fs::remove_dir_all(entry.path())?;
+        } else {
+            std::fs::remove_file(entry.path())?;
+        }
+    }
+    Ok(())
+}
+
+fn finish_run_cleanup(path: &Path) {
+    let _ = std::fs::remove_file(path.join("owner.lock"));
+    let _ = std::fs::remove_file(path.join("run-owner.json"));
+    let _ = std::fs::remove_dir(path);
 }
 
 fn cleanup_abandoned(root: &Path) {
@@ -1521,9 +1562,47 @@ fn cleanup_abandoned(root: &Path) {
         else {
             continue;
         };
-        drop(lock);
-        let _ = std::fs::remove_dir_all(path);
+        if clear_run_payload(&path).is_ok() {
+            drop(lock);
+            finish_run_cleanup(&path);
+        }
     }
+}
+
+#[cfg(test)]
+#[test]
+fn interrupted_browser_cleanup_retains_ownership_until_all_files_are_released() {
+    let parent = tempfile::tempdir().unwrap();
+    let run = parent.path().join("run-owned");
+    std::fs::create_dir(&run).unwrap();
+    std::fs::write(
+        run.join("run-owner.json"),
+        br#"{"application":"com.modhunter.desktop.watchtower","schema":1,"pid":4294967294}"#,
+    )
+    .unwrap();
+    let lock = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .share_mode(0)
+        .open(run.join("owner.lock"))
+        .unwrap();
+    let browser = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .share_mode(0)
+        .open(run.join("browser-cookie"))
+        .unwrap();
+    let foreign = parent.path().join("run-unowned");
+    std::fs::create_dir(&foreign).unwrap();
+    cleanup_abandoned(parent.path());
+    assert!(run.join("browser-cookie").is_file());
+    drop(lock);
+    cleanup_abandoned(parent.path());
+    assert!(run.join("run-owner.json").is_file() && run.join("owner.lock").is_file());
+    drop(browser);
+    cleanup_abandoned(parent.path());
+    assert!(!run.exists());
+    assert!(foreign.is_dir());
 }
 
 fn recover_retired(state: &WatchRuntime) {
@@ -1581,15 +1660,9 @@ fn session_changed(app: &tauri::AppHandle, previous: Option<Session>) {
     }
     let _ = cancel_session(app, &previous.id);
     close_session(app, &previous.id);
-    let base = if previous.remember {
-        state.profiles.clone()
-    } else {
-        state.ephemeral.path().join("sessions")
-    };
-    let path = base
-        .join(&previous.id)
-        .join(format!("generation-{}", previous.storage_generation));
-    if let Ok(mut paths) = state.retired.lock() {
+    if let Ok(path) = state.session_dir(&previous)
+        && let Ok(mut paths) = state.retired.lock()
+    {
         paths.push(path);
     }
 }
@@ -2099,13 +2172,14 @@ pub fn shutdown(app: &tauri::AppHandle) {
         }
         std::thread::sleep(Duration::from_millis(40));
     }
-    if let Ok(mut lock) = state.ephemeral_owner.lock() {
-        lock.take();
-    }
     cleanup_retired(&state);
     // WebView2 can release file handles shortly after the final view closes.
     while Instant::now() < deadline {
-        if std::fs::remove_dir_all(state.ephemeral.path()).is_ok() {
+        if clear_run_payload(&state.ephemeral).is_ok() {
+            if let Ok(mut lock) = state.ephemeral_owner.lock() {
+                lock.take();
+            }
+            finish_run_cleanup(&state.ephemeral);
             break;
         }
         std::thread::sleep(Duration::from_millis(60));

@@ -42,6 +42,8 @@ Open **Site sign-ins**, choose **Add site sign-in**, enter the website and give 
 
 Each named session has a separate WebView2 profile. This supports separate sessions for the same site without sharing cookies with another session or the privileged local manager. A page can use a session only for the intended site origin. Native popups preserve their parent session for supported login flows; the website still cannot invoke Modhunter's local filesystem or MO2 commands.
 
+Anonymous browsing and temporary sign-ins use a compact directory on a local Windows drive. Watchtower normally uses the account's temporary directory. If that location is too long or unavailable, it tries the Windows temporary directory with the same account-specific access controls. Each app run keeps separate browser data. On exit or after an interrupted run, Watchtower removes only its marked profiles after the browser releases them. Remembered accounts retain their existing profile directories. [Microsoft WebView2 deployment guidance](https://learn.microsoft.com/en-us/deployedge/webview2-security-tools) · [Windows file security](https://learn.microsoft.com/en-us/windows/win32/fileio/file-security-and-access-rights)
+
 | Control or state | Meaning |
 | --- | --- |
 | Remember this sign-in | The selected native browser profile persists across app launches. |

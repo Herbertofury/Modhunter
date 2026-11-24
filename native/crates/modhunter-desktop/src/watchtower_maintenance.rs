@@ -385,7 +385,7 @@ fn storage(app: &tauri::AppHandle) -> Result<Value> {
         (
             "temporary",
             "Temporary site sessions",
-            state.data.join("watchtower-temporary-profiles"),
+            app.state::<WatchRuntime>().temporary_root.path.clone(),
         ),
         (
             "watchlist",

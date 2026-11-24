@@ -4,6 +4,8 @@
 //! Browser/network work is supplied by the desktop after a check lease begins.
 mod feed;
 pub use feed::{PublicDocumentReader, PublicFormat};
+mod subscriptions;
+pub use subscriptions::subscription_document;
 mod source_choice;
 mod store;
 mod types;

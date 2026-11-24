@@ -1851,8 +1851,11 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
             if let Some(file) = app
                 .dialog()
                 .file()
-                .set_title(localized(app, "Preview a Watchtower JSON import"))
-                .add_filter("Watchtower export", &["json"])
+                .set_title(localized(
+                    app,
+                    "Preview a watchlist or feed subscription import",
+                ))
+                .add_filter("Watchlist or OPML subscriptions", &["json", "opml", "xml"])
                 .blocking_pick_file()
             {
                 let path = file.into_path().map_err(err)?;
@@ -1865,8 +1868,16 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
                 if bytes.len() > 8 * 1024 * 1024 {
                     return Err("Watchtower imports must be no larger than 8 MiB.".into());
                 }
-                let document: Value = serde_json::from_slice(&bytes)
-                    .map_err(|_| "This file is not a valid JSON export.".to_string())?;
+                let text = std::str::from_utf8(&bytes)
+                    .map_err(|_| "Choose a UTF-8 watchlist or OPML file.")?
+                    .trim_start_matches('\u{feff}')
+                    .trim_start();
+                let document: Value = if text.starts_with('<') {
+                    modhunter_core::watchtower::subscription_document(text)?
+                } else {
+                    serde_json::from_str(text)
+                        .map_err(|_| "This file is not a valid Watchtower JSON export.")?
+                };
                 result = state.store.command(
                     "import",
                     &json!({"document":document,"preview":true}),

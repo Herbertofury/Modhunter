@@ -2,42 +2,8 @@
 //! the desktop's ownership lock throughout each mutating operation.
 use super::*;
 use crate::watchtower::PublicFormat;
-use url::Url;
 
-fn source_url(raw: &str) -> Result<Url, String> {
-    let url = Url::parse(&canonical_page_url(raw)?).map_err(|_| "Invalid public source URL")?;
-    // Existing browser watches may embed signed or account-scoped URLs.
-    // Search never returns query values, including for ordinary public filters.
-    if url.query_pairs().any(|(key, _)| {
-        let key = key.to_ascii_lowercase();
-        matches!(
-            key.as_str(),
-            "key"
-                | "sig"
-                | "code"
-                | "email"
-                | "auth"
-                | "authorization"
-                | "oauth"
-                | "api_key"
-                | "apikey"
-        ) || [
-            "token",
-            "secret",
-            "password",
-            "credential",
-            "signature",
-            "session",
-        ]
-        .iter()
-        .any(|part| key.contains(part))
-            || key.starts_with("x-amz-")
-            || key.starts_with("x-goog-")
-    }) {
-        return Err("Use an anonymous public URL without credential parameters.".into());
-    }
-    Ok(url)
-}
+use crate::watchtower::url_policy::anonymous_source_url;
 
 fn public_row(doc: &Document, w: &Watch) -> Option<Value> {
     if w.removed_at.is_some() || w.session_id.is_some() || w.requires_session {
@@ -47,7 +13,7 @@ fn public_row(doc: &Document, w: &Watch) -> Option<Value> {
         PublicFormat::Json => "json",
         PublicFormat::Feed => "feed",
     };
-    let mut url = source_url(&w.url).ok()?;
+    let mut url = anonymous_source_url(&w.url).ok()?;
     let has_query = url.query().is_some();
     url.set_query(None);
     let title = if doc.settings.hide_titles || doc.settings.privacy_screen {
@@ -137,7 +103,7 @@ impl WatchStore {
         title: &str,
         now: u64,
     ) -> Result<Value, String> {
-        let url = source_url(raw_url)?.to_string();
+        let url = anonymous_source_url(raw_url)?.to_string();
         if title.len() > 512 || title.chars().any(char::is_control) {
             return Err("Invalid watch title.".into());
         }

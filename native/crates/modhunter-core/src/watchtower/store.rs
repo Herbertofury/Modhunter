@@ -244,6 +244,24 @@ impl WatchStore {
         if !payload.is_object() {
             return Err("Watchtower commands require an object.".into());
         }
+        let converted;
+        let payload = if action == "import" && payload["document"]["kind"] == "opml" {
+            let source = payload["document"]["text"]
+                .as_str()
+                .ok_or("Missing OPML subscription text.")?;
+            let mut fields = payload
+                .as_object()
+                .expect("checked above")
+                .iter()
+                .filter(|(key, _)| key.as_str() != "document")
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect::<serde_json::Map<_, _>>();
+            fields.insert("document".into(), super::subscription_document(source)?);
+            converted = Value::Object(fields);
+            &converted
+        } else {
+            payload
+        };
         match action {
             "state" => Ok(self.snapshot()),
             "detail" => {

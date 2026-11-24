@@ -389,20 +389,31 @@ fn change_watch(
     } else {
         vec![required(payload, "id")?.to_owned()]
     };
-    if ids.len() > 10_000 {
-        return Err("Select at most 10,000 pages for one operation.".into());
-    }
-    let mut seen = HashSet::new();
-    ids.retain(|id| seen.insert(id.clone()));
-    let indexes: Vec<_> = ids
-        .iter()
-        .map(|id| {
+    let indexes = if let [id] = ids.as_slice() {
+        vec![
             doc.watches
                 .iter()
                 .position(|w| &w.id == id)
-                .ok_or_else(|| format!("Watch {id} no longer exists."))
-        })
-        .collect::<Result<_, _>>()?;
+                .ok_or_else(|| format!("Watch {id} no longer exists."))?,
+        ]
+    } else {
+        let by_id: std::collections::HashMap<_, _> = doc
+            .watches
+            .iter()
+            .enumerate()
+            .map(|(index, w)| (w.id.as_str(), index))
+            .collect();
+        let mut seen = HashSet::new();
+        ids.retain(|id| seen.insert(id.clone()));
+        ids.iter()
+            .map(|id| {
+                by_id
+                    .get(id.as_str())
+                    .copied()
+                    .ok_or_else(|| format!("Watch {id} no longer exists."))
+            })
+            .collect::<Result<Vec<_>, _>>()?
+    };
     for index in indexes {
         let w = &mut doc.watches[index];
         if action == "restoreWatch" {
@@ -944,14 +955,14 @@ fn import_values(payload: &Value) -> Result<&Vec<Value>, String> {
         .get("watches")
         .and_then(Value::as_array)
         .ok_or("The export has no watch list.")?;
-    if values.len() > 10_000 {
-        return Err("Import at most 10,000 watches per operation.".into());
-    }
     Ok(values)
 }
 fn import_config(doc: &Document, value: &Value) -> Result<Watch, String> {
     if !value.is_object() {
         return Err("Each imported watch must be an object.".into());
+    }
+    if let Some(reason) = value.get("importError").and_then(Value::as_str) {
+        return Err(bounded_text(reason, 512));
     }
     let mut clean = value.clone();
     clean.as_object_mut().unwrap().remove("id");
@@ -966,6 +977,22 @@ fn import_config(doc: &Document, value: &Value) -> Result<Watch, String> {
     sources::validate_import_choices(&watch, value)?;
     Ok(watch)
 }
+// Imported pages never adopt an existing sign-in. Preserve the first matching
+// stored row, including when independent sign-in removals left paused duplicates.
+fn import_index(doc: &Document) -> std::collections::HashMap<(String, bool), usize> {
+    let mut index = std::collections::HashMap::with_capacity(doc.watches.len());
+    for (position, watch) in doc
+        .watches
+        .iter()
+        .enumerate()
+        .filter(|(_, w)| w.session_id.is_none())
+    {
+        index
+            .entry((watch.url.clone(), watch.requires_session))
+            .or_insert(position);
+    }
+    index
+}
 pub(super) fn import_preview(doc: &Document, payload: &Value) -> Result<Value, String> {
     let values = import_values(payload)?;
     let mut items = Vec::new();
@@ -975,11 +1002,12 @@ pub(super) fn import_preview(doc: &Document, payload: &Value) -> Result<Value, S
     let mut invalid = 0;
     let mut session_required = 0;
     let mut seen = HashSet::new();
+    let existing_pages = import_index(doc);
     for (index, value) in values.iter().enumerate() {
         match import_config(doc, value) {
             Ok(watch) => {
                 let key = (watch.url.clone(), watch.requires_session);
-                let existing = doc.watches.iter().find(|w| same_page(w, &watch));
+                let existing = existing_pages.get(&key).map(|&index| &doc.watches[index]);
                 let status =
                     if !seen.insert(key) || existing.is_some_and(|w| w.removed_at.is_none()) {
                         duplicates += 1;
@@ -1026,9 +1054,11 @@ fn commit_import(doc: &mut Document, payload: &Value, now: u64) -> Result<Value,
     let mut skipped = 0;
     let mut ids = Vec::new();
     let mut imported_creators = sources::ImportedCreators::new();
+    let mut pages = import_index(doc);
     for value in values {
         let mut watch = import_config(doc, value)?;
-        if let Some(index) = doc.watches.iter().position(|w| same_page(w, &watch)) {
+        let key = (watch.url.clone(), watch.requires_session);
+        if let Some(&index) = pages.get(&key) {
             if doc.watches[index].removed_at.is_some() {
                 restore(&mut doc.watches[index], now)?;
                 restored += 1;
@@ -1045,6 +1075,7 @@ fn commit_import(doc: &mut Document, payload: &Value, now: u64) -> Result<Value,
         watch.state = idle_state(&watch);
         ids.push(watch.id.clone());
         let watch_id = watch.id.clone();
+        pages.insert(key, doc.watches.len());
         doc.watches.push(watch);
         sources::import_choices(doc, &watch_id, value, &mut imported_creators)?;
         added += 1;

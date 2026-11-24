@@ -752,6 +752,52 @@ fn import_preview_is_read_only_and_commit_is_atomic_and_revision_guarded() {
 }
 
 #[test]
+fn full_subscription_export_previews_and_persists_through_the_normal_import() {
+    let (dir, store) = fresh();
+    let source = (0..11_325).fold(String::from("<opml><body>"), |mut xml, i| {
+        use std::fmt::Write;
+        write!(
+            xml,
+            r#"<outline text="Feed {i}" xmlUrl="https://example.com/{i}"/>"#
+        )
+        .unwrap();
+        xml
+    }) + "</body></opml>";
+    let document = json!({"kind":"opml","text":source});
+    let preview = command(
+        &store,
+        "import",
+        json!({"document":document,"preview":true}),
+        100,
+    );
+    assert_eq!(preview["counts"]["new"], 11_325);
+    let result = command(
+        &store,
+        "import",
+        json!({"document":document,"preview":false,"previewRevision":preview["revision"]}),
+        101,
+    );
+    assert_eq!(result["added"], 11_325);
+    drop(store);
+    let store = WatchStore::open(dir.path().join("watchtower.json"));
+    let again = command(
+        &store,
+        "import",
+        json!({"document":document,"preview":true}),
+        102,
+    );
+    assert_eq!(again["counts"]["duplicates"], 11_325);
+    let paused = command(
+        &store,
+        "pauseWatch",
+        json!({"ids":result["watchIds"],"enabled":false}),
+        103,
+    );
+    assert_eq!(paused["ok"], true);
+    assert_eq!(paused["watchIds"], result["watchIds"]);
+}
+
+#[test]
 fn import_restores_trash_deduplicates_and_pauses_account_pages_without_reusing_identity() {
     let (_dir, store) = fresh();
     let id = add(&store, "https://example.com/A", 100);

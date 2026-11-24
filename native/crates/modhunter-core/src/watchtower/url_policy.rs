@@ -105,6 +105,41 @@ pub fn page_origin(raw: &str) -> Result<String, String> {
     Ok(url.origin().ascii_serialization())
 }
 
+pub(super) fn anonymous_source_url(raw: &str) -> Result<Url, String> {
+    let url = Url::parse(&canonical_page_url(raw)?).map_err(|_| "Invalid public source URL")?;
+    // Existing browser watches may embed signed or account-scoped URLs.
+    // Search never returns query values, including for ordinary public filters.
+    if url.query_pairs().any(|(key, _)| {
+        let key = key.to_ascii_lowercase();
+        matches!(
+            key.as_str(),
+            "key"
+                | "sig"
+                | "code"
+                | "email"
+                | "auth"
+                | "authorization"
+                | "oauth"
+                | "api_key"
+                | "apikey"
+        ) || [
+            "token",
+            "secret",
+            "password",
+            "credential",
+            "signature",
+            "session",
+        ]
+        .iter()
+        .any(|part| key.contains(part))
+            || key.starts_with("x-amz-")
+            || key.starts_with("x-goog-")
+    }) {
+        return Err("Use an anonymous public URL without credential parameters.".into());
+    }
+    Ok(url)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

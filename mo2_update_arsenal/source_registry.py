@@ -119,22 +119,110 @@ def source_record(url: str, origin: str = "") -> dict:
             "label": provider.replace("-", " ").title(), "url": clean, "origin": origin}
 
 
+_SOURCE_FIELDS = {"url", "customurl", "modurl", "updateurl", "homepage", "website", "source"}
+_RECEIPT_FIELD = re.compile(r"([0-9]+)\\(modid|fileid)$")
+
+
+def _projected_ini_lines(stream):
+    """Preserve QSettings sections, options and continuation semantics without retaining descriptions."""
+    previous_indent = None
+    keep_continuation = False
+    relevant = _SOURCE_FIELDS | {"hascustomurl", "installationfile", "gamename", "nexusfilestatus",
+                                 "ignoredversion", "notes", "size"}
+    while True:
+        line = stream.readline(65536)
+        if not line:
+            return
+        truncated = len(line) == 65536 and not line.endswith("\n")
+        if truncated:
+            # Consume the remainder of this physical line without allocating it.
+            while True:
+                rest = stream.readline(65536)
+                if not rest or rest.endswith("\n"):
+                    break
+        content = line.strip()
+        if not content or content.startswith(("#", ";")):
+            yield "\n"
+            continue
+        indent = len(line) - len(line.lstrip())
+        if previous_indent is not None and indent > previous_indent:
+            if keep_continuation:
+                if truncated:
+                    raise ValueError("Incomplete multiline identity in large MO2 metadata")
+                yield line
+            continue
+        if content.startswith("["):
+            previous_indent = None
+            keep_continuation = False
+            yield line
+            continue
+        option = re.match(r"([^:=]+)[:=]", content)
+        if option is None:
+            yield line
+            continue
+        field = option[1].strip().lower()
+        keep_continuation = field in relevant or _RECEIPT_FIELD.fullmatch(field) is not None
+        previous_indent = indent
+        if not keep_continuation:
+            yield line[:indent] + "__uninspected_value__=\n"
+        elif field == "notes" and truncated:
+            yield line[:32768] + "\n"  # Source discovery consumes only the first 24,000 note characters.
+        elif truncated:
+            raise ValueError("Incomplete identity field in large MO2 metadata")
+        else:
+            yield line
+
+
+def _installed_receipts(parser, section):
+    if section is None:
+        return [], False
+    indexed = {}
+    incomplete = False
+    for key, value in parser.items(section):
+        found = _RECEIPT_FIELD.fullmatch(key)
+        if found:
+            if len(found[1]) > 20 or not found[1].isascii():
+                incomplete = True
+                continue
+            indexed.setdefault(int(found[1]), {})[found[2]] = value
+    declared = parser.get(section, "size", fallback=None)
+    if declared is not None:
+        incomplete |= not (declared.isascii() and declared.isdecimal() and len(declared) <= 20
+                           and int(declared) == len(indexed))
+    if indexed:
+        incomplete |= min(indexed) != 1 or max(indexed) != len(indexed)
+    receipts = []
+    for record in indexed.values():
+        mid, fid = record.get("modid", ""), record.get("fileid", "")
+        if not all(x.isascii() and x.isdecimal() and len(x) <= 20 and int(x) > 0 for x in (mid, fid)):
+            incomplete = True
+            continue
+        receipts.append([mid, fid])
+    return receipts, incomplete
+
+
 def discover_local_source(mod_directory: Path, notes: str = "") -> dict:
-    """Read only a mod's own small meta.ini and its existing notes."""
+    """Read only a mod's own meta.ini and its existing notes."""
     ini = Path(mod_directory) / "meta.ini"
     candidates: list[tuple[str, str]] = []
     custom_enabled = None
     metadata_notes = ""
     file_identity = {}
     try:
-        if ini.is_file() and ini.stat().st_size <= 65536:
-            text = ini.read_text(encoding="utf-8-sig", errors="replace")
-            lower = text.lower()
-            # A source-less INI can still own the archive and project receipts.
-            if "://" in text or any(field in lower for field in (
-                    "hascustomurl", "installationfile", "[installedfiles]", "gamename", "nexusfilestatus", "ignoredversion")):
+        if ini.is_file():
+            parser = None
+            if ini.stat().st_size > 65536:
                 parser = configparser.ConfigParser(interpolation=None, strict=False)
-                parser.read_string(text)
+                with ini.open(encoding="utf-8-sig", errors="replace") as stream:
+                    parser.read_file(_projected_ini_lines(stream))
+            else:
+                text = ini.read_text(encoding="utf-8-sig", errors="replace")
+                lower = text.lower()
+                if "://" in text or any(field in lower for field in (
+                        "hascustomurl", "installationfile", "[installedfiles]", "gamename", "nexusfilestatus", "ignoredversion")):
+                    parser = configparser.ConfigParser(interpolation=None, strict=False)
+                    parser.read_string(text)
+            if parser is not None:
                 general = next((section for section in parser.sections() if section.lower() == "general"), None)
                 if general:
                     value = parser.get(general, "hascustomurl", fallback="").strip().lower()
@@ -142,13 +230,8 @@ def discover_local_source(mod_directory: Path, notes: str = "") -> dict:
                     metadata_notes = parser.get(general, "notes", fallback="")
                     archive = parser.get(general, "installationFile", fallback="").replace("\\", "/").rsplit("/", 1)[-1]
                     installed = next((section for section in parser.sections() if section.lower() == "installedfiles"), None)
-                    receipts = []
-                    if installed:
-                        for key, value in parser.items(installed):
-                            index, separator, field = key.partition("\\")
-                            if separator and index.isascii() and index.isdigit() and field == "fileid":
-                                receipts.append([parser.get(installed, index + "\\modid", fallback=""), value])
-                    file_identity = {"installationArchive": archive, "installedFiles": receipts,
+                    receipts, incomplete = _installed_receipts(parser, installed)
+                    file_identity = {"installationArchive": archive, "installedFiles": receipts, "incomplete": incomplete,
                                      "game": parser.get(general, "gameName", fallback=""),
                                      "status": parser.get(general, "nexusFileStatus", fallback=""),
                                      "ignoredVersion": parser.get(general, "ignoredVersion", fallback="")}
@@ -158,8 +241,8 @@ def discover_local_source(mod_directory: Path, notes: str = "") -> dict:
                     for key in ("url", "customurl", "modurl", "updateurl", "homepage", "website", "source"):
                         if parser.has_option(section, key):
                             candidates.append((parser.get(section, key), "MO2 meta.ini"))
-    except (OSError, UnicodeError, configparser.Error):
-        pass
+    except (OSError, ValueError, UnicodeError, configparser.Error):
+        file_identity = {"incomplete": True}
     for url, origin in candidates if custom_enabled is not False else []:
         record = source_record(url, origin)
         if record["verified"]:

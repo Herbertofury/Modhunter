@@ -77,6 +77,8 @@ class NexusFileIndex:
     def resolve(self, item):
         def review(reason):
             return {"verdict": "review", "latestVersion": "", "reason": reason}
+        if item.get("installedFileEvidenceIncomplete"):
+            return review("MO2's installed-file receipt is incomplete. Review this installation's identity.")
         receipts = item.get("installedFiles") or []
         ids = set()
         for pair in receipts:

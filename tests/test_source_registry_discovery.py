@@ -67,7 +67,7 @@ class SourceRegistryDiscoveryTests(TestCase):
         binary = b"[General]\nnotes=\xff\x00\nurl=https://example.com/still-parseable\n"
         self.assertEqual(self.discover(binary)["url"], "https://example.com/still-parseable")
         oversized = b"[General]\nurl=https://example.com/too-large\n" + b" " * 65536
-        self.assertEqual(self.discover(oversized)["kind"], "unresolved")
+        self.assertEqual(self.discover(oversized)["url"], "https://example.com/too-large")
 
     def test_unsupported_url_shorthands_do_not_become_sources(self):
         data = (b"[General]\nurl=github.com/owner/repo\n"
@@ -83,6 +83,22 @@ class SourceRegistryDiscoveryTests(TestCase):
             record = self.discover(b"[General]\n; manual: https://example.com/comment\nnotes=ordinary\n")
         parser.assert_called_once_with(interpolation=None, strict=False)
         self.assertEqual(record["kind"], "unresolved")
+
+    def test_large_nexus_descriptions_preserve_exact_receipts_and_partial_receipts_force_review(self):
+        from mo2_update_arsenal.model import installed_file_fields
+        from mo2_update_arsenal.file_advisor import NexusFileIndex
+        data = b"[General]\ngameName=SkyrimSE\nnexusDescription=" + b"x" * 380000
+        data += b"\ninstallationFile=archives\\patch.zip\n[installedFiles]\nsize=1\n1\\modid=53\n1\\fileid=29\n"
+        receipt = self.discover(data)["_mo2FileIdentity"]
+        fields = installed_file_fields(receipt, "", "skyrimspecialedition", "skyrimse")
+        self.assertEqual(fields, {"installationArchive":"patch.zip","installedFiles":[["53","29"]]})
+        for invalid in (data.replace(b"size=1",b"size=2"), data.replace(b"1\\modid",b"2\\modid"),
+                        data.replace(b"fileid=29",b"fileid=0")):
+            row = installed_file_fields(self.discover(invalid)["_mo2FileIdentity"], "", "skyrimspecialedition","skyrimse")
+            self.assertTrue(row["installedFileEvidenceIncomplete"])
+            self.assertIs(row["updateEligible"],False)
+            index = NexusFileIndex({"files":[{"fileName":"patch.zip","fileId":29,"category":1,"version":"2","name":"Patch"}],"file_updates":[]})
+            self.assertEqual(index.resolve({**row,"installedVersion":"1","nexusId":53})["verdict"],"review")
 
     def test_forced_cache_retries_plain_to_linked_change_and_refuses_second_race(self):
         from mo2_update_arsenal.refresh_work import RefreshMetadataCache, UnstableSnapshotMetadata

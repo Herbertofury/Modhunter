@@ -317,14 +317,17 @@ class UpdateScanner:
             return not self.cache.scan_is_current(game, cache_epoch, cancel_event)
 
         grouped: dict[int, list[dict]] = {}
+        item_records: dict[str, dict] = {}
         for item in snapshot.get("items", []):
+            if item.get("installedFileEvidenceIncomplete"):
+                item_records[str(item.get("id", ""))] = incomplete_file_record()
+                continue
             mod_id = nexus_project_id(item, game)
             if mod_id > 0:
                 grouped.setdefault(mod_id, []).append(item)
         ids = sorted(grouped)
         now = time.time()
         output: dict[str, dict] = {}
-        item_records: dict[str, dict] = {}
         errors = []
         candidate_ids: set[int]
         if mode == "quick" and not cancelled():
@@ -504,10 +507,18 @@ class UpdateScanner:
 
 
 
+def incomplete_file_record():
+    return {"verdict": "review", "source": "mo2-file-receipt",
+            "reason": "The installed MO2 file identities are incomplete. Review the installation archive and merged files."}
+
+
 def local_mo2_candidates(snapshot: dict) -> dict:
     output = {}
     item_records = {}
     for item in snapshot.get("items", []):
+        if item.get("installedFileEvidenceIncomplete"):
+            item_records[str(item.get("id", ""))] = incomplete_file_record()
+            continue
         mid = nexus_project_id(item, snapshot.get("game", "skyrimspecialedition"))
         latest = item.get("latestKnownVersion", "")
         if mid <= 0:

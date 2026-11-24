@@ -415,7 +415,8 @@ class ArsenalService:
                 source = item.get("source") or {}
                 return (source.get("url", ""), source.get("verified") is True, source.get("kind", ""),
                         item.get("installationArchive"), item.get("installedFiles"), item.get("updateEligible"),
-                        item.get("latestKnownVersion"), item.get("ignoredVersion"), item.get("installedPackage"))
+                        item.get("latestKnownVersion"), item.get("ignoredVersion"), item.get("installedPackage"),
+                        item.get("installedFileEvidenceIncomplete"))
             versions_changed = old_items.keys() != new_items.keys() or any(
                 old_items[key].get("installedVersion") != new_items[key].get("installedVersion")
                 or old_items[key].get("nexusId") != new_items[key].get("nexusId")

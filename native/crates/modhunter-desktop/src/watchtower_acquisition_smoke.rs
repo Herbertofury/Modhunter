@@ -86,10 +86,16 @@ pub(super) fn wait_job(
 }
 pub(super) fn command(manager: &WebviewWindow, kind: &str, value: Value) -> Result<Value> {
     manager.eval(format!("window.__fixtureDownloadCommand=null;window.__TAURI__.core.invoke('watchtower_command',{{kind:{},value:{}}}).then(v=>window.__fixtureDownloadCommand=v).catch(e=>window.__fixtureDownloadCommand={{ok:false,error:String(e)}});",serde_json::to_string(kind).map_err(err)?,value)).map_err(err)?;
+    // A public source can take the entire navigation budget after WebView2
+    // starts. Keep the manager observable until its own command returns.
+    let budget = match kind {
+        "resolveFiles" | "resolveFolder" | "openOffer" => CHECK_DEADLINE + Duration::from_secs(20),
+        _ => Duration::from_secs(15),
+    };
     until(
         manager,
         "window.__fixtureDownloadCommand??null",
-        Instant::now() + Duration::from_secs(15),
+        Instant::now() + budget,
         Value::is_object,
     )
 }

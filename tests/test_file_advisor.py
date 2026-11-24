@@ -13,7 +13,7 @@ from mo2_update_arsenal.update_plan import PlanError, validate_batch_selection, 
 
 def row(ident="primary", source="nexus-api", version="2.0"):
     return {"id": ident, "nexusId": 44, "installedVersion": "1.0", "flags": ["DLL"],
-            "update": {"verdict": "candidate", "source": source, "latestVersion": version, "targetFileId":9, "evidenceScope":"exact-file",
+            "update": {"verdict": "candidate", "source": source, "latestVersion": version, "targetFileId":9, "installedFileId":8, "evidenceScope":"exact-file",
                        "checkedAt":time.time(), "expiresAt":time.time()+600}}
 
 

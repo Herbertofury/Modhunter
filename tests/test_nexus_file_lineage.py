@@ -60,11 +60,16 @@ class ExactFileTests(unittest.TestCase):
         row = {**old, "update":{**checked, "source":"nexus-api", "checkedAt":now, "expiresAt":now+60}}
         self.assertEqual(choose_nexus_file(row, [MAIN, PATCH])[0]["fileId"], 252976)
         self.assertIsNone(choose_nexus_file(row, [MAIN, dict(PATCH,fileId=1)])[0])
+        for invalid in (None, True, 0):
+            missing = {**row, "update":{**row["update"], "installedFileId":invalid}}
+            self.assertIsNone(choose_nexus_file(missing, [MAIN,PATCH])[0])
         self.assertIsNone(choose_nexus_file({**row, "update":{**row["update"],"expiresAt":now-1}}, [PATCH])[0])
 
     def test_conflicting_ambiguous_missing_and_withdrawn_evidence_stays_review(self):
         for files, history, item in [
-                ([MAIN,PATCH],None,ITEM), ([MAIN,PATCH],[edge(252976,1),edge(1,252976)],ITEM),
+                ([MAIN,PATCH],None,ITEM),
+                ([MAIN,PATCH],[edge(252976,999)],ITEM),
+                ([MAIN,PATCH,dict(PATCH,fileId=999,category=6)],[edge(252976,999)],ITEM), ([MAIN,PATCH],[edge(252976,1),edge(1,252976)],ITEM),
                 ([MAIN,PATCH],[edge(252976,1),edge(252976,2)],ITEM), ([MAIN],[],ITEM),
                 ([MAIN,dict(PATCH,category=6)],[],ITEM), ([PATCH, PATCH],[],ITEM),
                 ([PATCH,MAIN],[],dict(ITEM,installedFiles=[[MID,252976],[MID,88]])),

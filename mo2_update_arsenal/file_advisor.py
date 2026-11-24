@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from typing import Any
+import math
 import time
 
 from .version_evidence import compare_versions, normalized_version
@@ -120,8 +121,8 @@ class NexusFileIndex:
             current = next(iter(destinations))
         else:
             return review("The provider file history contains a cycle.")
-        if not target:
-            return review("The installed file is absent, obsolete or withdrawn and has no verified active successor.")
+        if not target or current != target["fileId"]:
+            return review("The provider's terminal file is absent, obsolete or withdrawn. Review the release history.")
         return self.compare(item, fid, target)
 
     @staticmethod
@@ -156,13 +157,14 @@ def advise_nexus_files(item: dict, files: list[dict]) -> dict:
     update = item.get("update") or {}
     latest = str(update.get("latestVersion") or "")
     target = nexus_file_id(update.get("targetFileId"))
+    installed = nexus_file_id(update.get("installedFileId"))
     candidate = update.get("source") == "nexus-api" and update.get("verdict") == "candidate"
     try:
         start, end = update["checkedAt"], update["expiresAt"]
-        fresh = type(start) in (int, float) and type(end) in (int, float) and 0 < start <= time.time() < end
+        fresh = type(start) in (int, float) and type(end) in (int, float) and 0 < start <= time.time() < end < math.inf
     except KeyError:
         fresh = False
-    trusted = (candidate and fresh and target and target != nexus_file_id(update.get("installedFileId"))
+    trusted = (candidate and fresh and installed and target and target != installed
                and update.get("evidenceScope") == "exact-file")
     published = _comparison_version(latest) if candidate else None
     unique_target = trusted and sum(nexus_file_id(raw.get("fileId")) == target

@@ -104,4 +104,8 @@ def navigate(organizer, mod_name: str, qtcore, qtwidgets, *, still_current=None)
     window.raise_()
     window.activateWindow()
     view.setFocus(qtcore.Qt.FocusReason.OtherFocusReason)
+    current = view.currentIndex()
+    if (not current.isValid() or current.siblingAtColumn(column) != index
+            or not selection.isSelected(index)):
+        return {"ok": False, "error": "MO2 changed the selected row during navigation"}
     return {"ok": True, "selected": display, "clearedTextFilter": cleared_filter, "message": f"Revealed {display} in MO2's left pane"}

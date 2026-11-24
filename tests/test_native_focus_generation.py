@@ -347,3 +347,9 @@ class FocusGenerationTests(unittest.TestCase):
             self.assertFalse(result["ok"])
         self.assertTrue(self.owner.empty())
         self.assertEqual(self.model.label_reads, 0)
+
+    def test_native_model_reset_clears_stale_selected_id(self):
+        self.observe_native_row(12)
+        self.assertEqual(self.request("revision")[1]["selectedModId"], "A-12")
+        self.plugin._on_native_model_reset()
+        self.assertEqual(self.request("revision")[1]["selectedModId"], "")

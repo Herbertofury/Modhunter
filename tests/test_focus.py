@@ -8,6 +8,7 @@ class Index:
  def __init__(self,model,row=-1,col=0):self.model=model;self.row=row;self.col=col
  def isValid(self):return self.row>=0
  def parent(self):return Index(self.model)
+ def siblingAtColumn(self,col):return self if col==self.col else Index(self.model,self.row,col)
 
 
 class MockModel:
@@ -22,6 +23,7 @@ class MockModel:
 class Select:
  def __init__(self):self.index=None
  def select(self,index,flags):self.index=index
+ def isSelected(self,index):return self.index is index
 
 
 class View:
@@ -30,6 +32,7 @@ class View:
  def selectionModel(self):return self.selector
  def expand(self,index):pass
  def setCurrentIndex(self,index):self.selected=index
+ def currentIndex(self):return self.selected or Index(self._model)
  def scrollTo(self,index,*_):self.scrolled=index
  def setFocus(self,*_):pass
 
@@ -85,6 +88,12 @@ class FocusTests(unittest.TestCase):
   result=navigate(Organizer({'a':'Same Name'}),'a',QT,widgets(Window(view)))
   self.assertFalse(result['ok']);self.assertEqual(result['matchedRows'],2)
   self.assertIsNone(view.selected)
+
+ def test_rejects_model_reset_during_native_reveal(self):
+  view=View(MockModel(['SkyUI','Other']))
+  view.setFocus=lambda *_: view.setCurrentIndex(Index(view.model()))
+  result=navigate(Organizer({'a':'SkyUI'}),'a',QT,widgets(Window(view)))
+  self.assertFalse(result['ok'])
 
  def test_missing_mod_fails_instead_of_wrong_selection(self):
   view=View(MockModel(['SkyUI']))

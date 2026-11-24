@@ -22,3 +22,5 @@ portable data, event-driven bounded updates, sourced Relationships, configurable
 ## Game-specific depth and acceptance
 
 Treat Path of Exile-scale endgame depth and uncapped paragon-like progression as ambitions requiring balance, persistence and numeric robustness, not literal parity. Preserve distinct mode mechanics, meaningful cross-mode rewards, pause/restart/death/abandonment and duplicate-reward prevention. These are ModHunter gameplay goals, not universal application features.
+
+The [permanent intelligence and performance roadmap](../wiki/Intelligence-and-Performance-Roadmap.md) adds per-file update, monitoring, analysis and production acceptance requirements to these goals.

@@ -93,7 +93,13 @@ class DuplicateReports:
                 result.update(ok=False, error="Saved duplicate report could not be read: " + str(exc))
         if observed:
             try:
-                result["operationResult"] = public_report(read_json(self.directory / (observed["reportId"] + ".json"), 64 * 1024 * 1024))
+                if observed["reportId"] == result.get("reportId"):
+                    # Both response fields refer to the same completed receipt.
+                    # Reuse only its successful public snapshot for this one
+                    # response. A fresh request still reads current disk data.
+                    result["operationResult"] = result["report"]
+                else:
+                    result["operationResult"] = public_report(read_json(self.directory / (observed["reportId"] + ".json"), 64 * 1024 * 1024))
                 result["operationJobId"] = observed["jobId"]
             except Exception as exc:
                 result.update(ok=False, error="Saved duplicate operation could not be read: " + str(exc))

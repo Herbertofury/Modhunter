@@ -249,6 +249,53 @@ test('history refuses stale profile results and safely renders the complete acce
  assert.doesNotMatch(h.node('activityResults').innerHTML,/First &lt;main&gt;/);
 });
 
+function siegeCombat(source,{count=250,squad=['warden','mage','cleric'],cooldowns=[.4,.6,.8],close=true,skills={},seed=1037}={}){
+ const lines=['HEROES','legacyRank'].map(name=>source.match(new RegExp('^const '+name+'=.*$','m'))?.[0]);
+ const exact=['skill','hasEvolution','targetNearest','addProjectile','hitEntity','enemyDefeated','squadPos','fireSquad'].map(name=>{
+  const i=source.indexOf('function '+name+'('),end=source.indexOf('\nfunction ',i+10);
+  assert.ok(i>=0);
+  // enemyDefeated is followed by an async function rather than a plain one.
+  const async=source.indexOf('\nasync function ',i+10);
+  return source.slice(i,end<0?async:async>i?Math.min(end,async):end);
+ });
+ assert.ok(lines.every(Boolean));
+ return Function('fixture',`
+ const {count,squad,cooldowns,close,skills,seed}=fixture;
+ const math=globalThis.Math,Math=Object.create(math),calls={distances:0,random:0},trace=[];
+ let rng=seed>>>0;
+ Math.random=()=>{calls.random++;rng=(Math.imul(rng,1664525)+1013904223)>>>0;return rng/4294967296};
+ const hyp=(x,y)=>{calls.distances++;return Math.hypot(x,y)};
+ const state={atlas:{legacy:{warcraft:2,rune:1}},run:{x:0,y:0,dir:.21,squad:squad.map((id,i)=>({id,cd:cooldowns[i]??0})),skills,entities:Array.from({length:count},(_,i)=>({id:i+1,x:(i%2===0?1:-1)*(i%17+1)/2+(close?0:16),y:(i%11-5)/2,hp:i%7===0?7:150,maxHp:150,slow:0,burn:0,type:i%3===0?'knight':'draugr',elite:i%71===0})),projectiles:[],effects:[],gems:[],evolutions:[],omens:[],hp:78,maxHp:100,kills:0,bossesKilled:0,combo:0,peakCombo:0,score:0,ultCharge:0}};
+ function bossDefeated(e){trace.push(['boss',e.id])}
+ function pushToast(text){trace.push(['toast',text])}
+ function flash(){trace.push(['flash'])}
+ ${lines.join('\n')}
+ ${exact.join('\n')}
+ return {calls,state,trace,frame(dt,x=state.run.x,y=state.run.y,dir=state.run.dir){state.run.x=x;state.run.y=y;state.run.dir=dir;fireSquad(dt)}};
+ `)({count,squad,cooldowns,close,skills,seed});
+}
+
+test('Siege only aims with ready squad members and preserves attacks at cooldown boundary',()=>{
+ const siege=fs.readFileSync(path.join(__dirname,'../mo2_update_arsenal/web/siege.js'),'utf8');
+ const cooling=siegeCombat(siege,{count:500,cooldowns:[.4,.6,.8]});
+ cooling.frame(1/60);
+ assert.deepEqual(cooling.state.run.squad.map(x=>x.cd),[.4,.6,.8].map(cd=>cd-1/60));
+ assert.equal(cooling.state.run.effects.length,0);
+ assert.equal(cooling.state.run.projectiles.length,0);
+ assert.equal(cooling.calls.random,0);
+ assert.equal(cooling.calls.distances,0,'A cooling-down Siege squad searched for unused targets');
+ const range=siegeCombat(siege,{count:500,squad:['ranger','mage','cleric'],cooldowns:[1/60,1,1]});
+ range.frame(1/60);
+ assert.equal(range.calls.distances,500,'Exactly the ready squad member aims');
+ assert.ok(range.state.run.squad[0].cd>0);
+ assert.deepEqual(range.state.run.projectiles.map(proj=>proj.kind),['arrow']);
+ assert.equal(range.calls.random,0);
+ const targets=siegeCombat(siege,{count:0,squad:['ranger'],cooldowns:[0]});
+ targets.frame(1/60);
+ assert.equal(targets.state.run.squad[0].cd,0,'A ready member remains ready until a target is found');
+ assert.deepEqual(targets.state.run.projectiles,[]);
+});
+
 test('loading source evidence preserves unsaved inspector notes',async()=>{
  const h=harness();await h.settle();const mod=h.qa.getCatalog().items[0];h.api.drawInspector(mod);
  h.context.document.getElementById('drawerNote').value='Keep my unsaved setup notes';await h.api.loadSourceDetails(mod);await h.settle();

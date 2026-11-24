@@ -1,0 +1,227 @@
+{
+  "schemaVersion": 1,
+  "observedUtcDate": "2026-11-24",
+  "operation": "Complete native import of a real selected MO2 profile",
+  "platform": "Windows x86_64, release-mode Rust core, 8 workers",
+  "sequence": [
+    "reference[0]",
+    "candidate[0]",
+    "candidate[1]",
+    "reference[1]"
+  ],
+  "conditions": "Cold means first import in a new process. OS file cache was uncontrolled. Independent SHA-256 inventory and other build work ran concurrently. Benchmark retains a complete catalog for the equality check.",
+  "acceptedCoverage": {
+    "mods": 11325,
+    "groups": 834,
+    "pluginCopies": 10352,
+    "winningPlugins": 3629,
+    "importWarnings": 0,
+    "normalizedCatalogAndWarningsEqual": true
+  },
+  "builds": {
+    "reference": {
+      "binarySha256": "bd504fa6d39d50fdeb195760fd217f0ba2f22dd6627849511dd3d5c2ae5d946f",
+      "warmMedianMs": 2706.67685,
+      "warmP95Ms": 4845.418900000001,
+      "medianThroughputModsPerSecond": 4184.097558598472,
+      "runs": [
+        {
+          "applicationCacheColdMs": 26686.0816,
+          "warmEngineMs": [
+            18697.6288,
+            3113.7682,
+            2854.0859,
+            2672.8179999999998,
+            2541.7508,
+            2516.4154,
+            2717.7096,
+            2733.2358,
+            2758.8383,
+            2557.0783,
+            2733.4132000000004,
+            2695.6441
+          ],
+          "processCompletionSeconds": 86.88630079990253,
+          "kernelCpuSeconds": 29.046875,
+          "userCpuSeconds": 17.625,
+          "peakWorkingSetBytes": 1240883200,
+          "appCacheCold": {
+            "bytesRead": 73052189,
+            "directoriesRead": 13636,
+            "elapsedMs": 26686.0816,
+            "filesRead": 21668,
+            "foreignMods": 0,
+            "metadataCacheHits": 0,
+            "mods": 11325,
+            "pluginCopies": 10352,
+            "pluginHeaderCacheHits": 0,
+            "warnings": 0,
+            "workers": 8
+          },
+          "finalWarmRun": {
+            "bytesRead": 73052189,
+            "directoriesRead": 13636,
+            "elapsedMs": 2695.6441,
+            "filesRead": 21668,
+            "foreignMods": 0,
+            "metadataCacheHits": 11313,
+            "mods": 11325,
+            "pluginCopies": 10352,
+            "pluginHeaderCacheHits": 10350,
+            "warnings": 0,
+            "workers": 8
+          }
+        },
+        {
+          "applicationCacheColdMs": 1989.9864,
+          "warmEngineMs": [
+            1818.4991,
+            1843.3252,
+            4845.418900000001,
+            3706.2321,
+            2951.7182000000003,
+            2504.491,
+            2812.9206,
+            3001.7074,
+            2641.8373,
+            2467.1159000000002,
+            2480.8801,
+            2648.6321
+          ],
+          "processCompletionSeconds": 45.93411370005924,
+          "kernelCpuSeconds": 40.75,
+          "userCpuSeconds": 21.125,
+          "peakWorkingSetBytes": 1236664320,
+          "appCacheCold": {
+            "bytesRead": 73052189,
+            "directoriesRead": 13636,
+            "elapsedMs": 1989.9864,
+            "filesRead": 21668,
+            "foreignMods": 0,
+            "metadataCacheHits": 0,
+            "mods": 11325,
+            "pluginCopies": 10352,
+            "pluginHeaderCacheHits": 0,
+            "warnings": 0,
+            "workers": 8
+          },
+          "finalWarmRun": {
+            "bytesRead": 73052189,
+            "directoriesRead": 13636,
+            "elapsedMs": 2648.6321,
+            "filesRead": 21668,
+            "foreignMods": 0,
+            "metadataCacheHits": 11313,
+            "mods": 11325,
+            "pluginCopies": 10352,
+            "pluginHeaderCacheHits": 10350,
+            "warnings": 0,
+            "workers": 8
+          }
+        }
+      ]
+    },
+    "candidate": {
+      "binarySha256": "65df82dabde488e101806328e006e5b073c54c5ac7e73d58521756cdbcf371e1",
+      "warmMedianMs": 1635.1037000000001,
+      "warmP95Ms": 2002.8924,
+      "medianThroughputModsPerSecond": 6926.1662119656385,
+      "runs": [
+        {
+          "applicationCacheColdMs": 1880.4972,
+          "warmEngineMs": [
+            1713.8555,
+            1614.8036000000002,
+            1546.7818,
+            1784.0605,
+            1815.4519,
+            1769.9395,
+            1639.3990000000001,
+            1870.4727,
+            1915.8929,
+            2002.8924,
+            1845.9155,
+            2073.522
+          ],
+          "processCompletionSeconds": 28.80601249996107,
+          "kernelCpuSeconds": 29.5,
+          "userCpuSeconds": 11.828125,
+          "peakWorkingSetBytes": 904605696,
+          "appCacheCold": {
+            "bytesRead": 73052189,
+            "directoriesRead": 13636,
+            "elapsedMs": 1880.4972,
+            "filesRead": 21668,
+            "foreignMods": 0,
+            "metadataCacheHits": 0,
+            "mods": 11325,
+            "pluginCopies": 10352,
+            "pluginHeaderCacheHits": 0,
+            "warnings": 0,
+            "workers": 8
+          },
+          "finalWarmRun": {
+            "bytesRead": 73052189,
+            "directoriesRead": 13636,
+            "elapsedMs": 2073.522,
+            "filesRead": 21668,
+            "foreignMods": 0,
+            "metadataCacheHits": 11313,
+            "mods": 11325,
+            "pluginCopies": 10352,
+            "pluginHeaderCacheHits": 10350,
+            "warnings": 0,
+            "workers": 8
+          }
+        },
+        {
+          "applicationCacheColdMs": 1459.6352000000002,
+          "warmEngineMs": [
+            1497.0805,
+            1411.8443,
+            1373.0092,
+            1257.7986,
+            1556.0353999999998,
+            1615.5552,
+            1506.6988000000001,
+            1792.0639,
+            1630.8084000000001,
+            1549.2283,
+            1714.6613,
+            1609.3787000000002
+          ],
+          "processCompletionSeconds": 23.810165599919856,
+          "kernelCpuSeconds": 27.25,
+          "userCpuSeconds": 10.140625,
+          "peakWorkingSetBytes": 903852032,
+          "appCacheCold": {
+            "bytesRead": 73052189,
+            "directoriesRead": 13636,
+            "elapsedMs": 1459.6352000000002,
+            "filesRead": 21668,
+            "foreignMods": 0,
+            "metadataCacheHits": 0,
+            "mods": 11325,
+            "pluginCopies": 10352,
+            "pluginHeaderCacheHits": 0,
+            "warnings": 0,
+            "workers": 8
+          },
+          "finalWarmRun": {
+            "bytesRead": 73052189,
+            "directoriesRead": 13636,
+            "elapsedMs": 1609.3787000000002,
+            "filesRead": 21668,
+            "foreignMods": 0,
+            "metadataCacheHits": 11313,
+            "mods": 11325,
+            "pluginCopies": 10352,
+            "pluginHeaderCacheHits": 10350,
+            "warnings": 0,
+            "workers": 8
+          }
+        }
+      ]
+    }
+  }
+}

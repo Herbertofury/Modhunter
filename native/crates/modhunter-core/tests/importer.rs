@@ -414,7 +414,12 @@ fn offline_catalog_preserves_exact_installed_files_and_blocks_partial_receipts()
     let f = Fixture::new("-Patch\n-Broken\n");
     let metadata = "[General]\ngameName=SkyrimSE\nmodid=50307\nversion=2.6.0.0\nignoredVersion=3.1\nnexusFileStatus=2\ninstallationFile=C:/Downloads/Patch.zip\n[installedFiles]\nsize=2\n2\\modid=50307\n2\\fileid=252977\n1\\modid=50307\n1\\fileid=252976\n";
     f.add("Patch", metadata);
-    f.add("Broken", &metadata.replace("size=2", "size=999999999"));
+    f.add(
+        "Broken",
+        &metadata
+            .replace("size=2", "size=999999999")
+            .replace("nexusFileStatus=2", "nexusFileStatus=1000"),
+    );
     let importer = ProfileImporter::new();
     let result = importer.import(&f.request()).unwrap();
     let patch = item(&result.catalog, "Patch");
@@ -427,6 +432,7 @@ fn offline_catalog_preserves_exact_installed_files_and_blocks_partial_receipts()
     );
     assert_eq!(patch["updateEligible"], true);
     let partial = item(&result.catalog, "Broken");
+    assert_eq!(partial["mo2FileStatus"], 1000);
     assert_eq!(partial["installedFileEvidenceIncomplete"], true);
     assert_eq!(partial["updateEligible"], false);
 }

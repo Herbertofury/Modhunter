@@ -749,7 +749,9 @@ fn add_file_evidence(item: &mut Value, meta: &Ini) {
     if !ignored.is_empty() {
         item["ignoredVersion"] = json!(ignored);
     }
-    if let Ok(status @ 1..=7) = meta.general("nexusfilestatus").parse::<u8>() {
+    // MO2 also records 1000 for an archived file hidden by its author.
+    // Retain an explicit 0 (unknown) separately from an absent setting.
+    if let Ok(status) = meta.general("nexusfilestatus").parse::<i32>() {
         item["mo2FileStatus"] = json!(status);
     }
     let Some(fields) = meta.section("installedfiles") else {

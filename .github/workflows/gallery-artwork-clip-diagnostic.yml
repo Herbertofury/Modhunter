@@ -1,0 +1,45 @@
+name: Gallery artwork exact-layout diagnostic
+on:
+  push:
+    branches: ['diagnostics/gallery-artwork-clip-0125']
+    paths:
+      - '.github/workflows/gallery-artwork-clip-diagnostic.yml'
+      - 'tests/gallery_artwork_clip_ab.py'
+permissions:
+  contents: read
+concurrency:
+  group: gallery-artwork-clip-0125
+  cancel-in-progress: false
+jobs:
+  compare:
+    if: github.repository == 'Herbertofury/Modhunter' && github.ref == 'refs/heads/diagnostics/gallery-artwork-clip-0125' && github.run_attempt == 1
+    runs-on: ubuntu-22.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Prepare pinned Chromium and repository fonts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install playwright==1.57.0 Pillow==13.0.0
+          python -m playwright install --with-deps chromium
+          python tests/prepare_ci_fonts.py --output "$RUNNER_TEMP/modhunter-artwork/ci-fonts.json"
+      - name: Compare complete Gallery and artwork behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          executable="$(python -c 'from playwright.sync_api import sync_playwright; p=sync_playwright().start(); print(p.chromium.executable_path); p.stop()')"
+          test -x "$executable"
+          PYTHONPATH=. python tests/gallery_artwork_clip_ab.py --executable "$executable" --output "$RUNNER_TEMP/modhunter-artwork/clip-ab"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: Modhunter-Gallery-Artwork-Diagnostic-Only
+          path: ${{ runner.temp }}/modhunter-artwork/clip-ab/clip-ab.json
+          if-no-files-found: ignore
+          retention-days: 7

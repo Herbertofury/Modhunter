@@ -1,5 +1,7 @@
 # Agent inspection
 
+These interfaces were tested on the 0.12.6 development candidate. See the [November verification report](Intelligence-Verification-2026-11-24) for production acceptance status.
+
 The Modhunter CLI exposes Skyrim inspection over MCP stdio. Launch it with `mcp-stdio --legacy-2025-11-25` for clients using initialization and the 2025-11-25 protocol, including compatible Codex and Claude Code clients. For example, a client configuration can set its command to the absolute path to `modhunter-cli.exe` and its arguments to `["mcp-stdio", "--legacy-2025-11-25"]`. A client using the 2026-07-28 protocol can omit the legacy flag.
 
 ### Live MO2 inventory and per-mod evidence

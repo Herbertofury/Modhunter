@@ -32,7 +32,7 @@ import test_watchtower_browser as watchtower  # noqa: E402
 
 def read(path: str, ref: str | None = None) -> str:
     if ref:
-        return subprocess.check_output(["git", "show", f"{ref}:{path}"], cwd=ROOT, text=True)
+        return subprocess.check_output(["git", "show", f"{ref}:{path}"], cwd=ROOT, encoding="utf-8")
     return (ROOT / path).read_text("utf-8")
 
 

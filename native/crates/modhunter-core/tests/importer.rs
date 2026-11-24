@@ -60,6 +60,31 @@ fn names(catalog: &Value) -> Vec<String> {
 }
 
 #[test]
+fn binary_qt_layout_does_not_prevent_import_or_change_path_selection() {
+    let fixture = Fixture::new("+Patch\n");
+    fixture.add("Patch", "[General]\nversion=2.6\n");
+    let path = fixture.root.path().join("ModOrganizer.ini");
+    let ini =
+        "[General]\ngameName=Skyrim Special Edition\n[Geometry]\nwindow=@ByteArray(\\x01\\xff\\0)";
+    fs::write(&path, ini).unwrap();
+    let importer = ProfileImporter::new();
+    let result = importer.import(&fixture.request()).unwrap();
+    assert_eq!(item(&result.catalog, "Patch")["installedVersion"], "2.6");
+    fs::write(
+        path,
+        format!("{ini}\n[Settings]\nmod_directory=@ByteArray(\\xff)"),
+    )
+    .unwrap();
+    assert!(
+        importer
+            .import(&fixture.request())
+            .unwrap_err()
+            .to_string()
+            .contains("Expected text for [settings] mod_directory")
+    );
+}
+
+#[test]
 fn canceled_import_stops_traversal_and_the_same_engine_can_refresh_again() {
     use std::sync::atomic::{AtomicUsize, Ordering};
     let modlist = (0..100).map(|n| format!("+Mod{n}\n")).collect::<String>();

@@ -198,7 +198,7 @@ impl ProfileImporter {
             .and_then(|p| p.parent())
             .unwrap_or(inferred_instance);
         let base_dir = match settings
-            .get("settings", "base_directory")
+            .text("settings", "base_directory")?
             .filter(|s| !s.is_empty())
         {
             Some(raw) => configured_path(raw, instance_dir, instance_dir)?,
@@ -209,7 +209,7 @@ impl ProfileImporter {
         } else {
             configured_path(
                 settings
-                    .get("settings", "mod_directory")
+                    .text("settings", "mod_directory")?
                     .filter(|s| !s.is_empty())
                     .unwrap_or("%BASE_DIR%/mods"),
                 &base_dir,
@@ -223,7 +223,7 @@ impl ProfileImporter {
             ));
         }
         if let Some(raw) = settings
-            .get("settings", "profiles_directory")
+            .text("settings", "profiles_directory")?
             .filter(|s| !s.is_empty())
         {
             let expected = configured_path(raw, &base_dir, instance_dir)?;
@@ -240,11 +240,11 @@ impl ProfileImporter {
         let (mut entries, parse_warnings) = parse_modlist(&text)?;
         warnings.extend(parse_warnings);
         let game = game_slug(first_nonempty(&[
-            settings.general("gamenexusname"),
-            settings.general("gamename"),
-            settings.general("game"),
+            settings.text("general", "gamenexusname")?.unwrap_or(""),
+            settings.text("general", "gamename")?.unwrap_or(""),
+            settings.text("general", "game")?.unwrap_or(""),
         ]));
-        let runtime = match settings.general("gameversion") {
+        let runtime = match settings.text("general", "gameversion")?.unwrap_or("") {
             "" => "unknown",
             s => s,
         };
@@ -428,7 +428,7 @@ impl ProfileImporter {
             .collect();
         let overwrite = configured_path(
             settings
-                .get("settings", "overwrite_directory")
+                .text("settings", "overwrite_directory")?
                 .filter(|s| !s.is_empty())
                 .unwrap_or("%BASE_DIR%/overwrite"),
             &base_dir,
@@ -436,7 +436,7 @@ impl ProfileImporter {
         )?;
         let overwrite_path = optional_analysis_path(overwrite);
         let game_data_path = settings
-            .get("general", "gamepath")
+            .text("general", "gamepath")?
             .filter(|s| !s.is_empty())
             .and_then(|raw| match configured_path(raw, &base_dir, instance_dir) {
                 Ok(path) => optional_analysis_path(path.join("Data")),

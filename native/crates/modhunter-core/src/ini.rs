@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, Default)]
 pub struct Ini {
-    sections: HashMap<String, HashMap<String, String>>,
+    sections: HashMap<String, HashMap<String, Vec<u8>>>,
 }
 
 impl Ini {
@@ -61,7 +61,7 @@ impl Ini {
                     n + 1
                 )));
             }
-            let value = decode_value(value.trim())?;
+            let value = decode_bytes(value.trim())?;
             let previous = parsed
                 .sections
                 .entry(section.clone())
@@ -78,22 +78,34 @@ impl Ini {
     }
 
     pub fn get(&self, section: &str, key: &str) -> Option<&str> {
-        self.sections
-            .get(&section.to_ascii_lowercase())?
-            .get(&key.to_ascii_lowercase())
-            .map(String::as_str)
+        self.text(section, key).ok().flatten()
     }
 
-    pub(crate) fn canonical_entries(&self) -> impl Iterator<Item = (&str, &str, &str)> {
+    /// An absent setting can use a default. A present binary setting cannot
+    /// safely be interpreted as a path, game identity or runtime version.
+    pub(crate) fn text(&self, section: &str, key: &str) -> Result<Option<&str>, CoreError> {
+        self.get_canonical(&section.to_ascii_lowercase(), &key.to_ascii_lowercase())
+            .map(|bytes| {
+                std::str::from_utf8(bytes)
+                    .ok()
+                    .filter(|text| !text.contains('\0'))
+                    .ok_or_else(|| {
+                        CoreError::Invalid(format!("Expected text for [{section}] {key}"))
+                    })
+            })
+            .transpose()
+    }
+
+    pub(crate) fn canonical_entries(&self) -> impl Iterator<Item = (&str, &str, &[u8])> {
         self.sections.iter().flat_map(|(section, entries)| {
             entries
                 .iter()
-                .map(move |(key, value)| (section.as_str(), key.as_str(), value.as_str()))
+                .map(move |(key, value)| (section.as_str(), key.as_str(), value.as_slice()))
         })
     }
 
-    pub(crate) fn get_canonical(&self, section: &str, key: &str) -> Option<&str> {
-        self.sections.get(section)?.get(key).map(String::as_str)
+    pub(crate) fn get_canonical(&self, section: &str, key: &str) -> Option<&[u8]> {
+        self.sections.get(section)?.get(key).map(Vec::as_slice)
     }
 
     pub fn general(&self, key: &str) -> &str {
@@ -132,6 +144,11 @@ pub fn decode_text(bytes: &[u8]) -> Result<String, CoreError> {
 /// A single backslash before an unknown character is preserved rather than
 /// silently damaging a manually supplied Windows path.
 pub fn decode_value(raw: &str) -> Result<String, CoreError> {
+    String::from_utf8(decode_bytes(raw)?)
+        .map_err(|_| CoreError::Invalid("Invalid UTF-8 in Qt INI QByteArray".into()))
+}
+
+fn decode_bytes(raw: &str) -> Result<Vec<u8>, CoreError> {
     let mut raw = raw;
     if raw.starts_with('"') && raw.ends_with('"') && raw.len() >= 2 {
         raw = &raw[1..raw.len() - 1];
@@ -141,10 +158,10 @@ pub fn decode_value(raw: &str) -> Result<String, CoreError> {
         raw = &raw[11..raw.len() - 1];
     }
     if let Some(s) = raw.strip_prefix("@@") {
-        return Ok(format!("@{s}"));
+        return Ok(format!("@{s}").into_bytes());
     }
     if !byte_array && raw.starts_with('@') {
-        return Ok(raw.to_owned()); // Preserve Qt values whose type we do not interpret.
+        return Ok(raw.as_bytes().to_vec()); // Preserve Qt values whose type we do not interpret.
     }
     // MO2 writes escaped backslashes, but hand-edited INIs often contain plain
     // drive paths. In that unambiguous path shape preserve \n/\t literally.
@@ -153,7 +170,7 @@ pub fn decode_value(raw: &str) -> Result<String, CoreError> {
         && raw.as_bytes().get(2) == Some(&b'\\')
         && !raw.contains("\\\\")
     {
-        return Ok(raw.to_owned());
+        return Ok(raw.as_bytes().to_vec());
     }
     let mut out = Vec::<u8>::with_capacity(raw.len());
     let mut chars = raw.chars().peekable();
@@ -202,8 +219,7 @@ pub fn decode_value(raw: &str) -> Result<String, CoreError> {
             }
         }
     }
-    String::from_utf8(out)
-        .map_err(|_| CoreError::Invalid("Invalid UTF-8 in Qt INI QByteArray".into()))
+    Ok(out)
 }
 
 #[cfg(test)]

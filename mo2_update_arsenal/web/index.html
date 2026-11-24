@@ -2360,7 +2360,28 @@ function details(mod,{live=false,game='',auditState={}}={}){
  if(list(a.warnings).length)html+='<ul class="insight-evidence">'+a.warnings.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>';
  return html+'</section>';
 }
-function matches(mod,filter){const s=summary(mod);return filter==='maintenance'?s.maintenance:filter==='esl-review'?s.eslReview:filter==='light'?Boolean(s.light||s.lightOverrides):filter==='stale-conversion'?s.stale>0:filter==='masters'?s.masterIssues>0:filter==='bugs-disabled'?['disabled','hidden','locked'].includes(s.bugState):filter==='bugs-unknown'?['unknown','unavailable'].includes(s.bugState):filter==='all'}
+// A toolbar filter answers only its selected question. Rendering matched
+// rows and the inspector still uses the full plugin counts and evidence.
+function matches(mod,filter){
+ if(filter==='all')return true;
+ if(filter==='bugs-disabled'||filter==='bugs-unknown'){
+  const bug=mod.modHealth?.bugs?.state||'unknown';
+  return filter==='bugs-disabled'?(bug==='disabled'||bug==='hidden'||bug==='locked'):(bug==='unknown'||bug==='unavailable');
+ }
+ const analysis=mod.localAnalysis,plugins=list(analysis?.plugins);
+ if(filter==='light')return plugins.some(p=>p.active!==false&&(p.winner&&p.header?.lightEffective===true||p.lightOverride&&p.winnerKnown&&p.winnerLight===true));
+ if(filter==='stale-conversion')return plugins.some(p=>staleStates.has(p.provenance?.state));
+ if(filter==='masters')return plugins.some(p=>list(p.masterIssues).length>0);
+ if(filter==='maintenance')return analysis?.needsRecheck===true||
+  ['hidden','removed','under-moderation','not-found','unavailable'].includes(mod.modHealth?.page?.status)||
+  plugins.some(p=>staleStates.has(p.provenance?.state)||list(p.masterIssues).length>0||list(p.errors).length>0||
+   p.eligibility?.status==='blocked'||p.records?.scanComplete===false||p.recordScanComplete===false);
+ if(filter==='esl-review')return analysis?.needsRecheck===true||
+  plugins.some(p=>staleStates.has(p.provenance?.state)||p.eligibility?.status==='flag-only-candidate'||
+   p.eligibility?.status==='requires-compaction'||p.eligibility?.status==='blocked'||
+   p.records?.scanComplete===false||p.recordScanComplete===false||p.winnerKnown===false);
+ return false;
+}
 function searchText(mod){const s=summary(mod);return[list(mod.localAnalysis?.plugins).map(p=>[p.name,p.eligibility?.status,p.provenance?.state,...list(p.masterIssues).map(x=>x.name+' '+x.status)].join(' ')).join(' '),s.light?'already light esl':'',s.stale?'stale conversion eslifier update rebuild':'',s.lightOverrides?'light override eslified':'',bugLabel(mod.modHealth?.bugs),mod.modHealth?.page?.status].join(' ').toLowerCase()}
 function csv(mod){const s=summary(mod),known=!!mod.localAnalysis;return[known?s.light:'',known?s.full:'',known?s.lightOverrides:'',known?s.candidates:'',known?s.compaction:'',known?s.stale:'',known?s.masterIssues:'',mod.localAnalysis?.checkedAt||'',s.bugState,s.bugCount??'',mod.modHealth?.bugs?.checkedAt||'']}
 const api={summary,chips,details,matches,searchText,csv,bugLabel,isNexus};

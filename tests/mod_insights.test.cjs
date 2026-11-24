@@ -229,3 +229,31 @@ test('a multi-plugin mod retains separate active light, active full and inactive
   assert.equal(result.inactive, 1);
   assert.match(insights.chips(row), /1 light · 1 full/);
 });
+
+test('large master and bug-tab filters read only the exact matching evidence',()=>{
+ const accesses={plugins:0,errors:0,tail:0};
+ const first=plugin({masterIssues:[{name:'Missing.esm',status:'missing'}]});
+ Object.defineProperty(first,'errors',{get(){accesses.errors++;return[]}});
+ const tail=()=>Object.defineProperty(plugin(),'masterIssues',{get(){accesses.tail++;return[]}});
+ const plugins=[first,...Array.from({length:255},tail)];
+ const row=mod([], {health:{bugs:{state:'locked'}}});
+ Object.defineProperty(row.localAnalysis,'plugins',{get(){accesses.plugins++;return plugins}});
+ assert.equal(insights.matches(row,'masters'),true);
+ assert.deepEqual(accesses,{plugins:1,errors:0,tail:0});
+ assert.equal(insights.matches(row,'bugs-disabled'),true);
+ assert.equal(insights.matches(row,'bugs-unknown'),false);
+ assert.deepEqual(accesses,{plugins:1,errors:0,tail:0});
+});
+test('earlier stop in matching preserves complete summary decisions with live evidence changes',()=>{
+ const master={name:'FixtureMaster.esm',status:'loads-after'};
+ const row=mod([light({active:false}),plugin({masterIssues:[master],winnerKnown:false}),light({winner:false,lightOverride:true,winnerLight:true,winnerKnown:true,active:null})]);
+ const check=()=>{
+  const s=insights.summary(row);
+  for(const [filter,expected] of [['maintenance',s.maintenance],['esl-review',s.eslReview],['light',!!(s.light||s.lightOverrides)],['stale-conversion',!!s.stale],['masters',!!s.masterIssues],['bugs-disabled',['hidden','locked','disabled'].includes(s.bugState)],['bugs-unknown',['unknown','unavailable'].includes(s.bugState)],['all',true],['not-a-filter',false]])
+   assert.equal(insights.matches(row,filter),expected,filter);
+ };
+ check();row.localAnalysis.plugins[1].masterIssues=[];row.localAnalysis.plugins[1].winnerKnown=true;
+ row.localAnalysis.plugins[2].active=false;row.localAnalysis.needsRecheck=true;row.modHealth.bugs.state='unavailable';
+ row.localAnalysis.plugins[0].provenance={state:'source-and-output-changed'};check();
+ row.localAnalysis.plugins=[];row.modHealth.page.status='under-moderation';row.localAnalysis.needsRecheck=false;check();
+});

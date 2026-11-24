@@ -517,6 +517,24 @@ def _metadata_page(metadata: dict | None, checked_at: Any, now: float, game: str
     return page
 
 
+# These notes are static, not per-plugin facts or a persistent cache.
+_LOCAL_ACTION_LIMIT = 256
+_PROVENANCE_NOTES = {
+    "source-changed": "The original plugin bytes changed while the winning output still matches the selected ESLifier record. Re-audit this conversion after the source update.",
+    "output-changed": "The output differs from the selected ESLifier record, or ESLifier marks it externally altered. Review that change before treating it as the recorded conversion.",
+    "source-and-output-changed": "Both the recorded source and output are inconsistent with the current analysis. Review the changes and rerun the conversion audit before trusting the output.",
+    "winner-changed": "The recorded ESLifier output no longer wins in this profile. Review MO2 file priority and the actual winning plugin before deciding whether to rebuild it.",
+}
+
+
+def _master_issue_detail(name: str, master: str, status: str) -> str:
+    if status == "missing":
+        return f"{name} declares {master}, which was not found in the complete scanned plugin inventory. Install the correct requirement or leave {name} disabled."
+    if status == "inactive":
+        return f"{name} requires {master}; that master is installed but inactive. Enable the correct master before enabling this plugin."
+    return f"{name} loads before its declared master {master}. Review the plugin load order in MO2."
+
+
 def _local_actions(item: dict, analysis: dict | None) -> list[dict]:
     if not isinstance(analysis, dict):
         return []
@@ -532,17 +550,12 @@ def _local_actions(item: dict, analysis: dict | None) -> list[dict]:
         # is stale; only master/eligibility actions below require the winner.
         provenance = plugin.get("provenance") if isinstance(plugin.get("provenance"), dict) else {}
         state = provenance.get("state")
-        provenance_notes = {
-            "source-changed": "The original plugin bytes changed while the winning output still matches the selected ESLifier record. Re-audit this conversion after the source update.",
-            "output-changed": "The output differs from the selected ESLifier record, or ESLifier marks it externally altered. Review that change before treating it as the recorded conversion.",
-            "source-and-output-changed": "Both the recorded source and output are inconsistent with the current analysis. Review the changes and rerun the conversion audit before trusting the output.",
-            "winner-changed": "The recorded ESLifier output no longer wins in this profile. Review MO2 file priority and the actual winning plugin before deciding whether to rebuild it.",
-        }
-        if (state in provenance_notes and provenance.get("tool") == "ESLifier"
+        if (state in _PROVENANCE_NOTES and provenance.get("tool") == "ESLifier"
                 and all(isinstance(provenance.get(field), str) and re.fullmatch(r"[0-9a-fA-F]{64}", provenance[field])
-                        for field in ("originalSha256", "outputSha256"))):
+                        for field in ("originalSha256", "outputSha256"))
+                and len(output) < _LOCAL_ACTION_LIMIT):
             output.append({"id": "esl-stale-" + name, "severity": "warning", "label": "Recheck changed ESL conversion",
-                           "detail": f"{name}: {provenance_notes[state]}", "action": "review-plugins", "url": "",
+                           "detail": f"{name}: {_PROVENANCE_NOTES[state]}", "action": "review-plugins", "url": "",
                            "evidence": "ESLifier records compared with freshly hashed MO2 plugin copies and the current winner",
                            "plugin": name, "provenanceState": state})
         if plugin.get("winner") is False:
@@ -555,17 +568,19 @@ def _local_actions(item: dict, analysis: dict | None) -> list[dict]:
             if not master:
                 continue
             status = issue["status"]
-            detail = {"missing": f"{name} declares {master}, which was not found in the complete scanned plugin inventory. Install the correct requirement or leave {name} disabled.",
-                      "inactive": f"{name} requires {master}; that master is installed but inactive. Enable the correct master before enabling this plugin.",
-                      "loads-after": f"{name} loads before its declared master {master}. Review the plugin load order in MO2."}[status]
+            if len(output) >= _LOCAL_ACTION_LIMIT:
+                # Still validate each piece of captured evidence, but never
+                # compose advice outside the existing public response bound.
+                continue
+            detail = _master_issue_detail(name, master, status)
             output.append({"id": "master-" + status + "-" + name + "-" + master, "severity": "warning", "label": "Resolve " + status.replace("-", " ") + " master",
                            "detail": detail, "action": "review-plugins", "url": "", "evidence": "TES4 MAST records and scanned plugin inventory", "plugin": name, "master": master})
         eligibility = plugin.get("eligibility") if isinstance(plugin.get("eligibility"), dict) else {}
-        if eligibility.get("status") == "flag-only-candidate":
+        if eligibility.get("status") == "flag-only-candidate" and len(output) < _LOCAL_ACTION_LIMIT:
             output.append({"id": "esl-candidate-" + name, "severity": "info", "label": "Review ESL flag candidate",
                            "detail": f"{name}'s scanned records meet the local flag-only checks. Review it in xEdit and account for save and external references before changing flags.",
                            "action": "review-plugins", "url": "", "evidence": "Full TES4 record analysis; save safety is not assessed", "plugin": name})
-    return output[:256]
+    return output
 
 
 def _scoped_bug_observation(observation, identity) -> bool:

@@ -62,6 +62,11 @@ class LocalMetadataCache:
             self._entries.pop(key, None)
         return flags, source
 
+    def directory_identity(self, path: Path):
+        entry = self._entries.get(self._key(path))
+        directory = entry[0][0] if entry and entry[0] else None
+        return directory[:2] if isinstance(directory, tuple) and len(directory) >= 2 else None
+
     def retain(self, paths: set[str]) -> None:
         active = {self._key(Path(path)) for path in paths}
         self._entries = {key: value for key, value in self._entries.items() if key in active}
@@ -98,6 +103,23 @@ def inspect_local_flags(mod_directory: Path) -> list[str]:
     except (OSError, PermissionError):
         pass
     return flags
+
+
+def focus_identity(path: str, game: str, name: str, cache: LocalMetadataCache | None):
+    """Bind a cross-profile reveal to the same installed directory and internal name."""
+    if not path or not os.path.isabs(path):
+        return {}
+    directory = cache.directory_identity(Path(path)) if cache is not None else None
+    if directory is None:
+        try:
+            st = os.stat(path)
+            directory = (st.st_dev, st.st_ino)
+        except OSError:
+            return {}
+    if not directory or not directory[1]:
+        return {}
+    key = [game, os.path.normcase(os.path.normpath(path)), name, *directory]
+    return {"focusIdentity": hashlib.sha256(json.dumps(key).encode()).hexdigest()}
 
 
 def installed_file_fields(receipt, native_archive, game, short_game):
@@ -214,6 +236,7 @@ def take_snapshot(organizer: Any, target_runtime: str = "unknown", *,
         items.append({
             "id": mod_id,
             "mo2InternalName": name,
+            **focus_identity(mod_path, game, name, metadata_cache),
             "priority": priority,
             "name": label,
             "installedVersion": version,

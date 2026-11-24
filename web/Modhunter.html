@@ -3581,7 +3581,7 @@ async function bridgeRequest(method,path,body){
  const key=PROFILE_EPOCH+':'+BRIDGE_READ_REVISION+':'+path;
  if(method==='GET'&&BRIDGE_READS.has(key))return BRIDGE_READS.get(key);
  const pending=(async()=>{const controller=new AbortController(),tm=setTimeout(()=>controller.abort(),method==='GET'?24000:195000);
-  try{const r=await fetch('/api/'+path,{method,headers:{'X-Arsenal-Token':BRIDGE.token,...(method==='POST'?{'Content-Type':'application/json'}:{})},body:method==='POST'?JSON.stringify(body||{}):undefined,cache:'no-store',signal:controller.signal});const j=await r.json();if(!r.ok||j.ok===false)throw Error(j.error||'Bridge request rejected');return j}finally{clearTimeout(tm)}
+  try{const r=await fetch('/api/'+path,{method,headers:{'X-Arsenal-Token':BRIDGE.token,...(method==='POST'?{'Content-Type':'application/json'}:{})},body:method==='POST'?JSON.stringify(body||{}):undefined,cache:'no-store',signal:controller.signal});const j=await r.json();if(!r.ok||j.ok===false){const error=Error(j.error||'Bridge request rejected');error.code=j.code;throw error}return j}finally{clearTimeout(tm)}
  })();
  if(method==='GET')BRIDGE_READS.set(key,pending);
  try{return await pending}finally{if(BRIDGE_READS.get(key)===pending)BRIDGE_READS.delete(key)}
@@ -3996,13 +3996,26 @@ function acceptNativeSelectionRevision(revision){
 async function locateInMO2(m,el){
  if(!BRIDGE.active||!LIVE_CATALOG){toast('Open from MO2 to reveal a mod.');return}
  const context=profileContext(),generation=LIVE_GENERATION,sequence=++MO2_FOCUS_SEQUENCE;
- const stillCurrent=()=>sequence===MO2_FOCUS_SEQUENCE&&generation===LIVE_GENERATION&&contextIsCurrent(context);
+ const ownsClick=()=>sequence===MO2_FOCUS_SEQUENCE;
+ const identity=m.focusIdentity;
+ const target={id:m.id,profileId:context.profile,generation,...(identity?{focusIdentity:identity}:{})};
  (MO2_FOCUS_BUTTONS??=new WeakMap()).set(el,sequence);el.disabled=true;
  try{
-  const r=await bridgeRequest('POST','focus',{id:m.id,profileId:context.profile,generation});
-  if(!stillCurrent()||!acceptNativeSelectionRevision(r.selectionRevision))return;
-  NATIVE_SELECTED=m.id;paintNativeSelection();window.AetherFX?.reveal($('row-'+m.id));toast('⌖ '+(r.message||'MO2 jumped to '+m.name));
- }catch(ex){if(stillCurrent())toast('MO2 navigation: '+ex.message)}
+  let result;
+  try{result=await bridgeRequest('POST','focus',target)}
+  catch(error){
+   if(error.code!=='focus-refresh'||!identity||!ownsClick())throw error;
+   result=await bridgeRequest('POST','focus',target);
+  }
+  if(!ownsClick())return;
+  const profile=result.resolvedProfileId||context.profile,id=result.resolvedModId||m.id;
+  if(profile!==LIVE_CATALOG?.profileId)await requestLiveCatalog('GET','snapshot',undefined,true);
+  const current=ITEM_MAP.get(id);
+  if(!ownsClick()||profile!==LIVE_CATALOG?.profileId||!current||
+     (identity?current.focusIdentity!==identity:!contextIsCurrent(context)||generation!==LIVE_GENERATION)||
+     !acceptNativeSelectionRevision(result.selectionRevision))return;
+  NATIVE_SELECTED=id;paintNativeSelection();window.AetherFX?.reveal($('row-'+id));toast('⌖ '+(result.message||'MO2 jumped to '+current.name));
+ }catch(ex){if(ownsClick())toast('MO2 navigation: '+ex.message)}
  finally{if(MO2_FOCUS_BUTTONS.get(el)===sequence){MO2_FOCUS_BUTTONS.delete(el);el.disabled=false}}
 }
 function questRank(score){if(score>=20000)return'LEGENDARY DRAGONBORN';if(score>=9000)return'ARCHMAGE OF THE FORGE';if(score>=3500)return'EBONY SENTINEL';if(score>=1000)return'SKYFORGE KNIGHT';if(score>=250)return'IRON VANGUARD';return'NOVICE ADVENTURER'}

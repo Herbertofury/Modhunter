@@ -163,6 +163,7 @@ class ArsenalService:
         self._labels_to_ids = self._label_index(snapshot)
         self._nexus_ids = {int(i.get("nexusId") or 0) for i in snapshot.get("items", [])}
         self._guard = threading.RLock()
+        self._focus_ready = threading.Condition(self._guard)
         self._snapshot_build_lock = threading.Lock()
         self._snapshot_payload_cache: tuple[tuple, bytes] | None = None
         self._queue_lock = threading.Lock()  # Serialize reviewed batches; never enqueue the same mod twice.
@@ -199,9 +200,9 @@ class ArsenalService:
         self._stopped = False
         self._agent_inventory_generation = 0
         self._generation = 1
-        # Native Reveal leases exclude plugin-audit observations only. The
-        # public generation still publishes those observations for clients.
-        self._audit_observation_revision = 0
+        # Old clients use the displayed generation to identify exact rows.
+        # Provider progress and plugin audits do not replace those rows.
+        self._focus_inventory_generation = self._generation
         self._execution_epoch = 0  # Monotonic identity for queued native intent.
         self._pending_ui: set[UIRequest] = set()
         self._discovery = SessionDiscovery(discovery_directory)
@@ -450,7 +451,7 @@ class ArsenalService:
                         item.get("installationArchive"), item.get("installedFiles"), item.get("updateEligible"),
                         item.get("latestKnownVersion"), item.get("ignoredVersion"), item.get("mo2FileStatus"),
                         item.get("installedPackage"),
-                        item.get("installedFileEvidenceIncomplete"))
+                        item.get("installedFileEvidenceIncomplete"), item.get("focusIdentity"))
             versions_changed = old_items.keys() != new_items.keys() or any(
                 old_items[key].get("installedVersion") != new_items[key].get("installedVersion")
                 or old_items[key].get("nexusId") != new_items[key].get("nexusId")
@@ -467,7 +468,11 @@ class ArsenalService:
             if not scan_context_changed and (old.get("profileName") != snapshot.get("profileName")
                     or _agent_rows_changed(old.get("items", []), snapshot.get("items", []))):
                 self._agent_inventory_generation += 1
+                self._focus_inventory_generation = self._generation + 1
+            if not same_profile or not same_game:
+                self._focus_order += 1
             if scan_context_changed:
+                self._focus_inventory_generation = self._generation + 1
                 self._execution_epoch += 1
                 if not (same_profile and same_game and same_runtime):
                     self._install_intent_epoch += 1
@@ -489,6 +494,7 @@ class ArsenalService:
             self._snapshot = snapshot
             self._items_by_id = new_items
             self._focus_profile_pending = False
+            self._focus_ready.notify_all()
             if self.selected_mod_id and self.selected_mod_id not in new_items:
                 self.set_selected("")
             self._labels_to_ids = self._label_index(snapshot)
@@ -516,20 +522,15 @@ class ArsenalService:
     def _publish_plugin_audit_revision_locked(self) -> None:
         """Caller owns _guard; no installed row or organizer context changed."""
         self._generation += 1
-        self._audit_observation_revision += 1
-
-    def _focus_generation_locked(self) -> int:
-        # Every non-audit generation bump still invalidates an admitted
-        # focus. Audit results change presentation facts only.
-        return self._generation - self._audit_observation_revision
 
     def _focus_error_locked(self, payload: dict, *, since_intent=False) -> str:
         if (self._stopped or self._focus_profile_pending
-                or payload["profileId"] != self._snapshot.get("profileId")
-                or payload["focusGeneration"] != self._focus_generation_locked()):
-            return "MO2 profile changed during navigation; refresh Arsenal"
+                or payload["profileId"] != self._snapshot.get("profileId")):
+            return "MO2 is switching profiles."
         item = self._items_by_id.get(payload["modId"])
-        if item is None or item.get("mo2InternalName") != payload["name"]:
+        if (item is None or item.get("mo2InternalName") != payload["name"]
+                or item.get("focusIdentity") != payload["focusIdentity"]
+                or item.get("nexusId") != payload["nexusId"]):
             return "Exact mod target no longer matches MO2"
         if (payload["focusOrder"] != self._focus_order or since_intent
                 and self._selection_revision != payload["selectionRevision"]):
@@ -542,7 +543,8 @@ class ArsenalService:
             error = self._focus_error_locked(payload, since_intent=since_intent)
             if error:
                 return {"ok": False, "error": error}
-            return {"ok": True, "profileName": self._snapshot.get("profileName"), "name": payload["name"]}
+            return {"ok": True, "profileName": self._snapshot.get("profileName"), "game": self._snapshot.get("game"),
+                    "name": payload["name"], "focusIdentity": payload["focusIdentity"]}
 
     def acknowledge_native_focus(self, payload: dict, result: dict) -> dict:
         """The owner finished traversal; only publish a still-owned selection."""
@@ -555,12 +557,32 @@ class ArsenalService:
             self.set_selected(payload["modId"])
             return {**result, "_selectionAck": self._selection_revision}
 
-    def focus_mod(self, mod_id: str, profile_id: str, *, generation=None) -> dict:
+    def focus_mod(self, mod_id: str, profile_id: str, *, generation=None, focus_identity=None) -> dict:
         with self._guard:
-            if (self._stopped or self._focus_profile_pending or profile_id != self._snapshot.get("profileId")
-                    or generation is not None and (type(generation) is not int or generation != self._generation)):
-                return {"ok": False, "error": "Profile changed; refresh before navigating"}
-            m = self._items_by_id.get(mod_id)
+            if self._focus_profile_pending and focus_identity:
+                self._focus_ready.wait_for(lambda: not self._focus_profile_pending or self._stopped, timeout=8)
+            current = self._snapshot.get("profileId")
+            if self._stopped or self._focus_profile_pending:
+                return {"ok": False, "code": "focus-refresh", "error": "MO2 is switching profiles."}
+            if generation is not None and (type(generation) is not int or not 0 <= generation <= self._generation):
+                return {"ok": False, "error": "Invalid navigation revision"}
+            remapped = current != profile_id
+            if remapped:
+                # The browser never supplies the native name. Both the old
+                # profile-scoped row ID and the physical directory must agree.
+                if not isinstance(focus_identity, str) or len(focus_identity) != 64:
+                    return {"ok": False, "error": "This mod's installation could not be identified in the current MO2 profile."}
+                from .model import identity
+                matches = [i for i in self._items_by_id.values()
+                           if i.get("focusIdentity") == focus_identity and i.get("mo2InternalName")
+                           and "live-" + identity(profile_id + "|" + i["mo2InternalName"]) == mod_id]
+                m = matches[0] if len(matches) == 1 else None
+            else:
+                m = self._items_by_id.get(mod_id)
+                if m and focus_identity is not None and m.get("focusIdentity") != focus_identity:
+                    return {"ok": False, "error": "The selected installation was replaced in MO2."}
+                if not focus_identity and generation is not None and generation < self._focus_inventory_generation:
+                    return {"ok": False, "code": "focus-refresh", "error": "The native inventory changed."}
             if m is None:
                 return {"ok": False, "error": "Mod is not in the current MO2 profile"}
             internal = m.get("mo2InternalName")
@@ -569,15 +591,19 @@ class ArsenalService:
             # The owner cannot infer a click clock from independent clients.
             # A valid authenticated admission is the server ordering point.
             self._focus_order += 1
-            payload = {"profileId": profile_id, "modId": mod_id, "name": internal,
-                       "focusGeneration": self._focus_generation_locked(), "focusOrder": self._focus_order,
+            mod_id = m["id"]
+            payload = {"profileId": current, "modId": mod_id, "name": internal,
+                       "focusIdentity": m.get("focusIdentity"), "nexusId": m.get("nexusId"),
+                       "focusOrder": self._focus_order,
                        "selectionRevision": self._selection_revision}
         # Route input can never supply the native name, acknowledgement, or
         # organizer generation. Asynchronous success does not confer ownership.
         result = self.call_ui("focus", payload, timeout=12)
-        if not result.get("ok"):
-            return result
         with self._guard:
+            if not result.get("ok"):
+                if self._focus_profile_pending or current != self._snapshot.get("profileId"):
+                    return {**result, "code": "focus-refresh"}
+                return result
             error = self._focus_error_locked(payload)
             if error:
                 return {"ok": False, "error": error}
@@ -591,6 +617,7 @@ class ArsenalService:
             elif ack != self._selection_revision or self.selected_mod_id != mod_id:
                 return {"ok": False, "error": "A newer MO2 selection superseded this navigation"}
             return {**{k: v for k, v in result.items() if k != "_selectionAck"},
+                    **({"resolvedProfileId": current, "resolvedModId": mod_id} if remapped else {}),
                     "selectionRevision": self._selection_revision}
 
     def siege_targets(self) -> dict:
@@ -1881,6 +1908,7 @@ class ArsenalService:
     def stop(self) -> None:
         with self._guard:
             self._stopped = True
+            self._focus_ready.notify_all()
             self._snapshot_payload_cache = None
             self._execution_epoch += 1
             self._scan_epoch += 1
@@ -2157,7 +2185,7 @@ class ArsenalService:
                     return self._reply(service.chronicle.save_realm_world(profile, data.get("world"), revision))
                 if uri.path == "/api/focus":
                     return self._reply(service.focus_mod(str(data.get("id") or ""), str(data.get("profileId") or ""),
-                                                         generation=data.get("generation")))
+                                                         generation=data.get("generation"), focus_identity=data.get("focusIdentity")))
                 if uri.path == "/api/progress":
                     result = service.save_progress(data)
                     return self._reply(result, 409 if result.get("profileChanged") else 200)

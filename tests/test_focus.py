@@ -69,6 +69,17 @@ def widgets(window):
 
 
 class FocusTests(unittest.TestCase):
+ def test_filtered_namesake_cannot_be_selected_instead_of_exact_native_priority(self):
+  org=Organizer({'native':'Same label'});org.priority=lambda name: 104
+  qt=SimpleNamespace(QModelIndex=QT.QModelIndex,QItemSelectionModel=QT.QItemSelectionModel,
+    Qt=SimpleNamespace(**{**vars(QT.Qt),'ItemDataRole':SimpleNamespace(DisplayRole=0,UserRole=256)}))
+  for priority,expected in [(52,False),(None,False),(104,True)]:
+   model=MockModel(['Same label']);view=View(model);read=model.data
+   model.data=lambda index,role:priority if role==260 else read(index,role)
+   result=navigate(org,'native',qt,widgets(Window(view)))
+   self.assertEqual(result['ok'],expected)
+   self.assertEqual(view.selected is not None,expected)
+
  def test_find_exact_ignores_priority_and_filtered_row_number(self):
   model=MockModel(['Iron Armor','SkyUI','Unofficial Patch'])
   self.assertEqual(name_column(model,QT),1)

@@ -17,6 +17,7 @@ from mo2_update_arsenal.bridge import ArsenalService
 from mo2_update_arsenal.focus import find_mo2_view, name_column, navigate
 from test_focus import MockModel, Organizer, QT, View, Window, widgets
 from test_plugin_autostart import plugin_type
+from mo2_update_arsenal.model import focus_identity, identity, call_str
 from test_plugin_intelligence import GatedRunner, wait_until
 
 
@@ -59,7 +60,7 @@ class FocusGenerationTests(unittest.TestCase):
         self.model = CountedModel([r["name"] for r in self.initial["items"]])
         self.view = View(self.model)
         scope = self.plugin._focus_mod.__globals__
-        scope.update(navigate=navigate, find_mo2_view=find_mo2_view, name_column=name_column)
+        scope.update(navigate=navigate, find_mo2_view=find_mo2_view, name_column=name_column, focus_identity=focus_identity, call_str=call_str)
         self.window = Window(self.view)
         scope["QtWidgets"] = widgets(self.window)
         for name in ("QModelIndex", "Qt", "QItemSelectionModel"):
@@ -312,32 +313,52 @@ class FocusGenerationTests(unittest.TestCase):
         self.assert_success(reply, 5)
         self.assertEqual(self.service.intelligence.state()["state"], "failed")
 
-    def test_audit_publication_does_not_accept_stale_browser_or_mask_real_owner_failure(self):
+    def test_audit_or_provider_progress_before_or_during_reveal_keeps_exact_row(self):
         entry, generation = self.start_audit_during_exact_focus()
-        request, reply = self.queue_focus(5, generation=generation)
         self.publish_audit(entry, generation)
-        code, rejected = self.request("focus", {"profileId": "A", "id": "A-5", "generation": generation})
-        self.assertEqual(code, 200)
-        self.assertFalse(rejected["ok"])
-        self.assertTrue(self.owner.empty())
-        self.model.rows = ["Different fixture"]
+        request, reply = self.queue_focus(5, generation=generation)
+        self.model.on_read = lambda: setattr(self.service, "_generation", self.service._generation + 1)
         self.plugin._dispatch(request)
-        code, rejected = reply.get(timeout=5)
-        self.assertEqual(code, 200)
-        self.assertFalse(rejected["ok"])
-        self.assertEqual(rejected.get("matchedRows"), 0)
-        self.assertIsNone(self.view.selected)
-        self.assertEqual(self.request("revision")[1]["selectedModId"], "")
+        self.assert_success(reply, 5)
 
-    def test_audit_only_change_cannot_mask_a_true_same_profile_catalog_republication(self):
-        entry, generation = self.start_audit_during_exact_focus()
-        request, reply = self.queue_focus(5, generation=generation)
-        self.publish_audit(entry, generation)
-        self.service.intelligence.runner.available = False
+    def test_same_profile_refresh_with_same_target_accepts_admitted_reveal(self):
+        request, reply = self.queue_focus(5)
         self.service.set_snapshot(deepcopy(self.initial))
         self.plugin._dispatch(request)
+        self.assert_success(reply, 5)
+
+    def test_completed_profile_switch_rebinds_only_the_same_real_directory(self):
+        with TemporaryDirectory() as folder:
+            name = "Exact installed name 5"
+            key = focus_identity(folder, "skyrimspecialedition", name, None)["focusIdentity"]
+            old_id = "live-" + identity("A|" + name)
+            current_id = "live-" + identity("B|" + name)
+            b = catalog("B")
+            b["items"][5].update(id=current_id, focusIdentity=key)
+            self.profile_name = b["profileName"]
+            self.service.set_snapshot(b)
+            original_get = self.plugin.org.getMod
+            self.plugin.org.getMod = lambda n: SimpleNamespace(absolutePath=lambda:folder) if n==name else original_get(n)
+            code, bad = self.request("focus", {"profileId":"A", "id":old_id, "focusIdentity":"f"*64})
+            self.assertFalse(bad["ok"])
+            self.assertTrue(self.owner.empty())
+            code, bad = self.request("focus", {"profileId":"A", "id":"wrong-old-id", "focusIdentity":key})
+            self.assertFalse(bad["ok"])
+            req, reply = self.queue_focus(5, id=old_id, focusIdentity=key, generation=1)
+            self.plugin._dispatch(req)
+            result=reply.get(timeout=5)[1]
+            self.assertTrue(result["ok"],result)
+            self.assertEqual((result["resolvedProfileId"],result["resolvedModId"]),("B",current_id))
+            self.assertEqual(self.view.selected.row,5)
+
+    def test_removed_or_replaced_install_is_never_selected(self):
+        request, reply = self.queue_focus(5)
+        updated = deepcopy(self.initial)
+        updated["items"][5]["focusIdentity"] = "f"*64
+        self.service.set_snapshot(updated)
+        self.plugin._dispatch(request)
         self.assertFalse(reply.get(timeout=5)[1]["ok"])
-        self.assertEqual(self.model.label_reads, 0)
+        self.assertIsNone(self.view.selected)
 
     def test_stale_client_generation_and_unauthenticated_requests_never_enter_owner_queue(self):
         for auth, generation, status in ((True, 2, 200), (True, True, 200), (False, 1, 403)):

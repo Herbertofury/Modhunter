@@ -82,6 +82,15 @@ def navigate(organizer, mod_name: str, qtcore, qtwidgets, *, still_current=None)
     if not is_current():
         return superseded
     index = matches[0]
+    user_role = getattr(qtcore.Qt.ItemDataRole, "UserRole", None)
+    if user_role is not None and hasattr(organizer.modList(), "priority"):
+        # MO2 ModList::PriorityRole and IModList::priority(internalName)
+        # both read the active profile's priority for the native mod index.
+        # A filter can hide the correct row while leaving its namesake visible.
+        expected = organizer.modList().priority(mod_name)
+        observed = model.data(index, int(user_role) + 4)
+        if type(expected) is not int or expected < 0 or observed != expected:
+            return {"ok": False, "error": "The visible MO2 row does not match this installation."}
     ancestor = index.parent()
     while ancestor.isValid():
         view.expand(ancestor)

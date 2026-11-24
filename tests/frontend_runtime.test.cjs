@@ -1164,6 +1164,31 @@ test('same-profile generation replacement refuses a late successful reveal and c
  assert.equal(button.disabled,false);
 });
 
+test('a live scan can advance the catalog while an exact installed row is being revealed',async()=>{
+ const h=harness();await h.settle();const [a]=h.qa.getCatalog().items;
+ const key='a'.repeat(64),events=[],button=h.context.document.getElementById('button');
+ a.focusIdentity=key;h.state.catalog.items[0].focusIdentity=key;
+ h.context.AetherFX={reveal:node=>events.push(node.id),config(){}};
+ h.state.defer.add('POST focus #1');const delayed=h.api.locateInMO2(a,button);await h.settle();
+ h.state.generation=2;const refresh=await h.api.requestLiveCatalog();await refresh.ready;
+ h.release('POST focus #1');await delayed;
+ assert.equal(h.calls.find(x=>x.endpoint==='focus').body.focusIdentity,key);
+ assert.deepEqual(events,['row-item-0']);assert.equal(button.disabled,false);
+});
+
+test('a cross-profile reveal fetches the new catalog and paints only the same installation',async()=>{
+ for(const sameDirectory of [true,false]){
+  const h=harness();await h.settle();const [a]=h.qa.getCatalog().items;
+  const key='a'.repeat(64),events=[],button=h.context.document.getElementById('button');
+  a.focusIdentity=key;h.context.AetherFX={reveal:node=>events.push(node.id),config(){}};
+  h.state.catalog=catalog('b');h.state.generation=2;
+  Object.assign(h.state.catalog.items[0],{id:'other-profile-row',focusIdentity:sameDirectory?key:'b'.repeat(64)});
+  h.state.focusReplies=[{selectionRevision:11,resolvedProfileId:'b',resolvedModId:'other-profile-row'}];
+  await h.api.locateInMO2(a,button);
+  assert.deepEqual(events,sameDirectory?['row-other-profile-row']:[]);assert.equal(button.disabled,false);
+ }
+});
+
 test('older revision poll cannot repaint over a newer native focus observation',async()=>{
  const h=harness();await h.settle();const [a,b]=h.qa.getCatalog().items;
  const events=[];

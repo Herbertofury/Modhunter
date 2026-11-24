@@ -12,7 +12,7 @@ from threading import Event, get_ident
 from time import monotonic
 from typing import Any
 
-from .model import COLORS, LocalMetadataCache, call_str, identity, inspect_local_flags, source_url, installed_file_fields
+from .model import COLORS, LocalMetadataCache, call_str, identity, inspect_local_flags, source_url, installed_file_fields, focus_identity
 from .source_registry import discover_local_source, source_record
 from .github_health import package_manifest
 
@@ -284,6 +284,7 @@ def project_snapshot(captured: SnapshotInput, *,
         items.append({
             "id": mod_id,
             "mo2InternalName": mod.name,
+            **focus_identity(mod.path, captured.game, mod.name, metadata_cache),
             "priority": mod.priority,
             "name": mod.label,
             "installedVersion": mod.version if mod.version not in ("Invalid", "None", "0", "0.0", "") else "?",

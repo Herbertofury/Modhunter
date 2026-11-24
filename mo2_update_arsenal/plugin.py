@@ -16,7 +16,7 @@ from PyQt6 import QtCore, QtGui, QtWidgets
 from .bridge import ArsenalService, UIRequest
 from .agent_control import set_enabled
 from .install_policy import protected_installs, protected_refusal
-from .model import LocalMetadataCache, call_str, take_snapshot
+from .model import LocalMetadataCache, call_str, take_snapshot, focus_identity
 from .refresh_work import RefreshMetadataCache, RefreshWork
 from .snapshot_projection import begin_snapshot_capture, capture_snapshot, project_snapshot
 from .focus import navigate, find_mo2_view, name_column
@@ -685,11 +685,17 @@ class ModUpdateArsenal(mobase.IPluginTool):
         if not target["ok"]:
             return target
         if self.org.profileName() != target["profileName"]:
-            return {"ok": False, "error": "MO2 profile changed during navigation; refresh Arsenal"}
+            return {"ok": False, "code": "focus-refresh", "error": "MO2 is switching profiles."}
 
         def still_current():
-            return (self.server is service and self.org.profileName() == target["profileName"]
-                    and service.native_focus_target(payload)["ok"])
+            if (self.server is not service or self.org.profileName() != target["profileName"]
+                    or not service.native_focus_target(payload)["ok"]):
+                return False
+            if target["focusIdentity"]:
+                mod = self.org.modList().getMod(target["name"])
+                observed = focus_identity(call_str(mod, "absolutePath"), target["game"], target["name"], None)
+                return observed.get("focusIdentity") == target["focusIdentity"]
+            return True
 
         prior_focus = self._focus_navigating
         self._focus_navigating = True

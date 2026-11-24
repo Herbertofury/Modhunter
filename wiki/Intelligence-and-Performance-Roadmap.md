@@ -21,6 +21,8 @@ Run targeted benchmarks with each change to scanning, matching, extraction, cata
 
 ## Existing evidence and accepted goals
 
+- [November 24 verification results and open production gates](https://github.com/Herbertofury/Modhunter/wiki/Intelligence-Verification-2026-11-24)
+
 - [Profile, dashboard and native verification](https://github.com/Herbertofury/Modhunter/blob/main/wiki/Development-and-Testing.md)
 - [Prior WhimWatch capability and transfer audit](https://github.com/Herbertofury/Modhunter/blob/main/native/evidence/whimwatch-parity-0.11.0.md)
 - [Source coverage](https://github.com/Herbertofury/Modhunter/blob/main/wiki/Updater-Source-Coverage.md)

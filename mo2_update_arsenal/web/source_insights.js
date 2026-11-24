@@ -64,7 +64,7 @@ function details(mod,{live=false,loading=false,error=''}={}){
  if(error)html+='<p class="insight-alert">'+esc(error)+'</p>';
  html+='<p class="insight-note">'+esc(u.reason||caps.reason||'Check this exact source to establish its release information.')+'</p>';
  html+='<dl class="source-facts"><dt>Adapter</dt><dd>'+esc(mode)+'</dd><dt>Source checked</dt><dd>'+esc(checked(u.checkedAt))+'</dd><dt>Release published</dt><dd>'+esc(checked(u.publishedAt))+'</dd><dt>Download support</dt><dd>'+esc(caps.reviewedDownload?'Reviewed provider files → MO2':caps.authentication==='mo2'?'MO2 native download manager':'Open the original provider')+'</dd>'+(u.moderationStatus?'<dt>Provider moderation</dt><dd>'+esc(u.moderationStatus)+' · provider listing status; not a compatibility assessment</dd>':'')+'</dl>';
- if(u.retryAt)html+='<p class="insight-note">Provider retry time: '+esc(checked(u.retryAt))+'.</p>';
+ if(u.retryAt)html+='<p class="insight-note">'+(u.retryEstimated?'Modhunter estimated retry time':'Provider retry time')+' '+esc(checked(u.retryAt))+'.</p>';
  if(u.summary)html+='<p class="source-summary">'+esc(text(u.summary).slice(0,4000))+'</p>';
  html+='<div class="source-people">'+person(u.author,'Author')+person(u.publisher,'Release publisher')+'</div>';
  const media=list(u.media).filter(x=>x&&safeURL(x.url));

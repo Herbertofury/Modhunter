@@ -2,6 +2,12 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const sources=require('../mo2_update_arsenal/web/source_insights.js');
+test('row details distinguish a provider retry deadline from a Modhunter estimate',()=>{
+ const mod={update:{retryAt:1700000000,availability:'rate-limited'}};
+ assert.match(sources.details(mod),/Provider retry time/);
+ mod.update.retryEstimated=true;
+ assert.match(sources.details(mod),/Modhunter estimated retry time/);
+});
 const row=()=>({id:'mod-a',name:'Example',installedVersion:'1.0',source:{type:'gitlab',verified:true,url:'https://gitlab.com/group/project'},update:{provider:'gitlab',verdict:'candidate',outcome:'release',latestVersion:'2.0',releaseId:'v2',releaseUrl:'https://gitlab.com/group/project/-/releases/v2',freshness:'fresh',checkedAt:Date.now()/1000,expiresAt:Date.now()/1000+900,capabilities:{checkMode:'public-api',reviewedDownload:true,authentication:'none'},releaseAssets:[{assetKey:'gitlab:group/project:v2:5',assetProof:'a'.repeat(64),name:'Mod-v2.zip',url:'https://gitlab.com/group/project/-/releases/v2/downloads/Mod-v2.zip',size:2048,hashes:{sha256:'b'.repeat(64)}}]}});
 
 test('each provider has its own release label and compact asset count enables review',()=>{

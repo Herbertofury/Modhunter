@@ -1102,13 +1102,16 @@ class GalleryWorkspaceTests(unittest.TestCase):
         self.page.wait_for_function("document.querySelector('#unifiedScan').dataset.state==='running'")
         self.page.evaluate("""() => {
           const x=__RESP__;x.catalog.items[0].update={verdict:'current',source:'nexus',checkedAt:Date.now()/1000};
-          x.scan={...x.scan,state:'partial',checked:9,total:12,deferredNexusProjects:3,elapsedSeconds:9.25};
+          x.scan={...x.scan,state:'partial',checked:9,total:12,deferredNexusProjects:3,elapsedSeconds:9.25,
+            rateLimitRetryAt:Date.UTC(2100,0,1)/1000,rateLimitRetryEstimated:true};
         }""")
         self.page.wait_for_function("""() => [...document.querySelectorAll('#toastWrap .toast')]
            .some(t=>t.textContent.includes('scan returned partial results'))""")
         for selector in ('#workspaceCheckDetail','#liveScanProgress','#liveSync','#toastWrap .toast'):
             value=self.page.locator(selector).all_text_contents()
-            self.assertTrue(any('3 Nexus projects deferred' in s and '9.25 s elapsed' in s for s in value), value)
+            retry_time = self.page.evaluate("new Date(Date.UTC(2100,0,1)).toLocaleString()")
+            self.assertTrue(any('3 Nexus projects deferred' in s and '9.25 s elapsed' in s
+                                and 'Modhunter estimated retry time ' + retry_time in s for s in value), value)
         self.assertIn("Partial results",self.page.locator('#workshopJourney').text_content())
         self.assertEqual(self.page.locator('#row-item-0 .detected-status').text_content(),"Up to date")
         self.assertFalse(self.page.locator('#workspaceScanProgress').is_visible())

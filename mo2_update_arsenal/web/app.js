@@ -208,6 +208,13 @@ function scanTimingAndDeferrals(state){
   parts.push(n.toLocaleString()+' Nexus project'+(n===1?'':'s')+' deferred');
  }
  if(Number.isFinite(state?.elapsedSeconds)&&state.elapsedSeconds>=0)parts.push(state.elapsedSeconds.toLocaleString()+' s elapsed');
+ if(Number.isFinite(state?.rateLimitRetryAt)&&state.rateLimitRetryAt>0){
+  const deadline=new Date(state.rateLimitRetryAt*1000);
+  if(Number.isFinite(deadline.getTime())){
+   const label=state.rateLimitRetryEstimated?'Modhunter estimated retry time':'Nexus retry time';
+   parts.push(deadline.getTime()>Date.now()?label+' '+deadline.toLocaleString():'Nexus checks can be retried now');
+  }
+ }
  return parts.length?' · '+parts.join(' · '):'';
 }
 function renderWorkspaceScan(){

@@ -66,7 +66,7 @@ OVERRIDE=r'''(() => {
  window.__TAURI__.core.invoke=async(command,args)=>{
   const kind=args.kind,v=args.value||{};
   const owned=['maintenance','browserChoices','prepareReview','openReview','saveReviewSelection','installReview','contentJobs','discardReview','cancelReview','cancelContentJob','diagnosticsPreview','diagnosticsCopy','diagnosticsSave','globalSettings','storage','previewDownloadCleanup','applyDownloadCleanup','duplicateScan','duplicateRecovery','contentBackups','contentRecovery','contentBatchRestore','checkAppRelease','dismissAppRelease','openAppRelease','previewAppReset','applyAppReset'];
-  owned.push('readiness','scanUnattributed','unattributedInventory','cancelUnattributed','revealUnattributed','installQueue','installQueueControl');
+  owned.push('readiness','scanUnattributed','unattributedInventory','cancelUnattributed','revealUnattributed','installQueue','installQueueControl','compareIniSnapshots');
   owned.push('notices','refreshNotices','activateNotice','dismissNotice');
   if(kind==='state')return {...await original(command,args),installQueueContext:clone(f.native.queueContext)};
   if(!owned.includes(kind))return original(command,args);

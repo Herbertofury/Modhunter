@@ -183,6 +183,9 @@ class ArsenalService:
         self.journal = OperationJournal(cache_path.with_name("update-operations.jsonl"))
         self._stopped = False
         self._generation = 1
+        # Native Reveal leases exclude plugin-audit observations only. The
+        # public generation still publishes those observations for clients.
+        self._audit_observation_revision = 0
         self._execution_epoch = 0  # Monotonic identity for queued native intent.
         self._pending_ui: set[UIRequest] = set()
         self._discovery = SessionDiscovery(discovery_directory)
@@ -490,10 +493,20 @@ class ArsenalService:
             self._focus_profile_pending = True
             self.set_selected("")
 
+    def _publish_plugin_audit_revision_locked(self) -> None:
+        """Caller owns _guard; no installed row or organizer context changed."""
+        self._generation += 1
+        self._audit_observation_revision += 1
+
+    def _focus_generation_locked(self) -> int:
+        # Every non-audit generation bump still invalidates an admitted
+        # focus. Audit results change presentation facts only.
+        return self._generation - self._audit_observation_revision
+
     def _focus_error_locked(self, payload: dict, *, since_intent=False) -> str:
         if (self._stopped or self._focus_profile_pending
                 or payload["profileId"] != self._snapshot.get("profileId")
-                or payload["generation"] != self._generation):
+                or payload["focusGeneration"] != self._focus_generation_locked()):
             return "MO2 profile changed during navigation; refresh Arsenal"
         item = self._items_by_id.get(payload["modId"])
         if item is None or item.get("mo2InternalName") != payload["name"]:
@@ -537,7 +550,7 @@ class ArsenalService:
             # A valid authenticated admission is the server ordering point.
             self._focus_order += 1
             payload = {"profileId": profile_id, "modId": mod_id, "name": internal,
-                       "generation": self._generation, "focusOrder": self._focus_order,
+                       "focusGeneration": self._focus_generation_locked(), "focusOrder": self._focus_order,
                        "selectionRevision": self._selection_revision}
         # Route input can never supply the native name, acknowledgement, or
         # organizer generation. Asynchronous success does not confer ownership.

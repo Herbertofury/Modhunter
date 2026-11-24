@@ -9,6 +9,7 @@ on:
     paths:
       - 'scripts/benchmark_extraction_routes.py'
       - 'scripts/benchmark_firecrawl.py'
+      - 'scripts/benchmark_changedetection.py'
       - '.github/workflows/extraction-benchmarks.yml'
 
 permissions:
@@ -44,6 +45,23 @@ jobs:
         with:
           name: completed-crawler-results
           path: extraction.json
+
+  changedetection-snapshots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install 'changedetection.io==0.70.4' psutil
+      - run: python scripts/benchmark_changedetection.py --output changedetection.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: completed-changedetection-snapshots
+          path: changedetection.json
 
   self-hosted-firecrawl:
     runs-on: ubuntu-latest

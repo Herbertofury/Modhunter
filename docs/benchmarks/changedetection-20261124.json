@@ -1,0 +1,22 @@
+{
+  "release": "0.70.4",
+  "url": "https://books.toscrape.com/",
+  "rows": 20,
+  "snapshotSha256": "c4e785c6050e3ea1064ce32ab56fbe44f29833b48f91166b5642e54f003f454d",
+  "distinctSnapshots": 1,
+  "workerMs": [
+    1130.0,
+    480.0,
+    400.0,
+    1250.0,
+    1120.0,
+    920.0
+  ],
+  "warmMedianMs": 920.0,
+  "warmP95Ms": 1250.0,
+  "processExitCode": 15,
+  "processWallSeconds": 20.317687000031583,
+  "processTreeCpuSecondsSampled": 0.90625,
+  "processTreePeakRssBytesSampled": 93863936,
+  "scope": "Serial worker observations on one public practice page. Timing includes HTTP and the selected text processor. Batch wall time includes startup, scheduling and shutdown. Resource samples use a 50 ms interval."
+}

@@ -37,6 +37,7 @@ from mo2_update_arsenal.bridge import UIRequest
 from mo2_update_arsenal.focus import find_mo2_view, name_column
 from mo2_update_arsenal.plugin import ModUpdateArsenal
 
+from .agent_probe import check_scoped_toggle
 from .audit_probe import exercise_plugin_audit
 from .content_probe import exercise_content_recovery, exercise_native_install, new_fixture_name
 
@@ -381,6 +382,8 @@ class NativeSmokePlugin(ModUpdateArsenal):
                 return  # A production error dialog may have tripped the watchdog.
             self._check("production_display_started_bridge", self.server is not None
                         and bool(self._capture.address))
+            self.org.setPluginSetting(self.name(), "agent_mod_control_scope",
+                                      json.dumps({self.server.profile_id(): ["Smoke Enabled"]}))
             address = self._capture.address
             parsed = urllib.parse.urlsplit(address)
             self._check("loopback_address", parsed.scheme == "http"
@@ -503,6 +506,9 @@ class NativeSmokePlugin(ModUpdateArsenal):
                             and replies[4]["error"]["code"] == -32602,
                             comparedMods=len(rows), profileMatched=page["profileId"] == catalog["profileId"],
                             rejectedMutation=replies[4]["error"]["code"] == -32602)
+            if rust_cli:
+                evidence = check_scoped_toggle(rust_cli, address, catalog["profileId"], by_name)
+                self._check("rust_mcp_scoped_mod_control", True, **evidence)
             target = by_name["Smoke Disabled"]
             focus = api("/api/focus", {"id": target["id"], "profileId": catalog["profileId"]})
             self._check("queued_focus", focus.get("ok") is True

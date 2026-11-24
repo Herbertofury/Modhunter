@@ -64,7 +64,8 @@ impl BridgeClient {
         let method = match route {
             "snapshot" | "agent-mods" | "notification-facts" | "install-queue"
             | "content-context" | "content-jobs" | "content-backups" | "duplicates" => "GET",
-            "content-install"
+            "agent-set-enabled"
+            | "content-install"
             | "content-cancel"
             | "content-recovery"
             | "content-batch-restore"

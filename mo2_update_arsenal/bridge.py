@@ -199,13 +199,17 @@ class ArsenalService:
                     "version": VERSION, "profileId": self._snapshot.get("profileId"),
                     "generation": self._generation, "executionEpoch": self._execution_epoch}
 
+    def agent_revision(self):
+        # A native callback can arrive before the next coalesced full refresh.
+        return f"{self._catalog_session}-{self._generation}-{self.content._native_generation}"
+
     def agent_mods(self, query: dict) -> dict:
         """Read a revision-bound page from the live inventory, without building the dashboard."""
         with self._guard:
             profile = self._snapshot.get("profileId")
             if self._stopped or not profile or query.get("profileId") != [profile]:
                 return {"ok": False, "error": "The selected MO2 profile is unavailable or changed."}
-            revision = f"{self._catalog_session}-{self._generation}"
+            revision = self.agent_revision()
             raw_offset = query.get("offset", ["0"])
             if len(raw_offset) != 1 or not raw_offset[0].isascii() or not raw_offset[0].isdecimal() or len(raw_offset[0]) > 18:
                 return {"ok": False, "error": "Invalid inventory offset."}
@@ -1953,6 +1957,10 @@ class ArsenalService:
                 except (ValueError, json.JSONDecodeError):
                     return self._reply({"ok": False, "error": "Invalid JSON"}, 400)
                 uri = urllib.parse.urlsplit(self.path)
+                if uri.path == "/api/agent-set-enabled":
+                    if not self._native_client():
+                        return self._reply({"ok": False, "error": "Native client required."}, 403)
+                    return self._reply(service.call_ui("agent-set-enabled", data, timeout=2))
                 if uri.path == "/api/content-install":
                     if not self._native_client():
                         return self._reply({"ok": False, "error": "Archive installation requires the owned native review"}, 403)

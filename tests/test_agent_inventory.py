@@ -6,6 +6,10 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock
+
+from mo2_update_arsenal.agent_control import set_enabled
 
 from mo2_update_arsenal.bridge import ArsenalService
 
@@ -65,6 +69,7 @@ class AgentInventoryTests(unittest.TestCase):
                 call("notifications/initialized", {})
                 tools = call("tools/list", {}, 2)["result"]["tools"]
                 self.assertIn("mo2_mods", [tool["name"] for tool in tools])
+                self.assertNotIn("mo2_set_enabled", [tool["name"] for tool in tools])
                 args = {"name": "mo2_mods", "arguments": {}}
                 page = call("tools/call", args, 3)["result"]["structuredContent"]
                 self.assertEqual(page["total"], len(self.rows))
@@ -75,3 +80,38 @@ class AgentInventoryTests(unittest.TestCase):
             finally:
                 cli.stdin.close()
                 cli.wait(timeout=10)
+
+    def test_host_scope_and_native_compare_and_set(self):
+        name = "Mod 0"
+        row = self.service._items_by_id["0"]
+        row["mo2InternalName"] = name
+        native_states = {name: 0}
+        native = Mock()
+        native.state.side_effect = native_states.__getitem__
+        def change(target, enabled):
+            native_states[target] = 2 if enabled else 0
+            return True
+        native.setActive.side_effect = change
+        organizer = Mock()
+        organizer.profileName.return_value = "Target"
+        organizer.modList.return_value = native
+        policy = Mock()
+        policy.capture.return_value = {"modName":name}
+        plugin = SimpleNamespace(org=organizer, name=lambda:"MO2 Update Arsenal", server=self.service,
+                                 _content_native=policy, _dirty=False, _schedule_refresh=Mock())
+        args = {"profileId":"target", "revision":self.service.agent_revision(), "itemId":"0",
+                "name":name, "expectedEnabled":False, "enabled":True}
+        for setting in ("{}", '{"different":["Mod 0"]}', '{"target":"Mod 0"}', '{"target":["Mod 1"]}'):
+            organizer.pluginSetting.return_value = setting
+            with self.assertRaises(ValueError): set_enabled(plugin,args,2)
+        native.setActive.assert_not_called()
+        organizer.pluginSetting.return_value = '{"target":["Mod 0"]}'
+        for values in ({"itemId":"1"}, {"revision":"old"}, {"expectedEnabled":True}, {"enabled":"true"}):
+            with self.assertRaises(ValueError): set_enabled(plugin,dict(args,**values),2)
+        native.setActive.assert_not_called()
+        self.assertTrue(set_enabled(plugin,args,2)["enabled"])
+        policy.check.assert_called()
+        native.setActive.assert_called_once_with(name,True)
+        with self.assertRaises(ValueError): set_enabled(plugin,args,2)
+        plugin._dirty = True
+        with self.assertRaises(ValueError): set_enabled(plugin,dict(args,expectedEnabled=True,enabled=False),2)

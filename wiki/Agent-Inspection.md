@@ -10,6 +10,12 @@ Call `mo2_mods` with empty arguments. Each page includes the profile, revision, 
 
 The local tools also accept `--bsa ALIAS PATH` and `--plugin ALIAS PATH` to expose selected launch-time BSA directory and plugin header snapshots. `spid_preview` parses text supplied by the caller. These inspection tools operate independently of a running MO2 connection.
 
+### Enable and disable selected mods
+
+MO2 and the MCP launcher must both grant access. In MO2 Settings → Plugins → MO2 Update Arsenal, set `agent_mod_control_scope` to JSON mapping the intended profile ID to exact internal mod names. For instance, `{"my-profile-id":["My Disposable Mod"]}` permits one mod. The default is an empty object. Add `--allow-mod "my-profile-id" "My Disposable Mod"` alongside the corresponding `--mo2` argument. Repeat the permission flag for further names.
+
+Read `mo2_mods`, then call `mo2_set_enabled` with its `itemId` (the row's `id`), `name` (the row's `mo2InternalName`), `revision`, `expectedEnabled` and desired `enabled`. The plugin validates membership, native path, version, state, profile and revision in the Qt thread, then calls MO2's mod list and reads the result back. MO2 can also update plugin visibility as part of its usual mod activation behavior. A changed profile, stale revision, active content operation, running game or modal dialog rejects the operation. After a lost reply, inspect fresh state before retrying. Mod Hunter's production acceptance keeps the user's established mods outside the permission list.
+
 ### Skyrim records and load order
 
 Install the Windows .NET 10 runtime and extract the [houseCARL 2.2.0 release](https://github.com/Avick3110/houseCARL/releases/tag/v2.2.0) into a trusted local tools directory. Add `--housecarl EXE DIRECTORIES_JSON` to the Modhunter MCP launch arguments. Point EXE at the upstream `housecarl-mcp.exe`. Create a private JSON file with four absolute directory paths, for example:

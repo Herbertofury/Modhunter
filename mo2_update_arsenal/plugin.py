@@ -14,6 +14,7 @@ import mobase
 from PyQt6 import QtCore, QtGui, QtWidgets
 
 from .bridge import ArsenalService, UIRequest
+from .agent_control import set_enabled
 from .model import LocalMetadataCache, call_str, take_snapshot
 from .focus import navigate, find_mo2_view, name_column
 from .scanner import version_verdict
@@ -73,7 +74,9 @@ class ModUpdateArsenal(mobase.IPluginTool):
         return mobase.VersionInfo(VERSION)
 
     def settings(self):
-        return []
+        return [mobase.PluginSetting("agent_mod_control_scope",
+            "Agent enable/disable permissions as JSON mapping each profile ID to exact MO2 internal mod names.",
+            "{}")]
 
     def displayName(self) -> str:
         return "Update Arsenal - Quest Board"
@@ -517,6 +520,11 @@ class ModUpdateArsenal(mobase.IPluginTool):
         if not request.begin():
             return  # Expired/cancelled Qt events can never execute later.
         try:
+            if request.cmd == "agent-set-enabled":
+                if self.server is None or QtWidgets.QApplication.activeModalWidget() is not None:
+                    raise ValueError("MO2 is unavailable or waiting for a dialog")
+                request.finish(set_enabled(self, request.payload, int(mobase.ModState.ACTIVE)))
+                return
             if request.cmd.startswith("content-"):
                 if self.server is None:
                     raise RuntimeError("Native content service is not active")

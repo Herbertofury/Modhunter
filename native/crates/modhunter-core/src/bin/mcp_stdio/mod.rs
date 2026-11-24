@@ -26,7 +26,7 @@ const PLUGIN_MASTER_NAME_LIMIT: usize = 255;
 const ENABLE_TOOL: &str = "mo2_set_enabled";
 const EVIDENCE_TOOL: &str = "mo2_mod_evidence";
 const LIVE_TOOL: &str = "mo2_mods";
-const USAGE: &str = "mcp-stdio [--legacy-2025-11-25] [--bsa ALIAS PATH] [--plugin ALIAS PATH] [--mo2 PROFILE_ID LOOPBACK_URL] [--allow-mod PROFILE_ID INTERNAL_NAME] [--housecarl EXE DIRECTORIES_JSON] [--watchtower read|manage CONFIG_DIRECTORY]";
+pub(super) const USAGE: &str = "mcp-stdio [--legacy-2025-11-25] [--bsa ALIAS PATH] [--plugin ALIAS PATH] [--mo2 PROFILE_ID LOOPBACK_URL] [--allow-mod PROFILE_ID INTERNAL_NAME] [--housecarl EXE DIRECTORIES_JSON] [--watchtower read|manage CONFIG_DIRECTORY]";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mode {

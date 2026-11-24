@@ -286,3 +286,21 @@ test('the installed-file inspector identifies a different project version and li
  row.source.url='https://www.nexusmods.com/skyrimspecialedition/mods/99';
  assert.ok(!insights.details(row).includes('file_id=252976'));
 });
+
+test('offline historical evidence has read-only detail, separate counts and escaped source text', () => {
+  const historicalNexus={verdict:'candidate',reason:'Observed <changed>',seen:'2026-11-24T18:00:00Z',
+    installedFile:2,targetFile:3,release:'1.2',providerUrl:'https://example.org/?x=<source>'};
+  const item=mod([], { historicalNexus });
+  const detail=insights.details(item,{offline:true});
+  assert.match(detail,/Historical Nexus evidence · Actionable/);
+  assert.match(detail,/2026-11-24 18:00:00 UTC/);
+  assert.match(detail,/Installed file ID<\/dt><dd>2/);
+  assert.match(detail,/Matched file ID<\/dt><dd>3/);
+  assert.match(detail,/Observed &lt;changed&gt;/);
+  assert.doesNotMatch(detail.match(/<section[^>]+data-historical-evidence.*?<\/section>/s)[0],/<a |<button|<source>/);
+  assert.doesNotMatch(insights.details(item,{offline:true,live:true}),/Historical Nexus evidence/);
+  assert.doesNotMatch(insights.details(item),/Historical Nexus evidence/);
+  assert.match(insights.historicalBadge(historicalNexus),/History · Actionable/);
+  assert.equal(insights.historicalSummary({error:'Files changed.'}),'Historical Nexus evidence unavailable. Files changed.');
+  assert.match(insights.historicalSummary({totals:{candidate:1,unverified:2},lastObservation:null}),/No provider observation · 1 actionable \/ 2 unverified/);
+});

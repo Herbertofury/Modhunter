@@ -1168,7 +1168,7 @@ impl Drop for ImportGuard<'_> {
 enum ProfileSelection {
     Choose,
     Remembered,
-    Exact(ImportRequest),
+    Exact(ImportRequest, Option<PathBuf>),
 }
 
 fn import_profile(
@@ -1211,8 +1211,12 @@ fn import_profile(
         )
     };
     notify(app);
+    let mut selected_history = None;
     let request = match selection {
-        ProfileSelection::Exact(request) => request,
+        ProfileSelection::Exact(request, history) => {
+            selected_history = history;
+            request
+        }
         ProfileSelection::Remembered => {
             let mut request = old.ok_or("Import a profile first.")?;
             request.ini_path = ini_path;
@@ -1244,7 +1248,7 @@ fn import_profile(
         drop(guard);
         return Ok(cancelled_import(&state));
     }
-    let result = match state.importer.import_with_analysis_cancellable(
+    let mut result = match state.importer.import_with_analysis_cancellable(
         &request,
         deep,
         &eslifier_data_paths,
@@ -1262,6 +1266,39 @@ fn import_profile(
         .as_str()
         .unwrap_or("Profile")
         .to_owned();
+    let profile_id = result.catalog["profileId"]
+        .as_str()
+        .ok_or("Missing profile identity.")?
+        .to_owned();
+    let history_path = match &selected_history {
+        Some(path) => Some(path.clone()),
+        None => state
+            .model
+            .lock()
+            .map_err(err)?
+            .prefs
+            .historical_evidence
+            .get(&profile_id)
+            .cloned(),
+    };
+    let mut history_view = None;
+    let mut explicit_history_error = None;
+    if let Some(path) = history_path {
+        match crate::history::read(&path, &result.catalog) {
+            Ok(report) => {
+                report.apply(&mut result.catalog);
+                if selected_history.is_some() {
+                    history_view = Some(report.encoded()?);
+                }
+            }
+            Err(error) => {
+                result.catalog["historicalNexus"] = json!({"error": error});
+                if selected_history.is_some() {
+                    explicit_history_error = Some(error);
+                }
+            }
+        }
+    }
     let dashboard = {
         let mut m = state.model.lock().map_err(err)?;
         if state.epoch.load(Ordering::Acquire) != epoch
@@ -1276,6 +1313,11 @@ fn import_profile(
         m.stats = Some(serde_json::to_value(result.stats).map_err(err)?);
         m.warnings = result.warnings;
         m.prefs.remember_import(request);
+        if history_view.is_some()
+            && let Some(path) = selected_history
+        {
+            m.prefs.historical_evidence.insert(profile_id, path);
+        }
         m.tabs
             .iter()
             .find(|t| t.mode == Mode::Dashboard)
@@ -1295,6 +1337,12 @@ fn import_profile(
     refresh_catalog_views(app)?;
     // Return the settled state to the caller as well as notifying the toolbar.
     drop(guard);
+    if let Some(error) = explicit_history_error {
+        return Err(error);
+    }
+    if let Some(encoded) = history_view {
+        historical::show(app, epoch, &profile, encoded)?;
+    }
     let message = if deep {
         format!(
             "Plugin audit finished for {profile}. Review each mod's plugin evidence in the dashboard."
@@ -1585,13 +1633,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
             if let Some(request) =
                 crate::offline_startup::requested_profile(std::env::args().skip(1))?
             {
-                let result = import_profile(app, ProfileSelection::Exact(request), false)?;
-                if result["canceled"] != true
-                    && let Some(path) = history
-                {
-                    historical::open(app, Some(&path))?;
-                }
-                return Ok(result);
+                return import_profile(app, ProfileSelection::Exact(request, history), false);
             }
             if history.is_some() {
                 return Err("--historical-evidence requires --offline-profile for a specific offline launch.".into());
@@ -1653,7 +1695,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
             }
         }
         "importMo2" => return import_profile(app, ProfileSelection::Choose, false),
-        "historicalEvidence" => historical::open(app, None)?,
+        "historicalEvidence" => historical::open(app)?,
         "refreshProfile" | "pluginAudit" => {
             let live = { state.model.lock().map_err(err)?.endpoint.is_some() };
             if live {

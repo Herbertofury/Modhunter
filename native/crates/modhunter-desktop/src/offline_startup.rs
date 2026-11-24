@@ -10,6 +10,8 @@ pub(crate) struct Preferences {
     pub mods_path: Option<PathBuf>,
     pub endpoint: Option<String>,
     pub eslifier_data_path: Option<PathBuf>,
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub historical_evidence: std::collections::BTreeMap<String, PathBuf>,
     #[serde(flatten)]
     other: std::collections::BTreeMap<String, serde_json::Value>,
 }
@@ -95,6 +97,7 @@ mod tests {
         fs::write(&ini, "[General]\ngameName=Skyrim Special Edition\n").unwrap();
         let mut prefs: Preferences = serde_json::from_value(json!({
             "endpoint":"http://127.0.0.1:54321/", "eslifierDataPath":"prior",
+            "historicalEvidence":{"unrelated-profile":"previous.json"},
             "unrelatedSetting":{"value":true}, "iniPath":"old.ini", "modsPath":"old-directory"
         }))
         .unwrap();
@@ -107,6 +110,11 @@ mod tests {
         let result = ProfileImporter::new().import(&request).unwrap();
         assert_eq!(result.catalog["profileName"], "Chosen Profile");
         assert_eq!(result.catalog["items"][0]["name"], "Sample");
+        let id = result.catalog["profileId"].as_str().unwrap();
+        let report = tmp.path().join("evidence.json");
+        prefs
+            .historical_evidence
+            .insert(id.to_owned(), report.clone());
         prefs.remember_import(request);
         let saved = serde_json::to_value(&prefs).unwrap();
         assert_eq!(saved["endpoint"], "http://127.0.0.1:54321/");
@@ -115,6 +123,11 @@ mod tests {
         assert_eq!(saved["iniPath"], saved["profile"]["iniPath"]);
         assert_eq!(saved["modsPath"], saved["profile"]["modsPath"]);
         let reloaded: Preferences = serde_json::from_value(saved).unwrap();
+        assert_eq!(reloaded.historical_evidence.get(id), Some(&report));
+        assert_eq!(
+            reloaded.historical_evidence.get("unrelated-profile"),
+            Some(&PathBuf::from("previous.json"))
+        );
         let restored = reloaded.profile.unwrap();
         assert_eq!(
             (restored.modlist_path, restored.ini_path, restored.mods_path),

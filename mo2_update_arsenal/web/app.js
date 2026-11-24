@@ -174,7 +174,7 @@ function detectedStatus(mod){
  const value={kind,label,reason,maintenance,security:Boolean(health.security),fileReview:Boolean(health.fileReview),updateAvailable:kind==='update',current:kind==='current',attention:['not-checked','source-needed','sign-in','blocked','manual','stale','review','offline'].includes(kind)};
  DETECTED_CACHE.set(mod,{context,value});return value;
 }
-function detectedMarkup(mod){const d=detectedStatus(mod);return '<span class="detected-status '+d.kind+'" title="'+escapeHTML(d.reason)+'">'+escapeHTML(d.label)+'</span>'+(d.maintenance?'<button class="maintenance-status" type="button" data-act="inspect" data-id="'+escapeHTML(mod.id)+'" title="Review the detected plugin, security advisory or compatibility issue. Open Details for evidence.">Maintenance</button>':'')}
+function detectedMarkup(mod){const d=detectedStatus(mod);return '<span class="detected-status '+d.kind+'" title="'+escapeHTML(d.reason)+'">'+escapeHTML(d.label)+'</span>'+(d.maintenance?'<button class="maintenance-status" type="button" data-act="inspect" data-id="'+escapeHTML(mod.id)+'" title="Review the detected plugin, security advisory or compatibility issue. Open Details for evidence.">Maintenance</button>':'')+(DATA.offline&&!BRIDGE.active?(INSIGHTS?.historicalBadge(mod.historicalNexus)||''):'')}
 function selectWorkspace(panel){
  if(!['mods','updates','downloads','history','tools','extras'].includes(panel))return;
  document.body.dataset.workspace=panel;
@@ -634,7 +634,7 @@ function drawInspector(m){
  $('drawerContent').innerHTML=`${thumbnailUrl(m)?'<div class="drawer-preview">'+thumbnailMarkup(m,true)+'</div>':''}<div class="drawer-mod-meta"><span${author?' data-no-translate':''}>${escapeHTML(author||providerLabel(source.type))}</span><strong>Installed ${escapeHTML(m.installedVersion||'Unknown')}</strong></div><div class="drawer-priority"><span>MO2 PRIORITY #${m.priority}</span><span>${escapeHTML(m.group)}</span><span>${BRIDGE.active?'LIVE PROFILE':DATA.offline?'IMPORTED PROFILE':'SCREENSHOT '+m.screenshot}</span></div>
  <div class="drawer-section drawer-alert" data-alert="${escapeHTML(audit.verdict)}"><span class="drawer-label" style="margin:0">${(BRIDGE.active||DATA.offline)?'RUNTIME / FILE COMPATIBILITY CHECK':'1.5.97 COMPATIBILITY ADVISORY'}</span><strong>${escapeHTML(audit.verdict==='avoid'?'AVOID LATEST RELEASE':audit.verdict==='hold'?'HOLD / PICK LEGACY FILE':audit.verdict==='safe-file'?(profileMode?'BUILD LISTED':'SE BUILD LISTED'):audit.verdict==='check'?'VERIFY SPECIFIC BUILD':'NOT YET VERIFIED')}</strong><p>${escapeHTML(audit.note||((BRIDGE.active||DATA.offline)?'This source has not established complete compatibility. Check the required game runtime, script extender, dependencies and installation choices.':'The provided screenshots do not establish compatibility for a new release. Check the required game executable, SKSE, Address Library, BEES and masters before updating.'))}</p>${audit.evidence?`<a class="drawer-link" href="${escapeHTML(audit.evidence)}" target="_blank" rel="noopener noreferrer">↗ View supporting source</a>`:''}</div>
  <div id="modSourceDetails">${SOURCES?.details(sourceDetailMod(m),{live:BRIDGE.active})||''}</div>
- <div id="modInsightDetails">${INSIGHTS?.details(m,{live:BRIDGE.active,game:DATA.game,auditState:DATA.pluginAuditState||{}})||''}</div>
+ <div id="modInsightDetails">${INSIGHTS?.details(m,{live:BRIDGE.active,offline:DATA.offline,game:DATA.game,auditState:DATA.pluginAuditState||{}})||''}</div>
  <label class="drawer-label" for="drawerStatus">CHECKLIST STATUS</label><select class="drawer-field" id="drawerStatus"><option value="pending" ${status==='pending'?'selected':''}>◷ Not checked</option><option value="done" ${status==='done'?'selected':''}>✓ Updated / cleared</option><option value="review" ${status==='review'?'selected':''}>⚠ Needs investigation</option><option value="skipped" ${status==='skipped'?'selected':''}>⤼ Deliberately skipped</option></select>
  <div class="drawer-row"><div><label class="drawer-label" for="drawerInstalled">INSTALLED VERSION</label><input class="drawer-field" id="drawerInstalled" value="${escapeHTML(row.installed||m.installedVersion)}" placeholder="version"></div><div><label class="drawer-label" for="drawerVerifiedVersion">FILE YOU TESTED</label><input class="drawer-field" id="drawerVerifiedVersion" value="${escapeHTML(row.testedVersion||'')}" placeholder="${profileMode?'e.g. release version and FOMOD option':'e.g. SE 1.5.97 FOMOD'}"></div></div>
  <label class="drawer-label" for="drawerCompat">YOUR COMPATIBILITY VERDICT</label><select class="drawer-field" id="drawerCompat"><option value="" ${!row.compat?'selected':''}>Use evidence / unverified</option><option value="compatible" ${selected('compatible')}>✓ ${escapeHTML(verifiedLabel)}</option><option value="check" ${selected('check')}>? Must check specific file</option><option value="hold" ${selected('hold')}>⚠ Hold pinned version</option><option value="ae-only" ${selected('ae-only')}>⛔ ${profileMode?'Wrong runtime or edition':'AE-only or 1.7+ build'}</option></select>
@@ -680,7 +680,7 @@ function refreshInspectorInsights(){
  const panel=$('modInsightDetails'),mod=ITEM_MAP.get(openedId);
  if(panel&&mod&&INSIGHTS){
   const expanded=new Map([...panel.querySelectorAll('details[data-plugin-name]')].map(el=>[el.dataset.pluginName,el.open]));
-  setHTML(panel,INSIGHTS.details(mod,{live:BRIDGE.active,game:DATA.game,auditState:DATA.pluginAuditState||{}}));
+  setHTML(panel,INSIGHTS.details(mod,{live:BRIDGE.active,offline:DATA.offline,game:DATA.game,auditState:DATA.pluginAuditState||{}}));
   for(const el of panel.querySelectorAll('details[data-plugin-name]'))if(expanded.has(el.dataset.pluginName))el.open=expanded.get(el.dataset.pluginName);
  }
 }
@@ -1992,6 +1992,13 @@ function importOfflineCatalog(c){
  $('liveSync').textContent='On-demand read-only profile import';
  $('liveState').textContent='Imported your real MO2 modlist.txt and installed metadata. Re-import to refresh from disk; connect the optional MO2 plugin for native Nexus checks and downloads.';
  $('heroSummary').textContent='Imported '+c.items.length+' actual mods from MO2 profile '+c.profileName+'. This desktop-only snapshot is read-only. Review exact sources, versions, and compatibility notes; native updating requires the MO2 plugin.';
+ if(c.historicalNexus&&INSIGHTS){
+  const summary=document.createElement('strong');
+  summary.dataset.historicalSummary='';
+  summary.style.display='block';
+  summary.textContent=INSIGHTS.historicalSummary(c.historicalNexus);
+  $('heroSummary').appendChild(summary);
+ }
  $('runtimeBadge').innerHTML='<span class="status-light"></span><div><strong>'+escapeHTML(c.game)+' / '+escapeHTML(c.profileName)+'</strong><span>Local snapshot · target runtime '+escapeHTML(c.gameRuntime||'unknown')+'</span></div><span class="runtime-lock">IMPORTED</span>';
  $('referenceLinks').textContent='Profile runtime: '+(c.gameRuntime||'unknown')+' · Check requirements on each mod source.';
  $('advisoryToggle').querySelector('b').textContent='IMPORTED PROFILE CHECKS';

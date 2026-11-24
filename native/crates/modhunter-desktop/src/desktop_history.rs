@@ -1,5 +1,5 @@
 use super::*;
-use std::{path::Path, sync::atomic::AtomicU64};
+use std::sync::atomic::AtomicU64;
 use tauri::WebviewWindowBuilder;
 
 static NEXT_WINDOW: AtomicU64 = AtomicU64::new(1);
@@ -18,7 +18,7 @@ pub(super) fn close_stale(app: &tauri::AppHandle, state: &Runtime) {
     }
 }
 
-pub(super) fn open(app: &tauri::AppHandle, path: Option<&Path>) -> Result<()> {
+pub(super) fn open(app: &tauri::AppHandle) -> Result<()> {
     let state = app.state::<Runtime>();
     let (epoch, catalog) = {
         let m = state.model.lock().map_err(err)?;
@@ -34,33 +34,55 @@ pub(super) fn open(app: &tauri::AppHandle, path: Option<&Path>) -> Result<()> {
                 .ok_or("Import the matching offline MO2 profile first.")?,
         )
     };
-    let path = match path {
-        Some(path) => path.to_owned(),
-        None => {
-            let Some(file) = app
-                .dialog()
-                .file()
-                .set_title("Open historical Nexus evidence for this profile")
-                .add_filter("Modhunter evidence JSON", &["json"])
-                .blocking_pick_file()
-            else {
-                return Ok(());
-            };
-            file.into_path().map_err(err)?
-        }
+    let Some(file) = app
+        .dialog()
+        .file()
+        .set_title("Open historical Nexus evidence for this profile")
+        .add_filter("Modhunter evidence JSON", &["json"])
+        .blocking_pick_file()
+    else {
+        return Ok(());
     };
-    let encoded = crate::history::read(&path, &catalog)?;
-    if state.epoch.load(Ordering::Acquire) != epoch {
-        return Err("The offline profile changed while opening historical evidence.".into());
+    let path = file.into_path().map_err(err)?;
+    let report = crate::history::read(&path, &catalog)?;
+    let profile_id = catalog["profileId"]
+        .as_str()
+        .ok_or("Missing profile identity.")?
+        .to_owned();
+    let profile = catalog["profileName"]
+        .as_str()
+        .unwrap_or("MO2 profile")
+        .to_owned();
+    {
+        let mut m = state.model.lock().map_err(err)?;
+        if state.epoch.load(Ordering::Acquire) != epoch
+            || state.importing.load(Ordering::Acquire)
+            || m.endpoint.is_some()
+            || !m.catalog.as_ref().is_some_and(|c| Arc::ptr_eq(c, &catalog))
+        {
+            return Err("The offline profile changed while opening historical evidence.".into());
+        }
+        drop(catalog);
+        report.apply(Arc::make_mut(m.catalog.as_mut().expect("checked catalog")));
+        m.prefs.historical_evidence.insert(profile_id, path);
     }
+    state.save()?;
+    refresh_catalog_views(app)?;
+    show(app, epoch, &profile, report.encoded()?)
+}
+
+pub(super) fn show(
+    app: &tauri::AppHandle,
+    epoch: u64,
+    profile: &str,
+    encoded: String,
+) -> Result<()> {
+    let state = app.state::<Runtime>();
     let label = format!(
         "nexus-history-{}",
         NEXT_WINDOW.fetch_add(1, Ordering::Relaxed)
     );
-    let title = format!(
-        "Historical Nexus evidence · {}",
-        catalog["profileName"].as_str().unwrap_or("MO2 profile")
-    );
+    let title = format!("Historical Nexus evidence · {profile}");
     let mut builder =
         WebviewWindowBuilder::new(app, &label, WebviewUrl::App("nexus-history.html".into()));
     if let Some(storage) = app.try_state::<DesktopSmokeStorage>() {

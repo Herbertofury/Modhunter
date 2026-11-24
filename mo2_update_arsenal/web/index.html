@@ -2361,7 +2361,37 @@ function fileDetails(mod,game){
  }
  return '<div class="insight-section"><h4>Installed Nexus file</h4><p>'+esc(u.reason||'File identity needs review.')+'</p><dl>'+rows+'<dt>Provider check</dt><dd>'+esc(checked(u.checkedAt))+(Number(u.expiresAt)>0&&Number(u.expiresAt)<=Date.now()/1000?' · expired':'')+'</dd></dl>'+link(href,'View matched file')+'</div>';
 }
-function details(mod,{live=false,game='',auditState={}}={}){
+const historicalLabels={
+ candidate:'Actionable',current:'Current',review:'Review',unverified:'Unverified',unavailable:'Unavailable',
+ ignored:'Ignored',unknown:'Unknown','newer-installed':'Newer installed'
+};
+function historicalDate(value){
+ if(!value)return '';
+ const date=new Date(value);
+ return Number.isFinite(date.getTime())?date.toISOString().slice(0,19).replace('T',' ')+' UTC':'';
+}
+function historicalSummary(history){
+ if(!history)return '';
+ if(history.error)return 'Historical Nexus evidence unavailable. '+history.error;
+ const counts=Object.entries(historicalLabels).filter(([key])=>history.totals?.[key]>0)
+  .map(([key,label])=>history.totals[key].toLocaleString()+' '+label.toLowerCase());
+ const date=historicalDate(history.lastObservation);
+ return 'Historical Nexus snapshot · '+(date?'Last observed '+date:'No provider observation')+' · '+counts.join(' / ')+'.';
+}
+function historicalBadge(h){
+ if(!h||!Object.hasOwn(historicalLabels,h.verdict))return '';
+ const date=historicalDate(h.seen);
+ return '<span class="detected-status" data-historical-verdict="'+esc(h.verdict)+'" title="'+esc((date||'No recorded provider observation')+' · '+h.reason)+'">History · '+esc(historicalLabels[h.verdict])+'</span>';
+}
+function historicalDetails(h){
+ if(!h||!Object.hasOwn(historicalLabels,h.verdict))return '';
+ const fields=[['Provider observation',historicalDate(h.seen)||'No recorded observation'],['Installed file ID',h.installedFile],
+  ['Matched file ID',h.targetFile],['Matched release',h.release],['Project version',h.projectVersion],
+  ['Evidence scope',h.scope],[h.seen&&h.providerUrl?'Observed source':'Source on record',h.providerUrl||h.sourceUrl]];
+ const rows=fields.filter(([,v])=>v!=null&&v!=='').map(([label,value])=>'<dt>'+esc(label)+'</dt><dd>'+esc(value)+'</dd>').join('');
+ return '<section class="insight-section" data-historical-evidence><h4>Historical Nexus evidence · '+esc(historicalLabels[h.verdict])+'</h4><p>'+esc(h.reason)+'</p><dl>'+rows+'</dl></section>';
+}
+function details(mod,{live=false,offline=false,game='',auditState={}}={}){
  const a=mod.localAnalysis||{},plugins=list(a.plugins),health=mod.modHealth||{},bugs=health.bugs||{},links=health.links||{},s=summary(mod);
  const id=esc(mod.id),known=Object.keys(a).length>0,deep=a.depth==='records',running=['queued','running'].includes(auditState.state);
  let html='<section class="insight-panel"><div class="insight-heading"><div><span class="drawer-label">PLUGIN & SOURCE INTELLIGENCE</span><h3>What this mod needs</h3></div><span class="insight-depth">'+esc(deep?'Record scan':known?'Header / native state':'Not analyzed')+'</span></div>'+chips(mod);
@@ -2371,6 +2401,7 @@ function details(mod,{live=false,game='',auditState={}}={}){
  if(auditState.error)html+='<p class="insight-alert">'+esc(auditState.error)+'</p>';
  if(health.job?.state==='failed')html+='<p class="insight-alert">Nexus check: '+esc(health.job.error)+'</p>';
  if(s.needsRecheck)html+='<p class="insight-alert">The profile changed. Recheck before using older record or conversion conclusions.</p>';
+ if(offline&&!live)html+=historicalDetails(mod.historicalNexus);
  html+=fileDetails(mod,game);
  const actions=list(health.actions).filter(x=>x.severity==='warning'||['review-update','review-page-change'].includes(x.id));
  if(actions.length)html+='<ul class="insight-next">'+actions.slice(0,8).map(x=>'<li><strong>'+esc(x.label)+'</strong><span>'+esc(x.detail)+'</span></li>').join('')+'</ul>';
@@ -2438,7 +2469,7 @@ function matches(mod,filter){
 }
 function searchText(mod){const s=summary(mod);return[list(mod.localAnalysis?.plugins).map(p=>[p.name,p.eligibility?.status,p.provenance?.state,...list(p.masterIssues).map(x=>x.name+' '+x.status)].join(' ')).join(' '),s.security?'security advisory affected':'',s.fileReview?'installed file review':'',mod.update?.installedFileId,mod.update?.targetFileId,s.light?'already light esl':'',s.stale?'stale conversion eslifier update rebuild':'',s.lightOverrides?'light override eslified':'',bugLabel(mod.modHealth?.bugs),mod.modHealth?.page?.status].join(' ').toLowerCase()}
 function csv(mod){const s=summary(mod),known=!!mod.localAnalysis;return[known?s.light:'',known?s.full:'',known?s.lightOverrides:'',known?s.candidates:'',known?s.compaction:'',known?s.stale:'',known?s.masterIssues:'',mod.localAnalysis?.checkedAt||'',s.bugState,s.bugCount??'',mod.modHealth?.bugs?.checkedAt||'']}
-const api={advisoryState,summary,chips,details,matches,searchText,csv,bugLabel,isNexus};
+const api={historicalBadge,historicalSummary,advisoryState,summary,chips,details,matches,searchText,csv,bugLabel,isNexus};
 root.ModhunterInsights=api;if(typeof module==='object'&&module.exports)module.exports=api;
 })(typeof window==='object'?window:globalThis);
 
@@ -2618,7 +2649,7 @@ function detectedStatus(mod){
  const value={kind,label,reason,maintenance,security:Boolean(health.security),fileReview:Boolean(health.fileReview),updateAvailable:kind==='update',current:kind==='current',attention:['not-checked','source-needed','sign-in','blocked','manual','stale','review','offline'].includes(kind)};
  DETECTED_CACHE.set(mod,{context,value});return value;
 }
-function detectedMarkup(mod){const d=detectedStatus(mod);return '<span class="detected-status '+d.kind+'" title="'+escapeHTML(d.reason)+'">'+escapeHTML(d.label)+'</span>'+(d.maintenance?'<button class="maintenance-status" type="button" data-act="inspect" data-id="'+escapeHTML(mod.id)+'" title="Review the detected plugin, security advisory or compatibility issue. Open Details for evidence.">Maintenance</button>':'')}
+function detectedMarkup(mod){const d=detectedStatus(mod);return '<span class="detected-status '+d.kind+'" title="'+escapeHTML(d.reason)+'">'+escapeHTML(d.label)+'</span>'+(d.maintenance?'<button class="maintenance-status" type="button" data-act="inspect" data-id="'+escapeHTML(mod.id)+'" title="Review the detected plugin, security advisory or compatibility issue. Open Details for evidence.">Maintenance</button>':'')+(DATA.offline&&!BRIDGE.active?(INSIGHTS?.historicalBadge(mod.historicalNexus)||''):'')}
 function selectWorkspace(panel){
  if(!['mods','updates','downloads','history','tools','extras'].includes(panel))return;
  document.body.dataset.workspace=panel;
@@ -3078,7 +3109,7 @@ function drawInspector(m){
  $('drawerContent').innerHTML=`${thumbnailUrl(m)?'<div class="drawer-preview">'+thumbnailMarkup(m,true)+'</div>':''}<div class="drawer-mod-meta"><span${author?' data-no-translate':''}>${escapeHTML(author||providerLabel(source.type))}</span><strong>Installed ${escapeHTML(m.installedVersion||'Unknown')}</strong></div><div class="drawer-priority"><span>MO2 PRIORITY #${m.priority}</span><span>${escapeHTML(m.group)}</span><span>${BRIDGE.active?'LIVE PROFILE':DATA.offline?'IMPORTED PROFILE':'SCREENSHOT '+m.screenshot}</span></div>
  <div class="drawer-section drawer-alert" data-alert="${escapeHTML(audit.verdict)}"><span class="drawer-label" style="margin:0">${(BRIDGE.active||DATA.offline)?'RUNTIME / FILE COMPATIBILITY CHECK':'1.5.97 COMPATIBILITY ADVISORY'}</span><strong>${escapeHTML(audit.verdict==='avoid'?'AVOID LATEST RELEASE':audit.verdict==='hold'?'HOLD / PICK LEGACY FILE':audit.verdict==='safe-file'?(profileMode?'BUILD LISTED':'SE BUILD LISTED'):audit.verdict==='check'?'VERIFY SPECIFIC BUILD':'NOT YET VERIFIED')}</strong><p>${escapeHTML(audit.note||((BRIDGE.active||DATA.offline)?'This source has not established complete compatibility. Check the required game runtime, script extender, dependencies and installation choices.':'The provided screenshots do not establish compatibility for a new release. Check the required game executable, SKSE, Address Library, BEES and masters before updating.'))}</p>${audit.evidence?`<a class="drawer-link" href="${escapeHTML(audit.evidence)}" target="_blank" rel="noopener noreferrer">↗ View supporting source</a>`:''}</div>
  <div id="modSourceDetails">${SOURCES?.details(sourceDetailMod(m),{live:BRIDGE.active})||''}</div>
- <div id="modInsightDetails">${INSIGHTS?.details(m,{live:BRIDGE.active,game:DATA.game,auditState:DATA.pluginAuditState||{}})||''}</div>
+ <div id="modInsightDetails">${INSIGHTS?.details(m,{live:BRIDGE.active,offline:DATA.offline,game:DATA.game,auditState:DATA.pluginAuditState||{}})||''}</div>
  <label class="drawer-label" for="drawerStatus">CHECKLIST STATUS</label><select class="drawer-field" id="drawerStatus"><option value="pending" ${status==='pending'?'selected':''}>◷ Not checked</option><option value="done" ${status==='done'?'selected':''}>✓ Updated / cleared</option><option value="review" ${status==='review'?'selected':''}>⚠ Needs investigation</option><option value="skipped" ${status==='skipped'?'selected':''}>⤼ Deliberately skipped</option></select>
  <div class="drawer-row"><div><label class="drawer-label" for="drawerInstalled">INSTALLED VERSION</label><input class="drawer-field" id="drawerInstalled" value="${escapeHTML(row.installed||m.installedVersion)}" placeholder="version"></div><div><label class="drawer-label" for="drawerVerifiedVersion">FILE YOU TESTED</label><input class="drawer-field" id="drawerVerifiedVersion" value="${escapeHTML(row.testedVersion||'')}" placeholder="${profileMode?'e.g. release version and FOMOD option':'e.g. SE 1.5.97 FOMOD'}"></div></div>
  <label class="drawer-label" for="drawerCompat">YOUR COMPATIBILITY VERDICT</label><select class="drawer-field" id="drawerCompat"><option value="" ${!row.compat?'selected':''}>Use evidence / unverified</option><option value="compatible" ${selected('compatible')}>✓ ${escapeHTML(verifiedLabel)}</option><option value="check" ${selected('check')}>? Must check specific file</option><option value="hold" ${selected('hold')}>⚠ Hold pinned version</option><option value="ae-only" ${selected('ae-only')}>⛔ ${profileMode?'Wrong runtime or edition':'AE-only or 1.7+ build'}</option></select>
@@ -3124,7 +3155,7 @@ function refreshInspectorInsights(){
  const panel=$('modInsightDetails'),mod=ITEM_MAP.get(openedId);
  if(panel&&mod&&INSIGHTS){
   const expanded=new Map([...panel.querySelectorAll('details[data-plugin-name]')].map(el=>[el.dataset.pluginName,el.open]));
-  setHTML(panel,INSIGHTS.details(mod,{live:BRIDGE.active,game:DATA.game,auditState:DATA.pluginAuditState||{}}));
+  setHTML(panel,INSIGHTS.details(mod,{live:BRIDGE.active,offline:DATA.offline,game:DATA.game,auditState:DATA.pluginAuditState||{}}));
   for(const el of panel.querySelectorAll('details[data-plugin-name]'))if(expanded.has(el.dataset.pluginName))el.open=expanded.get(el.dataset.pluginName);
  }
 }
@@ -4436,6 +4467,13 @@ function importOfflineCatalog(c){
  $('liveSync').textContent='On-demand read-only profile import';
  $('liveState').textContent='Imported your real MO2 modlist.txt and installed metadata. Re-import to refresh from disk; connect the optional MO2 plugin for native Nexus checks and downloads.';
  $('heroSummary').textContent='Imported '+c.items.length+' actual mods from MO2 profile '+c.profileName+'. This desktop-only snapshot is read-only. Review exact sources, versions, and compatibility notes; native updating requires the MO2 plugin.';
+ if(c.historicalNexus&&INSIGHTS){
+  const summary=document.createElement('strong');
+  summary.dataset.historicalSummary='';
+  summary.style.display='block';
+  summary.textContent=INSIGHTS.historicalSummary(c.historicalNexus);
+  $('heroSummary').appendChild(summary);
+ }
  $('runtimeBadge').innerHTML='<span class="status-light"></span><div><strong>'+escapeHTML(c.game)+' / '+escapeHTML(c.profileName)+'</strong><span>Local snapshot · target runtime '+escapeHTML(c.gameRuntime||'unknown')+'</span></div><span class="runtime-lock">IMPORTED</span>';
  $('referenceLinks').textContent='Profile runtime: '+(c.gameRuntime||'unknown')+' · Check requirements on each mod source.';
  $('advisoryToggle').querySelector('b').textContent='IMPORTED PROFILE CHECKS';

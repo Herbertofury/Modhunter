@@ -12,9 +12,9 @@ use std::{
 
 const MAX_BYTES: u64 = 128 * 1024 * 1024;
 
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct Report {
+pub(crate) struct Report {
     format: String,
     profile: String,
     profile_id: String,
@@ -31,7 +31,7 @@ struct Report {
     rows: Vec<Row>,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Row {
     id: String,
@@ -172,7 +172,7 @@ impl Row {
     }
 }
 
-fn decode(bytes: &[u8], catalog: &Value) -> Result<String, String> {
+fn decode(bytes: &[u8], catalog: &Value) -> Result<Report, String> {
     let mut report: Report = serde_json::from_slice(bytes).map_err(|_| {
         "Choose the JSON data from Modhunter's historical Nexus exporter.".to_string()
     })?;
@@ -218,16 +218,44 @@ fn decode(bytes: &[u8], catalog: &Value) -> Result<String, String> {
     }
     report.first_observation = earliest.map(|v| v.to_rfc3339());
     report.last_observation = latest.map(|v| v.to_rfc3339());
-    serde_json::to_string(&report)
-        .map(|s| {
-            s.replace('<', "\\u003c")
-                .replace('\u{2028}', "\\u2028")
-                .replace('\u{2029}', "\\u2029")
-        })
-        .map_err(|e| e.to_string())
+    Ok(report)
 }
 
-pub fn read(path: &Path, catalog: &Value) -> Result<String, String> {
+impl Report {
+    // Only project dated evidence into its own namespace. The native update
+    // authority, actions, and all provider and MO2 fields stay independent.
+    pub fn apply(&self, catalog: &mut Value) {
+        let rows: HashMap<_, _> = self.rows.iter().map(|row| (row.id.as_str(), row)).collect();
+        for item in catalog["items"]
+            .as_array_mut()
+            .expect("validated item array")
+        {
+            let row = rows[item["id"].as_str().expect("validated item ID")];
+            item["historicalNexus"] = serde_json::json!({
+                "verdict": row.verdict, "reason": row.reason, "seen": row.seen,
+                "installedFile": row.installed_file, "targetFile": row.target_file,
+                "release": row.release, "projectVersion": row.project_version, "scope": row.scope,
+                "providerUrl": row.provider_url, "sourceUrl": row.source_url
+            });
+        }
+        catalog["historicalNexus"] = serde_json::json!({
+            "totals": self.totals, "firstObservation": self.first_observation,
+            "lastObservation": self.last_observation, "exportedAt": self.exported_at,
+        });
+    }
+
+    pub fn encoded(&self) -> Result<String, String> {
+        serde_json::to_string(self)
+            .map(|s| {
+                s.replace('<', "\\u003c")
+                    .replace('\u{2028}', "\\u2028")
+                    .replace('\u{2029}', "\\u2029")
+            })
+            .map_err(|e| e.to_string())
+    }
+}
+
+pub fn read(path: &Path, catalog: &Value) -> Result<Report, String> {
     if !path.is_absolute()
         || !path
             .extension()
@@ -298,7 +326,24 @@ mod tests {
     #[test]
     fn native_decodes_data_and_recounts_without_interpreting_markup() {
         let (catalog, report) = fixture();
-        let text = decode(&serde_json::to_vec(&report).unwrap(), &catalog).unwrap();
+        let validated = decode(&serde_json::to_vec(&report).unwrap(), &catalog).unwrap();
+        let text = validated.encoded().unwrap();
+        let mut decorated = catalog.clone();
+        validated.apply(&mut decorated);
+        assert_eq!(
+            decorated["items"][0]["historicalNexus"]["targetFile"],
+            252976
+        );
+        assert_eq!(
+            decorated["historicalNexus"]["totals"],
+            serde_json::json!({"current":1})
+        );
+        decorated.as_object_mut().unwrap().remove("historicalNexus");
+        decorated["items"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("historicalNexus");
+        assert_eq!(decorated, catalog);
         assert!(!text.contains("<script>"));
         let result: Value = serde_json::from_str(&text).unwrap();
         assert_eq!(result["totals"], json!({"current":1}));

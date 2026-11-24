@@ -99,7 +99,37 @@ function fileDetails(mod,game){
  }
  return '<div class="insight-section"><h4>Installed Nexus file</h4><p>'+esc(u.reason||'File identity needs review.')+'</p><dl>'+rows+'<dt>Provider check</dt><dd>'+esc(checked(u.checkedAt))+(Number(u.expiresAt)>0&&Number(u.expiresAt)<=Date.now()/1000?' · expired':'')+'</dd></dl>'+link(href,'View matched file')+'</div>';
 }
-function details(mod,{live=false,game='',auditState={}}={}){
+const historicalLabels={
+ candidate:'Actionable',current:'Current',review:'Review',unverified:'Unverified',unavailable:'Unavailable',
+ ignored:'Ignored',unknown:'Unknown','newer-installed':'Newer installed'
+};
+function historicalDate(value){
+ if(!value)return '';
+ const date=new Date(value);
+ return Number.isFinite(date.getTime())?date.toISOString().slice(0,19).replace('T',' ')+' UTC':'';
+}
+function historicalSummary(history){
+ if(!history)return '';
+ if(history.error)return 'Historical Nexus evidence unavailable. '+history.error;
+ const counts=Object.entries(historicalLabels).filter(([key])=>history.totals?.[key]>0)
+  .map(([key,label])=>history.totals[key].toLocaleString()+' '+label.toLowerCase());
+ const date=historicalDate(history.lastObservation);
+ return 'Historical Nexus snapshot · '+(date?'Last observed '+date:'No provider observation')+' · '+counts.join(' / ')+'.';
+}
+function historicalBadge(h){
+ if(!h||!Object.hasOwn(historicalLabels,h.verdict))return '';
+ const date=historicalDate(h.seen);
+ return '<span class="detected-status" data-historical-verdict="'+esc(h.verdict)+'" title="'+esc((date||'No recorded provider observation')+' · '+h.reason)+'">History · '+esc(historicalLabels[h.verdict])+'</span>';
+}
+function historicalDetails(h){
+ if(!h||!Object.hasOwn(historicalLabels,h.verdict))return '';
+ const fields=[['Provider observation',historicalDate(h.seen)||'No recorded observation'],['Installed file ID',h.installedFile],
+  ['Matched file ID',h.targetFile],['Matched release',h.release],['Project version',h.projectVersion],
+  ['Evidence scope',h.scope],[h.seen&&h.providerUrl?'Observed source':'Source on record',h.providerUrl||h.sourceUrl]];
+ const rows=fields.filter(([,v])=>v!=null&&v!=='').map(([label,value])=>'<dt>'+esc(label)+'</dt><dd>'+esc(value)+'</dd>').join('');
+ return '<section class="insight-section" data-historical-evidence><h4>Historical Nexus evidence · '+esc(historicalLabels[h.verdict])+'</h4><p>'+esc(h.reason)+'</p><dl>'+rows+'</dl></section>';
+}
+function details(mod,{live=false,offline=false,game='',auditState={}}={}){
  const a=mod.localAnalysis||{},plugins=list(a.plugins),health=mod.modHealth||{},bugs=health.bugs||{},links=health.links||{},s=summary(mod);
  const id=esc(mod.id),known=Object.keys(a).length>0,deep=a.depth==='records',running=['queued','running'].includes(auditState.state);
  let html='<section class="insight-panel"><div class="insight-heading"><div><span class="drawer-label">PLUGIN & SOURCE INTELLIGENCE</span><h3>What this mod needs</h3></div><span class="insight-depth">'+esc(deep?'Record scan':known?'Header / native state':'Not analyzed')+'</span></div>'+chips(mod);
@@ -109,6 +139,7 @@ function details(mod,{live=false,game='',auditState={}}={}){
  if(auditState.error)html+='<p class="insight-alert">'+esc(auditState.error)+'</p>';
  if(health.job?.state==='failed')html+='<p class="insight-alert">Nexus check: '+esc(health.job.error)+'</p>';
  if(s.needsRecheck)html+='<p class="insight-alert">The profile changed. Recheck before using older record or conversion conclusions.</p>';
+ if(offline&&!live)html+=historicalDetails(mod.historicalNexus);
  html+=fileDetails(mod,game);
  const actions=list(health.actions).filter(x=>x.severity==='warning'||['review-update','review-page-change'].includes(x.id));
  if(actions.length)html+='<ul class="insight-next">'+actions.slice(0,8).map(x=>'<li><strong>'+esc(x.label)+'</strong><span>'+esc(x.detail)+'</span></li>').join('')+'</ul>';
@@ -176,6 +207,6 @@ function matches(mod,filter){
 }
 function searchText(mod){const s=summary(mod);return[list(mod.localAnalysis?.plugins).map(p=>[p.name,p.eligibility?.status,p.provenance?.state,...list(p.masterIssues).map(x=>x.name+' '+x.status)].join(' ')).join(' '),s.security?'security advisory affected':'',s.fileReview?'installed file review':'',mod.update?.installedFileId,mod.update?.targetFileId,s.light?'already light esl':'',s.stale?'stale conversion eslifier update rebuild':'',s.lightOverrides?'light override eslified':'',bugLabel(mod.modHealth?.bugs),mod.modHealth?.page?.status].join(' ').toLowerCase()}
 function csv(mod){const s=summary(mod),known=!!mod.localAnalysis;return[known?s.light:'',known?s.full:'',known?s.lightOverrides:'',known?s.candidates:'',known?s.compaction:'',known?s.stale:'',known?s.masterIssues:'',mod.localAnalysis?.checkedAt||'',s.bugState,s.bugCount??'',mod.modHealth?.bugs?.checkedAt||'']}
-const api={advisoryState,summary,chips,details,matches,searchText,csv,bugLabel,isNexus};
+const api={historicalBadge,historicalSummary,advisoryState,summary,chips,details,matches,searchText,csv,bugLabel,isNexus};
 root.ModhunterInsights=api;if(typeof module==='object'&&module.exports)module.exports=api;
 })(typeof window==='object'?window:globalThis);

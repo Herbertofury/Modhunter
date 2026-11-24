@@ -205,6 +205,23 @@ class StartupServiceTests(unittest.TestCase):
         self.assertEqual(self.service.snapshot()['items'][0]['update']['latestVersion'],'3.0')
         self.assertGreater(self.service._generation,generation)
         self.assertNotIn('itemRecords',self.service.scan_state())
+    def test_concurrent_source_completion_keeps_pending_nexus_progress_visible(self):
+        self.service.api_key = "test"
+        nexus_running = threading.Event()
+        def nexus(scanner, snapshot, mode, progress, **kwargs):
+            progress({"checked":3,"total":12,"fromCache":7})
+            nexus_running.set()
+            self.release.wait(5)
+            return {"records":{},"itemRecords":{},"queried":3,"errors":[]}
+        with patch("mo2_update_arsenal.bridge.UpdateScanner.scan", nexus):
+            self.launch()
+            self.assertTrue(nexus_running.wait(2))
+            self.publisher({"phase":"source-adapters-complete","checked":8,"total":8})
+            status = self.service.scan_state()
+            self.assertEqual((status["checked"],status["total"],status["fromCache"]),(11,20,7))
+            self.assertEqual(status["providerProgress"]["nexus"],{"checked":3,"total":12})
+            self.release_worker()
+
     def test_cancel_keeps_results_and_rejects_delayed_completion(self):
         self.launch();job=self.service.scan_state()['jobId']
         self.assertFalse(self.service.cancel_scan('A',job+1)['ok'])

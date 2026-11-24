@@ -805,11 +805,21 @@ class ArsenalService:
             if changed:
                 self._generation += 1
 
-        def progress(data):
+        # The startup adapters run concurrently. A finished source adapter must
+        # not replace the still-running Nexus counters with its own full bar.
+        counters = {}
+        def progress(data, lane="nexus"):
             with self._guard:
                 if is_current() and self._scan.get("state") == "running":
                     apply_records(data.get("itemRecords", {}))
-                    self._scan.update({k: v for k, v in data.items() if k not in {"itemRecords", "records"}})
+                    fields = {k: v for k, v in data.items() if k not in {"itemRecords", "records"}}
+                    if mode == "startup" and "checked" in fields and "total" in fields:
+                        counters[lane] = (fields["checked"], fields["total"])
+                        fields["checked"] = sum(pair[0] for pair in counters.values())
+                        fields["total"] = sum(pair[1] for pair in counters.values())
+                        fields["providerProgress"] = {name: {"checked": pair[0], "total": pair[1]}
+                                                      for name, pair in counters.items()}
+                    self._scan.update(fields)
         def worker():
             try:
                 with self._guard:
@@ -864,7 +874,7 @@ class ArsenalService:
                             self._source_scanner = SourceScanner(cache_path=self._source_cache_path,
                                 advisory_store=GitHubAdvisories(self._source_cache_path.with_suffix(".github-advisories.sqlite")))
                         scanner = self._source_scanner
-                    return scanner.scan(snapshot, progress, cancel_event=scan_cancel)
+                    return scanner.scan(snapshot, lambda data: progress(data, "sources"), cancel_event=scan_cancel)
                 effective_mode = mode
                 if mode == "sources":
                     result = scan_sources()

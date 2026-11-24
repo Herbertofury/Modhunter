@@ -107,6 +107,7 @@ struct Held {
     label: String,
     created: Instant,
     active: bool,
+    retry_completion_at: Option<Instant>,
 }
 thread_local! { static HANDLES:RefCell<HashMap<String,Held>>=RefCell::new(HashMap::new()); }
 struct FolderValidation {
@@ -495,6 +496,7 @@ fn request_download(
                 label: label.into(),
                 created: Instant::now(),
                 active: false,
+                retry_completion_at: None,
             },
         )
     });
@@ -557,6 +559,11 @@ fn tick(app: &tauri::AppHandle) {
             if !h.active {
                 continue;
             }
+            if h.retry_completion_at
+                .is_some_and(|next| Instant::now() < next)
+            {
+                continue;
+            }
             let mut state = COREWEBVIEW2_DOWNLOAD_STATE_IN_PROGRESS;
             let mut received = 0;
             let mut total = 0;
@@ -590,10 +597,29 @@ fn tick(app: &tauri::AppHandle) {
                 let b = b.unwrap();
                 let downloads = app.state::<Downloads>();
                 let mut store = downloads.store.lock().unwrap_or_else(|e| e.into_inner());
-                if store.begin_validation(id, &b).is_ok()
-                    && let Ok(path) = store.staging(id)
-                {
-                    validations.push((id.clone(), b, h.context.clone(), path));
+                let preparation = store.staging(id).and_then(|path| {
+                    store.begin_validation(id, &b)?;
+                    Ok(path)
+                });
+                match preparation {
+                    Ok(path) => validations.push((id.clone(), b, h.context.clone(), path)),
+                    Err(reason) => {
+                        if let Err(persist_error) = store.finish_error(id, "failed", &reason) {
+                            // The durable state still owns this completed
+                            // operation. A later tick can retry after the
+                            // filesystem recovers.
+                            if h.retry_completion_at.is_none() {
+                                report_download_error(
+                                    app,
+                                    format!(
+                                        "Could not persist download completion: {persist_error}"
+                                    ),
+                                );
+                            }
+                            h.retry_completion_at = Some(Instant::now() + Duration::from_secs(2));
+                            continue;
+                        }
+                    }
                 }
                 remove.push(id.clone());
                 changed = true;

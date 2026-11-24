@@ -165,6 +165,90 @@ test('review approved queue previews all selected archives from one plan pass wi
  assert.equal(confirm.textContent,'Queue 1 approved download');assert.ok(reads<=items.length);
 });
 
+
+function historyRenderFixture({live=true,catalog={profileId:'first'},records=[],warning=''}={}){
+ const start=APP.includes('const ACTIVITY_STATUS_LABELS=')?APP.indexOf('const ACTIVITY_STATUS_LABELS='):APP.indexOf('function activityStatus(');
+ const end=APP.indexOf('function exportActivity(){',start);
+ assert.ok(start>=0&&end>start);
+ const escape=APP.match(/^const escapeHTML=.*$/m)[0];
+ const cells=new Map(),requests=[],calls={parse:0,format:0,source:0};
+ const node=id=>{if(!cells.has(id))cells.set(id,{value:''});return cells.get(id)};
+ class CountDate extends Date{
+  constructor(value){super(value);calls.parse++}
+  toLocaleString(){calls.format++;return super.toLocaleString()}
+ }
+ const ui=Function('node','context','Date','fixture',`
+ const $=node,SET=(id,value)=>node(id).textContent=value,txt=value=>String(value??'');
+ ${escape}
+ let ACTIVITY_RECORDS=fixture.records,ACTIVITY_GENERATION=0,ACTIVITY_WARNING=fixture.warning,LIVE_CATALOG=fixture.catalog;
+ const BRIDGE={active:fixture.live},ITEM_MAP=new Map([['linked',{id:'linked',name:'Current folder',linked:true}]]),getSrc=context.getSrc,bridgeRequest=context.request;
+ ${APP.slice(start,end)}
+ return {renderActivity,refreshActivity,setCatalog:catalog=>{LIVE_CATALOG=catalog},records:()=>ACTIVITY_RECORDS};`)(node,
+  {getSrc(mod){calls.source++;return mod.linked?{verified:true,url:'https://mods.example/linked'}:{verified:false,url:'https://example.com/search?q=a&b=2'}},
+   request(method,endpoint){return new Promise(resolve=>requests.push({method,endpoint,reply:resolve}))}},
+  CountDate,{live,catalog,records,warning});
+ return {ui,node,calls,requests};
+}
+function historyDisplayRecords(){
+ const lastAt='2026-11-24T04:52:00+00:00',equivalent='2026-11-23T21:52:00-07:00';
+ return [
+  {key:'1',itemId:'linked',modName:'First <main>',fileName:'workshop.zip',provider:'nexus',lastAt,status:'installed',verifiedUpdate:true,sessionActive:true,hasProfileBackup:true,installedVersion:'1.0',targetVersion:'2.0',
+   timeline:[{at:lastAt,status:'complete',note:'Archive <reviewed>'},{at:equivalent,status:'installing'},{at:lastAt,status:'installed'}]},
+  {key:'2',itemId:'orphan',modName:'Archived addon',fileName:'old.zip',provider:'github',lastAt:'invalid',status:'needs-review',needsReview:true,
+   timeline:[{at:'invalid',status:'complete'},{status:'paused'}]},
+  {key:'3',itemId:'failed',modName:'Unsuccessful',status:'failed',provider:'nexus',lastAt,sessionActive:true,timeline:[{at:lastAt,status:'failed'}]},
+  {key:'4',itemId:'unverified',modName:'Manual choice',status:'installed',lastAt:'',timeline:[]},
+  {key:'5',itemId:'removed',modName:'Removed',status:'removed',lastAt:'',timeline:[]},
+ ];
+}
+test('history retains all timelines and localized text while formatting each receipt header once',()=>{
+ const records=historyDisplayRecords(),h=historyRenderFixture({records,warning:'Disk could not save'});
+ h.ui.renderActivity();
+ const html=h.node('activityResults').innerHTML;
+ assert.equal((html.match(/class="activity-entry /g)||[]).length,records.length);
+ assert.equal((html.match(/class="activity-timeline"/g)||[]).length,records.length);
+ assert.equal((html.match(/<li>/g)||[]).length,6);
+ const exact=new Date(records[0].lastAt).toLocaleString();
+ assert.equal(new Date(records[0].timeline[1].at).toLocaleString(),exact);
+ assert.equal(html.split(exact).length-1,6);
+ assert.match(html,/Time unknown/);
+ assert.equal((html.match(/Unknown time/g)||[]).length,2);
+ assert.match(html,/Archive &lt;reviewed&gt;/);
+ assert.match(html,/https:\/\/mods.example\/linked/);
+ assert.match(html,/https:\/\/example.com\/search\?q=a&amp;b=2/);
+ assert.match(html,/No automatic resume is available/);
+ assert.equal(h.node('activityCount').textContent,'5 / 5 visible');
+ assert.equal(h.node('activityStats').textContent,'5 operations · 1 verified updates · 1 previous-session reviews');
+ assert.equal(h.node('activityWarning').textContent,'Disk could not save');
+ assert.equal(h.node('activityExport').disabled,false);
+ assert.equal(h.calls.parse,7);
+ assert.equal(h.calls.format,3);
+ for(const [filter,query,want] of [['review','',3],['verified','',1],['active',' NEXUS ',2],['all','workshop.zip',1],['all','1.0 2.0',1],['active','archived addon',0],['unexpected','',5]]){
+  h.node('activityFilter').value=filter;h.node('activitySearch').value=query;h.ui.renderActivity();
+  assert.equal(h.node('activityCount').textContent,want+' / 5 visible');
+  assert.equal((h.node('activityResults').innerHTML.match(/class="activity-entry /g)||[]).length,want);
+  assert.equal(h.node('activityStats').textContent,'5 operations · 1 verified updates · 1 previous-session reviews');
+ }
+ const offline=historyRenderFixture({live:false,catalog:null,records:[]});offline.ui.renderActivity();
+ assert.match(offline.node('activityWarning').textContent,/Offline mode cannot read or modify installations/);
+ assert.equal(offline.node('activityExport').disabled,true);assert.equal(offline.node('activityRefresh').disabled,true);
+ assert.match(offline.node('activityResults').innerHTML,/No operations match this view/);
+});
+test('history refuses stale profile results and safely renders the complete accepted snapshot',async()=>{
+ const records=historyDisplayRecords(),h=historyRenderFixture();
+ const stale=h.ui.refreshActivity();
+ h.ui.setCatalog({profileId:'second'});
+ const current=h.ui.refreshActivity();
+ assert.deepEqual(h.requests.map(r=>[r.method,r.endpoint]),[['GET','activity'],['GET','activity']]);
+ h.requests[1].reply({profileId:'second',durable:true,records:records.slice(1)});
+ await current;
+ assert.equal(h.node('activityCount').textContent,'4 / 4 visible');
+ h.requests[0].reply({profileId:'first',durable:true,records:records.slice(0,1)});
+ await stale;
+ assert.equal(h.ui.records().length,4);
+ assert.doesNotMatch(h.node('activityResults').innerHTML,/First &lt;main&gt;/);
+});
+
 test('loading source evidence preserves unsaved inspector notes',async()=>{
  const h=harness();await h.settle();const mod=h.qa.getCatalog().items[0];h.api.drawInspector(mod);
  h.context.document.getElementById('drawerNote').value='Keep my unsaved setup notes';await h.api.loadSourceDetails(mod);await h.settle();

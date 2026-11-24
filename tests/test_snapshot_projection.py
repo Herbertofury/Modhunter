@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import builtins
+import hashlib
 import json
 import os
 import sys
@@ -139,6 +140,66 @@ class SnapshotProjectionTest(unittest.TestCase):
             self.assertTrue(actual["items"][0]["enabled"])
             self.assertFalse(actual["items"][1]["enabled"])
             self.assertEqual("advisory", actual["items"][3]["source"]["kind"])
+
+    def test_projection_only_resolves_the_required_source_fallbacks(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            metadata = self.new_metadata(root, "meta", "https://modrinth.com/mod/fixture")
+            disabled = self.new_metadata(root, "disabled", "https://github.com/fixture/disabled", disabled=True)
+            rows = {
+                "native": _mod("Native", nexus=8, url="https://github.com/fixture/native?token=private"),
+                "metadata": _mod("Metadata", nexus=9, path=metadata),
+                "disabled": _mod("Explicitly off", nexus=10, path=disabled, url="https://github.com/fixture/disabled"),
+                "invalid": _mod("Invalid native", nexus=11, url="https://127.0.0.1/no"),
+                "unverified": _mod("Unknown"),
+            }
+            org = _organizer(rows)
+            with (patch.object(projection, "datetime", _Clock),
+                  patch.object(model, "datetime", _Clock),
+                  patch.object(projection, "source_url", wraps=model.source_url) as nexus,
+                  patch.object(projection, "source_record", wraps=model.source_record) as custom):
+                actual = projection.project_snapshot(projection.capture_snapshot(org))
+                expected = model.take_snapshot(org)
+            self.assertEqual(json.dumps(expected), json.dumps(actual))
+            self.assertEqual([10, 11, 0], [c.args[1] for c in nexus.call_args_list])
+            self.assertEqual(["https://github.com/fixture/native?token=private", "https://127.0.0.1/no"],
+                             [c.args[0] for c in custom.call_args_list])
+            self.assertNotIn("private", json.dumps(actual))
+
+    def test_content_hash_retains_the_complete_canonical_json_across_chunk_boundaries(self):
+        def block_hash(items, cancelled):
+            return projection._catalog_content_hash(items, cancelled)
+
+        for count in (0, 1, 511, 512, 513, 1024, 1025, 11207):
+            with self.subTest(count=count):
+                rows = [{"z": i, "nested": {"title": '日本語\ud800"\n' if i % 2 == 0 else "Español 😺", "a": False},
+                         "a": [None, 1.25, "literal , ]"]} for i in range(count)]
+                baseline = hashlib.sha256(json.dumps(rows, sort_keys=True).encode()).hexdigest()
+                with patch.object(projection.json, "dumps", wraps=json.dumps) as encode:
+                    self.assertEqual(block_hash(rows, lambda: None), baseline)
+                self.assertEqual(sum(len(c.args[0]) for c in encode.call_args_list), count)
+                self.assertTrue(all(len(c.args[0]) <= 512 for c in encode.call_args_list))
+
+    def test_project_cancellation_during_hash_does_not_prune_cache(self):
+        count = 1025
+        rows = {f"mod-{i}": _mod(f"Mod {i}", nexus=i + 1) for i in range(count)}
+        captured = projection.capture_snapshot(_organizer(rows))
+        stop = Event()
+        cache = model.LocalMetadataCache()
+        encode = json.dumps
+        completed_chunk_sizes = []
+        def encode_then_cancel(chunk, *args, **kwargs):
+            text = encode(chunk, *args, **kwargs)
+            completed_chunk_sizes.append(len(chunk))
+            stop.set()
+            return text
+
+        with (patch.object(projection.json, "dumps", side_effect=encode_then_cancel),
+              patch.object(cache, "retain") as retain):
+            with self.assertRaises(projection.SnapshotCancelled):
+                projection.project_snapshot(captured, metadata_cache=cache, cancel_event=stop)
+            retain.assert_not_called()
+        self.assertEqual(completed_chunk_sizes, [512])
 
     def test_fallback_mod_order_duplicates_and_explicit_runtime(self):
         rows = {"later": _mod("Later"), "first": _mod("First")}

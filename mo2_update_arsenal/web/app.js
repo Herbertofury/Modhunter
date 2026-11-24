@@ -1589,39 +1589,48 @@ async function pollLiveBridge(){
  finally{LIVE_REFRESH_BUSY=false;LIVE_POLL_TIMER=setTimeout(pollLiveBridge,4200)}
 }
 
+const ACTIVITY_STATUS_LABELS={downloading:'Downloading in MO2',paused:'Paused in MO2',complete:'Ready in current MO2 session',installing:'Interactive installer open',failed:'Download failed',removed:'Removed from MO2',attention:'Manual attention'};
 function activityStatus(record){
  if(record.needsReview)return ['Previous session · review in MO2','needs-review'];
  if(record.status==='installed')return record.verifiedUpdate?['Version verified','verified']:['Installed · version unverified','review'];
- const labels={downloading:'Downloading in MO2',paused:'Paused in MO2',complete:'Ready in current MO2 session',installing:'Interactive installer open',failed:'Download failed',removed:'Removed from MO2',attention:'Manual attention'};
- return [labels[record.status]||String(record.status||'Unknown'),record.status||'unknown'];
+
+ return [ACTIVITY_STATUS_LABELS[record.status]||String(record.status||'Unknown'),record.status||'unknown'];
 }
 function renderActivity(){
  const panel=$('activityResults');if(!panel)return;
  const query=$('activitySearch').value.trim().toLowerCase(),filter=$('activityFilter').value||'all';
- const list=ACTIVITY_RECORDS.filter(rec=>{
-  if(filter==='review'&&!rec.needsReview&&rec.status!=='failed'&&!(rec.status==='installed'&&!rec.verifiedUpdate))return false;
-  if(filter==='verified'&&!(rec.status==='installed'&&rec.verifiedUpdate))return false;
-  if(filter==='active'&&!rec.sessionActive)return false;
-  return !query||[rec.modName,rec.itemId,rec.fileName,rec.provider,rec.installedVersion,rec.targetVersion,rec.status].join(' ').toLowerCase().includes(query);
- });
- const pending=ACTIVITY_RECORDS.filter(x=>x.needsReview).length;
- const verified=ACTIVITY_RECORDS.filter(x=>x.status==='installed'&&x.verifiedUpdate).length;
- SET('activityStats',ACTIVITY_RECORDS.length+' operations · '+verified+' verified updates · '+pending+' previous-session reviews');
- SET('activityCount',list.length+' / '+ACTIVITY_RECORDS.length+' visible');
- SET('activityWarning',!BRIDGE.active?'Connect through MO2 to view your real, profile-scoped update history. Offline mode cannot read or modify installations.':(ACTIVITY_WARNING||'This is read-only history. Previous MO2 sessions cannot automatically resume downloads or installations.'));
- panel.innerHTML=list.map(rec=>{
-  const state=activityStatus(rec),date=new Date(rec.lastAt),dateText=Number.isNaN(date.valueOf())?'Time unknown':date.toLocaleString();
+ const html=[];
+ let pending=0,verified=0;
+ for(const rec of ACTIVITY_RECORDS){
+  if(rec.needsReview)pending++;
+  const installed=rec.status==='installed',confirmed=installed&&rec.verifiedUpdate;
+  if(confirmed)verified++;
+  if(filter==='review'&&!rec.needsReview&&rec.status!=='failed'&&!(installed&&!rec.verifiedUpdate))continue;
+  if(filter==='verified'&&!confirmed)continue;
+  if(filter==='active'&&!rec.sessionActive)continue;
+  if(query&&![rec.modName,rec.itemId,rec.fileName,rec.provider,rec.installedVersion,rec.targetVersion,rec.status].join(' ').toLowerCase().includes(query))continue;
+  const state=activityStatus(rec),lastAt=rec.lastAt,date=new Date(lastAt),unknown=Number.isNaN(date.valueOf());
+  const dateText=unknown?'Time unknown':date.toLocaleString();
   const meta=[rec.installedVersion||'?',rec.targetVersion||'?'].join(' → ');
   const headline=rec.modName||rec.itemId||rec.fileName||'Unlinked MO2 download';
   const original=ITEM_MAP.get(rec.itemId)||{id:rec.itemId||rec.key||'',name:headline,nexusId:rec.modId||0,group:'',source:{}};
   const source=getSrc(original);
   const sourceTitle=source.verified?'Open original mod project in a new tab':'Find the original mod project';
   const timeline=(rec.timeline||[]).map(entry=>{
-   const at=new Date(entry.at),time=Number.isNaN(at.valueOf())?'Unknown time':at.toLocaleString();
+   // The ledger copies its latest event's timestamp onto the receipt. Reuse
+   // the identical localized text without retaining a per-timestamp cache.
+   const raw=entry.at;
+   let time;
+   if(typeof raw==='string'&&raw===lastAt)time=unknown?'Unknown time':dateText;
+   else{const at=new Date(raw);time=Number.isNaN(at.valueOf())?'Unknown time':at.toLocaleString()}
    return '<li><span>'+escapeHTML(entry.status||'')+'</span><small>'+escapeHTML(time)+'</small>'+(entry.note?'<small>'+escapeHTML(entry.note)+'</small>':'')+'</li>';
   }).join('');
-  return '<details class="activity-entry activity-'+escapeHTML(state[1])+'"><summary><span class="activity-dot" aria-hidden="true"></span><span class="activity-head"><a class="activity-mod-link'+(source.verified?'':' source-unresolved')+'" href="'+escapeHTML(source.url)+'" target="_blank" rel="noopener noreferrer" title="'+escapeHTML(sourceTitle)+'" aria-label="'+escapeHTML(sourceTitle+' for '+headline)+'">'+escapeHTML(headline)+'<span class="source-open-glyph" aria-hidden="true">↗</span></a><small>'+escapeHTML(meta)+' · '+escapeHTML(rec.provider||'MO2')+' · '+escapeHTML(rec.fileName||'Archive unknown')+'</small></span><span class="activity-state"><b>'+escapeHTML(state[0])+'</b><small>'+escapeHTML(dateText)+'</small></span></summary><div class="activity-detail"><div><strong>Source:</strong> '+escapeHTML(rec.provider||'Unknown')+' · <strong>Download:</strong> #'+escapeHTML(rec.downloadId)+'</div><div><strong>Runtime:</strong> '+escapeHTML(rec.gameRuntime||'Unknown')+' · <strong>Profile backup:</strong> '+(rec.hasProfileBackup?'Profile text files recorded':'Not recorded')+'</div>'+(rec.needsReview?'<p class="activity-safety">Previous session only. Open MO2 Downloads, verify the archive exists and rescan before taking further action. No automatic resume is available.</p>':'')+'<ol class="activity-timeline">'+timeline+'</ol></div></details>';
- }).join('')||'<div class="workshop-empty">No operations match this view. Queue an update from the MO2 plugin to begin recording real update activity.</div>';
+  html.push( '<details class="activity-entry activity-'+escapeHTML(state[1])+'"><summary><span class="activity-dot" aria-hidden="true"></span><span class="activity-head"><a class="activity-mod-link'+(source.verified?'':' source-unresolved')+'" href="'+escapeHTML(source.url)+'" target="_blank" rel="noopener noreferrer" title="'+escapeHTML(sourceTitle)+'" aria-label="'+escapeHTML(sourceTitle+' for '+headline)+'">'+escapeHTML(headline)+'<span class="source-open-glyph" aria-hidden="true">↗</span></a><small>'+escapeHTML(meta)+' · '+escapeHTML(rec.provider||'MO2')+' · '+escapeHTML(rec.fileName||'Archive unknown')+'</small></span><span class="activity-state"><b>'+escapeHTML(state[0])+'</b><small>'+escapeHTML(dateText)+'</small></span></summary><div class="activity-detail"><div><strong>Source:</strong> '+escapeHTML(rec.provider||'Unknown')+' · <strong>Download:</strong> #'+escapeHTML(rec.downloadId)+'</div><div><strong>Runtime:</strong> '+escapeHTML(rec.gameRuntime||'Unknown')+' · <strong>Profile backup:</strong> '+(rec.hasProfileBackup?'Profile text files recorded':'Not recorded')+'</div>'+(rec.needsReview?'<p class="activity-safety">Previous session only. Open MO2 Downloads, verify the archive exists and rescan before taking further action. No automatic resume is available.</p>':'')+'<ol class="activity-timeline">'+timeline+'</ol></div></details>');
+ }
+ SET('activityStats',ACTIVITY_RECORDS.length+' operations · '+verified+' verified updates · '+pending+' previous-session reviews');
+ SET('activityCount',html.length+' / '+ACTIVITY_RECORDS.length+' visible');
+ SET('activityWarning',!BRIDGE.active?'Connect through MO2 to view your real, profile-scoped update history. Offline mode cannot read or modify installations.':(ACTIVITY_WARNING||'This is read-only history. Previous MO2 sessions cannot automatically resume downloads or installations.'));
+ panel.innerHTML=html.join('')||'<div class="workshop-empty">No operations match this view. Queue an update from the MO2 plugin to begin recording real update activity.</div>';
  $('activityExport').disabled=!BRIDGE.active||!LIVE_CATALOG||!ACTIVITY_RECORDS.length;
  $('activityRefresh').disabled=!BRIDGE.active;
 }

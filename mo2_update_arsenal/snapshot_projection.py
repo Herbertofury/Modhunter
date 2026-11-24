@@ -202,6 +202,24 @@ def capture_snapshot(organizer: Any, target_runtime: str = "unknown") -> Snapsho
     return result
 
 
+def _catalog_content_hash(items: list[dict[str, Any]], check_cancelled: Callable[[], None]) -> str:
+    # Use the standard JSON encoder in bounded blocks without changing a
+    # single byte of the existing canonical list (including comma/space).
+    # Avoid allocating the entire encoded catalog as a single temporary.
+    chunk_rows = 512
+    if len(items) <= chunk_rows:
+        return hashlib.sha256(json.dumps(items, sort_keys=True).encode()).hexdigest()
+    digest = hashlib.sha256(b"[")
+    for start in range(0, len(items), chunk_rows):
+        check_cancelled()
+        if start:
+            digest.update(b", ")
+        block = json.dumps(items[start:start + chunk_rows], sort_keys=True).encode()
+        digest.update(memoryview(block)[1:-1])
+    digest.update(b"]")
+    return digest.hexdigest()
+
+
 def project_snapshot(captured: SnapshotInput, *,
                      metadata_cache: LocalMetadataCache | None = None,
                      force_metadata: bool = False,
@@ -243,11 +261,15 @@ def project_snapshot(captured: SnapshotInput, *,
             detected_source = discover_local_source(Path(mod.path), mod.notes) if mod.path else {}
         check_cancelled()
         custom_enabled = detected_source.pop("customUrlEnabled", None)
-        native_url = source_record(mod.native_url if custom_enabled is not False else "", "MO2 official mod URL")
-        nexus_source = source_url(captured.game, mod.nexus_id)
-        actual_source = (native_url if native_url.get("verified") else detected_source if detected_source.get("verified")
-                         else nexus_source if nexus_source.get("verified") else detected_source if detected_source.get("url")
-                         else nexus_source)
+        actual_source = (source_record(mod.native_url, "MO2 official mod URL")
+                         if mod.native_url and custom_enabled is not False else None)
+        if actual_source is None or not actual_source.get("verified"):
+            if detected_source.get("verified"):
+                actual_source = detected_source
+            else:
+                actual_source = source_url(captured.game, mod.nexus_id)
+                if not actual_source.get("verified") and detected_source.get("url"):
+                    actual_source = detected_source
         hint = "Contains native DLL files. Select a build for the exact game runtime." if flags else ""
         mod_id = "live-" + identity(captured.profile_id + "|" + mod.name)
         if mod_id in present:
@@ -273,7 +295,7 @@ def project_snapshot(captured: SnapshotInput, *,
             "screenshot": 0,
         })
     verified = sum(bool(i["source"]["verified"]) for i in items)
-    content_hash = hashlib.sha256(json.dumps(items, sort_keys=True).encode()).hexdigest()
+    content_hash = _catalog_content_hash(items, check_cancelled)
     check_cancelled()
     if metadata_cache is not None:
         metadata_cache.retain(active_paths)

@@ -37,3 +37,13 @@ class ProtectedInventoryTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 capture(receipt, [root], [])
             self.assertEqual(receipt.read_bytes(), b"original")
+
+    def test_concurrent_file_readers_accept_windows_executable_filenames(self):
+        with tempfile.TemporaryDirectory() as temp, contextlib.redirect_stdout(io.StringIO()):
+            root = Path(temp) / "tools"
+            root.mkdir()
+            for name in ("viewer.exe", "launch.bat", "meta.ini"):
+                (root / name).write_bytes(b"fixture")
+            receipt = root.parent / "receipt"
+            capture(receipt, [root], [], workers=3)
+            self.assertEqual(compare(receipt, receipt), 0)

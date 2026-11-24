@@ -1,6 +1,7 @@
 """Read-only file inventory for comparing the protected scope of an MO2 acceptance run."""
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import contextlib
 import hashlib
 import json
@@ -18,17 +19,21 @@ def readonly(database):
 
 
 def fingerprint(file_stat):
-    return file_stat.st_size, file_stat.st_mtime_ns, file_stat.st_mode, getattr(
+    mode = file_stat.st_mode
+    if os.name == "nt" and stat.S_ISREG(mode):
+        # Windows synthesizes POSIX execute bits for .exe/.bat in path.stat(),
+        # but not in DirEntry.stat(). The underlying NTFS attributes are retained.
+        mode &= ~(stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    return file_stat.st_size, file_stat.st_mtime_ns, mode, getattr(
         file_stat, "st_file_attributes", 0
     )
 
 
-def entries(root, full):
+def entries(root):
     stack = [(root, "", root.lstat())]
     while stack:
         path, relative, before = stack.pop()
         size, mtime, mode, attributes = fingerprint(before)
-        digest = ""
         target = ""
         if stat.S_ISLNK(mode) or attributes & stat.FILE_ATTRIBUTE_REPARSE_POINT:
             kind = "link"
@@ -41,17 +46,25 @@ def entries(root, full):
                     stack.append((Path(child.path), name, child.stat(follow_symlinks=False)))
         elif stat.S_ISREG(mode):
             kind = "file"
-            if full or path.name.lower() == "meta.ini":
-                with path.open("rb") as handle:
-                    digest = hashlib.file_digest(handle, "sha256").hexdigest()
-                if fingerprint(path.lstat()) != fingerprint(before):
-                    raise RuntimeError(f"File changed while hashing: {path}")
         else:
             raise ValueError(f"Unsupported entry in protected scope: {path}")
-        yield str(root), relative, kind, size, mtime, mode, attributes, digest, target
+        yield str(root), relative, kind, size, mtime, mode, attributes, "", target
 
 
-def capture(database, full, metadata):
+def hash_entry(row):
+    root, relative, _, size, mtime, mode, attributes, _, target = row
+    path = Path(root) / relative
+    expected = (size, mtime, mode, attributes)
+    with path.open("rb") as handle:
+        if fingerprint(os.fstat(handle.fileno())) != expected:
+            raise RuntimeError(f"File changed before hashing: {path}")
+        digest = hashlib.file_digest(handle, "sha256").hexdigest()
+    if fingerprint(path.lstat()) != expected:
+        raise RuntimeError(f"File changed while hashing: {path}")
+    return (*row[:7], digest, target)
+
+
+def capture(database, full, metadata, workers=1):
     roots = [(Path(path).absolute(), mode) for mode, paths in
              (("full", full), ("metadata", metadata)) for path in paths]
     if not roots:
@@ -70,7 +83,7 @@ def capture(database, full, metadata):
     with database.open("xb"):
         pass
     started = time.monotonic()
-    with contextlib.closing(sqlite3.connect(database)) as db:
+    with contextlib.closing(sqlite3.connect(database)) as db, ThreadPoolExecutor(max_workers=workers) as pool:
         db.executescript("""
             CREATE TABLE roots(root TEXT PRIMARY KEY, scope TEXT);
             CREATE TABLE run(version INTEGER, finished INTEGER);
@@ -85,8 +98,12 @@ def capture(database, full, metadata):
         hashed_bytes = 0
         progress_at = started
         for root, scope in roots:
-            rows = entries(root, scope == "full")
+            rows = entries(root)
             while batch := list(islice(rows, 512)):
+                to_hash = [i for i, row in enumerate(batch) if row[2] == "file" and
+                           (scope == "full" or Path(row[1] or row[0]).name.lower() == "meta.ini")]
+                for i, verified in zip(to_hash, pool.map(hash_entry, (batch[i] for i in to_hash))):
+                    batch[i] = verified
                 with db:
                     db.executemany("INSERT INTO entries VALUES(?,?,?,?,?,?,?,?,?)", batch)
                 total_files += sum(row[2] == "file" for row in batch)
@@ -129,6 +146,7 @@ def main():
     commands = parser.add_subparsers(dest="command", required=True)
     new = commands.add_parser("capture", help="Write a new private SQLite receipt outside the protected scope")
     new.add_argument("database", type=Path)
+    new.add_argument("--workers", type=int, default=1, help="Concurrent SHA-256 readers (default: 1)")
     new.add_argument("--full", action="append", default=[], help="Hash every file under this root")
     new.add_argument("--metadata", action="append", default=[],
                      help="Record every path, length, timestamps and attributes; hash meta.ini files only")
@@ -138,7 +156,7 @@ def main():
     args = parser.parse_args()
     if args.command == "compare":
         return compare(args.before, args.after)
-    capture(args.database, args.full, args.metadata)
+    capture(args.database, args.full, args.metadata, args.workers)
     return 0
 
 

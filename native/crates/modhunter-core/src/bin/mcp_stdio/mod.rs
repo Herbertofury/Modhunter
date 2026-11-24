@@ -1,5 +1,6 @@
-//! Read-only subprocess MCP. Files are selectable only before stdio starts.
+//! Subprocess MCP with launcher-selected file, profile, and state-directory scopes.
 mod housecarl;
+mod watchtower;
 use modhunter_core::{BridgeClient, validate_bridge_endpoint};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -25,7 +26,7 @@ const PLUGIN_MASTER_NAME_LIMIT: usize = 255;
 const ENABLE_TOOL: &str = "mo2_set_enabled";
 const EVIDENCE_TOOL: &str = "mo2_mod_evidence";
 const LIVE_TOOL: &str = "mo2_mods";
-const USAGE: &str = "mcp-stdio [--legacy-2025-11-25] [--bsa ALIAS PATH] [--plugin ALIAS PATH] [--mo2 PROFILE_ID LOOPBACK_URL] [--allow-mod PROFILE_ID INTERNAL_NAME] [--housecarl EXE DIRECTORIES_JSON]";
+const USAGE: &str = "mcp-stdio [--legacy-2025-11-25] [--bsa ALIAS PATH] [--plugin ALIAS PATH] [--mo2 PROFILE_ID LOOPBACK_URL] [--allow-mod PROFILE_ID INTERNAL_NAME] [--housecarl EXE DIRECTORIES_JSON] [--watchtower read|manage CONFIG_DIRECTORY]";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mode {
@@ -94,6 +95,7 @@ struct LiveProfile {
 
 struct Selections {
     housecarl: Option<housecarl::Companion>,
+    watchtower: Option<watchtower::Scope>,
     live: Option<LiveProfile>,
     archive: Option<ArchiveSnapshot>,
     plugin: Option<PluginSnapshot>,
@@ -119,12 +121,19 @@ fn configuration(args: &[String]) -> Result<(Mode, Selections), &'static str> {
     let mut live = None;
     let mut permissions = Vec::new();
     let mut companion = None;
+    let mut watch_scope = None;
     for [flag, alias, path] in triples {
         if flag == "--allow-mod" {
             if alias.is_empty() || path.is_empty() || path.chars().any(char::is_control) {
                 return Err(USAGE);
             }
             permissions.push((alias.as_str(), path.clone()));
+            continue;
+        }
+        if flag == "--watchtower" {
+            if watch_scope.replace((alias, path)).is_some() {
+                return Err(USAGE);
+            }
             continue;
         }
         if flag == "--housecarl" {
@@ -191,6 +200,9 @@ fn configuration(args: &[String]) -> Result<(Mode, Selections), &'static str> {
             archive,
             plugin,
             live,
+            watchtower: watch_scope
+                .map(|(mode, path)| watchtower::Scope::configure(mode, Path::new(path)))
+                .transpose()?,
             housecarl: companion
                 .map(|(exe, config)| {
                     housecarl::Companion::configure(Path::new(exe), Path::new(config))
@@ -202,7 +214,7 @@ fn configuration(args: &[String]) -> Result<(Mode, Selections), &'static str> {
 
 pub(super) fn run(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let (mode, selections) = configuration(args)?;
-    // Launcher-selected file handles are already closed. Requests only see memory.
+    // Archive and plugin selections are immutable snapshots. Live scopes reopen their selected state.
     serve(io::stdin().lock(), io::stdout(), mode, &selections)?;
     Ok(())
 }
@@ -294,6 +306,7 @@ struct SetEnabled {
 enum ToolRequest {
     SetEnabled(SetEnabled),
     Skyrim(housecarl::Query),
+    Watchtower(watchtower::Query),
     Live(LivePage),
     Evidence(EvidencePage),
     Spid(DeclarationRequest),
@@ -356,9 +369,13 @@ impl<W: Write> Wire<W> {
 
 fn server_info(selections: &Selections) -> Value {
     let name = if selections
-        .live
+        .watchtower
         .as_ref()
-        .is_some_and(|live| !live.permitted_names.is_empty())
+        .is_some_and(|scope| scope.manage)
+        || selections
+            .live
+            .as_ref()
+            .is_some_and(|live| !live.permitted_names.is_empty())
     {
         "modhunter-scoped-control"
     } else {
@@ -408,6 +425,12 @@ fn list(mode: Mode, selections: &Selections) -> Value {
                         "text":{"type":"string","maxLength":524288}}},
         "annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false}
     }]});
+    if let Some(scope) = &selections.watchtower {
+        result["tools"]
+            .as_array_mut()
+            .expect("tools array")
+            .extend(scope.tools());
+    }
     if let Some(archive) = &selections.archive {
         result["tools"].as_array_mut().expect("tools array").push(json!({
             "name":BSA_TOOL,
@@ -522,6 +545,7 @@ fn plugin_header(selection: &PluginSnapshot, request: PluginRequest) -> Result<V
 
 fn execute(mode: Mode, request: ToolRequest, selections: &Selections) -> Value {
     let generated = match request {
+        ToolRequest::Watchtower(query) => selections.watchtower.as_ref().expect("registered Watchtower").execute(query),
         ToolRequest::Skyrim(query) => selections
             .housecarl
             .as_ref()
@@ -746,6 +770,25 @@ fn handle<W: Write>(
                 {
                     serde_json::from_value(arguments).map(ToolRequest::SetEnabled)
                 }
+                Some(watchtower::SEARCH) if selections.watchtower.is_some() => {
+                    serde_json::from_value(arguments)
+                        .map(watchtower::Query::Search)
+                        .map(ToolRequest::Watchtower)
+                }
+                Some(watchtower::ADD)
+                    if selections.watchtower.as_ref().is_some_and(|s| s.manage) =>
+                {
+                    serde_json::from_value(arguments)
+                        .map(watchtower::Query::Add)
+                        .map(ToolRequest::Watchtower)
+                }
+                Some(watchtower::REFRESH)
+                    if selections.watchtower.as_ref().is_some_and(|s| s.manage) =>
+                {
+                    serde_json::from_value(arguments)
+                        .map(watchtower::Query::Refresh)
+                        .map(ToolRequest::Watchtower)
+                }
                 Some(EVIDENCE_TOOL) if selections.live.is_some() => {
                     serde_json::from_value(arguments).map(ToolRequest::Evidence)
                 }
@@ -755,7 +798,7 @@ fn handle<W: Write>(
                 Some(PLUGIN_TOOL) if selections.plugin.is_some() => {
                     serde_json::from_value(arguments).map(ToolRequest::Plugin)
                 }
-                _ => return reply(error(id, -32602, "Unknown read-only MCP tool")),
+                _ => return reply(error(id, -32602, "Unknown or unselected MCP tool")),
             };
             let Ok(request) = request else {
                 return reply(error(
@@ -812,7 +855,9 @@ fn serve(
             while let Ok(Work { id, request }) = rx.recv() {
                 // CPU work is bounded by the actual parser. If a cancellation
                 // arrives during it, discard its output rather than replying.
-                if matches!(request, ToolRequest::SetEnabled(_)) {
+                if matches!(request, ToolRequest::SetEnabled(_))
+                    || matches!(&request, ToolRequest::Watchtower(q) if q.writes())
+                {
                     let mut locked = wire.lock().unwrap();
                     if let Some(active) = locked.inflight.as_mut() {
                         if active.cancelled {

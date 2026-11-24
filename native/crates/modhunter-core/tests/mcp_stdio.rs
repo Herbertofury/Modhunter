@@ -404,6 +404,8 @@ fn invalid_startup_selectors_refuse_without_starting_stdio() {
     let path = selected.to_str().unwrap();
     let missing = temp.path().join("Private nonexistent.bsa");
     for flags in [
+        vec!["--watchtower", "write", temp.path().to_str().unwrap()],
+        vec!["--watchtower", "read", path],
         vec!["--bsa", "wrong/alias", path],
         vec!["--bsa", "one", path, "--bsa", "two", path],
         vec!["--bsa", "one", missing.to_str().unwrap()],
@@ -686,4 +688,182 @@ fn malformed_or_oversized_plugin_launch_selections_never_start_stdio_or_echo_pat
         std::os::unix::fs::symlink(&selected, &link).unwrap();
         run(&["--plugin", "Alias", link.to_str().unwrap()]);
     }
+}
+
+#[test]
+fn public_watch_mcp_scopes_management_and_respects_the_desktop_owner_and_private_rows() {
+    use modhunter_core::watchtower::WatchStore;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("watchtower.json");
+    let named = dir.path().to_str().unwrap();
+    let store = WatchStore::open(path.clone());
+    let cmd = |action, payload| store.command(action, &payload, 123).unwrap();
+    let session = cmd(
+        "saveSession",
+        json!({"origin":"https://github.com","label":"PRIVATE SESSION","remember":false}),
+    );
+    cmd(
+        "saveWatch",
+        json!({"url":"https://github.com/isolated/private","sessionId":session["sessionId"],"title":"PRIVATE SESSION WATCH"}),
+    );
+    cmd(
+        "saveWatch",
+        json!({"url":"https://github.com/isolated/browser","title":"PRIVATE BROWSER WATCH"}),
+    );
+    cmd(
+        "saveWatch",
+        json!({"url":"https://github.com/isolated/query?access_token=PRIVATE_SECRET","selector":"json:"}),
+    );
+    let removed = cmd(
+        "saveWatch",
+        json!({"url":"https://github.com/isolated/removed","selector":"json:","title":"PRIVATE REMOVED"}),
+    );
+    cmd("removeWatch", json!({"id":removed["watchId"]}));
+    let paused = cmd(
+        "saveWatch",
+        json!({"url":"https://github.com/isolated/paused","enabled":false,"selector":"json:"}),
+    );
+    let saved_session = store
+        .session(session["sessionId"].as_str().unwrap())
+        .unwrap();
+    let mut reader = Client::start(&["--watchtower", "read", named]);
+    let mut writer = Client::start(&["--watchtower", "manage", named]);
+    let call = |client: &mut Client, name: &str, args: Value| {
+        client.exchange(modern(
+            4,
+            "tools/call",
+            json!({"name":name,"arguments":args}),
+        ))
+    };
+    let tools = reader.exchange(modern(1, "tools/list", json!({})));
+    assert!(tools.to_string().contains("watchtower_search"));
+    assert!(!tools.to_string().contains("watchtower_add"));
+    assert!(
+        call(
+            &mut reader,
+            "watchtower_add",
+            json!({"url":"https://github.com/public.json","format":"json"})
+        )["error"]
+            .is_object()
+    );
+    assert!(!dir.path().join("watchtower.lock").exists());
+    let before = std::fs::read(&path).unwrap();
+    let page =
+        call(&mut reader, "watchtower_search", json!({}))["result"]["structuredContent"].clone();
+    assert_eq!(page["total"], 1);
+    let row = &page["watches"][0];
+    assert_eq!(row["watchId"], paused["watchId"]);
+    assert_eq!(row["eligible"], false);
+    assert!(!page.to_string().contains("PRIVATE"));
+    assert_eq!(before, std::fs::read(&path).unwrap());
+    let refresh = json!({"watchId":row["watchId"],"watchRevision":row["watchRevision"]});
+    assert_eq!(
+        call(&mut writer, "watchtower_refresh", refresh)["result"]["isError"],
+        true
+    );
+    for url in [
+        "http://127.0.0.1/",
+        "https://github.com/isolated/removed",
+        "https://api.github.com/foo?signature=PRIVATE",
+    ] {
+        assert_eq!(
+            call(
+                &mut writer,
+                "watchtower_add",
+                json!({"url":url,"format":"json"})
+            )["result"]["isError"],
+            true
+        );
+    }
+    assert_eq!(before, std::fs::read(&path).unwrap());
+    let mut lock = std::fs::OpenOptions::new();
+    lock.read(true).write(true).create(true).truncate(false);
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        lock.share_mode(0);
+    }
+    let owner = lock.open(dir.path().join("watchtower.lock")).unwrap();
+    #[cfg(not(windows))]
+    owner.try_lock().unwrap();
+    let add = json!({"url":"https://api.github.com/repos/fixture/public/ref?sort=PRIVATE_QUERY_VALUE","format":"json","title":"Branch"});
+    assert_eq!(
+        call(&mut writer, "watchtower_add", add.clone())["result"]["isError"],
+        true
+    );
+    assert_eq!(
+        call(&mut reader, "watchtower_search", json!({}))["result"]["structuredContent"]["total"],
+        1
+    );
+    drop(owner);
+    let added =
+        call(&mut writer, "watchtower_add", add.clone())["result"]["structuredContent"].clone();
+    assert_eq!(added["created"], true);
+    assert!(!added.to_string().contains("PRIVATE_QUERY_VALUE"));
+    let after = std::fs::read(&path).unwrap();
+    assert_eq!(
+        call(&mut writer, "watchtower_add", add)["result"]["structuredContent"]["created"],
+        false
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), after);
+    let reopened = WatchStore::open_for_public_watches(path, false).unwrap();
+    assert_eq!(reopened.session(&saved_session.id).unwrap(), saved_session);
+    assert_eq!(reopened.public_watch_rows().len(), 2);
+    let query_changed = json!({"query":"branch","offset":1,"revision":page["revision"]});
+    assert_eq!(
+        call(&mut reader, "watchtower_search", query_changed)["result"]["isError"],
+        true
+    );
+}
+
+#[test]
+fn public_watch_search_pages_keep_their_revision_and_respect_privacy_and_mutes() {
+    use modhunter_core::watchtower::WatchStore;
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("watchtower.json");
+    let store = WatchStore::open(source);
+    for index in 0..68 {
+        store.command("saveWatch",&json!({"url":format!("https://github.com/public/release/{index}"),"title":format!("Named fixture {index}"),"selector":"feed:"}),123).unwrap();
+    }
+    let mut reader = Client::start(&["--watchtower", "read", dir.path().to_str().unwrap()]);
+    let mut search = |args| {
+        reader.exchange(modern(
+            1,
+            "tools/call",
+            json!({"name":"watchtower_search","arguments":args}),
+        ))["result"]
+            .clone()
+    };
+    let first = search(json!({"query":"named fixture"}))["structuredContent"].clone();
+    assert_eq!(first["total"], 68);
+    assert_eq!(first["nextOffset"], 64);
+    let next = json!({"query":"named fixture","offset":64,"revision":first["revision"]});
+    let tail = search(next.clone())["structuredContent"].clone();
+    assert_eq!(tail["watches"].as_array().unwrap().len(), 4);
+    assert!(tail["nextOffset"].is_null());
+    store
+        .command(
+            "settings",
+            &json!({"mutedOrigins":["https://github.com"],"hideTitles":true,"privacyScreen":true}),
+            200,
+        )
+        .unwrap();
+    assert_eq!(search(next)["isError"], true);
+    let public = search(json!({"query":"github.com"}))["structuredContent"].clone();
+    assert_eq!(public["total"], 68);
+    let row = &public["watches"][0];
+    assert_eq!(row["eligible"], false);
+    assert_eq!(row["title"], "github.com");
+    assert_eq!(row["url"], "https://github.com/");
+    assert!(!public.to_string().contains("Named fixture"));
+    assert!(!public.to_string().contains("/public/release/"));
+    assert!(
+        store
+            .begin_public_check(
+                row["watchId"].as_str().unwrap(),
+                row["watchRevision"].as_str().unwrap(),
+                300
+            )
+            .is_err()
+    );
 }

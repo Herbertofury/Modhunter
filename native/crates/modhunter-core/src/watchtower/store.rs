@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 mod commands;
+mod public;
 #[cfg(test)]
 #[path = "store/recovery_tests.rs"]
 mod recovery_tests;
@@ -33,6 +34,28 @@ pub struct WatchStore {
 }
 
 impl WatchStore {
+    /// Shared cross-process ownership for the desktop and launcher-scoped writers.
+    /// The open file must remain alive until the complete write operation finishes.
+    pub fn acquire_writer(config: &Path) -> std::io::Result<std::fs::File> {
+        let path = config.join("watchtower.lock");
+        if std::fs::symlink_metadata(&path)
+            .is_ok_and(|m| !m.is_file() || m.file_type().is_symlink())
+        {
+            return Err(std::io::Error::other("Invalid Watchtower ownership file."));
+        }
+        let mut options = std::fs::OpenOptions::new();
+        options.create(true).read(true).write(true).truncate(false);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            options.share_mode(0);
+        }
+        let file = options.open(path)?;
+        #[cfg(not(windows))]
+        file.try_lock()?;
+        Ok(file)
+    }
+
     pub fn open(path: impl Into<PathBuf>) -> Self {
         Self::open_internal(path.into(), true)
     }

@@ -291,13 +291,7 @@ fn setup_paths(
     scheduler: bool,
 ) -> Result<()> {
     std::fs::create_dir_all(&config).map_err(err)?;
-    let ownership = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .share_mode(0)
-        .open(config.join("watchtower.lock"));
+    let ownership = WatchStore::acquire_writer(&config);
     let (ownership,ownership_error)=match ownership {
         Ok(file)=>(Some(file),String::new()),
         Err(_)=>(None,"Another Modhunter app is using Watchtower. Close that app, then reopen this instance to change or check pages.".into()),

@@ -14,6 +14,16 @@ In the mod library, **File review** shows rows where the installed archive, prov
 
 The local tools also accept `--bsa ALIAS PATH` and `--plugin ALIAS PATH` to expose selected launch-time BSA directory and plugin header snapshots. `spid_preview` parses text supplied by the caller. These inspection tools operate independently of a running MO2 connection.
 
+### Public Watchtower watches
+
+Use `--watchtower read CONFIG_DIRECTORY` to inspect the saved Watchtower configuration chosen at launch. Use `--watchtower manage CONFIG_DIRECTORY` to also register anonymous JSON or RSS/Atom sources and explicitly check one source. The directory must exist. An empty directory supports an independent Watchtower store.
+
+- Call `watchtower_search` with an optional `query` to find a public watch by title or URL path. Follow `nextOffset` with the same `query` and `revision` to read the next page. Results include observation time, hash, state and retained history count. Account-bound, removed and credential-parameter watches stay private. Public URL query values, personal notes and page bodies stay in the selected store. Hide page titles uses the site name for search and display. Privacy screen also hides paths.
+- Call `watchtower_add` with `url`, `format` (`json` or `feed`) and an optional `title`. A repeated add returns the matching watch. The first `watchtower_refresh` records its baseline.
+- Call `watchtower_refresh` with the `watchId` and `watchRevision` returned by search or add. The shared reader checks the complete public document and records the result in Watchtower. A changed document has a different observation hash and a retained history entry. Paused, muted and rate-limited watches retain their previous observations.
+
+Search works while the Windows app owns Watchtower. Add and refresh use the app's exclusive ownership lock for the duration of the operation. Close the owning app to write to that same store, or select a separate configuration directory at launch.
+
 ### Enable and disable selected mods
 
 MO2 and the MCP launcher must both grant access. In MO2 Settings → Plugins → MO2 Update Arsenal, set `agent_mod_control_scope` to JSON mapping the intended profile ID to exact internal mod names. For instance, `{"my-profile-id":["My Disposable Mod"]}` permits one mod. The default is an empty object. Add `--allow-mod "my-profile-id" "My Disposable Mod"` alongside the corresponding `--mo2` argument. Repeat the permission flag for further names.

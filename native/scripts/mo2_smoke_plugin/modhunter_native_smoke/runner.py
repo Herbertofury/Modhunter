@@ -478,7 +478,16 @@ class NativeSmokePlugin(ModUpdateArsenal):
     def _dispatch(self, request):
         self._dispatches.append({"command": request.cmd, "qtThread": self._on_qt_thread(),
                                  "threadName": threading.current_thread().name})
+        intent = self._installer_probe
+        watched = (request.cmd in {"content-install", "content-refresh"} and intent
+                   and intent.get("publicSha256") and intent["modName"] == self._new_fixture_name)
+        if watched:
+            from .public_fomod_probe import record_owned_metadata
+            fixture = Path(os.environ["MODHUNTER_NATIVE_SMOKE_INSTANCE"]).resolve(strict=True)
+            record_owned_metadata(intent, fixture, request.cmd + "-before")
         super()._dispatch(request)
+        if watched:
+            record_owned_metadata(intent, fixture, request.cmd + "-returned")
 
     def _exercise_http(self, address, token):
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))

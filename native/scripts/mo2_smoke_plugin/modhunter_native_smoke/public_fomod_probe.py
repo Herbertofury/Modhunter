@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import configparser
 import json
 import subprocess
 import time
@@ -22,6 +23,31 @@ SELECTED = {
     "Presets/TieredCasters_Standard_DISTR.ini": "63cce5fee04cf4c6038ab90d752f72b216120138de8dbbc4ed3b7b8a904ee95b",
     "Modules/TieredCasters_Healers_DISTR.ini": "9bc2a3ee28e1668cea143eedb0f57e67c7bcc2a9035328e7c77cf9c0bf2c71f6",
 }
+
+
+def record_owned_metadata(intent, fixture, phase):
+    """Inspect only the exact disposable FOMOD target while its native lease is armed."""
+    target = fixture / "mods" / intent["modName"]
+    if Path(intent["modRoot"]).resolve() != target or target.is_symlink():
+        raise AssertionError("Unexpected fixture metadata target")
+    path = target / "meta.ini"
+    record = {"phase": phase, "target": target.name, "present": path.is_file()}
+    if path.is_file():
+        data = path.read_bytes()
+        record["sha256"] = hashlib.sha256(data).hexdigest()
+        ini = configparser.ConfigParser(interpolation=None, strict=False)
+        ini.read_string(data.decode("utf-8-sig"))
+        record["valueHashes"] = {
+            section: {
+                key: hashlib.sha256(value.encode()).hexdigest()
+                for key, value in ini.items(section)
+            }
+            for section in ini.sections()
+        }
+    with (fixture / "public-acquisition" / "native-metadata.jsonl").open(
+        "a", encoding="utf-8"
+    ) as output:
+        output.write(json.dumps(record, separators=(",", ":")) + "\n")
 
 
 def accept_tiered_casters(QtWidgets, dialog, intent):
@@ -263,6 +289,28 @@ def run_public_fomod(api, root, profile, before, cli, arm, disarm, *, history=Fa
         rows[name]["enabled"] is False
         and all(rows[n]["enabled"] == v["enabled"] for n, v in before.items()),
         "Public FOMOD changed activation",
+    )
+    # Preserve completed installation evidence even when a subsequent native
+    # update or removal legitimately refuses to proceed.
+    (
+        output / ("chairrows-initial.json" if history else "tiered-initial.json")
+    ).write_text(
+        json.dumps(
+            {
+                "source": source,
+                "archiveSha256": digest,
+                "receiptId": receipt["id"],
+                "backupId": job["backupId"],
+                "target": name,
+                "installedVersion": rows[name].get("installedVersion"),
+                "disabled": not rows[name]["enabled"],
+                "dialogs": dialogs,
+                "files": files,
+                "manifestDigest": manifest["manifestDigest"],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
     )
     update = (
         versions.update_chairrows(

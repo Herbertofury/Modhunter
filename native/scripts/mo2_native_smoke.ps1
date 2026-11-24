@@ -425,6 +425,12 @@ finally {
         $LogIndex++
     }
     $Summary['finishedAt'] = [DateTime]::UtcNow.ToString('o')
+    foreach ($Name in 'native-metadata.jsonl', 'chairrows-initial.json', 'tiered-initial.json') {
+        $PublicReceipt = Join-Path $InstanceRoot ('public-acquisition/' + $Name)
+        if (Test-Path -LiteralPath $PublicReceipt -PathType Leaf) {
+            Copy-Item -LiteralPath $PublicReceipt -Destination (Join-Path $RunEvidence $Name)
+        }
+    }
     $Summary['durationSeconds'] = [Math]::Round(([DateTime]::UtcNow - $StartedAt).TotalSeconds, 2)
     Write-Utf8File (Join-Path $RunEvidence 'result.json') ($Summary | ConvertTo-Json -Depth 20)
     Get-ChildItem -LiteralPath $RunEvidence | Copy-Item -Destination $EvidenceDirectory -Recurse -Force

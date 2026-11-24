@@ -843,8 +843,26 @@ pub fn execute(request: Request, cancel: impl Fn() -> bool) -> Result<Value> {
                     return Err("New-target recovery found changed or ambiguous files; all copies preserved.".into());
                 }
             } else {
-                if tree(&root, &cancel)? != *after || saved.exists() {
-                    return Err("New mod changed or recovery copy exists; removal blocked.".into());
+                if saved.exists() {
+                    return Err(
+                        "This backup already contains a recovery copy; removal blocked.".into(),
+                    );
+                }
+                let current = tree(&root, &cancel)?;
+                if current != *after {
+                    let differing = after
+                        .keys()
+                        .chain(current.keys())
+                        .collect::<std::collections::BTreeSet<_>>()
+                        .into_iter()
+                        .filter(|p| after.get(*p) != current.get(*p))
+                        .take(8)
+                        .map(|p| p.as_str())
+                        .collect::<Vec<_>>();
+                    return Err(format!(
+                        "New mod changed after the install was recorded; removal blocked. Changed paths: {}",
+                        differing.join(", ")
+                    ));
                 }
                 if request.action == "previewRestoreNew" {
                     return Ok(

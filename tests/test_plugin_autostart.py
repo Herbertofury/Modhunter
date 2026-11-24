@@ -364,17 +364,27 @@ class BackgroundStartupIntegrationTests(unittest.TestCase):
         self.plugin._on_background_refresh_completed(self.result_port.get(timeout=3))
 
     def test_auto_start_yields_and_admits_complete_catalog_once_without_opening_browser(self):
+        self.assert_startup_batches(seconds_per_lookup=0, expected_first_batch=64)
+
+    def test_auto_start_yields_to_time_budget_and_resumes_the_complete_catalog(self):
+        self.assert_startup_batches(seconds_per_lookup=0.0008, expected_first_batch=8)
+
+    def assert_startup_batches(self, *, seconds_per_lookup, expected_first_batch):
         self.plugin._on_ui_initialized(object())
         self.plugin._on_plugins_refreshed()  # The queued startup absorbs it.
         self.assertEqual(len(self.timers), 1)
         self.tick()
         self.assertIsNone(self.plugin.server)
-        self.assertEqual(self.org.modList.return_value.getMod.call_count, 0)
-        self.tick()
-        self.assertEqual(self.org.modList.return_value.getMod.call_count, 64)
-        self.attach.assert_not_called()
-        self.created.assert_not_called()
-        self.pump_capture()
+        get_mod = self.org.modList.return_value.getMod
+        self.assertEqual(get_mod.call_count, 0)
+        with patch("mo2_update_arsenal.snapshot_projection.monotonic",
+                   side_effect=lambda: get_mod.call_count * seconds_per_lookup):
+            self.tick()
+            self.assertEqual(get_mod.call_count, expected_first_batch)
+            self.attach.assert_not_called()
+            self.created.assert_not_called()
+            self.pump_capture()
+        self.assertEqual([call.args[0] for call in get_mod.call_args_list], self.rows)
         self.assertEqual(len(self.entered.get(timeout=3).mods), 128)
         self.assertIsNone(self.plugin.server)
         self.created.assert_not_called()

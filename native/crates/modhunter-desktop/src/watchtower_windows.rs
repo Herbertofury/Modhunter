@@ -173,7 +173,7 @@ pub struct WatchRuntime {
     store: WatchStore,
     work: Mutex<Work>,
     windows: Mutex<BTreeMap<String, SiteWindow>>,
-    anonymous_origins: Mutex<std::collections::BTreeSet<String>>,
+    anonymous_origins: Mutex<BTreeMap<String, usize>>,
     prefill: Mutex<Option<Value>>,
     profiles: PathBuf,
     ephemeral: tempfile::TempDir,
@@ -186,6 +186,34 @@ pub struct WatchRuntime {
     stopping: AtomicBool,
     retired: Mutex<Vec<PathBuf>>,
     runtime_warning: Mutex<String>,
+}
+
+fn anonymous_profile_dir(
+    root: &Path,
+    origins: &mut BTreeMap<String, usize>,
+    origin: &str,
+) -> PathBuf {
+    // The mapping is owned by this ephemeral run. Keeping its path short leaves
+    // room for Chromium's own nested Windows profile files.
+    let next = origins.len();
+    let id = origins.entry(origin.to_owned()).or_insert(next);
+    root.join("anon").join(id.to_string())
+}
+
+#[cfg(test)]
+#[test]
+fn anonymous_profiles_reuse_only_the_exact_origin_and_stay_short() {
+    let mut origins = BTreeMap::new();
+    let root = Path::new("owned-run");
+    let first = anonymous_profile_dir(root, &mut origins, "https://github.com");
+    let second = anonymous_profile_dir(root, &mut origins, "https://github.com:8443");
+    assert_eq!(first, root.join("anon/0"));
+    assert_eq!(second, root.join("anon/1"));
+    assert_eq!(
+        first,
+        anonymous_profile_dir(root, &mut origins, "https://github.com")
+    );
+    assert_eq!(origins.len(), 2);
 }
 
 impl WatchRuntime {
@@ -244,19 +272,12 @@ impl WatchRuntime {
                 base.join(&s.id)
                     .join(format!("generation-{}", s.storage_generation))
             }
-            None => self
-                .ephemeral
-                .path()
-                .join("anonymous")
-                .join(format!("{:x}", Sha256::digest(origin.as_bytes()))),
+            None => {
+                let mut origins = self.anonymous_origins.lock().map_err(err)?;
+                anonymous_profile_dir(self.ephemeral.path(), &mut origins, origin)
+            }
         };
         std::fs::create_dir_all(&directory).map_err(err)?;
-        if session.is_none() {
-            self.anonymous_origins
-                .lock()
-                .map_err(err)?
-                .insert(origin.to_owned());
-        }
         // An owned marker distinguishes our retired browser generations from arbitrary directories.
         let marker = directory.join("modhunter-profile-owner.json");
         if !marker.exists() {
@@ -328,7 +349,7 @@ fn setup_paths(
         store,
         work: Mutex::new(Work::default()),
         windows: Mutex::new(BTreeMap::new()),
-        anonymous_origins: Mutex::new(std::collections::BTreeSet::new()),
+        anonymous_origins: Mutex::new(BTreeMap::new()),
         prefill: Mutex::new(None),
         profiles,
         ephemeral,

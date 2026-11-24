@@ -1,7 +1,7 @@
 //! Session files are hints, never authority. Every result passes the Rust
 //! loopback health probe before it can become an active connection.
 #![cfg_attr(not(windows), allow(dead_code))]
-use modhunter_core::{BridgeClient, validate_bridge_endpoint};
+use modhunter_core::{BridgeClient, BridgeHealth, validate_bridge_endpoint};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeSet, HashSet},
@@ -35,6 +35,25 @@ pub struct Session {
     pub generation: u64,
     pub execution_epoch: Option<u64>,
     pub latency_ms: f64,
+}
+
+impl From<Session> for BridgeHealth {
+    fn from(session: Session) -> Self {
+        Self {
+            endpoint: session.endpoint,
+            version: session.version,
+            profile_id: session.profile_id,
+            generation: session.generation,
+            execution_epoch: session.execution_epoch,
+            latency_ms: session.latency_ms,
+        }
+    }
+}
+
+pub fn unique_profile(sessions: Vec<Session>, profile: &str) -> Option<Session> {
+    let mut matches = sessions.into_iter().filter(|s| s.profile_id == profile);
+    let first = matches.next()?;
+    matches.next().is_none().then_some(first)
 }
 
 fn linked(meta: &fs::Metadata) -> bool {
@@ -152,6 +171,34 @@ pub fn discover(directory: &Path, client: &BridgeClient) -> std::io::Result<Vec<
 mod tests {
     use super::*;
     use std::{io::Write, net::TcpListener, time::Duration};
+    #[test]
+    fn reconnect_requires_one_validated_session_with_the_previous_profile() {
+        let session = |port: u16, profile: &str| Session {
+            endpoint: format!("http://127.0.0.1:{port}/"),
+            profile_id: profile.into(),
+            profile_name: "Same display name".into(),
+            version: "0.12.6".into(),
+            generation: 1,
+            execution_epoch: Some(7),
+            latency_ms: 0.0,
+        };
+        assert!(unique_profile(vec![session(3100, "other")], "saved").is_none());
+        assert!(
+            unique_profile(
+                vec![session(3100, "saved"), session(3101, "saved")],
+                "saved"
+            )
+            .is_none()
+        );
+        let found = unique_profile(
+            vec![session(3100, "other"), session(3102, "saved")],
+            "saved",
+        )
+        .unwrap();
+        let health = BridgeHealth::from(found);
+        assert_eq!(health.endpoint, "http://127.0.0.1:3102/");
+        assert_eq!(health.execution_epoch, Some(7));
+    }
     #[test]
     fn session_is_probed_and_duplicate_hints_do_not_duplicate_connections() {
         let temp = tempfile::tempdir().unwrap();

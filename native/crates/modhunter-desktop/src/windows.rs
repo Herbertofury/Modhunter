@@ -44,6 +44,7 @@ struct Model {
     active_id: Option<u64>,
     endpoint: Option<String>,
     connected: bool,
+    linked_profile: Option<String>,
     connection_error: String,
     latency_ms: Option<f64>,
     install_queue_scope: Option<(String, u64)>,
@@ -162,15 +163,17 @@ pub(crate) fn inspection_snapshot(app: &tauri::AppHandle) -> Result<Value> {
 }
 
 pub(crate) fn inspect_available_instances() -> Result<Value> {
+    Ok(json!(running_sessions()?))
+}
+
+fn running_sessions() -> Result<Vec<crate::discovery::Session>> {
     let directory = std::env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
         .ok_or("Windows LOCALAPPDATA directory is unavailable")?
         .join("Modhunter")
         .join("mo2-sessions");
     let client = BridgeClient::with_timeout(std::time::Duration::from_millis(800)).map_err(err)?;
-    Ok(json!(
-        crate::discovery::discover(&directory, &client).map_err(err)?
-    ))
+    crate::discovery::discover(&directory, &client).map_err(err)
 }
 
 impl Runtime {
@@ -1381,6 +1384,7 @@ fn connect_with_health(app: &tauri::AppHandle, health: BridgeHealth, epoch: u64)
         if state.epoch.load(Ordering::Acquire) != epoch {
             return Err("A newer connection request replaced this one.".into());
         }
+        m.linked_profile = Some(health.profile_id.clone());
         m.endpoint = Some(health.endpoint.clone());
         m.prefs.endpoint = Some(health.endpoint.clone());
         m.connected = true;
@@ -1422,23 +1426,46 @@ fn probe(app: &tauri::AppHandle) -> Result<Value> {
     }
     let was_connected = m.connected;
     let queue_scope_changed = match response {
-        Ok(h) => {
+        Ok(h) if was_connected || m.linked_profile.as_deref() == Some(&h.profile_id) => {
+            m.linked_profile = Some(h.profile_id.clone());
             m.connected = true;
             m.connection_error.clear();
             m.latency_ms = Some(h.latency_ms);
             record_install_queue_scope(&mut m, h.execution_epoch.map(|e| (h.profile_id, e)), false)
         }
-        Err(e) => {
+        other => {
             m.connected = false;
-            m.connection_error = e.to_string();
+            m.connection_error = match other {
+                Err(error) => error.to_string(),
+                Ok(_) => "The previous address now serves another MO2 profile.".into(),
+            };
             m.latency_ms = None;
             record_install_queue_scope(&mut m, None, false)
         }
     };
     let recovered = !was_connected && m.connected;
+    let missing_profile = if m.connected {
+        None
+    } else {
+        m.linked_profile.clone()
+    };
     drop(m);
     if queue_scope_changed {
         notify_install_queue_context(app);
+    }
+    if let Some(profile) = missing_profile
+        && let Ok(sessions) = running_sessions()
+        && let Some(replacement) = crate::discovery::unique_profile(sessions, &profile)
+    {
+        // A manual connect, unlink or import supersedes this background search.
+        if state
+            .epoch
+            .compare_exchange(epoch, epoch + 1, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            return connect_with_health(app, replacement.into(), epoch + 1);
+        }
+        return Ok(json!({"ok":true,"stale":true}));
     }
     if recovered {
         navigate_all(app)?;
@@ -1816,14 +1843,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
         "probe" => return probe(app),
         "discover" => {
             let epoch = state.epoch.fetch_add(1, Ordering::AcqRel) + 1;
-            let directory = std::env::var_os("LOCALAPPDATA")
-                .map(PathBuf::from)
-                .ok_or("Windows LOCALAPPDATA directory is unavailable")?
-                .join("Modhunter")
-                .join("mo2-sessions");
-            let client =
-                BridgeClient::with_timeout(std::time::Duration::from_millis(800)).map_err(err)?;
-            let sessions = crate::discovery::discover(&directory, &client).map_err(err)?;
+            let sessions = running_sessions()?;
             if state.epoch.load(Ordering::Acquire) != epoch {
                 return Err("A newer connection request replaced this discovery.".into());
             }
@@ -1833,14 +1853,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
                     // Discovery already validated this endpoint's health
                     // contract. Reuse that result instead of a second probe.
                     let session = sessions.into_iter().next().expect("one session");
-                    return connect_with_health(app, BridgeHealth {
-                        endpoint: session.endpoint,
-                        version: session.version,
-                        profile_id: session.profile_id,
-                        generation: session.generation,
-                        execution_epoch: session.execution_epoch,
-                        latency_ms: session.latency_ms,
-                    }, epoch);
+                    return connect_with_health(app, session.into(), epoch);
                 },
                 _ => return Ok(json!({"ok":true,"sessions":sessions,"state":state.snapshot(),"message":"Multiple MO2 sessions found. Choose a profile address from the address field, then Connect."})),
             }
@@ -1850,6 +1863,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
             let mut m = state.model.lock().map_err(err)?;
             m.endpoint = None;
             m.prefs.endpoint = None;
+            m.linked_profile = None;
             m.connected = false;
             m.connection_error.clear();
             m.latency_ms = None;
@@ -1985,6 +1999,7 @@ pub fn run() {
                     active_id: None,
                     endpoint: None,
                     connected: false,
+                    linked_profile: None,
                     connection_error: String::new(),
                     latency_ms: None,
                     install_queue_scope: None,

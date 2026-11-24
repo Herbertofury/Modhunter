@@ -887,9 +887,15 @@ function thumbnailMarkup(mod,large=false,source=getSrc(mod)){
  const metadata=' data-provider-label="'+escapeHTML(label)+'"';
  return large?'<div class="mod-art mod-art-large'+artClass+'"'+metadata+'>'+inside+'</div>':'<button class="mod-art'+artClass+'" type="button" data-act="preview" data-id="'+id+'"'+metadata+' title="'+escapeHTML('Inspect '+mod.name)+'" aria-label="'+escapeHTML('Preview and inspect '+mod.name)+'">'+inside+'</button>';
 }
+// Defer column resolution to the same layout that sizes the owned list.
+// Keep the proven observer+nonce rule only on engines lacking the exact
+// size-query and typed-arithmetic grammar used by the static stylesheet.
+const CSS_GALLERY_COLUMNS=globalThis.CSS?.supports?.('container-type','inline-size')&&
+ CSS.supports('flex-basis','calc((100% - (max(1,round(down,(100cqw + 14px) / 214px,1)) - 1) * 14px) / max(1,round(down,(100cqw + 14px) / 214px,1)))');
+if(CSS_GALLERY_COLUMNS)$('modList').dataset.gallerySizing='container';
 let GALLERY_GEOMETRY_RULE=null;
 function updateGalleryColumns(width){
- if(STORE.prefs.libraryView!=='gallery')return;
+ if(CSS_GALLERY_COLUMNS||STORE.prefs.libraryView!=='gallery')return;
  const list=$('modList');if(!list)return;
  const available=width??list.clientWidth;if(!(available>0))return;
  const comfy=STORE.prefs.density==='comfy',narrow=innerWidth<=580,gap=comfy?18:narrow?10:14;
@@ -911,8 +917,8 @@ function updateGalleryColumns(width){
  list.dataset.galleryGeometry=key;
 }
 function applyLibraryAppearance(){
- // Read one existing container width before changing the view. The outer
- // gallery wraps complete cards instead of sizing thousands of grid tracks.
+ // Legacy geometry keeps its original pre-view read. Current engines size
+ // every flex card during the same normal layout using the list content box.
  updateGalleryColumns();
  setBodyPreference('libraryView',STORE.prefs.libraryView==='gallery'?'gallery':'list');
  setBodyPreference('galleryGrouping',STORE.prefs.galleryGrouping==='chapters'?'chapters':'all');
@@ -947,8 +953,10 @@ $('libraryList').onclick=()=>updatePrefs({libraryView:'list'});
 $('libraryGallery').onclick=()=>updatePrefs({libraryView:'gallery'});
 $('galleryGrouping').onchange=event=>updatePrefs({galleryGrouping:event.target.value==='chapters'?'chapters':'all'});
 let GALLERY_RESIZE_FRAME=null,GALLERY_OBSERVED_WIDTH=0;
-if(typeof ResizeObserver==='function')new ResizeObserver(entries=>{for(const entry of entries)if(entry.target===$('modList')&&entry.contentRect.width!==GALLERY_OBSERVED_WIDTH){GALLERY_OBSERVED_WIDTH=entry.contentRect.width;if(GALLERY_RESIZE_FRAME===null)GALLERY_RESIZE_FRAME=requestAnimationFrame(()=>{GALLERY_RESIZE_FRAME=null;updateGalleryColumns(GALLERY_OBSERVED_WIDTH)})}}).observe($('modList'));
-else window.addEventListener('resize',()=>updateGalleryColumns());
+if(!CSS_GALLERY_COLUMNS){
+ if(typeof ResizeObserver==='function')new ResizeObserver(entries=>{for(const entry of entries)if(entry.target===$('modList')&&entry.contentRect.width!==GALLERY_OBSERVED_WIDTH){GALLERY_OBSERVED_WIDTH=entry.contentRect.width;if(GALLERY_RESIZE_FRAME===null)GALLERY_RESIZE_FRAME=requestAnimationFrame(()=>{GALLERY_RESIZE_FRAME=null;updateGalleryColumns(GALLERY_OBSERVED_WIDTH)})}}).observe($('modList'));
+ else window.addEventListener('resize',()=>updateGalleryColumns());
+}
 $('providerFilter').onchange=event=>updatePrefs({provider:event.target.value});
 $('railToggle').onclick=()=>updatePrefs({navExpanded:!STORE.prefs.navExpanded});
 $('railTheme').onclick=()=>$('themeToggle').click();

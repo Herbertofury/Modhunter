@@ -294,7 +294,69 @@ class GalleryWorkspaceTests(unittest.TestCase):
         self.assertEqual(self.page.locator('#libraryGallery').get_attribute('aria-pressed'), 'false')
         self.assertEqual(self.page.locator('#modList .mod-row').count(), 9)
 
+    def force_legacy_gallery_geometry(self):
+        self.context.add_init_script("""(() => {
+          const real=CSS.supports.bind(CSS);
+          CSS.supports=(...args)=>args[0]==='flex-basis'&&String(args[1]).includes('100cqw')?false:real(...args);
+        })()""")
+
+    def test_container_gallery_sizes_every_card_like_the_nonce_fallback(self):
+        nonce='bW9kaHVudGVyLXN0YXRpYy1xYQ'
+        # Reopen the owned fixture using fresh preferences for each arm.
+        # Unsupported engines just run the separate legacy assertions below.
+        self.context.add_init_script("localStorage.clear()")
+        self.open(count=36,group_count=3,style_nonce=nonce)
+        if not self.page.locator('#modList').get_attribute('data-gallery-sizing'):
+            chrome=self.page.evaluate("navigator.userAgent.match(/Chrome\\/(\\d+)/)?.[1]")
+            if chrome and int(chrome)>=140:
+                self.fail('Current Chromium did not admit the exact typed container-addressed arithmetic')
+            self.skipTest('Engine does not support typed CSS container arithmetic')
+
+        pairs=[(1440, 'compact'),(1028, 'compact'),(1028, 'comfy'),
+               (900, 'comfy'),(581, 'comfy'),(580, 'comfy'),(580, 'compact'),(390, 'compact')]
+
+        def run(container):
+            self.page.locator('#libraryGallery').click()
+            self.page.evaluate('window.__geometryOriginalRows=[...document.querySelectorAll("#modList > .mod-row")]')
+            results=[]
+            for viewport,density in pairs:
+                self.page.set_viewport_size({'width':viewport,'height':900})
+                if self.page.locator('body').get_attribute('data-density')!=density:
+                    self.page.locator('#densityToggle').click()
+                shape=self.page.evaluate("""async()=>{
+                  await new Promise(done=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(done))));
+                  const list=document.getElementById('modList'),box=list.getBoundingClientRect(),rows=[...list.querySelectorAll(':scope > .mod-row')];
+                  const style=document.querySelector('style[data-library-geometry]');
+                  return {styleCount:Number(!!style),nonce:style?.nonce,containerType:getComputedStyle(list).containerType,
+                    layout:[box.width,box.height],rowData:rows.map((row,i)=>{
+                      const rect=row.getBoundingClientRect(),control=row.querySelector('.inspect-btn');
+                      return {id:row.dataset.id,same:row===__geometryOriginalRows[i],geometry:[rect.x,rect.y,rect.width,rect.height],
+                        within:rect.left>=box.left-1&&rect.right<=box.right+1&&rect.width>0&&rect.height>0,
+                        painted:getComputedStyle(row).contentVisibility==='visible',tab:control.tabIndex,
+                        label:control.getAttribute('aria-label')};
+                    })};
+                }""")
+                self.assertEqual(shape.pop('styleCount'),0 if container else 1)
+                self.assertEqual(shape.pop('containerType'),'inline-size' if container else 'normal')
+                self.assertEqual(shape.pop('nonce',None),None if container else nonce)
+                self.assertEqual([entry['id'] for entry in shape['rowData']],[f'item-{i}' for i in range(36)])
+                self.assertTrue(all(entry['same'] and entry['within'] and entry['painted'] and entry['tab']==0
+                                    for entry in shape['rowData']), shape)
+                results.append(shape)
+            self.page.locator('#row-item-0 .inspect-btn').focus()
+            self.page.keyboard.press('Enter')
+            self.assertTrue(self.page.locator('#detailDrawer').evaluate("drawer=>drawer.classList.contains('open')"))
+            return results
+
+        supported=run(True)
+        self.force_legacy_gallery_geometry()
+        self.page.set_viewport_size({'width':1440,'height':900})
+        self.open(count=36,group_count=3,style_nonce=nonce)
+        self.assertIsNone(self.page.locator('#modList').get_attribute('data-gallery-sizing'))
+        self.assertEqual(supported,run(False))
+
     def test_gallery_geometry_works_with_packaged_style_nonce_policy(self):
+        self.force_legacy_gallery_geometry()
         nonce = 'bW9kaHVudGVyLXN0eWxlLXFh'
         self.open(count=12, style_nonce=nonce)
         # Prove the browser enforces the response policy; a missing nonce in
@@ -1125,6 +1187,7 @@ class GalleryWorkspaceTests(unittest.TestCase):
         self.assertEqual(self.page.locator('#detailDrawer').get_attribute('aria-hidden'),'true')
 
     def test_gallery_label_literals_preserve_escaping_fallback_and_nonce_without_row_changes(self):
+        self.force_legacy_gallery_geometry()
         nonce='bW9kaHVudGVyLWxhYmVsLXFh'
         self.open(count=6,style_nonce=nonce)
         style_count=self.page.locator('style').count()

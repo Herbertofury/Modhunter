@@ -1224,6 +1224,20 @@ body[data-layout="compact"][data-library-view="gallery"] .source-btn{border:0;pa
 body[data-layout="compact"][data-library-view="gallery"] .inspect-col{grid-column:2;grid-row:5;padding-top:8px;border-top:1px solid var(--vault-soft)}
 body[data-layout="compact"][data-library-view="gallery"] .favorite-btn{display:inline-flex}
 body[data-layout="compact"][data-density="comfy"][data-library-view="gallery"] .modlist{gap:18px}
+/* Container-based flex columns. Keep the established gaps, breakpoints and
+   card proportions without passing width variables to every card descendant.
+   Only #modList determines inline size; no card skips layout or painting. */
+body[data-layout="compact"][data-library-view="gallery"] #modList[data-gallery-sizing="container"]{container-type:inline-size}
+body[data-layout="compact"][data-library-view="gallery"] #modList[data-gallery-sizing="container"] > .mod-row{
+ flex-basis:calc((100% - (max(1,round(down,(100cqw + 14px) / 214px,1)) - 1) * 14px) / max(1,round(down,(100cqw + 14px) / 214px,1)))
+}
+body[data-layout="compact"][data-library-view="gallery"][data-density="comfy"] #modList[data-gallery-sizing="container"] > .mod-row{
+ flex-basis:calc((100% - (max(1,round(down,(100cqw + 18px) / 278px,1)) - 1) * 18px) / max(1,round(down,(100cqw + 18px) / 278px,1)))
+}
+@media(max-width:580px){
+ body[data-layout="compact"][data-library-view="gallery"] #modList[data-gallery-sizing="container"] > .mod-row{flex-basis:calc((100% - 10px) / 2)}
+ body[data-layout="compact"][data-library-view="gallery"][data-density="comfy"] #modList[data-gallery-sizing="container"] > .mod-row{flex-basis:100%}
+}
 body[data-layout="compact"][data-density="comfy"][data-library-view="gallery"] .mod-art{height:164px}
 body[data-layout="compact"] .empty-state{grid-column:1/-1;background:var(--vault-surface);border:1px dashed var(--vault-line);border-radius:8px;color:var(--vault-text);padding:44px 16px}
 body[data-layout="compact"][data-library-view="gallery"] .empty-state{flex:0 0 100%;width:100%}
@@ -3243,9 +3257,15 @@ function thumbnailMarkup(mod,large=false,source=getSrc(mod)){
  const metadata=' data-provider-label="'+escapeHTML(label)+'"';
  return large?'<div class="mod-art mod-art-large'+artClass+'"'+metadata+'>'+inside+'</div>':'<button class="mod-art'+artClass+'" type="button" data-act="preview" data-id="'+id+'"'+metadata+' title="'+escapeHTML('Inspect '+mod.name)+'" aria-label="'+escapeHTML('Preview and inspect '+mod.name)+'">'+inside+'</button>';
 }
+// Defer column resolution to the same layout that sizes the owned list.
+// Keep the proven observer+nonce rule only on engines lacking the exact
+// size-query and typed-arithmetic grammar used by the static stylesheet.
+const CSS_GALLERY_COLUMNS=globalThis.CSS?.supports?.('container-type','inline-size')&&
+ CSS.supports('flex-basis','calc((100% - (max(1,round(down,(100cqw + 14px) / 214px,1)) - 1) * 14px) / max(1,round(down,(100cqw + 14px) / 214px,1)))');
+if(CSS_GALLERY_COLUMNS)$('modList').dataset.gallerySizing='container';
 let GALLERY_GEOMETRY_RULE=null;
 function updateGalleryColumns(width){
- if(STORE.prefs.libraryView!=='gallery')return;
+ if(CSS_GALLERY_COLUMNS||STORE.prefs.libraryView!=='gallery')return;
  const list=$('modList');if(!list)return;
  const available=width??list.clientWidth;if(!(available>0))return;
  const comfy=STORE.prefs.density==='comfy',narrow=innerWidth<=580,gap=comfy?18:narrow?10:14;
@@ -3267,8 +3287,8 @@ function updateGalleryColumns(width){
  list.dataset.galleryGeometry=key;
 }
 function applyLibraryAppearance(){
- // Read one existing container width before changing the view. The outer
- // gallery wraps complete cards instead of sizing thousands of grid tracks.
+ // Legacy geometry keeps its original pre-view read. Current engines size
+ // every flex card during the same normal layout using the list content box.
  updateGalleryColumns();
  setBodyPreference('libraryView',STORE.prefs.libraryView==='gallery'?'gallery':'list');
  setBodyPreference('galleryGrouping',STORE.prefs.galleryGrouping==='chapters'?'chapters':'all');
@@ -3303,8 +3323,10 @@ $('libraryList').onclick=()=>updatePrefs({libraryView:'list'});
 $('libraryGallery').onclick=()=>updatePrefs({libraryView:'gallery'});
 $('galleryGrouping').onchange=event=>updatePrefs({galleryGrouping:event.target.value==='chapters'?'chapters':'all'});
 let GALLERY_RESIZE_FRAME=null,GALLERY_OBSERVED_WIDTH=0;
-if(typeof ResizeObserver==='function')new ResizeObserver(entries=>{for(const entry of entries)if(entry.target===$('modList')&&entry.contentRect.width!==GALLERY_OBSERVED_WIDTH){GALLERY_OBSERVED_WIDTH=entry.contentRect.width;if(GALLERY_RESIZE_FRAME===null)GALLERY_RESIZE_FRAME=requestAnimationFrame(()=>{GALLERY_RESIZE_FRAME=null;updateGalleryColumns(GALLERY_OBSERVED_WIDTH)})}}).observe($('modList'));
-else window.addEventListener('resize',()=>updateGalleryColumns());
+if(!CSS_GALLERY_COLUMNS){
+ if(typeof ResizeObserver==='function')new ResizeObserver(entries=>{for(const entry of entries)if(entry.target===$('modList')&&entry.contentRect.width!==GALLERY_OBSERVED_WIDTH){GALLERY_OBSERVED_WIDTH=entry.contentRect.width;if(GALLERY_RESIZE_FRAME===null)GALLERY_RESIZE_FRAME=requestAnimationFrame(()=>{GALLERY_RESIZE_FRAME=null;updateGalleryColumns(GALLERY_OBSERVED_WIDTH)})}}).observe($('modList'));
+ else window.addEventListener('resize',()=>updateGalleryColumns());
+}
 $('providerFilter').onchange=event=>updatePrefs({provider:event.target.value});
 $('railToggle').onclick=()=>updatePrefs({navExpanded:!STORE.prefs.navExpanded});
 $('railTheme').onclick=()=>$('themeToggle').click();

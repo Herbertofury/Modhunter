@@ -640,6 +640,20 @@ body[data-layout="compact"][data-library-view="gallery"] .source-btn{border:0;pa
 body[data-layout="compact"][data-library-view="gallery"] .inspect-col{grid-column:2;grid-row:5;padding-top:8px;border-top:1px solid var(--vault-soft)}
 body[data-layout="compact"][data-library-view="gallery"] .favorite-btn{display:inline-flex}
 body[data-layout="compact"][data-density="comfy"][data-library-view="gallery"] .modlist{gap:18px}
+/* Container-based flex columns. Keep the established gaps, breakpoints and
+   card proportions without passing width variables to every card descendant.
+   Only #modList determines inline size; no card skips layout or painting. */
+body[data-layout="compact"][data-library-view="gallery"] #modList[data-gallery-sizing="container"]{container-type:inline-size}
+body[data-layout="compact"][data-library-view="gallery"] #modList[data-gallery-sizing="container"] > .mod-row{
+ flex-basis:calc((100% - (max(1,round(down,(100cqw + 14px) / 214px,1)) - 1) * 14px) / max(1,round(down,(100cqw + 14px) / 214px,1)))
+}
+body[data-layout="compact"][data-library-view="gallery"][data-density="comfy"] #modList[data-gallery-sizing="container"] > .mod-row{
+ flex-basis:calc((100% - (max(1,round(down,(100cqw + 18px) / 278px,1)) - 1) * 18px) / max(1,round(down,(100cqw + 18px) / 278px,1)))
+}
+@media(max-width:580px){
+ body[data-layout="compact"][data-library-view="gallery"] #modList[data-gallery-sizing="container"] > .mod-row{flex-basis:calc((100% - 10px) / 2)}
+ body[data-layout="compact"][data-library-view="gallery"][data-density="comfy"] #modList[data-gallery-sizing="container"] > .mod-row{flex-basis:100%}
+}
 body[data-layout="compact"][data-density="comfy"][data-library-view="gallery"] .mod-art{height:164px}
 body[data-layout="compact"] .empty-state{grid-column:1/-1;background:var(--vault-surface);border:1px dashed var(--vault-line);border-radius:8px;color:var(--vault-text);padding:44px 16px}
 body[data-layout="compact"][data-library-view="gallery"] .empty-state{flex:0 0 100%;width:100%}

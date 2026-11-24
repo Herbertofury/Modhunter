@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 64
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: '1.99.1'
@@ -108,7 +108,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 64
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

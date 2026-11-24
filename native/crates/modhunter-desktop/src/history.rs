@@ -312,8 +312,8 @@ mod tests {
         let bytes = serde_json::to_vec(&report).unwrap();
         std::fs::write(&path, &bytes).unwrap();
         assert_eq!(
-            read(&path, &catalog).unwrap(),
-            decode(&bytes, &catalog).unwrap()
+            read(&path, &catalog).unwrap().encoded().unwrap(),
+            decode(&bytes, &catalog).unwrap().encoded().unwrap()
         );
         assert!(read(Path::new("history.json"), &catalog).is_err());
         let other = directory.path().join("history.html");

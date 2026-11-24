@@ -26,6 +26,14 @@ python native/scripts/export_nexus_history.py --catalog "D:\Private\catalog.json
 
 The catalog is the complete native `modhunter-cli import --modlist <absolute modlist.txt> [--ini <ModOrganizer.ini>] [--mods <directory>]` JSON output. The exporter requires `catalog.offline`, a profile ID, an import timestamp with a time zone, and unique names and IDs in `catalog.items`. The report records the SHA-256 of the original catalog bytes.
 
+For the Windows desktop, use `--output "D:\Private\Nexus history.json"` with the same catalog and observation inputs. Import the matching offline profile and choose **Nexus History** in the desktop toolbar. You can also pair the JSON with an explicit offline profile in a shortcut.
+
+```powershell
+.\Modhunter.exe "--offline-profile=D:\MO2\profiles\My Profile\modlist.txt" "--historical-evidence=D:\Private\Nexus history.json"
+```
+
+The history window shows the recorded observation date, complete verdict filters, reasons and individual installed and target file IDs. The normal dashboard continues to describe the current offline import. Modhunter checks the profile identity, full row coverage and the installed metadata used by the resolver, including versions, receipt IDs, archives and ignored versions. A change to that evidence requires a new export. Refreshing or switching the profile closes the previous evidence view. This is a local historical record provided by the operator. The view uses bundled code, displays source addresses as text and has no native command permissions.
+
 The read-only SQLite observation source has a `projects(game TEXT, mod_id INTEGER, payload TEXT, errors TEXT, seen TEXT)` table, keyed by `(game, mod_id)`. The game is the Nexus domain slug. Each `payload` is JSON containing the public GraphQL project and its complete file list as `[project, files]`. Successful responses carry `errors=[]`. Failed provider observations retain their error strings in a JSON array. The `seen` value is the ISO 8601 observation time with its UTC offset. The exporter runs the product's exact-file resolver against those saved observations. Missing observations stay unverified. Every verdict describes the evidence available at the recorded time.
 
 To independently cross-check an earlier complete census, add `--verify-rows "D:\Private\decisions.jsonl" --catalog-sha256 <original-catalog-sha256>`. Each JSONL record carries `name`, `installed`, `mo2Newest`, `sourceGame`, `nexusId`, `sourceUrl`, `observedAt`, optional `failure`, and the product `decision` object. The exporter verifies coverage, mod and provider identity, dates, source links, verdicts, reasons, versions and resolved file IDs before replacing the report. An unavailable or unverified row remains visible alongside rows with exact file matches.

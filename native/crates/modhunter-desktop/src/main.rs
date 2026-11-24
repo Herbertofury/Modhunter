@@ -2,6 +2,8 @@
 
 mod catalog;
 mod discovery;
+#[cfg(any(windows, test))]
+mod history;
 mod import_operation;
 #[cfg(any(windows, test))]
 mod ini_review;

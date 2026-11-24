@@ -124,6 +124,22 @@ class HistoricalExportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "duplicate"):
             self.render()
 
+    def test_desktop_json_binds_the_installed_archive_without_exposing_its_path(self):
+        output = self.html.with_suffix(".json")
+
+        def snapshot():
+            report.export(self.catalog, self.db, output)
+            return json.loads(output.read_bytes())
+
+        original = snapshot()
+        self.assertEqual(original["format"], "modhunter-nexus-history-v1")
+        changed = dict(self.first, installationArchive="different-private-archive.zip")
+        self.save_catalog([changed, self.second])
+        fresh = snapshot()
+        self.assertNotEqual(original["rows"][0]["binding"], fresh["rows"][0]["binding"])
+        self.assertEqual(original["rows"][1]["binding"], fresh["rows"][1]["binding"])
+        self.assertNotIn("different-private-archive", output.read_text(encoding="utf-8"))
+
     def test_mismatched_provider_identity_and_duplicate_projects_fail_closed(self):
         with closing(sqlite3.connect(self.db)) as db, db:
             db.execute("UPDATE projects SET errors='[]',payload=?", (json.dumps([{"modId": 99}, []]),))

@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; base-uri 'none'; form-action 'none'; connect-src 'none'">
+<title>Historical Nexus update evidence</title>
+<link rel="stylesheet" href="nexus-history.css"></head><body><main>
+<header><div class="eyebrow">Modhunter · Historical snapshot</div><h1>Nexus update evidence</h1>
+<h2 id="profile"></h2><p class="meta" id="observation-date"></p><p>These decisions describe the installed files and public Nexus observations recorded for this snapshot. Recheck a file in Modhunter before applying an update.</p>
+<details><summary>Snapshot identity and dates</summary><p class="meta" id="dates"></p><div class="meta">Native catalog SHA-256 <code id="hash"></code></div></details></header>
+<nav id="counts" aria-label="Filter by historical verdict"></nav>
+<label for="query">Search mods, file IDs, versions or reasons</label><input id="query" type="search" autocomplete="off" placeholder="Search this snapshot">
+<div class="statusline"><strong id="matches" aria-live="polite"></strong><div class="pager"><button id="prev" aria-label="Previous page">Previous</button><span id="page"></span><button id="next" aria-label="Next page">Next</button></div></div>
+<div class="tablewrap"><table><thead><tr><th>Mod and decision</th><th>Versions</th><th>Source and file identity</th><th>Provider observation (UTC)</th></tr></thead><tbody id="rows"></tbody></table><p id="empty" class="empty" hidden>No matching mods.</p></div>
+</main><script type="application/json" id="data"></script><script src="nexus-history.js"></script></body></html>

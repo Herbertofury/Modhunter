@@ -117,7 +117,32 @@ def historical_rows(catalog, database):
                 if info.get("targetFileId"):
                     url += f"&file_id={int(info['targetFileId'])}"
         source = item.get("source") or {}
+        # Match desktop history::binding. Include every native field used to identify or compare releases.
+        identity = [
+            item.get(key)
+            for key in (
+                "id",
+                "name",
+                "installedVersion",
+                "latestKnownVersion",
+                "sourceGame",
+                "nexusId",
+                "installedFiles",
+                "installationArchive",
+                "ignoredVersion",
+                "installedFileEvidenceIncomplete",
+                "updateEligible",
+                "missingFromDisk",
+                "notInProfile",
+                "foreign",
+                "repository",
+            )
+        ] + [source.get("type"), source.get("url")]
+        binding = hashlib.sha256(
+            json.dumps(identity, ensure_ascii=False, separators=(",", ":")).encode()
+        ).hexdigest()
         yield {
+            "binding": binding,
             "id": item["id"],
             "name": item["name"],
             "game": game,
@@ -170,8 +195,10 @@ def verify_rows(path, rows):
 
 def export(catalog_path, observations_path, output, prior=None, expected_hash=None):
     inputs = [catalog_path, observations_path] + ([prior] if prior else [])
-    if output.suffix.lower() != ".html" or any(path.resolve() == output.resolve() for path in inputs):
-        raise ValueError("Choose an HTML output separate from the evidence inputs.")
+    if output.suffix.lower() not in (".html", ".json") or any(
+        path.resolve() == output.resolve() for path in inputs
+    ):
+        raise ValueError("Choose an HTML or JSON output separate from the evidence inputs.")
     if prior and not expected_hash:
         raise ValueError("--verify-rows requires the original --catalog-sha256.")
     catalog, digest = load_catalog(catalog_path, expected_hash)
@@ -183,6 +210,7 @@ def export(catalog_path, observations_path, output, prior=None, expected_hash=No
         verify_rows(prior, rows)
     dates = [timestamp(row["seen"]) for row in rows if row["seen"]]
     facts = {
+        "format": "modhunter-nexus-history-v1",
         "profile": catalog["profileName"],
         "profileId": catalog["profileId"],
         "catalogSHA256": digest,
@@ -194,14 +222,26 @@ def export(catalog_path, observations_path, output, prior=None, expected_hash=No
         "rows": rows,
     }
     data = json.dumps(facts, ensure_ascii=True, separators=(",", ":")).replace("<", r"\u003c")
-    template = Path(__file__).with_name("nexus_history.html").read_text(encoding="utf-8")
-    script = template.split('<script id="app">', 1)[1].split("</script>", 1)[0]
-    script_hash = base64.b64encode(hashlib.sha256(script.encode()).digest()).decode("ascii")
-    html = template.replace("REPORT_SCRIPT_HASH", script_hash).replace("<!--REPORT_DATA-->", data)
+    document = data
+    if output.suffix.lower() == ".html":
+        ui = Path(__file__).resolve().parents[1] / "ui"
+        template = (ui / "nexus-history.html").read_text(encoding="utf-8")
+        script = (ui / "nexus-history.js").read_text(encoding="utf-8")
+        style = (ui / "nexus-history.css").read_text(encoding="utf-8")
+        script_hash = base64.b64encode(hashlib.sha256(script.encode()).digest()).decode("ascii")
+        document = (
+            template.replace(
+                "script-src 'self'; style-src 'self'",
+                f"script-src 'sha256-{script_hash}'; style-src 'unsafe-inline'",
+            )
+            .replace('<script src="nexus-history.js"></script>', f"<script>{script}</script>")
+            .replace('<link rel="stylesheet" href="nexus-history.css">', f"<style>{style}</style>")
+            .replace('id="data"></script>', f'id="data">{data}</script>')
+        )
     with tempfile.NamedTemporaryFile(dir=output.parent, prefix=".modhunter-report-", delete=False) as tmp:
         temporary = Path(tmp.name)
     try:
-        temporary.write_text(html, encoding="utf-8")
+        temporary.write_text(document, encoding="utf-8")
         os.replace(temporary, output)
     finally:
         temporary.unlink(missing_ok=True)
@@ -214,7 +254,9 @@ def main():
     parser.add_argument(
         "--observations", type=Path, required=True, help="Read-only SQLite public Nexus snapshot"
     )
-    parser.add_argument("--output", type=Path, required=True, help="Local historical .html report")
+    parser.add_argument(
+        "--output", type=Path, required=True, help="Local .html report or desktop .json data file"
+    )
     parser.add_argument(
         "--verify-rows", type=Path, help="Independently cross-check a complete recorded JSONL census"
     )

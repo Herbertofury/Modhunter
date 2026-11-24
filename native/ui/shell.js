@@ -24,6 +24,7 @@
   $('diagnostics').disabled=!connected||busy.has('diagnostics');
   $('pluginAudit').disabled=!!state.importing||busy.has('pluginAudit')||busy.has('importMo2')||busy.has('refreshProfile')||(!connected&&!state.offlineProfile);
   $('pluginAudit').textContent=auditing?'AUDITING…':'PLUGIN AUDIT';
+  $('historicalEvidence').disabled=!!state.endpoint||!state.offlineProfile||!!state.importing||busy.has('historicalEvidence');
   $('cancelImport').hidden=!state.importing;
   $('cancelImport').disabled=!!state.cancelling||busy.has('cancelImport');
   $('cancelImport').textContent=state.cancelling?'CANCELING…':'CANCEL';
@@ -34,7 +35,7 @@
   $('compareIni').setAttribute('aria-busy',String(busy.has('compareIni')));
   $('clearEslifierData').disabled=!state.eslifierDataPath||!!state.importing||busy.has('clearEslifierData');
   $('disconnect').disabled=!state.endpoint&&!busy.has('connect')&&!busy.has('discover');
-  for(const [id,kind] of [['connect','connect'],['openWatchtower','watchtower'],['discover','discover'],['importMo2','importMo2'],['refreshProfile','refreshProfile'],['diagnostics','diagnostics'],['pluginAudit','pluginAudit'],['cancelImport','cancelImport'],['configureIni','configureIni'],['configureMods','configureMods'],['clearPaths','clearPaths'],['configureEslifierData','configureEslifierData'],['clearEslifierData','clearEslifierData']]){
+  for(const [id,kind] of [['connect','connect'],['openWatchtower','watchtower'],['discover','discover'],['importMo2','importMo2'],['refreshProfile','refreshProfile'],['diagnostics','diagnostics'],['pluginAudit','pluginAudit'],['historicalEvidence','historicalEvidence'],['cancelImport','cancelImport'],['configureIni','configureIni'],['configureMods','configureMods'],['clearPaths','clearPaths'],['configureEslifierData','configureEslifierData'],['clearEslifierData','clearEslifierData']]){
    const working=busy.has(kind)||(kind==='pluginAudit'&&auditing)||(kind==='cancelImport'&&!!state.cancelling);
    $(id).setAttribute('aria-busy',String(working));
   }
@@ -76,7 +77,7 @@
   }catch(error){message(String(error),true,true);return null}
   finally{if(exclusive){busy.delete(kind);render(state)}}
  }
- for(const [id,kind,value] of [['openWatchtower','watchtower'],['openReadiness','readiness'],['newDash','new','dashboard'],['newSiege','new','siege'],['newRealm','new','realm'],['back','back'],['forward','forward'],['reload','reload'],['open','external'],['copy','copy'],['diagnostics','diagnostics'],['disconnect','disconnect'],['importMo2','importMo2'],['refreshProfile','refreshProfile'],['pluginAudit','pluginAudit'],['configureIni','configureIni'],['configureMods','configureMods'],['clearPaths','clearPaths'],['configureEslifierData','configureEslifierData'],['clearEslifierData','clearEslifierData']])$(id).onclick=()=>command(kind,value);
+ for(const [id,kind,value] of [['openWatchtower','watchtower'],['openReadiness','readiness'],['newDash','new','dashboard'],['newSiege','new','siege'],['newRealm','new','realm'],['back','back'],['forward','forward'],['reload','reload'],['open','external'],['copy','copy'],['diagnostics','diagnostics'],['disconnect','disconnect'],['importMo2','importMo2'],['refreshProfile','refreshProfile'],['pluginAudit','pluginAudit'],['historicalEvidence','historicalEvidence'],['configureIni','configureIni'],['configureMods','configureMods'],['clearPaths','clearPaths'],['configureEslifierData','configureEslifierData'],['clearEslifierData','clearEslifierData']])$(id).onclick=()=>command(kind,value);
  $('compareIni').onclick=async()=>{
   if(disposed||$('compareIni').disabled)return;
   const owner=iniView,visible=()=>!disposed&&owner===iniView;

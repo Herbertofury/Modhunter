@@ -2338,6 +2338,7 @@ dependencies = [
 name = "modhunter-desktop"
 version = "0.12.6"
 dependencies = [
+ "chrono",
  "modhunter-core",
  "serde",
  "serde_json",

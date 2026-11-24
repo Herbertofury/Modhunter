@@ -123,6 +123,18 @@ test('ESLifier path selection and clearing retain no stale selected title', asyn
   assert.match(h.nodes.get('configureEslifierData').title, /Choose ESLifier_Data/);
 });
 
+test('historical evidence opens from a completed offline profile', async () => {
+  const h = await harness(snapshot());
+  const button = h.nodes.get('historicalEvidence');
+  assert.equal(button.disabled, false);
+  await button.onclick();
+  assert.equal(h.calls.at(-1).kind, 'historicalEvidence');
+  for (const patch of [{importing:true}, {offlineProfile:null}, {endpoint:'http://127.0.0.1:55555/'}]) {
+    h.emit(snapshot(patch));
+    assert.equal(button.disabled, true);
+  }
+});
+
 test('audit requires an offline profile or directs a live session to its dashboard', async () => {
   const h = await harness(snapshot({ offlineProfile: null, offlineModCount: 0 }));
   assert.equal(h.nodes.get('pluginAudit').disabled, true);

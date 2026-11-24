@@ -21,6 +21,9 @@ use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 use url::Url;
 
+#[path = "desktop_history.rs"]
+mod historical;
+
 type Result<T> = std::result::Result<T, String>;
 
 #[derive(Clone, Serialize)]
@@ -54,6 +57,7 @@ struct Model {
 struct DesktopSmokeStorage(tempfile::TempDir);
 
 struct Runtime {
+    history_window: Mutex<Option<(u64, String)>>,
     model: Mutex<Model>,
     save_guard: Mutex<()>,
     importer: ProfileImporter,
@@ -270,7 +274,9 @@ fn notify_install_queue_context(app: &tauri::AppHandle) {
 }
 
 fn notify(app: &tauri::AppHandle) {
-    let state = app.state::<Runtime>().snapshot();
+    let runtime = app.state::<Runtime>();
+    historical::close_stale(app, &runtime);
+    let state = runtime.snapshot();
     let _ = app.emit_to("chrome", "modhunter-state", state);
 }
 fn alert(app: &tauri::AppHandle, message: impl Into<String>) {
@@ -1575,10 +1581,20 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
                 m.shell_ready = true;
                 (m.prefs.endpoint.clone(), m.prefs.profile.is_some())
             };
+            let history = historical::requested_path(std::env::args().skip(1))?;
             if let Some(request) =
                 crate::offline_startup::requested_profile(std::env::args().skip(1))?
             {
-                return import_profile(app, ProfileSelection::Exact(request), false);
+                let result = import_profile(app, ProfileSelection::Exact(request), false)?;
+                if result["canceled"] != true
+                    && let Some(path) = history
+                {
+                    historical::open(app, Some(&path))?;
+                }
+                return Ok(result);
+            }
+            if history.is_some() {
+                return Err("--historical-evidence requires --offline-profile for a specific offline launch.".into());
             }
             if let Some(endpoint) = restore.0
                 && let Ok(result) = connect(app, &endpoint)
@@ -1637,6 +1653,7 @@ fn execute(app: &tauri::AppHandle, kind: &str, value: Value) -> Result<Value> {
             }
         }
         "importMo2" => return import_profile(app, ProfileSelection::Choose, false),
+        "historicalEvidence" => historical::open(app, None)?,
         "refreshProfile" | "pluginAudit" => {
             let live = { state.model.lock().map_err(err)?.endpoint.is_some() };
             if live {
@@ -1917,6 +1934,7 @@ pub fn run() {
                 });
             }
             app.manage(Runtime {
+                history_window: Mutex::new(None),
                 save_guard: Mutex::new(()),
                 model: Mutex::new(Model {
                     prefs,

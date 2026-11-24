@@ -192,6 +192,14 @@ class NativeBridgeTests(unittest.TestCase):
         fake.requestFailed.emit("skyrimspecialedition", 88, 0, fake.calls[-1][-1], 401, "Not connected")
         self.assertTrue(q.event.is_set())
         self.assertFalse(q.result["ok"])
+        self.assertIn("sign-in", q.result["error"])
+        for code, text in [(429, "quota"), (403, "denied access"), (404, "find"), (5, "Operation canceled")]:
+            q = UIRequest("nexus-metadata", {"game": "skyrimspecialedition", "modId": 88})
+            gateway.request(q)
+            fake.requestFailed.emit("skyrimspecialedition", 88, 0, fake.calls[-1][-1], code, "Operation canceled")
+            self.assertEqual(q.result["statusCode"], code)
+            self.assertIn(text, q.result["error"])
+            self.assertNotIn("Connect to Nexus", q.result["error"])
 
 
 class MixedDownloadTests(unittest.TestCase):

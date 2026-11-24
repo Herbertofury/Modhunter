@@ -69,6 +69,7 @@ class BoundedNexusAuditTests(unittest.TestCase):
         self.assertEqual(len(calls), 5)
         self.assertEqual(results[0]["queried"], 5)
         self.assertEqual(results[0]["cachedOrDeferred"], 11995)
+        self.assertEqual(results[0]["deferredNexusProjects"], 11995)
         self.assertTrue(results[0]["cancelled"])
         self.assertEqual(len(results[0]["itemRecords"]), 12000)
         self.assertEqual({row["verdict"] for row in results[0]["itemRecords"].values()}, {"unknown"})

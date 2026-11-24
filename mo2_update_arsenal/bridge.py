@@ -736,6 +736,7 @@ class ArsenalService:
         return {"ok": True, "started": True, "scan": self.scan_state(), "profileId": profile_id}
 
     def begin_scan(self, mode: str, profile_id: str | None = None) -> dict:
+        scan_started = time.monotonic()
         if mode not in ("quick", "deep", "local", "sources", "all", "startup"):
             return {"ok": False, "error": "Invalid scan mode"}
         with self._guard:
@@ -892,7 +893,11 @@ class ArsenalService:
                                 update = project_records.get(str(native_project))
                         if update:
                             _bind_scan_result(item, scanned_item, update)
-                    self._scan = {"state": "partial" if result.get("errors") else "completed", "mode": effective_mode, **result, "checked": result.get("queried", 0), "total": result.get("queried", 0), "jobId": job_epoch}
+                    attempted = result.get("queried", 0)
+                    self._scan = {"state": "partial" if result.get("errors") else "completed",
+                                  "mode": effective_mode, **result, "checked": attempted,
+                                  "total": attempted + result.get("deferredNexusProjects", 0),
+                                  "elapsedSeconds": round(time.monotonic() - scan_started, 3), "jobId": job_epoch}
                     # A full audit is required, following the latest verified install.
                     # Local / cached and quick activity checks cannot crown a profile.
                     self.chronicle.maybe_victory(snapshot["profileId"], self._snapshot, self._scan,

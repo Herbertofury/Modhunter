@@ -622,7 +622,7 @@ class UpdateScanner:
         if was_cancelled:
             errors.append("Nexus audit was cancelled; verification incomplete")
         return {"records": output, "itemRecords": item_records, "uniqueNexusMods": len(ids),
-                "queried": queried, "fromCache": len(ids) - total,
+                "queried": queried, "fromCache": len(ids) - total, "deferredNexusProjects": total - queried,
                 "cachedOrDeferred": len(ids) - queried, "cancelled": was_cancelled,
                 "mode": mode, "errors": errors, "checkedAt": datetime.now(timezone.utc).isoformat(),
                 "quotaRemaining": self.client.remaining}

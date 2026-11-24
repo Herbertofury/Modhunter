@@ -346,9 +346,15 @@ class NativeNexusGateway:
         if args[2] != 0:
             request.finish({"ok": False, "error": "MO2 Nexus failure response identity did not match the requested operation"})
             return
-        request.finish({
-            "ok": False,
-            "statusCode": args[4] if type(args[4]) is int else None,
-            "error": "MO2 Nexus connection failed: " + str(args[-1])[:200]
-            + ". Verify MO2 Settings > Nexus > Connect to Nexus.",
-        })
+        status = args[4] if type(args[4]) is int else None
+        if status == 429:
+            message = "Nexus rate limit reached (HTTP 429). Retry after the provider quota resets."
+        elif status == 401:
+            message = "Nexus requires sign-in (HTTP 401). Connect to Nexus in MO2 Settings."
+        elif status == 403:
+            message = "Nexus denied access to this item for the connected account (HTTP 403)."
+        elif status == 404:
+            message = "Nexus could not find this project or file (HTTP 404)."
+        else:
+            message = "MO2 Nexus request failed: " + str(args[-1])[:200]
+        request.finish({"ok": False, "statusCode": status, "error": message})

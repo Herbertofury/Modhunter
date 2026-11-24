@@ -16,6 +16,20 @@ In the mod library, **File review** shows rows where the installed archive, prov
 
 The local tools also accept `--bsa ALIAS PATH` and `--plugin ALIAS PATH` to expose selected launch-time BSA directory and plugin header snapshots. `spid_preview` parses text supplied by the caller. These inspection tools operate independently of a running MO2 connection.
 
+### Search a historical Nexus snapshot offline
+
+From a source checkout, export the native profile catalog and its recorded public Nexus observations to one local HTML file. Choose a private output directory. The file contains your installed mod names, versions, project and file IDs, public source links, decision reasons and observation times. Open it in a browser to search the entire profile or select a verdict. The report embeds its data and makes no network requests. Opening a source link is an explicit browser navigation.
+
+```powershell
+python native/scripts/export_nexus_history.py --catalog "D:\Private\catalog.json" --observations "D:\Private\public-nexus-cache.sqlite" --output "D:\Private\Nexus history.html"
+```
+
+The catalog is the complete native `modhunter-cli import --modlist <absolute modlist.txt> [--ini <ModOrganizer.ini>] [--mods <directory>]` JSON output. The exporter requires `catalog.offline`, a profile ID, an import timestamp with a time zone, and unique names and IDs in `catalog.items`. The report records the SHA-256 of the original catalog bytes.
+
+The read-only SQLite observation source has a `projects(game TEXT, mod_id INTEGER, payload TEXT, errors TEXT, seen TEXT)` table, keyed by `(game, mod_id)`. The game is the Nexus domain slug. Each `payload` is JSON containing the public GraphQL project and its complete file list as `[project, files]`. Successful responses carry `errors=[]`. Failed provider observations retain their error strings in a JSON array. The `seen` value is the ISO 8601 observation time with its UTC offset. The exporter runs the product's exact-file resolver against those saved observations. Missing observations stay unverified. Every verdict describes the evidence available at the recorded time.
+
+To independently cross-check an earlier complete census, add `--verify-rows "D:\Private\decisions.jsonl" --catalog-sha256 <original-catalog-sha256>`. Each JSONL record carries `name`, `installed`, `mo2Newest`, `sourceGame`, `nexusId`, `sourceUrl`, `observedAt`, optional `failure`, and the product `decision` object. The exporter verifies coverage, mod and provider identity, dates, source links, verdicts, reasons, versions and resolved file IDs before replacing the report. An unavailable or unverified row remains visible alongside rows with exact file matches.
+
 ### Public Watchtower watches
 
 Use `--watchtower read CONFIG_DIRECTORY` to inspect the saved Watchtower configuration chosen at launch. Use `--watchtower manage CONFIG_DIRECTORY` to also register anonymous JSON or RSS/Atom sources and explicitly check one source. The directory must exist. An empty directory supports an independent Watchtower store.
@@ -49,7 +63,7 @@ Call `skyrim_load_order` with empty arguments to inspect the configured profile.
 
 Use `skyrim_inspect` for these additional reads. Each call returns the underlying engine's result and its scope.
 
-- `{"kind":"check","formId":"00000F:Skyrim.esm","family":"errors"}` runs houseCARL's reference checks on that record. Select `scripts` or `facegen` to examine that family. The response retains exclusions and upstream diagnostics.
+- `{"kind":"check","formId":"00000F:Skyrim.esm","family":"errors"}` runs houseCARL's reference checks on that record. Select `scripts` or `facegen` to examine that family. For `dialogue`, supply the FormID of a dialogue topic, quest, dialogue view or dialogue branch. The companion passes that record as the seed for the dialogue analysis. The response retains exclusions and upstream diagnostics.
 - `{"kind":"archive","name":"Skyrim - Meshes0.bsa"}` returns the complete upstream archive entry count for a file in the configured game Data directory. Use the separate launch-selected BSA directory tool to page through paths.
 - `{"kind":"asset","path":"meshes/example.nif"}` checks a Data-relative asset and its providers.
 - `{"kind":"nif","path":"meshes/example.nif"}` reads the mesh structure and reports any unavailable blocks.
@@ -73,10 +87,10 @@ The names below omit the upstream `housecarl_` prefix. Each group reflects the 2
 | --- | --- |
 | records, load_order_status | Production read via Modhunter. Record tree resolved competing providers and reported one plugin load failure. |
 | asset_status, nif_inspect | Production read via Modhunter. Verified an enabled mesh's provider and internal NIF blocks, absent-path handling and an NPC's FaceGen pair. |
-| layer, skse | Production read via Modhunter. Verified SPID inspection and matching SKSE DLL/config inventory. Other distributor formats and SKSE finding modes need individual runtime coverage. |
+| layer, skse | Production reads through Modhunter covered SkyPatcher, SPID, KID, BOS and FLM. The companion read 406, 292, 382, 204 and 86 configuration files respectively. The SKSE query returned a matching DLL and its config. |
 | create_plugin, apply | Isolated direct upstream calls wrote a new header-only plugin and a separate single-record override and read back the override. |
 | bsa_list | The product MCP companion and its independent native archive index both counted 136 entries in the installed MarketplaceTextures.bsa. The native index also read all 23 game Data BSAs (172,961 entries). |
-| check | Product MCP checked the selected Skyrim.esm gold record through houseCARL on the real profile. Its result reported zero dangling references for that record, 3,628 successfully scanned plugins and one explicit parse exclusion. Script and FaceGen check families are available with separate selection. |
+| check | Product MCP checked the selected Skyrim.esm gold record through houseCARL on the real profile. Its result reported zero dangling references for that record, 3,628 successfully scanned plugins and one explicit parse exclusion. The script and FaceGen checks returned scoped results for individual records. A dialogue check resolved topic 000E3C:Skyrim.esm and inspected its winning INFO list. Passing the Dragonbane weapon as a dialogue seed produced an explicit error. |
 | create, remove, forward, copy, write_seq, compact_plugin, merge_plugins | Upstream registration observed. Integrated workflow and mutation verification pending. |
 | place, nif_set, compile_script, decompile_script, bsa_extract, bsa_repack | Upstream registration observed. Integrated editing and external-tool verification pending. |
 | nexus_search, nexus_mod, nexus_graphql, nexus_check_updates, nexus_identify | Upstream registration observed. Real-provider matching and authorization require separate acceptance. |

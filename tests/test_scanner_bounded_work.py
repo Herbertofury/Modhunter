@@ -102,7 +102,8 @@ class BoundedNexusAuditTests(unittest.TestCase):
                     calls.append(path)
                     raise failure("Fixture provider halted")
 
-                result = UpdateScanner(self.cache, NexusClient("fixture", fetch)).scan(catalog(1000), "deep")
+                cache = Cache(self.cache.path.with_name(failure.__name__ + ".json"))
+                result = UpdateScanner(cache, NexusClient("fixture", fetch)).scan(catalog(1000), "deep")
                 self.assertGreaterEqual(len(calls), 1)
                 self.assertLessEqual(len(calls), 5)
                 self.assertEqual(result["queried"], len(calls))

@@ -7,6 +7,7 @@ from __future__ import annotations
 import concurrent.futures
 import json
 import logging
+import math
 import os
 import re
 import threading
@@ -16,6 +17,7 @@ import urllib.parse
 import urllib.request
 from collections import deque
 from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Callable
 
@@ -42,7 +44,23 @@ class MissingAuth(NexusError):
 
 
 class QuotaDepleted(NexusError):
-    pass
+    def __init__(self, message, retry_after=None):
+        super().__init__(message)
+        now = time.time()
+        # MO2 exposes the status code without HTTP headers. Defer for one
+        # hourly quota window unless the provider supplies a deadline.
+        delay = 3600
+        self.estimated = True
+        if retry_after is not None:
+            try:
+                text = str(retry_after).strip()
+                seconds = float(int(text)) if text.isascii() and text.isdecimal() else parsedate_to_datetime(text).timestamp() - now
+                if math.isfinite(seconds):
+                    delay = max(1, seconds)
+                    self.estimated = False
+            except (OverflowError, ValueError, TypeError, OSError):
+                pass
+        self.retry_at = now + delay
 
 
 def version_verdict(installed: str, latest: str) -> str:
@@ -111,7 +129,7 @@ class NexusClient:
                 return json.loads(content)
         except urllib.error.HTTPError as ex:
             if ex.code == 429:
-                raise QuotaDepleted("Nexus rate limit reached. No further requests sent.") from ex
+                raise QuotaDepleted("Nexus rate limit reached", (ex.headers or {}).get("Retry-After")) from ex
             if ex.code in (401, 403):
                 raise MissingAuth("Nexus API key is invalid or is not authorized") from ex
             if ex.code == 404:
@@ -165,13 +183,20 @@ class Cache:
                 try:
                     sequence, game, mod_id, value = json.loads(line)
                     if (type(sequence) is not int or sequence <= self._checkpoint or type(game) is not str
-                            or not re.fullmatch(r"[a-z0-9_-]{2,64}", game) or type(mod_id) is not int
-                            or mod_id <= 0 or not isinstance(value, dict)
-                            or not metadata_identity_matches(value.get("meta"), game, mod_id)):
+                            or not re.fullmatch(r"[a-z0-9_-]{2,64}", game) or not isinstance(value, dict)):
+                        continue
+                    if mod_id is None:
+                        deadline = value.get("nexusRetryAt")
+                        if type(deadline) not in (int, float) or not math.isfinite(deadline):
+                            continue
+                        self.data["nexusRetryAt"] = deadline
+                        self.data["nexusRetryEstimated"] = value.get("nexusRetryEstimated") is not False
+                    elif type(mod_id) is int and mod_id > 0 and metadata_identity_matches(value.get("meta"), game, mod_id):
+                        self.data["entries"][f"{game}/{mod_id}"] = value
+                    else:
                         continue
                 except (ValueError, TypeError, UnicodeError):
                     continue  # An interrupted final write is safe to query again.
-                self.data["entries"][f"{game}/{mod_id}"] = value
                 self._checkpoint = sequence
                 self._dirty = True
 
@@ -218,23 +243,43 @@ class Cache:
         with self.lock:
             if not self.scan_is_current(game, epoch, cancel_event):
                 return False
-            sequence = self._checkpoint + 1
-            payload = json.dumps([sequence, game, mod_id, value], ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-            # Reserve the number before I/O: a failed flush can leave a
-            # complete record that a restarted reader can legitimately see.
-            self._checkpoint = sequence
-            try:
-                self.path.parent.mkdir(parents=True, exist_ok=True)
-                with self._journal.open("ab") as stream:
-                    # Frame both ends: a new accepted record can follow a torn tail.
-                    stream.write(b"\n" + payload + b"\n")
-                    stream.flush()
-                    os.fsync(stream.fileno())
-            except OSError as exc:
-                raise OSError(f"Could not save the Nexus scan checkpoint for {game}/{mod_id}; "
-                              "earlier completed projects remain available on restart") from exc
+            self._append_checkpoint(game, mod_id, value)
             self.set(game, mod_id, value)
             return True
+
+    def _append_checkpoint(self, game, mod_id, value):
+        sequence = self._checkpoint + 1
+        payload = json.dumps([sequence, game, mod_id, value], ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        # Reserve before I/O: a failed flush can leave a complete record.
+        self._checkpoint = sequence
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with self._journal.open("ab") as stream:
+                # Frame both ends so a new record can follow a torn tail.
+                stream.write(b"\n" + payload + b"\n")
+                stream.flush()
+                os.fsync(stream.fileno())
+        except OSError as exc:
+            raise OSError(f"Could not save the Nexus scan checkpoint for {game}/{mod_id}; "
+                          "earlier completed projects remain available on restart") from exc
+
+    def quota_deadline(self):
+        with self.lock:
+            deadline = self.data.get("nexusRetryAt")
+            return deadline if type(deadline) in (int, float) and math.isfinite(deadline) and deadline > time.time() else 0
+
+    def defer_for_scan(self, game, error, *, epoch, cancel_event):
+        with self.lock:
+            existing = self.quota_deadline()
+            # An explicit provider deadline supersedes our own estimate.
+            estimated = self.data.get("nexusRetryEstimated") is not False
+            replaces = (not existing or (estimated and not error.estimated)
+                        or (estimated == error.estimated and error.retry_at > existing))
+            if self.scan_is_current(game, epoch, cancel_event) and replaces:
+                record = {"nexusRetryAt": error.retry_at, "nexusRetryEstimated": error.estimated}
+                self._append_checkpoint(game, None, record)
+                self.data.update(record)
+                self._dirty = True
 
     def persist_for_scan(self, game: str, *, epoch: int | None,
                          cancel_event: threading.Event) -> bool:
@@ -360,7 +405,7 @@ def public_nexus_query(query, variables, *, partial=False):
         return data["data"]
     except urllib.error.HTTPError as exc:
         if exc.code == 429:
-            raise QuotaDepleted("Nexus rate limit reached") from exc
+            raise QuotaDepleted("Nexus rate limit reached", (exc.headers or {}).get("Retry-After")) from exc
         if exc.code in (401, 403):
             raise MissingAuth("Nexus requires authenticated access to this data") from exc
         raise NexusError(f"Public Nexus returned HTTP {exc.code}") from exc
@@ -422,47 +467,12 @@ class NativeScanCatalog:
         self.batch_failures = 0
         self.rate_limit = None
 
-    def for_installed_files(self, mod_id, metadata, items):
-        # MO2 owns authenticated metadata, access decisions and downloads. Its
-        # requestFiles also translates every remote description into BBCode HTML
-        # on the GUI thread, even when the caller only consumes raw version data.
-        if metadata.get("mod_id") != mod_id or metadata.get("domain_name") != self.game:
-            return None
-        try:
-            with self.lock:
-                if self.unavailable:
-                    return None
-                if self.client is None:
-                    try:
-                        self.public_requests += 1  # Resolve the exact game domain.
-                        self.client = self.client_factory(self.game)
-                    except QuotaDepleted:
-                        raise
-                    except NexusError:
-                        self.unavailable = True
-                        return None
-                self.public_requests += 1
-            project = self.client.get(f"/v1/games/{self.game}/mods/{mod_id}.json")
-        except QuotaDepleted:
-            raise
-        except NexusError:
-            return None
-        if (project["status"] != "published" or not metadata.get("version")
-                or project["version"] != metadata["version"]):
-            return None
-        catalog = project["fileCatalog"]
-        return catalog if self.covers(catalog, items) else None
-
-    @staticmethod
-    def covers(catalog, items):
-        index = NexusFileIndex(catalog)
-        return all(index.resolve(item).get("evidenceScope") == "exact-file"
-                   for item in items if item.get("installedFiles") or item.get("installationArchive"))
-
     def batch(self, ids):
         with self.lock:
             if self.rate_limit is not None:
-                raise QuotaDepleted(self.rate_limit)
+                if self.rate_limit.retry_at > time.time():
+                    raise self.rate_limit
+                self.rate_limit = None
             if self.unavailable:
                 return {}
             if self.client is None:
@@ -470,7 +480,7 @@ class NativeScanCatalog:
                     self.public_requests += 1
                     self.client = self.client_factory(self.game)
                 except QuotaDepleted as error:
-                    self.rate_limit = str(error)
+                    self.rate_limit = error
                     raise
                 except NexusError:
                     self.unavailable = True
@@ -480,7 +490,7 @@ class NativeScanCatalog:
             projects = self.client.get_projects(ids)
         except QuotaDepleted as error:
             with self.lock:
-                self.rate_limit = str(error)
+                self.rate_limit = error
             raise
         except NexusError:
             with self.lock:
@@ -584,9 +594,15 @@ class UpdateScanner:
         now = time.time()
         output: dict[str, dict] = {}
         errors = []
+        retry_at = self.cache.quota_deadline()
         candidate_ids: set[int]
-        if mode == "quick" and not cancelled():
-            data = self.client.get(f"/v1/games/{game}/mods/updated.json?period=1m")
+        if mode == "quick" and not cancelled() and not retry_at:
+            try:
+                data = self.client.get(f"/v1/games/{game}/mods/updated.json?period=1m")
+            except QuotaDepleted as error:
+                retry_at = error.retry_at
+                self.cache.defer_for_scan(game, error, epoch=cache_epoch, cancel_event=cancel_event)
+                data = []
             if not isinstance(data, list):
                 raise NexusError("Nexus updated feed is not an array")
             candidate_ids = set()
@@ -599,6 +615,8 @@ class UpdateScanner:
                     if n > 0:
                         candidate_ids.add(n)
             candidate_ids.intersection_update(ids)
+            if retry_at:
+                candidate_ids = set(ids)
         else:
             candidate_ids = set(ids)
         uncached: list[int] = []
@@ -627,12 +645,16 @@ class UpdateScanner:
                      and metadata.get("status") in (None, "published", "Published")
                      and (mod_id not in identifiable or isinstance(metadata.get("fileCatalog"), dict))
                      and 0 <= now - checked_at < STARTUP_CACHE_SECONDS)
-            if fresh and self.native_catalog is not None and metadata.get("fileCatalogRoute") == "public-file-groups":
-                fresh = (mode != "startup" and self.native_catalog.covers(metadata["fileCatalog"], grouped[mod_id]))
+            if fresh and self.native_catalog is not None and mod_id in identifiable:
+                # Migrate both the older authenticated group shortcut and cached
+                # unsigned public-only lookups. Neither contains signed history.
+                fresh = metadata["fileCatalog"].get("providerGroups") is not True
             should = (mode == "deep" or (mod_id in candidate_ids and mode == "quick")
                       or (mode == "startup" and not fresh)
                       or (cached is not None and (not metadata_identity_matches(metadata, game, mod_id)
                                                  or not 0 <= checked_at <= now)))
+            if retry_at:
+                should = not fresh
             if not cached and mode == "quick" and mod_id not in candidate_ids:
                 for item in grouped[mod_id]:
                     info={"verdict": "unverified", "reason": "Not in last month's Nexus activity. Run Full audit to establish a baseline.", "source": "nexus-activity"}
@@ -659,11 +681,17 @@ class UpdateScanner:
         queried = 0
         consecutive_failures = 0
         halt_info = None
+        if retry_at and total:
+            halt.set()
+            reason = "Nexus rate limit is active. Retry pending checks after the cooldown."
+            errors.append(reason)
+            halt_info = {"availability": "rate-limited", "reason": reason, "retryAt": retry_at,
+                         "retryEstimated": self.cache.data.get("nexusRetryEstimated") is not False}
 
         def stopped() -> bool:
             return halt.is_set() or cancelled()
 
-        use_batches = self.native_catalog is not None and mode == "startup" and bool(total)
+        use_batches = self.native_catalog is not None and bool(total)
 
         def fetch_one(mod_id: int, published: dict | None) -> dict | None:
             nonlocal queried
@@ -688,12 +716,6 @@ class UpdateScanner:
                 metadata = {key: value for key, value in metadata.items() if key != "fileCatalog"}
             if (mod_id in identifiable and "fileCatalog" not in metadata and metadata.get("available") is not False
                     and metadata.get("status") in (None, "published", "Published") and not stopped()):
-                if self.native_catalog is not None and not use_batches:
-                    catalog = self.native_catalog.for_installed_files(mod_id, metadata, grouped[mod_id])
-                    if catalog is not None:
-                        return {**metadata, "fileCatalog": catalog, "fileCatalogRoute": "public-file-groups"}
-                    if stopped():
-                        return None
                 try:
                     with query_lock:
                         if stopped():
@@ -714,7 +736,10 @@ class UpdateScanner:
                 metadata = {**metadata, "fileCatalog": {"files": compact, "file_updates": history}}
                 if published is not None:
                     metadata["fileCatalogRoute"] = "public-metadata-native-v1"
-            if stopped():
+            # Another in-flight project may have returned 429 while these
+            # signed files were arriving. Preserve every completed response.
+            if cancelled() or (halt.is_set() and mod_id in identifiable and "fileCatalog" not in metadata
+                               and metadata.get("available") is not False and metadata.get("status") in (None, "published", "Published")):
                 return None
             return metadata
 
@@ -756,6 +781,11 @@ class UpdateScanner:
                     errors.append(str(ex))
                 halt_info = {"availability": "authentication-required" if isinstance(ex, MissingAuth) else "rate-limited",
                              "reason": str(ex)}
+                if isinstance(ex, QuotaDepleted):
+                    self.cache.defer_for_scan(game, ex, epoch=cache_epoch, cancel_event=cancel_event)
+                    retry_at = self.cache.quota_deadline()
+                    halt_info["retryAt"] = retry_at
+                    halt_info["retryEstimated"] = self.cache.data.get("nexusRetryEstimated") is not False
                 record(mid, {"verdict": "unknown", "source": "nexus-api", **halt_info})
             except (NexusError, ValueError) as ex:
                 checked += 1
@@ -786,6 +816,9 @@ class UpdateScanner:
             errors.append("Nexus audit was cancelled; verification incomplete")
         if self.native_catalog is not None:
             stats["publicGraphRequests"] = self.native_catalog.public_requests - public_requests_before
+        if retry_at:
+            stats["rateLimitRetryAt"] = retry_at
+            stats["rateLimitRetryEstimated"] = self.cache.data.get("nexusRetryEstimated") is not False
         return {"records": output, "itemRecords": item_records, "uniqueNexusMods": len(ids), **stats,
                 "queried": queried, "fromCache": len(ids) - total, "deferredNexusProjects": total - queried,
                 "cachedOrDeferred": len(ids) - queried, "cancelled": was_cancelled,

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from mo2_update_arsenal.file_advisor import NexusFileIndex
 from mo2_update_arsenal.quick_update import choose_nexus_file
-from mo2_update_arsenal.scanner import Cache, NativeScanCatalog, NexusClient, NexusError, QuotaDepleted, UpdateScanner, public_project_metadata
+from mo2_update_arsenal.scanner import Cache, NativeScanCatalog, NexusClient, NexusError, UpdateScanner, public_project_metadata
 from mo2_update_arsenal.source_registry import discover_local_source
 
 GAME = "skyrimspecialedition"
@@ -51,33 +51,18 @@ class ExactFileTests(unittest.TestCase):
             self.assertEqual(scan.scan(profile, "startup")["itemRecords"], result)
             self.assertEqual(len(calls), 2)
 
-    def test_background_native_scan_skips_formatted_file_lists_only_for_exact_public_rows(self):
-        native_project = {"mod_id": MID, "domain_name": GAME, "version": "4.1.0", "status": "published"}
-        public = {"status": "published", "version": "4.1.0", "fileCatalog": {
-            "providerGroups": True, "files": [dict(PATCH, groupId=1), dict(MAIN, groupId=2)]}}
-        public_client = Mock()
-        public_client.get.return_value = public
-        factory = Mock(return_value=public_client)
-        lookup = NativeScanCatalog(GAME, factory)
+    def test_one_project_deep_scan_fetches_exact_signed_file_history_once(self):
+        metadata = {"mod_id": MID, "domain_name": GAME, "version": "4.1.0", "status": "published"}
+        public = Mock()
+        public.get_projects.return_value = {MID: metadata}
         with tempfile.TemporaryDirectory() as temp:
-            api = Mock(return_value=native_project)
-            scanner = UpdateScanner(Cache(Path(temp)/"cache.json"), NexusClient("native", api), native_catalog=lookup)
-            evidence = scanner.scan({"game": GAME, "items": [ITEM]}, "deep")["itemRecords"][ITEM["id"]]
-        self.assertEqual((evidence["verdict"], evidence["targetFileId"]), ("current", PATCH["fileId"]))
-        self.assertEqual(api.call_count, 1)
-        self.assertNotIn("/files.json", api.call_args.args[0])
-        self.assertEqual(public_client.get.call_count, 1)
-
-        other = dict(ITEM, installationArchive="", installedFiles=[[MID, 888]])
-        self.assertIsNone(lookup.for_installed_files(MID, native_project, [ITEM, other]))
-        self.assertIsNone(lookup.for_installed_files(MID, dict(native_project, version="4.2"), [ITEM]))
-        self.assertIsNone(lookup.for_installed_files(MID, dict(native_project, mod_id=99), [ITEM]))
-        public_client.get.side_effect = NexusError("File catalog is private")
-        self.assertIsNone(lookup.for_installed_files(MID, native_project, [ITEM]))
-        public_client.get.side_effect = QuotaDepleted("rate limited")
-        with self.assertRaises(QuotaDepleted):
-            lookup.for_installed_files(MID, native_project, [ITEM])
-        factory.assert_called_once_with(GAME)
+            api = Mock(return_value={"files": [PATCH, MAIN], "file_updates": [edge(PATCH["fileId"], 999)]})
+            scanner = UpdateScanner(Cache(Path(temp)/"cache.json"), NexusClient("native", api),
+                                    native_catalog=NativeScanCatalog(GAME, lambda _: public))
+            result = scanner.scan({"game": GAME, "items": [ITEM]}, "deep")
+        self.assertEqual(result["itemRecords"][ITEM["id"]]["verdict"], "review")
+        public.get_projects.assert_called_once_with([MID])
+        api.assert_called_once_with(f"/v1/games/{GAME}/mods/{MID}/files.json")
 
     def test_same_active_archive_with_disagreeing_labels_has_no_verified_update_or_downgrade(self):
         index = NexusFileIndex({"files":[PATCH, MAIN], "file_updates":[]})

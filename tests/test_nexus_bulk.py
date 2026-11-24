@@ -86,10 +86,9 @@ class BulkStartupTests(unittest.TestCase):
             # its outgoing edge to an absent/withdrawn target.
             edges = [{"old_file_id": 101, "new_file_id": 901}] if mid == 1 else []
             return {"files": [{"fileId": 100 + mid, "version": "1", "category": 1}], "file_updates": edges}
-        with patch.object(lookup, "for_installed_files", side_effect=AssertionError("unbatched lookup")):
-            scanner = UpdateScanner(self.cache, NexusClient("fixture", native), native_catalog=lookup)
-            result = scanner.scan({"game": GAME, "items": items}, "startup")
-            warm = scanner.scan({"game": GAME, "items": items}, "startup")
+        scanner = UpdateScanner(self.cache, NexusClient("fixture", native), native_catalog=lookup)
+        result = scanner.scan({"game": GAME, "items": items}, "startup")
+        warm = scanner.scan({"game": GAME, "items": items}, "startup")
         self.assertEqual((result["publicBatches"], result["publicGraphRequests"]), (3, 4))
         self.assertEqual((result["providerProjectRequests"], result["providerFileRequests"]), (1, 36))
         self.assertEqual(result["queried"], 37)
@@ -116,7 +115,7 @@ class BulkStartupTests(unittest.TestCase):
         native.assert_called_once_with(f"/v1/games/{GAME}/mods/42/files.json")
         self.assertFalse(lookup.matches_published(42, source, {"meta": {**prior, "available": False}}))
 
-    def test_dashboard_startup_reaches_batched_pages_and_signed_native_file_callback(self):
+    def test_dashboard_startup_deep_and_all_reach_batched_pages_and_signed_native_file_callback(self):
         items = [row(i) for i in range(1, 6)]
         snapshot = {"profileId": "test", "profileName": "test", "game": GAME, "items": items}
         def dispatch(req):
@@ -129,13 +128,16 @@ class BulkStartupTests(unittest.TestCase):
         service._source_scanner = Mock(scan=Mock(return_value={"itemRecords": {}, "errors": []}))
         client = Mock(get_projects=Mock(side_effect=lambda ids: {mid: project(mid) for mid in ids}))
         with patch("mo2_update_arsenal.scanner.NativeScanCatalog", return_value=NativeScanCatalog(GAME, lambda _: client)):
-            self.assertTrue(service.startup_check("test", 0)["ok"])
-            deadline = time.monotonic() + 5
-            while service.scan_state()["state"] == "running" and time.monotonic() < deadline:
-                time.sleep(.005)
-        self.assertEqual(service.scan_state()["state"], "completed")
-        self.assertEqual([r["update"]["targetFileId"] for r in service.snapshot()["items"]], [101, 102, 103, 104, 105])
-        client.get_projects.assert_called_once_with([1, 2, 3, 4, 5])
+            for mode in ("startup", "deep", "all"):
+                response = service.startup_check("test", 0) if mode == "startup" else service.begin_scan(mode, "test")
+                self.assertTrue(response["ok"])
+                deadline = time.monotonic() + 5
+                while service.scan_state()["state"] == "running" and time.monotonic() < deadline:
+                    time.sleep(.005)
+                self.assertEqual(service.scan_state()["state"], "completed")
+                self.assertEqual([r["update"]["targetFileId"] for r in service.snapshot()["items"]], [101, 102, 103, 104, 105])
+                client.get_projects.assert_called_with([1, 2, 3, 4, 5])
+        self.assertEqual(client.get_projects.call_count, 3)
 
     def test_other_batches_report_while_one_public_request_waits_and_cancel_discards_backlog(self):
         release = threading.Event()
@@ -176,3 +178,66 @@ class BulkStartupTests(unittest.TestCase):
         self.assertEqual(result["errors"], ["quota depleted"])
         self.assertLessEqual(client.get_projects.call_count, PUBLIC_BATCH_WORKERS)
         self.assertEqual({r["availability"] for r in result["itemRecords"].values()}, {"rate-limited"})
+        self.assertTrue(result["rateLimitRetryEstimated"])
+
+    def test_explicit_quota_deadline_survives_restart_and_preserves_signed_results(self):
+        snapshot = {"game": GAME, "items": [row(1), row(2)]}
+        saved = {**project(1), "fileCatalog": {"files": [{"fileId": 101, "name": "Known file", "version": "1", "category": 1}], "file_updates": []}}
+        with patch("mo2_update_arsenal.scanner.time.time", return_value=1000):
+            self.cache.set(GAME, 1, {"meta": saved, "checkedAt": 999})
+            api = Mock(side_effect=QuotaDepleted("quota", "45"))
+            graph = Mock(get_projects=Mock(return_value={2: project(2)}))
+            first = UpdateScanner(self.cache, NexusClient("native", api), native_catalog=NativeScanCatalog(GAME, lambda _: graph))
+            result = first.scan(snapshot, "startup")
+            self.assertEqual(result["itemRecords"]["1"]["targetFileId"], 101)
+            self.assertEqual(result["rateLimitRetryAt"], 1045)
+            self.assertFalse(result["rateLimitRetryEstimated"])
+        with patch("mo2_update_arsenal.scanner.time.time", return_value=1044):
+            offline = Mock(side_effect=AssertionError("request during cooldown"))
+            restored = UpdateScanner(Cache(self.cache.path), NexusClient("native", offline), native_catalog=NativeScanCatalog(GAME, offline))
+            for mode in ("startup", "deep", "quick"):
+                result = restored.scan(snapshot, mode)
+                self.assertEqual(result["fromCache"], 1)
+                self.assertEqual(result["queried"], 0)
+                self.assertEqual(result["itemRecords"]["2"]["availability"], "rate-limited")
+                self.assertEqual(result["itemRecords"]["2"]["retryAt"], 1045)
+            offline.assert_not_called()
+        with patch("mo2_update_arsenal.scanner.time.time", return_value=1046):
+            api = Mock(return_value={"files": [{"fileId": 102, "version": "1", "category": 1}], "file_updates": []})
+            resumed = UpdateScanner(Cache(self.cache.path), NexusClient("native", api), native_catalog=NativeScanCatalog(GAME, lambda _: graph))
+            self.assertEqual(resumed.scan(snapshot, "startup")["itemRecords"]["2"]["targetFileId"], 102)
+            api.assert_called_once_with(f"/v1/games/{GAME}/mods/2/files.json")
+
+    def test_completed_inflight_files_are_checkpointed_after_another_project_receives_429(self):
+        started, limited = threading.Event(), threading.Event()
+        def files(path):
+            if path.endswith("/1/files.json"):
+                started.set()
+                self.assertTrue(limited.wait(4))
+                return {"files": [{"fileId": 101, "category": 1, "version": "1"}], "file_updates": []}
+            self.assertTrue(started.wait(4))
+            raise QuotaDepleted("429", "120")
+        graph = Mock(get_projects=Mock(return_value={i: project(i) for i in (1, 2)}))
+        engine = UpdateScanner(self.cache, NexusClient("fixture", files), native_catalog=NativeScanCatalog(GAME, lambda _: graph))
+        checkpoint = self.cache.defer_for_scan
+        def persisted(*args, **kwargs):
+            checkpoint(*args, **kwargs)
+            self.assertGreater(Cache(self.cache.path).quota_deadline(), time.time())
+            limited.set()
+        with patch.object(self.cache, "defer_for_scan", side_effect=persisted):
+            result = engine.scan({"game": GAME, "items": [row(1), row(2)]}, "deep")
+        self.assertEqual(result["itemRecords"]["1"]["targetFileId"], 101)
+        self.assertEqual(result["itemRecords"]["2"]["availability"], "rate-limited")
+        self.assertEqual(Cache(self.cache.path).get(GAME, 1)["meta"]["fileCatalog"]["files"][0]["fileId"], 101)
+
+    def test_old_public_only_cache_needs_signed_file_history_with_or_without_a_route_marker(self):
+        for mid, route in ((1, {"fileCatalogRoute": "public-file-groups"}), (2, {})):
+            self.cache.set(GAME, mid, {"checkedAt": time.time(), "meta": {**project(mid), **route, "fileCatalog": {
+                "providerGroups": True, "files": [{"fileId": 100 + mid, "version": "1", "category": 1, "groupId": mid}]}}})
+        graph = Mock(get_projects=Mock(return_value={i: project(i) for i in (1, 2)}))
+        api = Mock(return_value={"files": [], "file_updates": []})
+        scanner = UpdateScanner(self.cache, NexusClient("fixture", api), native_catalog=NativeScanCatalog(GAME, lambda _: graph))
+        result = scanner.scan({"game": GAME, "items": [row(1), row(2)]}, "startup")
+        self.assertEqual(result["fromCache"], 0)
+        self.assertEqual(api.call_count, 2)
+        self.assertEqual({r["verdict"] for r in result["itemRecords"].values()}, {"review"})

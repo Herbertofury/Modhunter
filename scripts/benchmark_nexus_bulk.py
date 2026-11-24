@@ -9,12 +9,13 @@ import re
 import sqlite3
 import sys
 import tempfile
+import threading
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from mo2_update_arsenal.file_advisor import NexusFileIndex
 from mo2_update_arsenal.scanner import (
-    Cache, NativeScanCatalog, NexusClient, NexusError, PUBLIC_BATCH_SIZE, UpdateScanner,
+    Cache, NativeScanCatalog, NexusClient, NexusError, PublicNexusClient, PUBLIC_BATCH_SIZE, UpdateScanner,
     nexus_project_id, public_batch_metadata, public_project_metadata, summary_from_metadata,
 )
 
@@ -29,13 +30,12 @@ def scanner_replay(catalog, native, public, raw_valid, oracle, output_dir):
     rows = [{**item, "updateEligible": False} if nexus_project_id(item, game) not in oracle else item
             for item in catalog["items"]]
     snapshot = {**catalog, "items": rows}
+    grouped = defaultdict(list)
+    for item in rows:
+        mid = nexus_project_id(item, game)
+        if mid and not item.get("installedFileEvidenceIncomplete"):
+            grouped[mid].append(item)
     class RecordedGraph:
-        def get(self, path):
-            mid = int(path.rsplit("/", 1)[1].split(".")[0])
-            if mid not in raw_valid:
-                raise NexusError("No published observation")
-            return raw_valid[mid]
-
         def get_projects(self, ids):
             return {mid: public[mid] for mid in ids if mid in public}
 
@@ -46,21 +46,48 @@ def scanner_replay(catalog, native, public, raw_valid, oracle, output_dir):
             return metadata["fileCatalog"]
         return {k: v for k, v in metadata.items() if k != "fileCatalog"}
 
+    class HistoricalClient(PublicNexusClient):
+        """550a172's previous signed-page + individually corroborated V2 group policy."""
+        def __init__(self):
+            self.count = Counter()
+            self.lock = threading.Lock()
+
+        def get(self, path):
+            if path.endswith("/files.json"):
+                with self.lock:
+                    self.count["providerFileRequests"] += 1
+                return signed(path)
+            mid = int(path.rsplit("/", 1)[1].split(".")[0])
+            meta = signed(path)
+            with self.lock:
+                self.count["providerProjectRequests"] += 1
+                self.count["publicGraphRequests"] += 1 + (not self.count["publicGraphRequests"])
+            observed = raw_valid.get(mid)
+            if observed and observed["status"] == "published" and meta.get("version") == observed["version"]:
+                files = observed["fileCatalog"]
+                index = NexusFileIndex(files)
+                if all(index.resolve(r).get("evidenceScope") == "exact-file" for r in grouped[mid]
+                       if r.get("installedFiles") or r.get("installationArchive")):
+                    return {**meta, "fileCatalog": files}
+            return meta
+
     results, reference = {}, {}
-    for name in ("signed-v1", "previous-per-project-public", "batched-startup", "batched-warm-restart"):
-        mode = "deep" if name == "previous-per-project-public" else "startup"
-        # On a cold cache, deep executes the previous one-at-a-time public
-        # verification handler; both baselines receive the same signed replies.
+    for name in ("signed-v1", "previous-per-project-public", "batched-startup", "batched-deep", "batched-warm-restart"):
+        mode = "deep" if name in ("previous-per-project-public", "batched-deep") else "startup"
         cache_name = "batched-startup" if name == "batched-warm-restart" else name
-        lookup = None if name == "signed-v1" else NativeScanCatalog(game, lambda _: RecordedGraph())
+        historical = name == "previous-per-project-public"
+        lookup = None if name == "signed-v1" or historical else NativeScanCatalog(game, lambda _: RecordedGraph())
+        client = HistoricalClient() if historical else NexusClient("recorded", signed)
         start = time.perf_counter()
-        scanner = UpdateScanner(Cache(output_dir / (cache_name + ".json")), NexusClient("recorded", signed), native_catalog=lookup)
+        scanner = UpdateScanner(Cache(output_dir / (cache_name + ".json")), client, native_catalog=lookup)
         result = scanner.scan(snapshot, mode)
         elapsed = time.perf_counter() - start
         decisions = {key: signature(record) for key, record in result["itemRecords"].items()}
         if not reference:
             reference = decisions
         counts = {k: result.get(k, 0) for k in ("publicGraphRequests", "providerProjectRequests", "providerFileRequests", "fromCache")}
+        if historical:
+            counts.update(client.count)
         counts["totalTransports"] = sum(counts[k] for k in ("publicGraphRequests", "providerProjectRequests", "providerFileRequests"))
         results[name] = {**counts, "elapsedSeconds": elapsed, "projectsPerSecond": len(oracle) / elapsed,
                          "providerErrors": len(result["errors"]), "records": len(decisions),
@@ -156,7 +183,7 @@ def main():
         args.output.write_text(encoded, encoding="utf-8")
     print(encoded)
     return int(bool(mismatches or any(r["providerErrors"] for r in replay.values())
-                    or replay["batched-startup"]["decisionMismatches"] or replay["batched-warm-restart"]["decisionMismatches"]))
+                    or any(replay[k]["decisionMismatches"] for k in ("batched-startup", "batched-deep", "batched-warm-restart"))))
 
 
 if __name__ == "__main__":

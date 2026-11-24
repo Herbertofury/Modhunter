@@ -12,12 +12,15 @@ from typing import Any
 from .scanner import normalized_version
 
 
-def _same_numeric_version(a: Any, b: Any) -> bool:
-    x, y = normalized_version(str(a or "")), normalized_version(str(b or ""))
-    if x is None or y is None:
-        return False
-    n = max(len(x), len(y))
-    return x + (0,) * (n - len(x)) == y + (0,) * (n - len(y))
+def _comparison_version(value: Any) -> tuple[int, ...] | None:
+    """Canonicalize the existing equality rule: trailing zero components agree."""
+    version = normalized_version(str(value or ""))
+    if version is None:
+        return None
+    length = len(version)
+    while length > 1 and version[length - 1] == 0:
+        length -= 1
+    return version[:length]
 
 
 def advise_nexus_files(item: dict, files: list[dict]) -> dict:
@@ -30,8 +33,11 @@ def advise_nexus_files(item: dict, files: list[dict]) -> dict:
     latest = str(update.get("latestVersion") or "")
     source = str(update.get("source") or "")
     trusted_version = source == "nexus-api" and str(update.get("verdict")) == "candidate"
-    ranked: list[dict] = []
-    for order, raw in enumerate(files):
+    published = _comparison_version(latest) if trusted_version else None
+    # Fixed relevance tiers; appending keeps the provider's exact order in
+    # each tier without making per-file sort keys or rearranging the files.
+    exact_mains, matching_options, other_mains, alternates = [], [], [], []
+    for raw in files:
         if not isinstance(raw, dict):
             continue
         file = deepcopy(raw)
@@ -39,33 +45,37 @@ def advise_nexus_files(item: dict, files: list[dict]) -> dict:
             category = int(file.get("category") or 0)
         except (TypeError, ValueError, OverflowError):
             category = 0
-        exact = bool(trusted_version and _same_numeric_version(file.get("version"), latest))
+        exact = published is not None and _comparison_version(file.get("version")) == published
+        if exact and category == 1:
+            bucket, tier = exact_mains, "matches-project"
+            hint = ""  # Set after we know whether another main file matches.
+        elif exact:
+            bucket, tier = matching_options, "matching-option"
+            hint = "Version matches the published project, but this is not a main file. Review its purpose."
+        elif category == 1:
+            bucket, tier = other_mains, "main-file"
+            hint = "Main file; review variants, prerequisites and your game runtime"
+        else:
+            bucket, tier = alternates, "alternate"
+            hint = "Optional or alternate file; verify which installer option you need"
         file["releaseVersionMatch"] = exact
-        file["reviewTier"] = "matches-project" if exact and category == 1 else (
-            "matching-option" if exact else "main-file" if category == 1 else "alternate")
+        file["reviewTier"] = tier
         file["suggested"] = False
-        file["reviewHint"] = ("Main file; review variants, prerequisites and your game runtime" if category == 1
-                              else "Optional or alternate file; verify which installer option you need")
-        ranked.append((order, file))
+        file["reviewHint"] = hint
+        bucket.append(file)
 
     # Multiple main files matching a published version may target different
     # game runtimes, mod editions or installation roles. Never pick one blindly.
-    exact_mains = [file for _, file in ranked if file["reviewTier"] == "matches-project"]
     unique = len(exact_mains) == 1
-    for _, file in ranked:
-        if file["reviewTier"] == "matches-project":
-            file["suggested"] = unique
-            file["reviewHint"] = (
-                "Only main file with the published project version. Still verify runtime, requirements and installer options."
-                if unique else "Multiple main files match this release; review the edition and runtime of each."
-            )
-        elif file["reviewTier"] == "matching-option":
-            file["reviewHint"] = "Version matches the published project, but this is not a main file. Review its purpose."
-        # Retain original source order inside each relevance tier. The full
-        # underlying file list is never truncated or silently discarded.
-    priority = {"matches-project": 0, "matching-option": 1, "main-file": 2, "alternate": 3}
-    ranked.sort(key=lambda pair: (priority[pair[1]["reviewTier"]], pair[0]))
-    return {"files": [file for _, file in ranked],
+    main_hint = (
+        "Only main file with the published project version. Still verify runtime, requirements and installer options."
+        if unique else "Multiple main files match this release; review the edition and runtime of each."
+    )
+    for file in exact_mains:
+        file["suggested"] = unique
+        file["reviewHint"] = main_hint
+    ranked = [file for bucket in (exact_mains, matching_options, other_mains, alternates) for file in bucket]
+    return {"files": ranked,
             "reviewAdvice": {"hasUniqueMainMatch": unique,
                              "matchingMainFiles": len(exact_mains),
                              "fileCount": len(ranked),

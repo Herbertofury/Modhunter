@@ -4,8 +4,9 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from mo2_update_arsenal.file_advisor import advise_nexus_files
+from mo2_update_arsenal.file_advisor import advise_nexus_files, normalized_version
 from mo2_update_arsenal.bridge import ArsenalService
 from mo2_update_arsenal.update_plan import PlanError, validate_batch_selection, validate_release_asset
 
@@ -35,6 +36,29 @@ class AdvisorTest(unittest.TestCase):
         self.assertEqual(result["reviewAdvice"]["matchingMainFiles"], 1)
         self.assertFalse(result["files"][1]["suggested"])
         self.assertEqual({f["fileId"] for f in result["files"]}, {8, 9, 10, 11})
+
+    def test_project_version_is_parsed_once_and_tiers_keep_source_order(self):
+        published = "v00008.030.0.0"
+        files = [
+            {"fileId": fid, "category": cat, "version": version,
+             "fixtureMetadata": {"fileMarkers": [str(fid)]}}
+            for fid, cat, version in [
+                (1, 2, "8.30"), (2, 1, "8.30.0.0.0"), (3, 1, "8.30-beta"),
+                (4, 2, "8.30.1"), (5, 2, "08.30.00"), (6, 1, "8.30.0.0.0.0"),
+                (7, 1, "8.03"), (8, "bad", True), (9, 2, "v8.30.0.0.0.0.0"),
+            ]
+        ]
+        with patch("mo2_update_arsenal.file_advisor.normalized_version",
+                   wraps=normalized_version) as parse:
+            result = advise_nexus_files(row(version=published), files)
+        self.assertEqual([f["fileId"] for f in result["files"]], [2, 6, 1, 5, 3, 7, 4, 8, 9])
+        self.assertEqual([f["fileId"] for f in result["files"] if f["releaseVersionMatch"]], [2, 6, 1, 5])
+        self.assertEqual(result["reviewAdvice"]["matchingMainFiles"], 2)
+        self.assertFalse(any(f["suggested"] for f in result["files"]))
+        result["files"][0]["fixtureMetadata"]["fileMarkers"].append("reviewed")
+        self.assertEqual(files[1]["fixtureMetadata"]["fileMarkers"], ["2"])
+        published_parses = sum(args == (published,) for args, _ in parse.call_args_list)
+        self.assertEqual(published_parses, 1, "Do not reparse immutable project evidence for every file")
 
     def test_multiple_equal_main_versions_are_ambiguous(self):
         files = FILES + [{"fileId": 12, "name": "AE", "version": "2.0", "category": 1}]

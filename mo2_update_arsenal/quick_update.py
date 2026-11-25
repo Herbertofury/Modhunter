@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .file_advisor import advise_nexus_files
+from .file_advisor import advise_nexus_files, nexus_file_id
 from .update_plan import risk_reasons, validate_release_asset, PlanError
 from .source_adapters import PUBLIC_API_PROVIDERS, asset_proof
 
@@ -29,11 +29,8 @@ def choose_nexus_file(item: dict, files: list[dict]) -> tuple[dict | None, str]:
     if len(suggested) != 1:
         return None, "Several editions or no exact main-file match; choose the file you want"
     picked = suggested[0]
-    try:
-        identifier = int(picked.get("fileId", 0))
-    except (ValueError, TypeError, OverflowError):
-        identifier = 0
-    if identifier <= 0 or isinstance(picked.get("fileId"), bool):
+    identifier = nexus_file_id(picked.get("fileId"))
+    if identifier <= 0:
         return None, "File ID is not valid; choose a file manually"
     return picked, "Matched the published Nexus version to a unique main file"
 

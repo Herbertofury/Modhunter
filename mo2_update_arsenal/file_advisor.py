@@ -12,6 +12,30 @@ from typing import Any
 from .scanner import normalized_version
 
 
+def nexus_file_id(value: Any) -> int:
+    """Accept only positive integer identities, never lossy numeric coercion."""
+    if type(value) is int:
+        return value if value > 0 else 0
+    if isinstance(value, str) and value.isascii() and value.isdecimal() and len(value) <= 20:
+        return int(value) if int(value) > 0 else 0
+    return 0
+
+
+def index_nexus_files(files: Any) -> dict[int, dict | None]:
+    """Index exact IDs; duplicate IDs remain ambiguous even with equal metadata.
+
+    Malformed rows cannot match, and do not hide unrelated valid files.
+    """
+    indexed: dict[int, dict | None] = {}
+    if not isinstance(files, list):
+        return indexed
+    for file in files:
+        identifier = nexus_file_id(file.get("fileId")) if isinstance(file, dict) else 0
+        if identifier:
+            indexed[identifier] = None if identifier in indexed else file
+    return indexed
+
+
 def _same_numeric_version(a: Any, b: Any) -> bool:
     x, y = normalized_version(str(a or "")), normalized_version(str(b or ""))
     if x is None or y is None:
@@ -30,6 +54,7 @@ def advise_nexus_files(item: dict, files: list[dict]) -> dict:
     latest = str(update.get("latestVersion") or "")
     source = str(update.get("source") or "")
     trusted_version = source == "nexus-api" and str(update.get("verdict")) == "candidate"
+    identities = index_nexus_files(files)
     ranked: list[dict] = []
     for order, raw in enumerate(files):
         if not isinstance(raw, dict):
@@ -51,13 +76,15 @@ def advise_nexus_files(item: dict, files: list[dict]) -> dict:
     # Multiple main files matching a published version may target different
     # game runtimes, mod editions or installation roles. Never pick one blindly.
     exact_mains = [file for _, file in ranked if file["reviewTier"] == "matches-project"]
-    unique = len(exact_mains) == 1
+    unique = (len(exact_mains) == 1
+              and identities.get(nexus_file_id(exact_mains[0].get("fileId"))) is not None)
     for _, file in ranked:
         if file["reviewTier"] == "matches-project":
             file["suggested"] = unique
             file["reviewHint"] = (
                 "Only main file with the published project version. Still verify runtime, requirements and installer options."
-                if unique else "Multiple main files match this release; review the edition and runtime of each."
+                if unique else "File identity is invalid or duplicated; refresh the file list before choosing."
+                if len(exact_mains) == 1 else "Multiple main files match this release; review the edition and runtime of each."
             )
         elif file["reviewTier"] == "matching-option":
             file["reviewHint"] = "Version matches the published project, but this is not a main file. Review its purpose."

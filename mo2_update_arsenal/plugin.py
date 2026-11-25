@@ -40,7 +40,7 @@ class ModUpdateArsenal(mobase.IPluginTool):
         self.org = None
         self.server = None
         self.dispatcher = None
-        self._dirty = False
+        self._pending_refresh = None
         self._runtime = "unknown"
         self._download_complete_callback = None
         self._selection_connected = False
@@ -298,18 +298,26 @@ class ModUpdateArsenal(mobase.IPluginTool):
             self.server.set_download_status(did, state)
 
     def _schedule_refresh(self):
-        if self._dirty or self._closing:
+        if self._pending_refresh is not None or self._closing:
             return
         if self.server is None:
             if self._ui_initialized:
                 self._startup_attempts = 0
                 QtCore.QTimer.singleShot(0, self._start_automatically)
             return
-        self._dirty = True
-        QtCore.QTimer.singleShot(150, self._refresh_snapshot)
+        token = self._pending_refresh = object()
+
+        def refresh_if_pending():
+            if not self._closing and self._pending_refresh is token:
+                self._pending_refresh = None
+                self._refresh_snapshot()
+
+        QtCore.QTimer.singleShot(150, refresh_if_pending)
 
     def _refresh_snapshot(self, *, force_metadata: bool = False) -> dict:
-        self._dirty = False
+        # An explicit capture subsumes earlier requests, not events raised
+        # while native state is being read. Those receive their own token.
+        pending, self._pending_refresh = self._pending_refresh, None
         if not self.server:
             return {"ok": False, "error": "Launch Arsenal first"}
         started = time.perf_counter()
@@ -323,6 +331,10 @@ class ModUpdateArsenal(mobase.IPluginTool):
             self._publish_diagnostics()
             return {"ok": True, "count": len(snapshot["items"]), "profile": snapshot["profileName"], "catalog": snapshot}
         except Exception as exc:
+            # A failed explicit capture did not satisfy its pending event.
+            # A failed scheduled capture has no token and does not loop.
+            if pending is not None:
+                self._schedule_refresh()
             self._snapshot_error = type(exc).__name__
             self._publish_diagnostics()
             LOG.warning("Modhunter profile refresh failed (%s)", type(exc).__name__)

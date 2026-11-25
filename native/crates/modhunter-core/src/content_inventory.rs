@@ -54,17 +54,15 @@ fn io(error: impl std::fmt::Display) -> String {
     error.to_string()
 }
 fn linked(meta: &fs::Metadata) -> bool {
-    if meta.file_type().is_symlink() {
-        return true;
-    }
     #[cfg(windows)]
     {
         use std::os::windows::fs::MetadataExt;
-        if meta.file_attributes() & 0x400 != 0 {
-            return true;
-        }
+        meta.file_type().is_symlink() || meta.file_attributes() & 0x400 != 0
     }
-    false
+    #[cfg(not(windows))]
+    {
+        meta.file_type().is_symlink()
+    }
 }
 #[derive(Debug, PartialEq, Eq)]
 struct MetadataStamp {

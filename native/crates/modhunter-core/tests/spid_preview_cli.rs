@@ -1,0 +1,207 @@
+use serde_json::Value;
+use std::io::Write;
+use std::process::{Command, Output, Stdio};
+
+fn call(args: &[&str], bytes: &[u8]) -> Output {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_modhunter-cli"))
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("start native CLI");
+    // An invalid operation can refuse before consuming any stdin.
+    let write = child.stdin.take().unwrap().write_all(bytes);
+    let output = child.wait_with_output().unwrap();
+    if output.status.success() {
+        write.unwrap();
+    }
+    output
+}
+
+fn report(output: &Output) -> Value {
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stderr.is_empty());
+    serde_json::from_slice(&output.stdout).unwrap()
+}
+
+#[test]
+fn preserves_physical_and_authored_order_and_identifies_only_primary_forms() {
+    let output = call(&["spid-preview", "--name", "synthetic_DISTR.ini"],
+        b"\xef\xbb\xbf; comment\r\n\r\nSpell = 0x1a2~Demo Patch.ESL||SyntheticFilter|NONE|NONE|1|15\r\nSpell = SampleSpell\r\nSpell = SampleSpell\r\n");
+    let json = report(&output);
+    assert_eq!(json["sourceName"], "synthetic_DISTR.ini");
+    assert_eq!(json["runtimeStatus"], "not_evaluated");
+    assert_eq!(
+        json["rows"][0],
+        serde_json::json!({
+            "status": "declaration", "line": 3, "formType": "Spell",
+            "target": {"kind":"plugin_form", "plugin":"Demo Patch.ESL", "localFormHex":"1A2"},
+            "unevaluatedSlots": 6
+        })
+    );
+    assert_eq!(json["rows"][1]["target"]["editorId"], "SampleSpell");
+    assert_eq!(json["rows"][2]["line"], 5);
+    assert_eq!(json["rows"][2]["target"], json["rows"][1]["target"]);
+    let transcript = String::from_utf8_lossy(&output.stdout);
+    assert!(!transcript.contains("SyntheticFilter"));
+}
+
+#[test]
+fn never_guesses_unknown_syntax_or_legacy_or_incidental_tokens() {
+    let output = call(&["spid-preview", "--name", "not-an-alias_DISTR.INI"],
+        b"FinalOutfit = SyntheticSecret\nSpell = 0x0100001a~Demo.esp\nPerk = 0x1~../Invalid.esp\nItem = 00001\nSpell = SampleSpell|1|2|3|4|5|6|7\n[Example]\nSpell = SectionScoped\n");
+    let json = report(&output);
+    let rows = json["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 7);
+    assert!(
+        rows.iter()
+            .all(|r| r["status"] == "unreviewed" && r.get("target").is_none())
+    );
+    assert_eq!(rows[0]["reason"], "unsupported_directive");
+    assert_eq!(rows[4]["reason"], "unsupported_slot_shape");
+    assert_eq!(rows[6]["reason"], "unsupported_section");
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("SyntheticSecret"));
+}
+
+#[test]
+fn invalid_scope_input_or_bounds_emit_no_partial_report() {
+    for (args, input) in [
+        (
+            vec!["spid-preview", "--name", "one.ini"],
+            b"Spell = Synthetic".to_vec(),
+        ),
+        (vec!["spid-preview", "--name", "../one_DISTR.ini"], vec![]),
+        (
+            vec!["spid-preview", "--name", "one_DISTR.ini", "other_DISTR.ini"],
+            vec![],
+        ),
+        (vec!["spid-preview", "--name", "one_DISTR.ini"], vec![0xff]),
+        (
+            vec!["spid-preview", "--name", "one_DISTR.ini"],
+            vec![b' '; 512 * 1024 + 1],
+        ),
+        (
+            vec!["spid-preview", "--name", "one_DISTR.ini"],
+            vec![b' '; 8193],
+        ),
+        (
+            vec!["spid-preview", "--name", "one_DISTR.ini"],
+            b"Spell = Synthetic\n".repeat(4097),
+        ),
+    ] {
+        let output = call(&args, &input);
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        assert!(!output.stderr.is_empty());
+    }
+}
+
+#[test]
+fn empty_and_only_comments_do_not_assert_a_clean_load_order() {
+    let json = report(&call(
+        &["spid-preview", "--name", "comments_DISTR.ini"],
+        b"; no declarations\n",
+    ));
+    assert_eq!(json["runtimeStatus"], "not_evaluated");
+    assert_eq!(json["rows"], serde_json::json!([]));
+}
+
+#[test]
+fn selected_file_matches_stdin_without_report_path_or_neighbor_access() {
+    let temp = tempfile::tempdir().unwrap();
+    let name = "Fixture_DISTR.Ini";
+    let chosen = temp.path().join(name);
+    let bytes = b"; authored text\nSpell = 0x15~Demo.esl|PrivateFilter\nUnknown = Secret\n";
+    std::fs::write(&chosen, bytes).unwrap();
+    std::fs::write(
+        temp.path().join("Neighbor_DISTR.ini"),
+        b"Spell = NeighborSecret",
+    )
+    .unwrap();
+    let selected = call(&["spid-preview", "--file", chosen.to_str().unwrap()], b"");
+    let streamed = call(&["spid-preview", "--name", name], bytes);
+    assert_eq!(selected.stdout, streamed.stdout);
+    let json = report(&selected);
+    assert_eq!(json["runtimeStatus"], "not_evaluated");
+    assert_eq!(json["sourceName"], name);
+    let output = String::from_utf8(selected.stdout).unwrap();
+    assert!(!output.contains(temp.path().to_str().unwrap()));
+    assert!(!output.contains("PrivateFilter") && !output.contains("NeighborSecret"));
+    assert_eq!(std::fs::read(&chosen).unwrap(), bytes);
+}
+
+#[test]
+fn selected_invalid_missing_directory_and_oversized_inputs_emit_no_report() {
+    let temp = tempfile::tempdir().unwrap();
+    let directory = temp.path().join("Directory_DISTR.ini");
+    let bad_name = temp.path().join("NotSpid.ini");
+    let missing = temp.path().join("Missing_DISTR.ini");
+    let oversized = temp.path().join("Large_DISTR.ini");
+    let bad_utf8 = temp.path().join("Bad_DISTR.ini");
+    std::fs::create_dir(&directory).unwrap();
+    std::fs::write(&bad_name, b"Spell = Good").unwrap();
+    std::fs::write(&bad_utf8, [0xff]).unwrap();
+    std::fs::File::create(&oversized)
+        .unwrap()
+        .set_len(512 * 1024 + 1)
+        .unwrap();
+    for input in [&directory, &bad_name, &missing, &oversized, &bad_utf8] {
+        let path = input.to_str().unwrap();
+        let output = call(&["spid-preview", "--file", path], b"");
+        assert!(!output.status.success());
+        assert!(output.stdout.is_empty());
+        assert!(!String::from_utf8(output.stderr).unwrap().contains(path));
+    }
+    let output = call(
+        &[
+            "spid-preview",
+            "--file",
+            bad_name.to_str().unwrap(),
+            "--name",
+            "Other_DISTR.ini",
+        ],
+        b"",
+    );
+    assert!(!output.status.success() && output.stdout.is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn selected_symlink_and_fifo_never_open_or_report() {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::fs::symlink;
+
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("Real_DISTR.ini");
+    let linked = temp.path().join("Link_DISTR.ini");
+    let fifo = temp.path().join("Pipe_DISTR.ini");
+    std::fs::write(&source, b"Spell = Real").unwrap();
+    symlink(&source, &linked).unwrap();
+    let raw = CString::new(fifo.as_os_str().as_bytes()).unwrap();
+    assert_eq!(unsafe { libc::mkfifo(raw.as_ptr(), 0o600) }, 0);
+    for path in [&linked, &fifo] {
+        let output = call(&["spid-preview", "--file", path.to_str().unwrap()], b"");
+        assert!(!output.status.success() && output.stdout.is_empty());
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn selected_non_disk_namespaces_and_streams_fail_closed() {
+    for path in [
+        r"\\server\share\Remote_DISTR.ini",
+        r"\\?\C:\Device_DISTR.ini",
+        r"Z:DriveRelative_DISTR.ini",
+        r"C:\NUL\Example_DISTR.ini",
+        r"C:\folder\Regular:stream_DISTR.ini",
+    ] {
+        let output = call(&["spid-preview", "--file", path], b"");
+        assert!(!output.status.success() && output.stdout.is_empty());
+    }
+}

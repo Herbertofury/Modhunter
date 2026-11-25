@@ -1,7 +1,10 @@
-use super::{Eligibility, PluginAuditStats, PluginHeader, RecordSummary, Stamp};
+use super::{
+    Eligibility, InspectionExtras, PluginAuditStats, PluginHeader, RecordSummary,
+    SelectedRecordCounts, Stamp,
+};
 use crate::{CancellationCheck, CoreError, check_cancelled, io_error};
 use sha2::{Digest, Sha256};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read};
 
@@ -96,6 +99,7 @@ pub(super) fn scan(
     game: &str,
     options: ScanOptions<'_>,
     stats: &mut PluginAuditStats,
+    mut extras: Option<&mut InspectionExtras>,
 ) -> Result<Parsed, CoreError> {
     let ScanOptions {
         deep,
@@ -148,10 +152,16 @@ pub(super) fn scan(
             stats.header_cache_hits += 1;
             header.clone()
         } else {
-            parse_header(&payload, &raw, name, game)?
+            parse_header(&payload, &raw, name, game, extras.as_deref_mut())?
         };
         let records = if deep && !matches!(game, "starfield" | "morrowind" | "unknown") {
-            let mut records = scan_records(&mut input, stamp.size, width, header.masters.len())?;
+            let mut records = scan_records(
+                &mut input,
+                stamp.size,
+                width,
+                header.masters.len(),
+                extras.as_mut().map(|selected| &mut selected.types),
+            )?;
             records.scan_complete = records.total_records + records.groups
                 == header.declared_record_and_group_count as usize;
             Some(records)
@@ -191,6 +201,7 @@ fn parse_header(
     raw: &[u8; 24],
     name: &str,
     game: &str,
+    mut extras: Option<&mut InspectionExtras>,
 ) -> Result<PluginHeader, CoreError> {
     let mut position = 0_usize;
     let mut extended = None;
@@ -230,6 +241,15 @@ fn parse_header(
                 }
                 version = Some(value);
                 declared = u32_at(data, 4);
+            }
+            b"CNAM" | b"SNAM" => {
+                if let Some(extras) = extras.as_deref_mut() {
+                    if tag == b"CNAM" {
+                        extras.author.observe(data, 1024);
+                    } else {
+                        extras.description.observe(data, 8192);
+                    }
+                }
             }
             b"MAST" => {
                 if masters.len() >= 4096 || data.is_empty() || !data.contains(&0) {
@@ -290,6 +310,7 @@ fn scan_records(
     file_length: u64,
     width: usize,
     masters: usize,
+    mut types: Option<&mut BTreeMap<String, SelectedRecordCounts>>,
 ) -> Result<RecordSummary, CoreError> {
     if masters > 253 {
         return invalid("This audit does not resolve plugins with more than 253 masters");
@@ -339,6 +360,25 @@ fn scan_records(
             summary.total_records += 1;
             let id = u32_at(&raw, 12);
             let flags = u32_at(&raw, 8);
+            if let Some(types) = types.as_deref_mut() {
+                let signature = std::str::from_utf8(&raw[..4]).expect("Validated ASCII signature");
+                let counts = if let Some(counts) = types.get_mut(signature) {
+                    counts
+                } else {
+                    if types.len() == 512 {
+                        return invalid("Plugin exceeds the 512 record-signature inspection limit");
+                    }
+                    types.entry(signature.into()).or_default()
+                };
+                let index = (id >> 24) as usize;
+                if id == 0 || index > masters {
+                    counts.unresolved_index += 1;
+                } else if index == masters {
+                    counts.local_index += 1;
+                } else {
+                    counts.declared_master_index += 1;
+                }
+            }
             if flags & 0x20 != 0 {
                 summary.deleted_records += 1;
             }
@@ -650,6 +690,7 @@ mod cancellation_tests {
                     cancelled: &|| checks.fetch_add(1, Ordering::Relaxed) >= 3,
                 },
                 &mut stats,
+                None,
             );
             assert!(matches!(result, Err(CoreError::Cancelled)), "{game}");
             assert!(

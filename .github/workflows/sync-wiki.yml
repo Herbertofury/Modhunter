@@ -1,39 +1,50 @@
-name: Sync documentation to GitHub Wiki
+name: Verify and sync ModHunter Wiki
 on:
-  push:
-    branches: [main]
+  pull_request:
     paths:
       - 'wiki/**'
+      - 'scripts/*sync_wiki*'
       - '.github/workflows/sync-wiki.yml'
   workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Push reviewed pages to the live Wiki (unchecked = preview)'
+        type: boolean
+        default: false
 permissions:
-  contents: write
-concurrency:
-  group: modhunter-live-wiki
-  cancel-in-progress: false
+  contents: read
 jobs:
-  wiki:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Publish canonical wiki pages
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          WIKI_URL: https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.wiki.git
-        shell: bash
+        with:
+          persist-credentials: false
+      - name: Test no-loss wiki planning
         run: |
-          set -euo pipefail
-          mkdir -p /tmp/modhunter-wiki
-          if ! git clone "$WIKI_URL" /tmp/modhunter-wiki; then
-            echo "::error::The GitHub Wiki repository is not initialized or the Actions token lacks Wiki write access. Create the first Home page in GitHub's Wiki UI, or supply a credential with Wiki write permission."
-            exit 1
+          bash -n scripts/sync_wiki.sh
+          python3 -m unittest discover -s scripts -p 'test_sync_wiki.py' -v
+          bash scripts/test_sync_wiki_git.sh
+  wiki:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: modhunter-live-wiki
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Preview or publish canonical pages
+        env:
+          MODHUNTER_WIKI_TOKEN: ${{ secrets.MODHUNTER_WIKI_TOKEN || github.token }}
+          PUBLISH: ${{ inputs.publish }}
+        run: |
+          if [ "$PUBLISH" = true ]; then
+            bash scripts/sync_wiki.sh --publish
+          else
+            bash scripts/sync_wiki.sh --preview
           fi
-          # Update repository-owned pages while preserving other Wiki content.
-          cp wiki/*.md /tmp/modhunter-wiki/
-          cd /tmp/modhunter-wiki
-          git config user.name "Modhunter Wiki Bot"
-          git config user.email "actions@users.noreply.github.com"
-          git add -A
-          if git diff --cached --quiet; then echo "Wiki already current"; exit 0; fi
-          git commit -m "docs: sync canonical Modhunter Wiki"
-          git push origin HEAD

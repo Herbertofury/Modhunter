@@ -1,26 +1,57 @@
 #!/usr/bin/env bash
-# Syncs wiki Markdown into the separate GitHub Wiki Git repository.
 set -euo pipefail
-repo="${GITHUB_REPOSITORY:-Herbertofury/Modhunter}"
-remote="https://github.com/${repo}.wiki.git"
-if [[ -n "${MODHUNTER_WIKI_TOKEN:-}" ]];then
-  remote="https://x-access-token:${MODHUNTER_WIKI_TOKEN}@github.com/${repo}.wiki.git"
-fi
+case "${1:-}" in
+  ""|--preview) mode=--preview ;;
+  --publish) mode=--publish ;;
+  *) echo 'Usage: bash scripts/sync_wiki.sh [--preview|--publish]' >&2; exit 2 ;;
+esac
+[[ $# -le 1 ]] || exit 2
+
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+remote="https://github.com/Herbertofury/Modhunter.wiki.git"
 work="$(mktemp -d)"
-trap 'rm -rf "$work"' EXIT
+trap 'rm -rf -- "$work"' EXIT
+
+if [[ -n "${MODHUNTER_WIKI_TOKEN:-}" ]]; then
+  cat > "$work/askpass" <<'ASK'
+#!/usr/bin/env bash
+case "$1" in
+  *Username*) printf '%s\n' x-access-token ;;
+  *Password*) printf '%s\n' "$MODHUNTER_WIKI_TOKEN" ;;
+  *) exit 1 ;;
+esac
+ASK
+  chmod 700 "$work/askpass"
+  export GIT_ASKPASS="$work/askpass"
+fi
+export GIT_TERMINAL_PROMPT=0
+
 if ! git clone -q "$remote" "$work/wiki"; then
-  echo 'Wiki clone unavailable. Initialize the first Home page on GitHub Wiki first, or check Wiki push credentials.' >&2
+  echo 'Wiki clone failed. Check the initialized Wiki and Git credentials.' >&2
   exit 2
 fi
-cd "$work/wiki"
-# GitHub Wiki supports Markdown filenames including _Sidebar.md / _Footer.md.
-find . -mindepth 1 -maxdepth 1 ! -name .git -type f -delete
-cp -a "$here/wiki/." ./
-# Exclude the repository-only instructions from the live Wiki.
-rm -f README.md
-git add -A
-if git diff --cached --quiet;then echo 'Wiki already in sync';exit 0;fi
-git -c user.name='Modhunter Wiki Sync' -c user.email='actions@users.noreply.github.com' commit -qm 'docs: synchronize Modhunter Wiki'
-git push -q origin HEAD
-printf 'Synced Modhunter Wiki pages successfully.\n'
+if ! git -C "$work/wiki" rev-parse --verify HEAD >/dev/null; then
+  echo 'Wiki has no commit. Initialize the first Home page before sync.' >&2
+  exit 2
+fi
+git -C "$here" diff --quiet HEAD -- wiki/ &&
+  [[ -z "$(git -C "$here" status --porcelain --untracked-files=all -- wiki/)" ]] ||
+  { echo 'Commit wiki source changes before syncing.' >&2; exit 2; }
+source_commit="$(git -C "$here" rev-parse HEAD)"
+mkdir "$work/source"
+git -C "$here" archive "$source_commit" wiki/ | tar -xf - -C "$work/source"
+echo "Source commit: $source_commit"
+echo "Current wiki commit: $(git -C "$work/wiki" rev-parse HEAD)"
+if [[ "$mode" == --preview ]]; then
+  python3 "$here/scripts/sync_wiki.py" "$work/source/wiki" "$work/wiki"
+  exit
+fi
+python3 "$here/scripts/sync_wiki.py" "$work/source/wiki" "$work/wiki" --apply
+git -C "$work/wiki" add -A
+if git -C "$work/wiki" diff --cached --quiet; then
+  echo 'Wiki already current.'
+  exit
+fi
+git -C "$work/wiki" -c user.name='Modhunter Wiki Sync' -c user.email='actions@users.noreply.github.com' commit -qm "docs: sync Modhunter Wiki from $source_commit"
+git -C "$work/wiki" push -q origin HEAD
+printf 'Wiki push accepted for %s\n' "$(git -C "$work/wiki" rev-parse HEAD)"

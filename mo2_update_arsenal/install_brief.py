@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Any
 
 from .download_ids import download_id as parse_download_id
-from .update_plan import risk_reasons, validate_release_asset, PlanError
+from .update_plan import find_profile_item, risk_reasons, validate_release_asset, PlanError
 
 
 PROFILE_BACKUP_FILES = ["modlist.txt", "plugins.txt", "loadorder.txt", "archives.txt", "lockedorder.txt"]
@@ -48,11 +48,16 @@ def build_install_brief(snapshot: dict, ticket: dict | None, download_id: Any, *
     if ticket.get("profileName") and str(ticket["profileName"]) != str(snapshot.get("profileName") or ""):
         failures.append("The MO2 profile name changed since this archive was queued")
 
-    rows = {str(x.get("id")): x for x in snapshot.get("items", [])}
     item_id = str(ticket.get("itemId") or "")
-    item = rows.get(item_id) if item_id else None
-    if item_id and not item:
-        failures.append("The originally selected mod is no longer installed in this MO2 profile")
+    item = None
+    if item_id:
+        try:
+            item = find_profile_item(snapshot, item_id)
+        except PlanError as exc:
+            failures.append(str(exc))
+        else:
+            if item is None:
+                failures.append("The originally selected mod is no longer installed in this MO2 profile")
     if item:
         queued_project = _positive_int(ticket.get("modId"))
         if (ticket.get("provider") == "nexus" and queued_project

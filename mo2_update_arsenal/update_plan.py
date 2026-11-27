@@ -110,6 +110,17 @@ def plan_updates(snapshot: dict) -> dict:
             "note": "Project version is not file compatibility. All queued downloads require explicit per-file review; installs remain interactive in MO2."}
 
 
+def find_profile_item(snapshot: dict, item_id: str) -> dict | None:
+    """Return one stable row, never guess between duplicate identities."""
+    match = None
+    for row in snapshot.get("items", []):
+        if str(row.get("id")) == item_id:
+            if match is not None:
+                raise PlanError("Multiple MO2 rows share the selected identity; refresh the active profile")
+            match = row
+    return match
+
+
 def validate_batch_selection(snapshot: dict, payload: dict) -> list[dict]:
     """Validate the *entire* selection before any native download or backup.
 
@@ -124,7 +135,16 @@ def validate_batch_selection(snapshot: dict, payload: dict) -> list[dict]:
     entries = payload.get("entries")
     if not isinstance(entries, list) or not entries:
         raise PlanError("Choose at least one exact Nexus file")
-    indexed = {str(i.get("id")): i for i in snapshot.get("items", [])}
+    requested = {row["itemId"] for row in entries
+                 if isinstance(row, dict) and isinstance(row.get("itemId"), str)}
+    indexed = {}
+    ambiguous = set()
+    for item in snapshot.get("items", []):
+        key = str(item.get("id"))
+        if key in requested:
+            if key in indexed:
+                ambiguous.add(key)
+            indexed[key] = item
     result: list[dict] = []
     seen_items: set[str] = set()
     seen_files: set[tuple[int, int]] = set()
@@ -134,6 +154,8 @@ def validate_batch_selection(snapshot: dict, payload: dict) -> list[dict]:
         item_id = raw.get("itemId")
         if not isinstance(item_id, str) or item_id not in indexed:
             raise PlanError("Selected mod is no longer in the active MO2 profile")
+        if item_id in ambiguous:
+            raise PlanError("Multiple MO2 rows share the selected identity; refresh the active profile")
         if item_id in seen_items:
             raise PlanError("A mod was selected twice; remove the duplicate selection")
         seen_items.add(item_id)
@@ -167,7 +189,7 @@ def validate_release_asset(snapshot: dict, raw: dict, *, require_fresh=True) -> 
     if not isinstance(raw, dict) or raw.get("kind") != "source":
         raise PlanError("Invalid reviewed source selection")
     item_id = str(raw.get("itemId") or "")
-    item = next((x for x in snapshot.get("items", []) if str(x.get("id")) == item_id), None)
+    item = find_profile_item(snapshot, item_id)
     if item is None or raw.get("reviewed") is not True:
         raise PlanError("Source mod must exist and have a reviewed file selection")
     if str(item.get("installedVersion") or "") != str(raw.get("installedVersion") or ""):

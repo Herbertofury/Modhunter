@@ -46,6 +46,7 @@ Unsupported sites retain explicit manual/account/API-key/official-client states.
 - At most 25,000 requested rows and 2,048 distinct projects. Excessive input fails explicitly.
 - Per-process cache bounded during insertion and export to 256 entries / 4 MiB. Entries over 128 KiB are not cached. Only consumed public fields are retained.
 - Successful observations last up to 15 minutes; expired entries can use ETag/Last-Modified conditional requests. A 304 requires an existing cached body for the same resolved endpoint and refreshes its observation time. GitLab redirect validators cannot transfer to a different release tag.
+- Overlapping reads of the exact same API URL within one scan share one request and immutable parsed response. This covers Modrinth slug/ID aliases after their independent identity checks resolve to a common version endpoint. The scan records shared fetch calls as `stats.coalesced`; each installed row still receives its complete independently validated release record. Completed requests leave the in-flight registry, so it cannot become an unbounded second cache. Separate scans and non-overlapping forced reads keep their existing refresh behavior.
 - Failed revalidation expires previous success. Provider cooldowns survive cache round-trips, including forced scans. HTTP 429 and GitHub rate-limit 403 respect a bounded retry window of up to one hour.
 - Generic 403 is access-denied-or-challenged, not proof that an account is required; 404 does not establish deletion.
 - Detailed row metadata is reduced when the response budget is approached. The CLI rejects results beyond 30 MiB and requests beyond 32 MiB.
@@ -53,6 +54,8 @@ Unsupported sites retain explicit manual/account/API-key/official-client states.
 ## Evidence
 
 `tests/source_adapters.rs` uses an injected transport and clock to exercise production normalization/cache logic without depending on live providers. It covers foreign/duplicate identities, source joins, prerelease/future rejection, game/loader/community mismatch, provenance roles, checksums, conditional cache, failure invalidation, rate limits and response bounds.
+
+The overlapping-alias fixture exercises the actual scan with 24 installed rows, two verified source identities, 16 complete versions and 64 files per version. It checks all selected files and every output row, plus shared provider failure. Run its explicit equivalent-work benchmark with `cargo test --manifest-path native/Cargo.toml --locked -p modhunter-core --test source_adapters benchmark_modrinth_alias_requests -- --ignored --nocapture`. The fixture's 35 ms provider delay is synthetic; request/byte counts and full-result digests establish local transport behavior, not live-site or Windows UI speed.
 
 `native/scripts/verify_source_adapters_live.py` is an explicit opt-in public API smoke through the compiled CLI. It saves scalar identity/status/count/timing/hash evidence without publishing third-party changelogs or downloading archives. Network failures remain failures to establish release metadata; this is not a deterministic release gate or proof of native MO2/game behavior.
 

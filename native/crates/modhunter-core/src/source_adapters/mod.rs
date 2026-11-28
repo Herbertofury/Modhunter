@@ -205,7 +205,7 @@ pub fn scan_sources_with(
         cache: http.export_cache(),
         stats: json!({"sourceProjects":groups.len(),"manualSources":manual,"queried":http.stats.requests.load(Ordering::Relaxed),
             "cacheHits":http.stats.cache_hits.load(Ordering::Relaxed),"revalidated":http.stats.revalidated.load(Ordering::Relaxed),
-            "rateLimited":http.stats.rate_limited.load(Ordering::Relaxed),"items":request.items.len(),"workers":request.workers,
+            "rateLimited":http.stats.rate_limited.load(Ordering::Relaxed),"coalesced":http.stats.coalesced.load(Ordering::Relaxed),"items":request.items.len(),"workers":request.workers,
             "elapsedMs":started.elapsed().as_secs_f64()*1000.0,"budgetMs":request.budget_ms}),
         errors,
         checked_at: now,

@@ -10,7 +10,7 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 use std::io::Read;
 use std::sync::{
-    Mutex,
+    Arc, Mutex, OnceLock,
     atomic::{AtomicUsize, Ordering},
 };
 use std::time::{Duration, Instant};
@@ -201,6 +201,7 @@ pub struct Observation {
 #[derive(Default)]
 pub struct HttpStats {
     pub requests: AtomicUsize,
+    pub coalesced: AtomicUsize,
     pub cache_hits: AtomicUsize,
     pub revalidated: AtomicUsize,
     pub rate_limited: AtomicUsize,
@@ -247,9 +248,14 @@ impl CacheStore {
         }
     }
 }
+// Keep the public observation shape intact while overlapping aliases share
+// its immutable parsed response without cloning a large version list.
+type SharedFetch = Arc<OnceLock<Result<Arc<Observation>, FetchFailure>>>;
+
 pub(crate) struct HttpContext<'a> {
     transport: &'a dyn SourceTransport,
     cache: Mutex<CacheStore>,
+    in_flight: Mutex<BTreeMap<String, SharedFetch>>,
     host_cooldowns: Mutex<BTreeMap<String, (u64, u16)>>,
     now: u64,
     deadline: Instant,
@@ -316,6 +322,7 @@ impl<'a> HttpContext<'a> {
         Self {
             transport,
             cache: Mutex::new(entries),
+            in_flight: Mutex::new(BTreeMap::new()),
             host_cooldowns: Mutex::new(host_cooldowns),
             now,
             deadline: Instant::now() + budget,
@@ -323,7 +330,7 @@ impl<'a> HttpContext<'a> {
             stats: HttpStats::default(),
         }
     }
-    pub fn fetch(&self, url: &str) -> Result<Observation, FetchFailure> {
+    pub fn fetch(&self, url: &str) -> Result<Arc<Observation>, FetchFailure> {
         if !api_url_allowed(url) {
             return Err(FetchFailure::new(
                 "unsupported",
@@ -331,6 +338,39 @@ impl<'a> HttpContext<'a> {
                 self.now,
             ));
         }
+        // Source groups are deduplicated before this layer, but different
+        // Modrinth slugs/IDs can still resolve to one canonical version URL.
+        // All request options, credentials policy, force mode and deadline
+        // belong to this scan, so an exact URL identifies the same operation.
+        // Never hold the map lock while doing I/O or waiting for its owner.
+        let flight = {
+            let mut in_flight = self.in_flight.lock().expect("in-flight mutex");
+            if let Some(flight) = in_flight.get(url) {
+                self.stats.coalesced.fetch_add(1, Ordering::Relaxed);
+                Arc::clone(flight)
+            } else {
+                let flight = Arc::new(OnceLock::new());
+                in_flight.insert(url.to_owned(), Arc::clone(&flight));
+                flight
+            }
+        };
+        let result = flight
+            .get_or_init(|| self.fetch_once(url).map(Arc::new))
+            .clone();
+        // This is only an in-flight registry, not another persistent cache.
+        // Waiting workers keep their Arc; completed payloads are released when
+        // the last consumer finishes. An older flight cannot remove a newer one.
+        let mut in_flight = self.in_flight.lock().expect("in-flight mutex");
+        if in_flight
+            .get(url)
+            .is_some_and(|current| Arc::ptr_eq(current, &flight))
+        {
+            in_flight.remove(url);
+        }
+        result
+    }
+
+    fn fetch_once(&self, url: &str) -> Result<Observation, FetchFailure> {
         let host = reqwest::Url::parse(url)
             .expect("validated URL")
             .host_str()
@@ -925,4 +965,47 @@ pub fn parse_json(bytes: &[u8]) -> Result<Value, serde_json::Error> {
         }
     }
     serde_json::from_slice::<Strict>(bytes).map(|s| s.0)
+}
+
+#[cfg(test)]
+mod flight_tests {
+    use super::*;
+
+    struct CountingTransport(AtomicUsize);
+    impl SourceTransport for CountingTransport {
+        fn get(&self, _: &str, _: &Validators, _: Duration) -> Result<HttpReply, String> {
+            let id = self.0.fetch_add(1, Ordering::Relaxed) + 1;
+            Ok(HttpReply {
+                status: 200,
+                body: serde_json::to_vec(&serde_json::json!({"id":id,"body":"x".repeat(200_000)}))
+                    .unwrap(),
+                headers: BTreeMap::new(),
+            })
+        }
+    }
+
+    #[test]
+    fn completed_flight_releases_full_body_and_preserves_later_forced_read() {
+        let transport = CountingTransport(AtomicUsize::new(0));
+        let http = HttpContext::new(
+            &transport,
+            &SourceCache::default(),
+            1_800_000_000,
+            Duration::from_secs(5),
+            true,
+        );
+        let url = "https://api.github.com/repos/owner/mod/releases/latest";
+        let first = http.fetch(url).unwrap();
+        assert_eq!(first.value["id"], 1);
+        assert_eq!(first.value["body"].as_str().unwrap().len(), 200_000);
+        let released = Arc::downgrade(&first);
+        drop(first);
+        assert!(
+            released.upgrade().is_none(),
+            "completed flights must not retain full payloads"
+        );
+        let second = http.fetch(url).unwrap();
+        assert_eq!(second.value["id"], 2);
+        assert_eq!(transport.0.load(Ordering::Relaxed), 2);
+    }
 }

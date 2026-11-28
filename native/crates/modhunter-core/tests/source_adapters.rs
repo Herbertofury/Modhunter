@@ -4,8 +4,9 @@ use modhunter_core::source_adapters::{
 };
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, VecDeque};
-use std::sync::Mutex;
-use std::time::Duration;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Barrier, Mutex};
+use std::time::{Duration, Instant};
 
 const NOW: u64 = 1_800_000_000;
 const GH: &str = "https://api.github.com/repos/owner/mod/releases/latest";
@@ -117,6 +118,148 @@ fn thunderstore() -> Value {
         "latest":{"namespace":"Team","name":"Example","full_name":"Team-Example-2.0.0","version_number":"2.0.0","is_active":true,
             "description":"Fixture","icon":"https://gcdn.thunderstore.io/live/repository/icons/example.png","date_created":"2026-11-10T09:00:00Z",
             "dependencies":["Dependency-Library-1.2.3"],"download_url":"https://thunderstore.io/package/download/Team/Example/2.0.0/"}})
+}
+
+// Distinct source links can resolve to one Modrinth project. Hold both project
+// lookups at a fixture barrier so their canonical version requests overlap.
+// The delay models provider latency, and is confined to this test transport.
+struct AliasTransport {
+    projects: Barrier,
+    versions: Vec<u8>,
+    version_status: u16,
+    calls: AtomicUsize,
+    version_calls: AtomicUsize,
+    response_bytes: AtomicUsize,
+}
+impl AliasTransport {
+    fn new(version_status: u16) -> Self {
+        let versions: Vec<_> = (0..16)
+            .map(|index| {
+                let mut version = modrinth_version();
+                let id = format!("V{index:07}");
+                version["id"] = id.clone().into();
+                version["version_number"] = format!("2.{index}").into();
+                version["date_published"] =
+                    format!("2026-11-{:02}T09:00:00Z", index + 1).into();
+                version["files"] = (0..64)
+                    .map(|asset| {
+                        let name = format!("Release-{index}-{asset}.zip");
+                        json!({"filename":name,"url":format!("https://cdn.modrinth.com/data/AABBCCDD/versions/{id}/{name}"),
+                            "size":4500 + asset,"primary":asset == 0,"hashes":{"sha512":"b".repeat(128)}})
+                    })
+                    .collect();
+                version
+            })
+            .collect();
+        Self {
+            projects: Barrier::new(2),
+            versions: serde_json::to_vec(&versions).unwrap(),
+            version_status,
+            calls: AtomicUsize::new(0),
+            version_calls: AtomicUsize::new(0),
+            response_bytes: AtomicUsize::new(0),
+        }
+    }
+}
+impl SourceTransport for AliasTransport {
+    fn get(&self, url: &str, _: &Validators, _: Duration) -> Result<HttpReply, String> {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        let (status, body) = if url.contains("/version?") {
+            self.version_calls.fetch_add(1, Ordering::Relaxed);
+            std::thread::sleep(Duration::from_millis(35));
+            (self.version_status, self.versions.clone())
+        } else {
+            assert!(matches!(
+                url,
+                "https://api.modrinth.com/v2/project/example"
+                    | "https://api.modrinth.com/v2/project/AABBCCDD"
+            ));
+            self.projects.wait();
+            (200, serde_json::to_vec(&modrinth_project()).unwrap())
+        };
+        self.response_bytes.fetch_add(body.len(), Ordering::Relaxed);
+        Ok(HttpReply {
+            status,
+            body,
+            headers: BTreeMap::new(),
+        })
+    }
+}
+fn alias_request() -> SourceScanRequest {
+    let mut req = request("https://modrinth.com/mod/example");
+    req.game = "minecraft".into();
+    req.game_runtime = "1.21.1".into();
+    req.loader = "fabric".into();
+    req.workers = 2;
+    req.force = true;
+    req.items = (0..24)
+        .map(|row| {
+            let mut item = req.items[0].clone();
+            item.id = format!("row-{row}");
+            if row % 2 == 1 {
+                item.source.url = "https://modrinth.com/mod/AABBCCDD".into();
+            }
+            item
+        })
+        .collect();
+    req
+}
+fn alias_scan(version_status: u16) -> (Value, Value) {
+    use sha2::{Digest, Sha256};
+    let transport = AliasTransport::new(version_status);
+    let started = Instant::now();
+    let result = scan_sources_with(&alias_request(), &transport, NOW).unwrap();
+    let elapsed = started.elapsed().as_secs_f64() * 1000.0;
+    assert_eq!(result.item_records.len(), 24);
+    if version_status == 200 {
+        for row in result.item_records.values() {
+            assert_eq!(row["outcome"], "release");
+            assert_eq!(row["latestVersion"], "2.15");
+            assert_eq!(row["releaseAssets"].as_array().unwrap().len(), 64);
+        }
+    } else {
+        for row in result.item_records.values() {
+            assert_eq!(row["availability"], "unavailable");
+            assert_eq!(row["freshness"], "unverified");
+        }
+    }
+    let rows = serde_json::to_value(&result.item_records).unwrap();
+    let metrics = json!({"elapsedMs":elapsed,
+        "requests":transport.calls.load(Ordering::Relaxed),
+        "versionRequests":transport.version_calls.load(Ordering::Relaxed),
+        "responseBytes":transport.response_bytes.load(Ordering::Relaxed),
+        "rowCount":result.item_records.len(),
+        "rowDigest":format!("{:x}", Sha256::digest(serde_json::to_vec(&rows).unwrap())),
+        "stats":result.stats});
+    (rows, metrics)
+}
+
+#[test]
+fn overlapping_modrinth_aliases_share_complete_version_response() {
+    let (_, metrics) = alias_scan(200);
+    println!("ALIAS_REPRO {metrics}");
+    assert_eq!(metrics["versionRequests"], 1);
+    assert_eq!(metrics["requests"], 3);
+}
+
+#[test]
+fn overlapping_modrinth_aliases_share_provider_failure() {
+    let (_, metrics) = alias_scan(503);
+    assert_eq!(metrics["versionRequests"], 1);
+}
+
+#[test]
+#[ignore = "explicit equivalent-work transport benchmark"]
+fn benchmark_modrinth_alias_requests() {
+    let mut samples = Vec::new();
+    for _ in 0..24 {
+        let (_, metrics) = alias_scan(200);
+        samples.push(metrics);
+    }
+    println!(
+        "ALIAS_BENCH {}",
+        json!({"fixture":"24 rows, two verified aliases, 16 versions, 64 files per version, 35 ms transport delay", "samples":samples})
+    );
 }
 
 #[test]

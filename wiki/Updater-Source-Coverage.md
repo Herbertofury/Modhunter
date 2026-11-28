@@ -68,6 +68,8 @@ Published digests in release metadata are labeled as such. Their presence is not
 
 Public checks deduplicate shared projects and use four workers by default, capped at eight. Requests have connection and total deadlines; a normal scan has a 45-second budget. The cache retains ETag/Last-Modified evidence, supports 304 revalidation, expires ordinary fresh entries after 15 minutes, and observes provider cooldowns. Failed refreshes do not silently keep an old verdict current.
 
+If two verified Modrinth links use a project's slug and its canonical ID, their overlapping reads of the same release endpoint share one request. Both rows retain their exact source identity and complete release-file results. Provider failures are shared as failures, so an alias cannot accidentally turn an outage into a current-version verdict. This temporary sharing ends with the active requests and leaves forced refreshes in later scans intact.
+
 A public release needs a valid check time and expiry within that 15-minute window to be shown as current or recommended or dispatched for a new download. Missing, invalid or expired timing leaves the source available for review, not as a fresh update. Reviewing a previously downloaded archive still checks its exact file and profile identity without treating the review as a new download.
 
 API responses, retained cache data and detailed output have explicit size limits. A single helper request accepts up to 25,000 rows and 2,048 distinct public projects. Limits return an explicit result/error instead of dropping installed rows from the dashboard. Provider availability, scan budgets and rate limits still govern network speed.

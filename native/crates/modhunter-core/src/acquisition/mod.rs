@@ -543,14 +543,10 @@ pub fn valid_component(name: &str) -> bool {
     }
     let lower = name.to_ascii_lowercase();
     let stem = lower.split('.').next().unwrap_or("");
-    if matches!(stem, "con" | "prn" | "aux" | "nul")
+    !(matches!(stem, "con" | "prn" | "aux" | "nul")
         || (stem.len() == 4
             && (stem.starts_with("com") || stem.starts_with("lpt"))
-            && stem.as_bytes()[3].is_ascii_digit())
-    {
-        return false;
-    }
-    true
+            && stem.as_bytes()[3].is_ascii_digit()))
 }
 pub fn reject_link(path: &Path) -> Result<()> {
     let m = fs::symlink_metadata(path).map_err(error)?;

@@ -155,6 +155,35 @@ class SourceEvidenceTests(unittest.TestCase):
             with self.subTest(provider=provider), self.assertRaises(PlanError):
                 validate_release_asset(snapshot(item), selection(item))
 
+    def test_modrinth_same_version_optional_file_keeps_its_exact_url_and_digest(self):
+        item, raw = fixture("modrinth")
+        main = raw["releaseAssets"][0]
+        base = main["url"].rsplit("/", 1)[0]
+        optional = {**main, "assetId": 43, "assetKey": "modrinth:IjKlMnOp:optional+blue.zip",
+                    "name": "optional+blue.zip", "url": base + "/optional%2Bblue.zip",
+                    "releaseVersion": "2.0.0", "hashes": {"sha512": "b" * 128}}
+        raw["releaseAssets"] = [main, optional]
+        item["update"] = normalize_adapter_record(item, raw)
+        files = item["update"]["releaseAssets"]
+        self.assertEqual([f["name"] for f in files], ["mod.zip", "optional+blue.zip"])
+        self.assertEqual(files[1]["hashes"]["sha512"], "b" * 128)
+        self.assertIsNone(choose_release_asset(item)[0], "do not auto-select among sibling files")
+        request = {**selection(item), "assetKey": files[1]["assetKey"], "assetProof": files[1]["assetProof"]}
+        reviewed = validate_release_asset(snapshot(item), request)
+        self.assertEqual((reviewed["name"], reviewed["url"]), (optional["name"], optional["url"]))
+        for route in (main["url"], base + "/nested/optional%2Bblue.zip", base + "/optional%2BBlue.zip"):
+            changed = copy.deepcopy(item)
+            asset = changed["update"]["releaseAssets"][1]
+            asset["url"] = route
+            # A newly derived review proof must not authorize a different remote filename.
+            proof = asset_proof(changed["source"], changed["update"], asset)
+            with self.subTest(route=route), self.assertRaises(PlanError):
+                validate_release_asset(snapshot(changed), {**request, "assetProof": proof})
+        legacy = optional["url"].replace("/IjKlMnOp/", "/%32.0.0/")
+        raw["releaseAssets"][1]["url"] = legacy
+        item["update"] = normalize_adapter_record(item, raw)
+        self.assertTrue(item["update"]["releaseAssets"][1]["installable"])
+
     def test_modrinth_non_mo2_file_remains_visible_but_cannot_queue(self):
         item, raw = fixture("modrinth")
         raw["releaseAssets"][0]["name"] = "mod.jar"

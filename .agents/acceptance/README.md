@@ -9,3 +9,14 @@ The reviewed root router changes only `.agents/foundry/AGENTS-adapter.md` to `.a
 Dedicated CI tests on Windows/Linux do not trigger native-rust release, source-import or wiki-sync paths. The existing source-checkpoint workflow may retain the new commit after main merge; its behavior is unchanged. No workflow is manually dispatched. This verifies repository routing and bytes, not coding-agent behavioral superiority, actual MO2 execution, game/UI functionality or installed-client propagation.
 
 The explicit transition helper retains its generic legacy refusal and exception rollback tests; original legacy data remains for normal Git recovery. Ongoing coexistence updates, live harness acceptance, skills/history/releases and Agent-Foundry retirement remain open. Do not remove the legacy lock to bypass the generic tool's safety guard.
+
+## Ongoing acceptance after reviewed product changes
+
+CI now runs the unchanged original suite on the exact adoption commit
+`662f2507ad1816efc0da1d8ac3acb66c8e55797f`. That suite still checks the same
+419 source bytes, original router and pinned policy. In a separate current-source
+check, the live router keeps the original owner instructions in order, retains
+the Athena snapshots, host binding and ModHunter lifecycle skill, and points to
+the current owner-required policy and interface-acceptance links. Product and
+wiki changes since the original adoption are not reverted to make historical
+checks pass. Both historical and live checks must pass.

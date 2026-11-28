@@ -1,6 +1,8 @@
 # Repository instructions
 
 Read `.agents/athena/AGENTS-adapter.md` for the pinned shared engineering core.
+
+For user-facing interface work, apply the [Athena portfolio interface quality contract](https://github.com/Herbertofury/Athena/blob/main/guidance/DESIGN_QUALITY_STANDARD.md#portfolio-interface-quality-contract) and record real host acceptance using the [interface quality receipt](https://github.com/Herbertofury/Athena/blob/main/guidance/templates/INTERFACE_QUALITY_RECEIPT.md). This is an additive requirement; it does not change either governance lock or declare product features implemented. Preserve mod-manager and plugin responsiveness and offline use; do not add accounts or presence to surfaces that do not need them.
 Keep this file and nested instructions project-owned: setup, commands, constraints and acceptance belong here.
 
 ## Modhunter-local engineering contract

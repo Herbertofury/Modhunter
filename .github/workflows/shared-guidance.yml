@@ -20,4 +20,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m unittest discover -s .agents/acceptance -v
+      - name: Checkout exact reviewed historical adoption
+        uses: actions/checkout@v4
+        with:
+          ref: 662f2507ad1816efc0da1d8ac3acb66c8e55797f
+          path: .guidance-original
+          persist-credentials: false
+      - name: Replay all original preservation and exact routing assertions
+        working-directory: .guidance-original
+        run: python -B -m unittest discover -s .agents/acceptance -v
+      - name: Verify current router, pins and owner-approved links
+        run: python -B .agents/acceptance/check_live_router.py .guidance-original/AGENTS.md

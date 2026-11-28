@@ -302,11 +302,22 @@ def asset_matches_source(source: dict, update: dict, asset: dict) -> bool:
         origin = _strict_url(str(asset.get("originUrl") or asset.get("url") or ""))
         return bool(repo and project == repo and owned_gitlab_path(url) and owned_gitlab_path(origin))
     if provider == "modrinth":
-        return (url.hostname == "cdn.modrinth.com" and bool(re.fullmatch(r"[A-Za-z0-9]+", project))
-                and bool(re.fullmatch(r"[A-Za-z0-9]+", release))
-                and (url.path.startswith("/data/" + project + "/versions/" + release + "/")
-                     or asset.get("releaseVersion") == update.get("latestVersion") and bool(asset.get("releaseVersion"))
-                     and url.path.startswith("/data/" + project + "/versions/" + str(asset["releaseVersion"]) + "/")))
+        if (url.hostname != "cdn.modrinth.com" or not re.fullmatch(r"[A-Za-z0-9]+", project)
+                or not re.fullmatch(r"[A-Za-z0-9]+", release)):
+            return False
+        route = url.path.split("/")
+        if len(route) != 6 or route[:4] != ["", "data", project, "versions"]:
+            return False
+        try:
+            route_version, route_name = (unquote(part, errors="strict") for part in route[4:])
+        except UnicodeDecodeError:
+            return False
+        legacy = asset.get("releaseVersion")
+        return route_name == name and (
+            route_version == release
+            or isinstance(legacy, str) and bool(legacy) and legacy == update.get("latestVersion")
+            and route_version == legacy
+        )
     if provider == "thunderstore":
         # projectId is the API's Namespace/Package identity; a community prefix
         # may be carried separately in compatibility and never changes ownership.

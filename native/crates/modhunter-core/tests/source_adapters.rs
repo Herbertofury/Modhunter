@@ -270,6 +270,73 @@ fn rate_limits_survive_process_cache_and_forced_checks() {
     assert_eq!(second.item_records["row"]["retryAt"], NOW + 180);
 }
 #[test]
+fn modrinth_reset_is_relative_and_survives_forced_cross_project_checks() {
+    let mock = Mock::new();
+    mock.reply(
+        "https://api.modrinth.com/v2/project/example",
+        429,
+        Value::Null,
+        &[("x-ratelimit-reset", "45")],
+    );
+    let mut req = request("https://modrinth.com/mod/example");
+    let first = scan_sources_with(&req, &mock, NOW).unwrap();
+    assert_eq!(first.item_records["row"]["retryAt"], NOW + 45);
+    req.cache = serde_json::from_str(&serde_json::to_string(&first.cache).unwrap()).unwrap();
+    req.force = true;
+    req.items[0].source.url = "https://modrinth.com/mod/another".into();
+    let second = scan_sources_with(&req, &mock, NOW + 1).unwrap();
+    assert_eq!(mock.count(), 1);
+    assert_eq!(second.item_records["row"]["availability"], "rate-limited");
+    assert_eq!(second.item_records["row"]["retryAt"], NOW + 45);
+}
+
+#[test]
+fn provider_reset_units_precedence_and_bounds_are_preserved() {
+    for (source, endpoint, headers, seconds) in [
+        (
+            "https://modrinth.com/mod/example",
+            "https://api.modrinth.com/v2/project/example",
+            vec![("x-ratelimit-reset", "45"), ("retry-after", "120")],
+            120,
+        ),
+        (
+            "https://modrinth.com/mod/example",
+            "https://api.modrinth.com/v2/project/example",
+            vec![("x-ratelimit-reset", "0")],
+            1,
+        ),
+        (
+            "https://modrinth.com/mod/example",
+            "https://api.modrinth.com/v2/project/example",
+            vec![("x-ratelimit-reset", "999999")],
+            3600,
+        ),
+        (
+            "https://modrinth.com/mod/example",
+            "https://api.modrinth.com/v2/project/example",
+            vec![("x-ratelimit-reset", "invalid")],
+            60,
+        ),
+        (
+            "https://github.com/owner/mod",
+            GH,
+            vec![("x-ratelimit-reset", "1800000045")],
+            45,
+        ),
+    ] {
+        let mock = Mock::new();
+        mock.reply(endpoint, 429, Value::Null, &headers);
+        let result = scan_sources_with(&request(source), &mock, NOW).unwrap();
+        assert_eq!(
+            result.item_records["row"]["retryAt"],
+            NOW + seconds,
+            "{source} {headers:?}"
+        );
+        assert_eq!(result.item_records["row"]["availability"], "rate-limited");
+    }
+}
+
+#[test]
 fn failed_forced_revalidation_never_returns_cached_current_evidence() {
     let mock = Mock::new();
     mock.reply(GH, 200, gh(), &[]);
